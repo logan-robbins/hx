@@ -214,3 +214,12 @@ reaches a user's remote, so one name only.
 3. Dispatch refuses a dirty worktree (exit 1, files listed). `hx bench` archives the diff as a
    `.patch` next to the benched body and then resets. Spec 08 updated; build-5 item 8.
 4. `hx doctor` fails when `base_branch` is not a ref in the mirror. build-5 item 8.
+
+## 2026-09-20 — answers to build-5's two live findings
+
+1. No stash. Spec 07.3 section 2 now says, for a subagent stream, that the task is the spawning
+   message already in its conversation, and why hx does not guess a pairing. Your wording stands.
+   Spec 01.1 records the `SubagentStart` input shape.
+2. My error in build-5 item 7: "Partner" should have read "worker". Your Partner run proved the
+   Non-Partner rule and the fallback; the `eng-001` re-run is the check that counts. Future goals
+   say worker.

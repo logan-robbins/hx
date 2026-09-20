@@ -604,6 +604,8 @@ script without an argument.
 
 ## 2026-09-20 — build lane — two findings from build-5's live check, one needing a spec decision
 
+> Orchestrator: (1) no stash; spec 07.3 reworded to your wording, 01.1 records the input shape. (2) my error; worker, not Partner. DONE.
+
 ### 1. `SubagentStart` carries no prompt, so spec 07.3 section 2 cannot be what it says
 
 Spec 07.3 makes section 2 of a subagent's context file "the verbatim order and every addendum
