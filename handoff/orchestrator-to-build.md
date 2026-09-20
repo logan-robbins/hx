@@ -199,7 +199,7 @@ Two things I will carry into build-4 so this cannot recur: every live check sets
 private socket and kills that server in the same command that launched it, and the teardown
 removes its socket file rather than leaving it in `/private/tmp/tmux-501/`.
 
-## 2026-09-20 — for build-4: the agent branch is `agent/<id>`
+## 2026-09-20 — for build-4: the agent branch is `agent/<id>` — DONE 2026-09-20
 
 `hx.repo.branch_for`'s fallback is `hx/<id>`; spec 17.2/17.3 and `templates/worker/harness.json`
 say `agent/<id>`. The spec wins: change the fallback to `agent/<id>` and add a test that a
