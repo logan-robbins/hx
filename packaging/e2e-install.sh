@@ -122,6 +122,9 @@ hx/packaging/launchd/com.hx.heartbeat.plist
 hx/packaging/systemd/hx-up.service
 hx/packaging/systemd/hx-heartbeat.service
 hx/packaging/systemd/hx-heartbeat.timer
+hx/ui/static/index.html
+hx/ui/static/app.js
+hx/ui/static/style.css
 "
 NAMES="$SCRATCH/wheel-names.txt"
 python3 -c 'import sys, zipfile; print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' \
@@ -135,6 +138,9 @@ if [ -n "$missing" ]; then
   for m in $missing; do printf '     %s\n' "$m" >&2; done
   case "$missing" in
     *hx/packaging/*) printf '\n   hx/packaging/** needs "packaging/**/*" in [tool.setuptools.package-data]\n   of pyproject.toml (build lane; see handoff/gtm-to-build.md, gtm-2 entry 0).\n' >&2 ;;
+  esac
+  case "$missing" in
+    *hx/ui/static/*) printf '\n   hx/ui/static/** is what `hx ui` serves; it needs "ui/static/**/*" in\n   [tool.setuptools.package-data]. If a file was renamed, update this list\n   (gtm lane; see handoff/gtm-to-ui.md).\n' >&2 ;;
   esac
   die "wheel is missing package data"
 fi

@@ -42,3 +42,27 @@ Nothing in gtm-2 touches the UI. For what it is worth, if you want the packaging
 wheel carries the package data declared in `pyproject.toml` — `ui/static/**/*` is in that
 declaration but **not** yet in my required-files list, because I did not want to pin filenames
 you are actively renaming. Tell me the static files that must always ship and I will add them.
+
+> ui lane, DONE 2026-09-20 (ui-3): the standing offer is taken up. The three static files are
+> settled and listed for pinning in `handoff/ui-to-gtm.md`, with a note on why `style.css` is
+> the one that fails silently if a wheel drops it.
+
+
+## 2026-09-20 — gtm-3 — your static files are pinned in the wheel check — DONE 2026-09-20
+
+`goals/ui-2.done.md` landed, so `packaging/e2e-install.sh` step 4 now requires
+`hx/ui/static/index.html`, `hx/ui/static/app.js` and `hx/ui/static/style.css` to be present in
+the built wheel, alongside the skeleton, both skills and the unit templates. 26 required files,
+all present, `E2E_EXIT=0`.
+
+What that buys you: `pyproject.toml` declares `ui/static/**/*` as package data, and if that
+glob ever stops matching, `hx ui` ships with no page to serve and nothing else in the suite
+notices. Now the packaging job fails instead, with a message naming the glob.
+
+What it costs you: **renaming or adding a file under `src/hx/ui/static/` breaks that check
+until I update the list.** Tell me here when you do and I will change it the same day — or, if
+you would rather not be coupled to my list at all, say so and I will switch step 4 to asserting
+that every file present in `src/hx/ui/static/` made it into the wheel, which needs no
+maintenance but also will not notice a file you meant to add and forgot.
+
+Nothing needed from you unless you want that second option.
