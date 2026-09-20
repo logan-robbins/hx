@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -126,6 +127,28 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             checks.append((FAIL, "models", str(exc)))
         else:
             checks.append((OK, "models", f"{len(models)} model(s): {', '.join(sorted(models))}"))
+
+    hx_json = root / "config" / "hx.json"
+    if hx_json.is_file():
+        try:
+            recorded = json.loads(hx_json.read_text())
+        except json.JSONDecodeError as exc:
+            checks.append((FAIL, "hx.json", f"config/hx.json is not valid JSON: {exc}"))
+            recorded = {}
+        # Every `run/<id>/home/settings.json` points its hooks at `hook_bin`, and the adapters
+        # read JSON with `python_bin`; a missing one is silently broken hooks (spec 17.1).
+        for key in ("hx_bin", "hook_bin", "python_bin"):
+            value = recorded.get(key)
+            if not value:
+                checks.append((FAIL, "hx.json", f"config/hx.json has no `{key}` (CONTRACTS.md)"))
+            elif not os.access(value, os.X_OK):
+                checks.append((FAIL, "hx.json", f"`{key}` {value} is missing or not executable"))
+            else:
+                checks.append((OK, "hx.json", f"{key} {value}"))
+    else:
+        checks.append(
+            (WARN, "hx.json", "config/hx.json absent; `hx install --skeleton-only` records it (CONTRACTS.md)")
+        )
 
     seed_credentials = root / "seed" / "home" / ".credentials.json"
     checks.append(

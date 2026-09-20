@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import store
 from .errors import ValidationError
 from .ids import ID_RE, OUTCOMES
 
@@ -65,3 +66,30 @@ def outcome_of(tasks: dict[str, dict], item_id: str) -> str | None:
 def is_ready(tasks: dict[str, dict], after: list[str]) -> bool:
     """Spec 08: readiness of an `after` entry is `tasks.json[<dep>].outcome == "done"`."""
     return all(outcome_of(tasks, dep) == "done" for dep in after)
+
+
+def new_entry(order: str, after: list[str], dispatched: str) -> dict:
+    """A fresh `tasks.json` record for a dispatch (spec 08)."""
+    return {
+        "order": order,
+        "after": list(after),
+        "addenda": [],
+        "outcome": None,
+        "dispatched": dispatched,
+        "completed": None,
+    }
+
+
+def write_tasks(root: Path, tasks: dict[str, dict]) -> None:
+    """Write `tasks.json` atomically. The caller holds `run/tasks.lock` (spec 04)."""
+    store.atomic_write_json(path_for(root), tasks)
+
+
+def unmet(tasks: dict[str, dict], after: list[str]) -> list[str]:
+    """The `after` entries whose outcome is not `done` — CONTRACTS.md `waiting_on`."""
+    return [dep for dep in after if outcome_of(tasks, dep) != "done"]
+
+
+def promotable(tasks: dict[str, dict], queued: dict[str, list[str]]) -> list[str]:
+    """Ids among `queued` (id → after) whose every dependency is now `done` (spec 06)."""
+    return sorted(item_id for item_id, after in queued.items() if is_ready(tasks, after))

@@ -60,7 +60,8 @@ def test_install_is_idempotent_and_never_overwrites(tmp_path):
     result = install_skeleton(root)
     assert json.loads(edited.read_text())["claude-opus-5"]["window"] == 400000
     assert "config/models.json" in result["skipped"]
-    assert result["created"] == []
+    assert result["created"] == [], result["created"]
+    assert "config/hx.json" in result["skipped"]
 
 
 def test_missing_gtm_files_are_reported_not_fatal(tmp_path, monkeypatch):
@@ -85,7 +86,7 @@ def test_cli_requires_skeleton_only_for_now(run_hx, tmp_path):
     root = tmp_path / "instance"
     result = run_hx("install", "--root", str(root))
     assert result.returncode == 2
-    assert "not implemented (build-11)" in result.stderr
+    assert "not implemented (build-4)" in result.stderr
     assert "--skeleton-only" in result.stderr
     assert not root.exists()
 
@@ -96,6 +97,35 @@ def test_cli_creates_a_scratch_root(run_hx, tmp_path):
     assert result.returncode == 0, result.stderr
     assert f"root {root}" in result.stdout
     assert (root / "adapters" / "claude" / "start.sh").is_file()
+
+
+def test_config_hx_json_records_the_entry_points(tmp_path):
+    """CONTRACTS.md `config/hx.json`: absolute `hx_bin`, `hook_bin`, `python_bin`."""
+    import json as _json
+    import os
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    recorded = _json.loads((root / "config" / "hx.json").read_text())
+    assert set(recorded) == {"hx_bin", "hook_bin", "python_bin"}
+    for key, value in recorded.items():
+        assert value, f"{key} is empty"
+        assert os.path.isabs(value), f"{key} is not absolute: {value}"
+        assert os.access(value, os.X_OK), f"{key} is not executable: {value}"
+
+
+def test_doctor_fails_when_an_entry_point_is_missing(tmp_path):
+    import json as _json
+
+    from hx.doctor import FAIL, run_checks
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    recorded = _json.loads((root / "config" / "hx.json").read_text())
+    recorded["hook_bin"] = str(tmp_path / "gone" / "hx-hook")
+    (root / "config" / "hx.json").write_text(_json.dumps(recorded))
+    failures = [c for c in run_checks(root) if c[0] == FAIL]
+    assert any("hook_bin" in detail for _, _, detail in failures), failures
 
 
 def test_cli_honours_harness_root_env(run_hx, tmp_path):

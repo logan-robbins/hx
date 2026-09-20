@@ -77,6 +77,17 @@ def emit(entry: dict, target: Path) -> None:
         handle.flush()
 
 
+#: The idle prompt `hx.goal.pane_is_idle` looks for. The real TUI draws a `>` input box
+#: instead; `hx.goal.IDLE_PROMPTS` carries both patterns and M6 confirms the real one.
+IDLE_PROMPT = "hx-fake-idle>"
+
+
+def prompt() -> None:
+    """Announce that the pane is waiting for input, the way a real idle TUI does."""
+    sys.stdout.write(IDLE_PROMPT + "\n")
+    sys.stdout.flush()
+
+
 def load_script() -> list[dict]:
     path = os.environ.get("HX_FAKE_SCRIPT")
     if not path or not Path(path).is_file():
@@ -115,9 +126,9 @@ def main() -> int:
     input_log.touch()
     # A real pane would show a prompt here; a test waits for this marker before pasting.
     (directory / "fake-ready").write_text(now() + "\n")
-    sys.stdout.write("fake-claude ready\n")
-    sys.stdout.flush()
+    prompt()
 
+    holding = False
     for line in sys.stdin:
         line = line.rstrip("\n")
         with input_log.open("a") as handle:
@@ -128,6 +139,16 @@ def main() -> int:
                 emit(entry, hooks_log)
         if line.strip() == "/fake-exit":
             break
+        # `/fake-hold` leaves the pane mid-turn, with no idle prompt, the way a real session
+        # looks while it is working; `/fake-release` ends the turn. This is how a test drives
+        # `hx goal`'s two paths (paste now versus `run/<id>/goal-pending`).
+        if line.strip() == "/fake-hold":
+            holding = True
+            continue
+        if line.strip() == "/fake-release":
+            holding = False
+        if not holding:
+            prompt()
     return 0
 
 

@@ -14,44 +14,63 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from . import archive as archive_cmd
+from . import bench as bench_cmd
 from . import board as board_cmd
+from . import complete as complete_cmd
+from . import compose as compose_cmd
+from . import dispatch as dispatch_cmd
 from . import doctor as doctor_cmd
+from . import flush as flush_cmd
+from . import goal as goal_cmd
 from . import install as install_cmd
+from . import lifecycle
+from . import orders as orders_cmd
+from . import read as read_cmd
+from . import resume as resume_cmd
+from . import show as show_cmd
+from . import task as task_cmd
+from . import wake as wake_cmd
 from .errors import HxError
 
 #: Every command of spec 08, plus `install`, `up`, `doctor`, `ui`, `show`, `repo`, `push`
 #: and `upgrade`. The value is the build-lane goal that delivers it (spec 13 milestone + 1).
+#: Packaging moved forward: `hx install` (full), `hx repo add`, sparse worktrees, `hx push`
+#: and `hx upgrade` are build-4; build-3 stays M2+M3. The numbers for `companion`, `seam`,
+#: `metrics` and `ui` are the orchestrator's to confirm once the goals after build-4 are set.
 NOT_IMPLEMENTED = {
-    "launch": 2,
-    "up": 2,
-    "dispatch": 2,
-    "goal": 2,
-    "task": 2,
-    "complete": 2,
-    "resume": 2,
-    "read": 2,
-    "bench": 2,
-    "wake": 2,
-    "orders": 2,
-    "archive": 2,
-    "compose": 3,
-    "flush": 6,
+    "repo": 4,
+    "push": 4,
+    "upgrade": 4,
     "companion": 6,
     "seam": 7,
-    "restart": 7,
     "metrics": 8,
-    "heartbeat": 9,
-    "show": 10,
     "ui": 10,
-    "repo": 11,
-    "push": 11,
-    "upgrade": 11,
 }
 
 IMPLEMENTED = {
+    "archive": archive_cmd.main,
+    "bench": bench_cmd.main,
     "board": board_cmd.main,
+    "complete": complete_cmd.main,
+    # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
+    # what they do arrives at M2 and M5 (spec 13).
+    "compose": compose_cmd.main,
+    "dispatch": dispatch_cmd.main,
     "doctor": doctor_cmd.main,
+    "flush": flush_cmd.main,
+    "goal": goal_cmd.main,
+    "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
+    "launch": lifecycle.main_launch,
+    "orders": orders_cmd.main,
+    "read": read_cmd.main,
+    "restart": lifecycle.main_restart,
+    "resume": resume_cmd.main,
+    "show": show_cmd.main,
+    "task": task_cmd.main,
+    "up": lifecycle.main_up,
+    "wake": wake_cmd.main,
 }
 
 COMMANDS = sorted(set(IMPLEMENTED) | set(NOT_IMPLEMENTED))
@@ -61,8 +80,22 @@ USAGE = f"""usage: hx <command> [options]
 hx is the control plane for a HarnessAgent fleet (spec/HARNESS_SPEC.md). HARNESS_ROOT
 selects the instance; it defaults to ~/hx and may never be inside the user's ~/.claude.
 
-implemented now:
+the control plane:
+  launch ID                    idle work item, home, tmux session, goal if working
+  dispatch ID ORDER [ID ORDER] validate the orders, then working or queued
+  goal ID [--now]              paste the pointer, or leave it pending mid-turn
+  task                         print your own order and its addenda
+  complete OUTCOME             the agent's last action; checks run here
+  resume ID ADDENDUM           continue a blocked or decision item
+  bench ID                     archive the body and free the id
+  read ID [--full]             the Digest and the open decision
+  restart ID / up / heartbeat  relaunch, boot, and the 15-minute cron
+  wake partner TEXT            the one way anything reaches the Partner
+
+read-only views:
   board [--json] [--require-done ID...]   the whole instance, and every invariant
+  show ID [--json]                        everything hx knows about one id
+  orders [--json] / archive [--json]      the order graph, and what has been archived
   doctor [--json]                         what is here, what is missing, what is broken
   install --skeleton-only --root PATH     create the instance layout and skeleton
 

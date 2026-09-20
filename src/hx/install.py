@@ -12,9 +12,12 @@ skeleton. Until those land, install copies what exists and `hx doctor` reports t
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import sys
 from pathlib import Path
 
+from . import store
 from .errors import HxError
 from .root import resolve_root
 
@@ -63,6 +66,38 @@ EXPECTED_SKELETON_FILES = (
 )
 
 
+def entry_points() -> dict[str, str]:
+    """Absolute paths of `hx`, `hx-hook` and the interpreter (CONTRACTS.md `config/hx.json`).
+
+    The entry-point scripts sit next to the running interpreter — that is where `uv tool
+    install` and a venv both put them — so resolve from `sys.executable` first and fall back
+    to PATH. Hook commands in every `run/<id>/home/settings.json` reference these, so a
+    package upgrade that moves them is followed by `hx upgrade`, not by broken hooks
+    (spec 17.1).
+    """
+    # `sys.executable` unresolved: inside a venv that is the venv's own python, which is the
+    # interpreter hx runs on and the one whose bin/ holds the entry-point scripts. Resolving
+    # it would jump to the base installation, where they are not.
+    found: dict[str, str] = {"python_bin": str(Path(sys.executable).absolute())}
+    bindirs = [Path(sys.executable).absolute().parent, Path(sys.prefix) / "bin"]
+    for key, name in (("hx_bin", "hx"), ("hook_bin", "hx-hook")):
+        for bindir in bindirs:
+            candidate = bindir / name
+            if candidate.is_file():
+                found[key] = str(candidate)
+                break
+        else:
+            found[key] = shutil.which(name) or ""
+    return found
+
+
+def write_hx_json(root: Path) -> dict[str, str]:
+    """Record the entry points the adapters and hooks read (CONTRACTS.md, spec 17.1)."""
+    recorded = entry_points()
+    store.atomic_write_json(root / "config" / "hx.json", recorded)
+    return recorded
+
+
 def skeleton_dir() -> Path:
     """The package's instance skeleton, shipped as package data (pyproject `package-data`)."""
     return Path(__file__).resolve().parent / "skeleton"
@@ -109,8 +144,24 @@ def install_skeleton(root: Path) -> dict:
     else:
         skipped.append(".gitignore")
 
+    hx_json = root / "config" / "hx.json"
+    before = hx_json.read_text() if hx_json.is_file() else None
+    recorded = write_hx_json(root)
+    # Always refreshed, because it records where this package's entry points actually are;
+    # reported as kept when nothing moved, so a re-run is visibly a no-op.
+    if hx_json.read_text() == before:
+        skipped.append("config/hx.json")
+    else:
+        created.append("config/hx.json")
+
     missing = [name for name in EXPECTED_SKELETON_FILES if not (root / name).exists()]
-    return {"root": str(root), "created": created, "skipped": skipped, "missing": missing}
+    return {
+        "root": str(root),
+        "created": created,
+        "skipped": skipped,
+        "missing": missing,
+        "hx_json": recorded,
+    }
 
 
 def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | None = None) -> int:
@@ -126,7 +177,7 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     root = resolve_root(args.root, env)
     if not args.skeleton_only:
         raise HxError(
-            "install: not implemented (build-11); `hx install --skeleton-only --root <path>` "
+            "install: not implemented (build-4); `hx install --skeleton-only --root <path>` "
             "creates the instance layout and skeleton (spec 17.2 step 2). The preflight "
             "checks, seed login, repo mirror, boot units and `hx launch partner` land with "
             "their milestones"

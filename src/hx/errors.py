@@ -30,3 +30,24 @@ class ValidationError(HxError):
     """A config, order, or work item file failed validation. Exit 2 (spec 05)."""
 
     exit_code = 2
+
+
+class NotFound(HxError):
+    """A named id, order file, or work item does not exist.
+
+    Distinct from `ValidationError` so a caller can tell "no such id" from "the instance is
+    broken": the UI turns this into 404 and everything else into 502
+    (handoff/ui-to-build.md).
+    """
+
+    exit_code = 2
+
+
+class Refused(HxError):
+    """A transition hx will not make: the wrong state, the wrong caller, a failing check.
+
+    Exit 1, like `HxRefusal`, because the instance is intact and the caller asked for
+    something the rules do not allow (spec 06, 08).
+    """
+
+    exit_code = 1

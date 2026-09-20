@@ -113,6 +113,8 @@ while IFS='=' read -r name value; do
 done < <(env)
 
 launcher=("$here/start.sh" --exec "$id")
+pane_log=$root/logs/$id/$id-pane.log
+mkdir -p "$root/logs/$id"
 
 if ! "${TMUX_CMD[@]}" has-session -t "=$id" 2>/dev/null; then
   "${TMUX_CMD[@]}" new-session -d -s "$id" -n main -c "$cwd" "${env_args[@]}" "${launcher[@]}"
@@ -130,4 +132,10 @@ else
   fi
 fi
 
+# The pane capture, the UI's fallback for a dead session (spec 03, 11). Not a Companion
+# stream: `hx.streams` ignores it and `hx dispatch` archives it with the rest of logs/<id>/.
+"${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
+"${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"
+
 printf 'start.sh: %s running in tmux session %s window main (cwd %s)\n' "$bin" "$id" "$cwd"
+printf 'start.sh: pane log %s\n' "$pane_log"

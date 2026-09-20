@@ -53,3 +53,37 @@ def live_sessions(env: dict[str, str] | None = None) -> set[str] | None:
 def has_session(name: str, env: dict[str, str] | None = None) -> bool:
     sessions = live_sessions(env)
     return bool(sessions and name in sessions)
+
+
+def pane_log(root, item_id: str):
+    """`logs/<id>/<id>-pane.log`: the raw pane capture (spec 03, 11).
+
+    It is the UI's fallback for a dead session, not a Companion stream, so
+    `hx.streams` ignores it and only `hx dispatch` (which archives all of `logs/<id>/`)
+    ever moves it.
+    """
+    return root / "logs" / item_id / f"{item_id}-pane.log"
+
+
+def arm_pane_log(root, item_id: str, env: dict[str, str] | None = None) -> bool:
+    """Point `tmux pipe-pane -o` at the pane log, replacing any pipe already running.
+
+    `start.sh` arms this at launch; `hx dispatch` re-arms it after archiving `logs/<id>/`,
+    because a pipe started before the archive keeps writing into the moved file.
+    """
+    if not has_session(item_id, env):
+        return False
+    target = pane_log(root, item_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    quoted = str(target).replace("'", "'\\''")
+    subprocess.run(
+        [*tmux_command(env), "pipe-pane", "-t", f"={item_id}:main"],
+        capture_output=True,
+        check=False,
+    )
+    result = subprocess.run(
+        [*tmux_command(env), "pipe-pane", "-o", "-t", f"={item_id}:main", f"cat >> '{quoted}'"],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0

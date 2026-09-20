@@ -84,10 +84,25 @@ def test_every_spec_09_event_is_wired_with_the_right_id(installed):
         assert "--id eng-001" in command, command
 
 
-def test_the_hook_binary_defaults_to_bin_hx_hook(installed):
-    """Spec 09: every hook command is `<root>/bin/hx-hook --id <id> <event>`."""
+def test_the_hook_binary_defaults_to_bin_hx_hook(instance):
+    """Spec 09: every hook command is `<root>/bin/hx-hook --id <id> <event>`.
+
+    The fallback, used when `hx install` has not recorded `config/hx.json` (CONTRACTS.md).
+    """
+    (instance / "config" / "hx.json").unlink()
+    assert run_install(instance, "eng-001").returncode == 0
+    for command in hook_commands(settings_for(instance, "eng-001")):
+        assert command.startswith(str(instance / "bin" / "hx-hook"))
+
+
+def test_the_hook_binary_comes_from_config_hx_json_when_recorded(installed):
+    """`hx install --skeleton-only` records it, so a real instance uses the real path."""
+    import json as _json
+
+    recorded = _json.loads((installed / "config" / "hx.json").read_text())["hook_bin"]
+    assert recorded
     for command in hook_commands(settings_for(installed, "eng-001")):
-        assert command.startswith(str(installed / "bin" / "hx-hook"))
+        assert command.startswith(recorded)
 
 
 def test_config_hx_json_overrides_the_hook_binary(instance):

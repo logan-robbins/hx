@@ -190,3 +190,151 @@ def parse_order(path: str | Path) -> Order:
     if not path.is_file():
         raise ValidationError(f"{path}: order file not found; the order is always a file (spec 06)")
     return parse_order_text(path.read_text(), path)
+
+
+# --- `hx orders [--json]` (CONTRACTS.md) -------------------------------------------------------
+#
+# Read-only over `orders/`, `tasks.json`, and the work items. The one fact this view can show
+# that nothing else can is `file_matches_record`: the Partner edited the order file after
+# dispatch, so what the agent is running is not what the file now says.
+
+
+def addendum_path_for(root: Path, item_id: str) -> Path:
+    return root / "orders" / f"{item_id}.addendum.md"
+
+
+def collect(root: Path) -> dict:
+    """The `hx orders --json` document."""
+    from . import timestamps
+    from .config_harness import load_harness
+    from .errors import ValidationError
+    from .ids import ID_RE, sort_key
+    from .tasks import load_tasks, outcome_of, unmet
+    from .workitems import find_work_item
+
+    root = Path(root)
+    errors: list[str] = []
+    try:
+        tasks = load_tasks(root)
+    except ValidationError as exc:
+        errors.append(str(exc))
+        tasks = {}
+
+    orders_dir = root / "orders"
+    ids: set[str] = set(tasks)
+    if orders_dir.is_dir():
+        for path in orders_dir.glob("*.md"):
+            stem = path.name.removesuffix(".addendum.md").removesuffix(".md")
+            if ID_RE.match(stem):
+                ids.add(stem)
+            else:
+                errors.append(
+                    f"orders/{path.name}: not an order file; orders are `orders/<id>.md` (spec 03)"
+                )
+
+    entries = []
+    for item_id in sorted(ids, key=sort_key):
+        path = orders_dir / f"{item_id}.md"
+        order_text = None
+        after: list[str] = []
+        if path.is_file():
+            try:
+                parsed = parse_order(path)
+                order_text = parsed.text
+                after = parsed.after
+            except ValidationError as exc:
+                errors.append(str(exc))
+                order_text = path.read_text()
+
+        addenda = []
+        addendum = addendum_path_for(root, item_id)
+        record = tasks.get(item_id)
+        if addendum.is_file():
+            recorded = list((record or {}).get("addenda") or [])
+            addenda.append(
+                {
+                    "ts": recorded[-1]["ts"] if recorded else None,
+                    "path": str(addendum.relative_to(root)),
+                    "text": addendum.read_text(),
+                }
+            )
+
+        work_item = None
+        try:
+            work_item = find_work_item(root, item_id)
+        except ValidationError as exc:
+            errors.append(str(exc))
+
+        if record is None:
+            state = None
+            file_matches = None
+            record_after = after
+        else:
+            state = work_item.name.rsplit("-", 1)[1].removesuffix(".md") if work_item else None
+            file_matches = order_text == record.get("order") if order_text is not None else False
+            record_after = list(record.get("after") or [])
+
+        waiting_on = unmet(tasks, record_after)
+        entries.append(
+            {
+                "id": item_id,
+                "pod": work_item.parent.name if work_item else None,
+                "path": str(path.relative_to(root)) if path.is_file() else None,
+                "after": record_after,
+                "order": order_text,
+                "addenda": addenda,
+                "record": dict(record) if record else None,
+                "state": state,
+                "ready": waiting_on == [],
+                "waiting_on": waiting_on,
+                "file_matches_record": file_matches,
+            }
+        )
+
+    nodes = [
+        {
+            "id": entry["id"],
+            "state": entry["state"],
+            "outcome": outcome_of(tasks, entry["id"]),
+            "ready": entry["ready"],
+        }
+        for entry in entries
+    ]
+    edges = [
+        {"from": dep, "to": entry["id"], "met": dep not in entry["waiting_on"]}
+        for entry in entries
+        for dep in entry["after"]
+    ]
+
+    return {
+        "root_abs": str(root),
+        "ts": timestamps.now(),
+        "orders": entries,
+        "graph": {"nodes": nodes, "edges": edges},
+        "errors": errors,
+    }
+
+
+def main(argv: list[str], root: Path, *, env=None) -> int:
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(prog="hx orders", add_help=True)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--root", help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+
+    view = collect(root)
+    if args.json:
+        print(json.dumps(view, indent=2))
+    else:
+        for entry in view["orders"]:
+            print(
+                f"{entry['path'] or '(no file)'}  {entry['state'] or '-'}  "
+                f"after={','.join(entry['after']) or '-'}  "
+                f"waiting_on={','.join(entry['waiting_on']) or '-'}  "
+                f"matches={entry['file_matches_record']}"
+            )
+        for error in view["errors"]:
+            print(error)
+    return 1 if view["errors"] else 0

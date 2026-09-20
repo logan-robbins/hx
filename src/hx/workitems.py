@@ -14,7 +14,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .errors import ValidationError
+from . import store
+from .errors import NotFound, ValidationError
 from .frontmatter import frontmatter_list, parse_frontmatter
 from .ids import ID_PATTERN, ID_RE, OUTCOMES, STATES
 
@@ -173,3 +174,170 @@ def find_work_items(root: Path) -> tuple[dict[str, list[Path]], list[str]]:
                 continue
             by_id.setdefault(name.id, []).append(entry)
     return by_id, errors
+
+
+# --- transitions (spec 06) -------------------------------------------------------------------
+#
+# hx owns the state suffix and the `## Order` addenda; the body between them is the
+# HarnessAgent's (spec 04). Renames are same-directory renames (spec 08).
+
+SECTION_ORDER = "## Order"
+SECTION_TASKS = "## Tasks"
+SECTION_DIGEST = "## Digest"
+SECTION_OPEN_DECISION = "## Open decision"
+
+#: `templates/work-item.md` placeholders, rendered by literal replacement, never `str.format`
+#: (CONTRACTS.md "`templates/work-item.md` placeholders", handoff/gtm-to-build.md).
+TEMPLATE_TOKENS = ("{{id}}", "{{pod}}", "{{after}}", "{{dispatched}}", "{{order}}")
+
+
+def pods_dir(root: Path, pod: str) -> Path:
+    return root / "pods" / pod
+
+
+def work_item_path(root: Path, pod: str, item_id: str, state: str) -> Path:
+    return pods_dir(root, pod) / f"{item_id}-{state}.md"
+
+
+def find_work_item(root: Path, item_id: str) -> Path | None:
+    """The one work item for an id, or None. Raises when there is more than one (spec 06)."""
+    by_id, _ = find_work_items(root)
+    found = by_id.get(item_id, [])
+    if len(found) > 1:
+        listed = ", ".join(str(p.relative_to(root)) for p in found)
+        raise ValidationError(f"{item_id}: {len(found)} work items ({listed}); one work item per id (spec 06)")
+    return found[0] if found else None
+
+
+def require_work_item(root: Path, item_id: str) -> Path:
+    path = find_work_item(root, item_id)
+    if path is None:
+        raise NotFound(f"{item_id}: no work item under pods/; `hx launch {item_id}` creates one")
+    return path
+
+
+def state_of(path: Path) -> str:
+    return parse_work_item_filename(path.name, path=path).state
+
+
+def rename_state(path: Path, state: str) -> Path:
+    """Move a work item to a new state. Same-directory rename, so it is atomic (spec 08)."""
+    if state not in STATES:
+        raise ValidationError(f"{path}: `{state}` is not a work item state ({', '.join(STATES)})")
+    name = parse_work_item_filename(path.name, path=path)
+    target = path.with_name(f"{name.id}-{state}.md")
+    if target != path:
+        path.rename(target)
+    return target
+
+
+def render(template: str, *, item_id: str, pod: str, after: list[str], dispatched: str, order: str) -> str:
+    """Render `templates/work-item.md`. Literal replacement of the five tokens, nothing else.
+
+    `{{after}}` renders *inside* the `[...]` the template already has, so `after: [{{after}}]`
+    becomes `after: [eng-000, eng-002]` and `after: []` when empty.
+    """
+    rendered = template
+    for token, value in (
+        ("{{id}}", item_id),
+        ("{{pod}}", pod),
+        ("{{after}}", ", ".join(after)),
+        ("{{dispatched}}", dispatched),
+        ("{{order}}", order),
+    ):
+        rendered = rendered.replace(token, value)
+    return rendered
+
+
+def load_template(root: Path) -> str:
+    path = root / "templates" / "work-item.md"
+    if not path.is_file():
+        raise NotFound(f"{path}: no work item template; `hx install` copies it from the package (spec 17.2)")
+    return path.read_text()
+
+
+def split_frontmatter_text(text: str) -> tuple[str, str]:
+    """Return (frontmatter block including both fences, body). Raises when there is none."""
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        raise ValidationError("work item has no frontmatter; it opens with `---` (spec 06)")
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "\n".join(lines[: index + 1]) + "\n", "\n".join(lines[index + 1 :])
+    raise ValidationError("work item frontmatter was opened with `---` and never closed")
+
+
+def set_frontmatter(path: Path, **fields: str | None) -> None:
+    """Rewrite frontmatter keys in place, leaving the body and key order untouched."""
+    front, body = split_frontmatter_text(path.read_text())
+    lines = front.split("\n")
+    for key, value in fields.items():
+        rendered = "" if value is None else str(value)
+        for index, line in enumerate(lines):
+            if line.split(":", 1)[0].strip() == key and not line.startswith("---"):
+                lines[index] = f"{key}: {rendered}".rstrip()
+                break
+        else:
+            lines.insert(len(lines) - 2, f"{key}: {rendered}".rstrip())
+    store.atomic_write_text(path, "\n".join(lines) + body)
+
+
+def section_bounds(body: str, heading: str) -> tuple[int, int] | None:
+    """(start, end) line indexes of a `## Heading` section's content, fences respected."""
+    lines = body.split("\n")
+    level = len(heading) - len(heading.lstrip("#"))
+    start = None
+    in_fence: str | None = None
+    for index, line in enumerate(lines):
+        fence = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if fence:
+            marker = fence.group(1)[0]
+            in_fence = marker if in_fence is None else (None if in_fence == marker else in_fence)
+            continue
+        if in_fence is not None:
+            continue
+        stripped = line.rstrip()
+        if start is None:
+            if stripped == heading:
+                start = index
+            continue
+        hashes = len(stripped) - len(stripped.lstrip("#"))
+        if stripped.startswith("#") and 0 < hashes <= level:
+            return start, index
+    return (start, len(lines)) if start is not None else None
+
+
+def section_text(body: str, heading: str) -> str | None:
+    bounds = section_bounds(body, heading)
+    if bounds is None:
+        return None
+    start, end = bounds
+    return "\n".join(body.split("\n")[start + 1 : end]).strip("\n")
+
+
+def append_to_section(path: Path, heading: str, text: str) -> None:
+    """Insert `text` at the end of a section, before the next heading of the same level."""
+    front, body = split_frontmatter_text(path.read_text())
+    bounds = section_bounds(body, heading)
+    if bounds is None:
+        raise ValidationError(f"{path}: no `{heading}` section to append to (spec 06)")
+    _, end = bounds
+    lines = body.split("\n")
+    block = text.rstrip("\n").split("\n")
+    while end > 0 and lines[end - 1].strip() == "":
+        end -= 1
+    updated = lines[:end] + ["", *block, ""] + lines[end:]
+    store.atomic_write_text(path, front + "\n".join(updated))
+
+
+def replace_section(path: Path, heading: str, text: str) -> None:
+    """Replace a section's content, keeping the heading and everything around it."""
+    front, body = split_frontmatter_text(path.read_text())
+    bounds = section_bounds(body, heading)
+    if bounds is None:
+        raise ValidationError(f"{path}: no `{heading}` section (spec 06)")
+    start, end = bounds
+    lines = body.split("\n")
+    block = text.rstrip("\n").split("\n")
+    updated = lines[: start + 1] + ["", *block, ""] + lines[end:]
+    store.atomic_write_text(path, front + "\n".join(updated))
