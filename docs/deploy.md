@@ -106,11 +106,18 @@ non-interactive.
 If you would rather not log in a second time:
 
 ```bash
-hx install --from-user-config
+hx install --from-user-config ~/.claude
 ```
 
-which copies the credentials out of your `~/.claude` instead. It **reads** that directory and
-never writes to it.
+which copies the credentials out of the directory you name instead — your own `~/.claude`, or
+any other Claude home you have logged in. It takes a path so that it can be pointed somewhere
+else, which is how the deploy proof tests it without going near your real one.
+
+It **reads** that directory and never writes to it, and it takes exactly one file from it:
+`.credentials.json`. Your settings, your `CLAUDE.md`, your skills, agents and hooks are not
+copied — copying your settings wholesale would drag your hooks and permission rules into every
+agent and quietly break it. The bypass-permissions acceptance is set in the harness's own
+settings rather than lifted from yours.
 
 ## 4. Point it at your repo
 

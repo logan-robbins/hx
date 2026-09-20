@@ -54,6 +54,18 @@ as milestones are accepted.
   `### Checks` bash block; the work-item template keeps spec 06's sections, its standing
   instructions, and the five placeholders `CONTRACTS.md` pins; every `AGENTS.md` has exactly
   one `## UPDATES BELOW ONLY`; both `SKILL.md` files have valid frontmatter.
+
+### Changed
+
+- `docs/two-worlds.md` is now checked against `adapters/claude/install.sh` and `start.sh`
+  rather than against the spec they implement: the settings file is documented key by key
+  (`skipDangerousModePermissionPrompt`, `pluginConfigs["agents-md@builtin"].options.instructionFiles`,
+  the seven `claudeMdExcludes` globs, `crossSessionInbound` for the Partner alone), the
+  credential seeding says which single file is taken and names both refusals that stop a home
+  without credentials from launching, the launch argv is quoted in full, and the pane log is
+  described. A new section says plainly which parts are built today and which are build-4.
+- `docs/deploy.md`: `--from-user-config` takes a **path**, and the doc says what it copies out
+  of it — `.credentials.json`, and nothing else.
 - `tests/scenario/m8/`: the M8 scenario pack (spec 13) — `chat.md` turn by turn, the Partner's
   own order and the two workers' orders with a real `after` chain, the addendum that answers
   the `decision`, both worker personas, the eight `expected/` board states, and a fixture repo
@@ -61,6 +73,24 @@ as milestones are accepted.
   parses every order with the function `hx dispatch` uses, checks the `after` graph is acyclic,
   and compares each expected board against what the real `hx board` prints for an instance
   built in that state.
+- `tests/scenario/m8b/`: a second, smaller scenario where **nothing mentions a decision**.
+  One order contradicts itself in a single documented way — `## Order` demands JSON and nothing
+  else on stdout, criterion 3 of `## Definition of done` demands the human-readable line first
+  — and its `### Checks` are deliberately neutral between the two readings, so no path
+  satisfies the checks while dodging the question. `tests/scenario/test_m8b_pack.py` asserts
+  the contradiction is still present in both halves, that the checks resolve neither, and that
+  nothing the worker can see names the `decision` outcome.
+- `tests/scenario/packlib.py`: the shared pack machinery — building an instance in a given
+  observation state and reading the real `hx board` from it — so the two packs cannot drift.
+- `packaging/e2e-deploy.sh`: the M10 deploy proof for one machine. Fresh `HOME`, the full
+  `hx install --from-user-config <fake user Claude home>`, `hx repo add` against a bare product
+  repo with its own `.claude/`, `hx launch` with the fake `claude` on a private tmux server,
+  and the boot units rendered into that HOME's launchd or systemd directory. It asserts that
+  only the credentials were taken from the fake user home, that the home is byte-identical
+  afterwards, that the worktree has no `.claude/`, that no rendered unit holds an
+  unsubstituted token, and that the real `~/.claude` is unchanged. While the full `hx install`
+  is build-4 it prints its gate and exits 0 with `SKIPPED (waiting on build-4)`, and
+  `tests/packaging/test_e2e_deploy.py` skips with that reason rather than passing silently.
 - `docs/companion-eval.md`: the M7 plan — the recorded-log corpus and where it comes from, five
   seam points per task, the two metrics `hx metrics` records, the pass bar, and how a prompt
   change to `companion/BASE.md` or a role file is judged before and after on the same corpus.
