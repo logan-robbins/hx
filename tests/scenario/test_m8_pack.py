@@ -23,7 +23,6 @@ step, not the transitions that produce it. M8 itself asserts the transitions.
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import re
 import shutil
@@ -31,6 +30,10 @@ import subprocess
 import sys
 
 import pytest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
+import packlib  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PACK = pathlib.Path(__file__).resolve().parent / "m8"
@@ -47,8 +50,7 @@ POD = "engineers"
 
 #: A fixed instant, written into every marker so `hx board` prints something deterministic.
 #: Normalised back to `<ts>` before comparing, so the checked-in files carry no fake data.
-FIXED_TS = "2026-09-20T12:00:00Z"
-TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z")
+FIXED_TS = packlib.FIXED_TS
 
 #: (expected filename stem, {id: (state, outcome, after, goal marker?)}) for each observation
 #: point in README.md. `goal` is the `run/<id>/goal` marker, which `hx complete` removes.
@@ -344,89 +346,23 @@ def test_a_queued_item_never_carries_a_goal_marker():
 # ------------------------------------------------- the live check against `hx board`
 
 
-def build_instance(root: pathlib.Path, states: dict) -> None:
-    """Write the instance exactly as hx would have left it at this observation point."""
-    subprocess.run(
-        [sys.executable, "-m", "hx", "install", "--skeleton-only", "--root", str(root)],
-        check=True, capture_output=True, text=True,
-        env={**os.environ, "PYTHONPATH": str(REPO / "src")},
-    )
-    worker_template = root / "templates" / "worker"
-    tasks: dict[str, dict] = {}
-    for item_id, (state, outcome, after, has_goal) in states.items():
-        pod = "partner" if item_id == "partner" else POD
-        if item_id != "partner":
-            config_dir = root / "config" / item_id
-            config_dir.mkdir(parents=True, exist_ok=True)
-            for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
-                text = (worker_template / name).read_text()
-                (config_dir / name).write_text(
-                    text.replace("{{id}}", item_id).replace("{{pod}}", pod)
-                )
-            (root / "wt" / item_id).mkdir(parents=True, exist_ok=True)
-
-        body = (root / "templates" / "work-item.md").read_text()
-        body = (
-            body.replace("{{id}}", item_id)
-            .replace("{{pod}}", pod)
-            .replace("{{after}}", ", ".join(after))
-            .replace("{{dispatched}}", FIXED_TS)
-            .replace("{{order}}", "## Order\n\nscenario fixture\n\n## Definition of done\n\n1. n/a")
-        )
-        # Only a `complete` item carries an outcome in its frontmatter (spec 06); hx.workitems
-        # rejects an `idle` item that does. A benched item's `done` still shows on the board,
-        # because it comes from tasks.json, which `hx bench` does not touch (spec 08).
-        if outcome and state == "complete":
-            body = body.replace("outcome:\n", f"outcome: {outcome}\n", 1)
-        item_dir = root / "pods" / pod
-        item_dir.mkdir(parents=True, exist_ok=True)
-        (item_dir / f"{item_id}-{state}.md").write_text(body)
-
-        run_dir = root / "run" / item_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        if has_goal:
-            (run_dir / "goal").write_text(FIXED_TS + "\n")
-
-        if state != "idle" or outcome:
-            tasks[item_id] = {
-                "order": "scenario fixture", "after": after, "addenda": [],
-                "outcome": outcome, "dispatched": FIXED_TS,
-                "completed": FIXED_TS if outcome else None,
-            }
-    (root / "tasks.json").write_text(json.dumps(tasks, indent=2))
-
-
-def normalise(text: str) -> str:
-    return TS_RE.sub("<ts>", text).strip()
-
-
 @pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
 def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path):
     """Build the instance in this step's state and diff the real `hx board` against the
-    checked-in file. This is what stops `expected/` from being plausible-looking fiction."""
+    checked-in file. This is what stops `expected/` from being plausible-looking fiction.
+
+    The instance building lives in `packlib` because m8b does exactly the same thing; two
+    copies of it would drift the moment one pack gained a state the other did not.
+    """
     if shutil.which("tmux") is None:
         pytest.skip("tmux is not on PATH; `hx board` cannot tell which sessions are live")
 
     root = tmp_path / "hx"
-    build_instance(root, states)
-
-    # No tmux session is created. `hx board` matches a live session by the id itself, and
-    # this suite must not create sessions named `partner` or `eng-001` on a machine that may
-    # be running a real fleet. So the "no live tmux session" errors are expected here and are
-    # stripped before comparing; M8 asserts session liveness for real.
-    r = subprocess.run(
-        [sys.executable, "-m", "hx", "board"],
-        capture_output=True, text=True,
-        env={**os.environ, "HARNESS_ROOT": str(root), "PYTHONPATH": str(REPO / "src")},
-    )
-
-    board_lines = [
-        line for line in normalise(r.stdout).splitlines()
-        if not line.endswith(tuple(f"no live tmux session {i}" for i in states))
-    ]
+    packlib.build_instance(root, states, worker_pod=POD)
+    lines, stderr = packlib.real_board(root, states)
     expected = (EXPECTED / f"{stem}.txt").read_text().strip().splitlines()
-    assert board_lines == expected, (
-        f"{stem}: `hx board` printed\n  " + "\n  ".join(board_lines)
+    assert lines == expected, (
+        f"{stem}: `hx board` printed\n  " + "\n  ".join(lines)
         + "\nexpected/ holds\n  " + "\n  ".join(expected)
-        + f"\n\nstderr:\n{r.stderr}"
+        + f"\n\nstderr:\n{stderr}"
     )
