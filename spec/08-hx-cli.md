@@ -10,6 +10,8 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 | `hx repo add <url\|path>` | `hx install`, Partner | Bare mirror at `repos/<name>.git`; `config/repo.json` |
 | `hx push <id>` | Partner, on instruction | `git push upstream agent/<id>` from the mirror; the only command that touches the user's remote |
 | `hx show <id> [--json]` | Partner, UI | Work item, step state, context file, stream tails, metrics, subagent handles for one id |
+| `hx orders [--json]` | Partner, UI | Every `orders/*.md` and addendum with the `tasks.json` record it produced, readiness (`waiting_on`), whether the file still matches the dispatched order, and the `after` graph |
+| `hx archive [--json]` | Partner, UI | Benched bodies and archived dispatches per id with their digests |
 | `hx ui` | systemd/launchd, Partner | 16-ui.md server on `127.0.0.1` |
 | `hx upgrade` | Human, rarely | 17-packaging.md 17.6 |
 | `hx up` | systemd/launchd at boot | `hx launch <id>` for every `config/<id>/`, `partner` first |

@@ -142,3 +142,76 @@ version: the output of `claude --version` with the ` (Claude Code)` suffix strip
 worker configuration ships as `templates/worker/{AGENTS.md,SUBAGENTS.md,harness.json}` for the
 Partner to copy into `config/<id>/` when it creates an agent; `hx doctor` and `hx board` must
 not expect any id but `partner` in a fresh root.
+
+## `hx orders --json` and `hx archive --json`
+
+Read-only views for the Orders and Archive pages (spec 16.2); Partner and UI callers; exit 0 unless `errors` is non-empty. Adopted as the ui lane proposed:
+
+**`hx orders --json`** — every `orders/*.md` and addendum with the `tasks.json` record it
+produced, plus the `after` graph:
+
+```json
+{
+  "root_abs": "/srv/hx",
+  "ts": "2026-09-20T13:10:00Z",
+  "orders": [
+    {
+      "id": "eng-002",
+      "pod": "engineers",
+      "path": "orders/eng-002.md",
+      "after": ["eng-003"],
+      "order": "…orders/eng-002.md verbatim…",
+      "addenda": [{"ts": "…", "path": "orders/eng-002.addendum.md", "text": "…"}],
+      "record": {"order": "…", "after": ["eng-003"], "addenda": [{"ts": "…", "text": "…"}],
+                 "outcome": null, "dispatched": "…", "completed": null},
+      "state": "queued",
+      "ready": false,
+      "waiting_on": ["eng-003"],
+      "file_matches_record": true
+    }
+  ],
+  "graph": {
+    "nodes": [{"id": "eng-002", "state": "queued", "outcome": null, "ready": false}],
+    "edges": [{"from": "eng-003", "to": "eng-002", "met": false}]
+  },
+  "errors": []
+}
+```
+
+- `record` is the `tasks.json` entry for that id, which is exactly the `task` block of
+  `hx show <id> --json` minus nothing — same six keys. `null` when the order file exists but
+  was never dispatched, and then `state` and `file_matches_record` are `null` too.
+- `waiting_on` is the subset of `after` whose `tasks.json` outcome is not `done`; `ready` is
+  `waiting_on == []`, the same rule as the board. This is what spec 16.2 calls "which queued
+  items wait on which ids".
+- `file_matches_record` is `orders/<id>.md` on disk compared with the order recorded at
+  dispatch. It is the one fact this view can show that nothing else can: the Partner edited the
+  order file after dispatch, so what the agent is running is not what the file now says. If you
+  would rather the UI not surface that, drop the key and we drop the badge.
+- `edges` is one entry per `after` relation, in `orders` order; `met` mirrors `waiting_on`.
+
+**`hx archive --json`** — benched bodies and archived dispatches per id:
+
+```json
+{
+  "root_abs": "/srv/hx",
+  "ts": "2026-09-20T13:10:00Z",
+  "items": [
+    {
+      "id": "eng-001",
+      "pod": "engineers",
+      "bench":   [{"ts": "…", "path": "pods/engineers/archive/eng-001-<ts>.md", "digest": "…"}],
+      "archive": [{"ts": "…", "path": "archive/eng-001/<ts>", "digest": "…"}]
+    }
+  ],
+  "errors": []
+}
+```
+
+- The `bench` and `archive` entries are the `hx show <id> --json` `bench` and `archive` entries
+  verbatim — same three keys, same meaning — so this view is the whole-fleet form of what
+  `hx show` already returns per id. An id with no history yet has two empty lists.
+
+## SSE `changed` scopes
+
+`/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except the reserved scope `tasks`, emitted when `tasks.json` changed. The browser treats `tasks` as "re-fetch the board and the orders view".

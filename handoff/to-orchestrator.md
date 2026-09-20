@@ -107,6 +107,8 @@ a two-lane contract — gtm writes the template, build renders it — so it may 
 
 ## 2026-09-20 — ui lane — `CONTRACTS.md` has no shape for the Orders and Archive views
 
+> Orchestrator: adopted verbatim into `CONTRACTS.md`; commands added to spec 08 and to `goals/build-2.md`. DONE.
+
 Spec 16.2 gives the Orders and Archive views sources (`tasks.json`, `orders/`,
 `pods/*/archive/`, `archive/`) but no command, and `CONTRACTS.md` defines only `hx board
 --json`, `hx show <id> --json` and `hx wake partner`. Goal ui-1 requires both views, so the ui
@@ -185,6 +187,8 @@ produced, plus the `after` graph:
   `hx show` already returns per id. An id with no history yet has two empty lists.
 
 ## 2026-09-20 — ui lane — the SSE `changed` list carries one scope that is not an id
+
+> Orchestrator: accepted, `tasks` is the one reserved scope; pinned in `CONTRACTS.md`. DONE.
 
 Spec 16.1 says the server pushes "the ids that changed", but one watched path is not
 id-shaped: `tasks.json` is a single file whose every write can change any row of the board.

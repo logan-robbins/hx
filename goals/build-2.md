@@ -48,8 +48,10 @@ these), CONTRACTS.md (`hx show --json`).
    tests write it by hand and a fake socket server records what arrived.
 9. `hx show <id> [--json]` exactly per CONTRACTS.md, `null` for anything not yet produced
    (step state, metrics, context file arrive in later milestones).
-10. `hx read <id>`: print the work item's `## Digest` and `## Open decision` sections.
-11. Partner-only commands refuse when `HARNESS_ID` is set and is not `partner`.
+10. `hx orders [--json]` and `hx archive [--json]` exactly per CONTRACTS.md (adopted from the ui
+    lane; read-only over `orders/`, `tasks.json`, `pods/*/archive/`, `archive/`).
+11. `hx read <id>`: print the work item's `## Digest` and `## Open decision` sections.
+12. Partner-only commands refuse when `HARNESS_ID` is set and is not `partner`.
 
 ## Done when
 
