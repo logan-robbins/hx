@@ -5,7 +5,7 @@
 # Pipe through shasum for one hash.
 #
 # Excluded (written by the user's own Claude sessions or by Claude's cloud sync, never by hx):
-#   projects/ sessions/ shell-snapshots/ telemetry/ cache/ paste-cache/ session-env/ backups/
+#   projects/ sessions/ shell-snapshots/ telemetry/ cache/ paste-cache/ session-env/ backups/ file-history/
 #   plugins/cache/ plugins/marketplaces/ plugins/repos/ plugins/synced/ skills/synced/
 #   history.jsonl .last-* *.lock .DS_Store
 # plugins/known_marketplaces.json is hashed with its lastUpdated timestamps removed.
@@ -17,7 +17,7 @@ cd "$dir"
 prune=( -path './projects' -o -path './sessions' -o -path './shell-snapshots' -o -path './telemetry'
         -o -path './cache' -o -path './paste-cache' -o -path './session-env' -o -path './backups'
         -o -path './plugins/cache' -o -path './plugins/marketplaces' -o -path './plugins/repos'
-        -o -path './plugins/synced' -o -path './skills/synced' )
+        -o -path './plugins/synced' -o -path './skills/synced' -o -path './file-history' )
 {
 find . \( "${prune[@]}" \) -prune -o -type l -print0 \
   | sort -z | while IFS= read -r -d '' l; do printf 'link:%s  %s\n' "$(readlink "$l")" "${l#./}"; done
