@@ -64,15 +64,22 @@ def ensure_work_item(root: Path, item_id: str) -> Path:
 def ensure_workdir(root: Path, item_id: str) -> Path | None:
     """The worktree `start.sh` runs in. The Partner has none (spec 05, 17.4).
 
-    Cutting a sparse worktree from the bare mirror is `hx repo add` (spec 17.3), which lands
-    with packaging. Until then, and for an instance with no mirror, the directory is created
-    so a launch is possible.
+    With a mirror, this is a sparse worktree cut from it on the agent's own branch, without
+    the product's `.claude/` (spec 17.3). Without one — an instance whose human has not run
+    `hx repo add` yet — the directory is created bare so a launch is still possible.
     """
+    from . import repo as repo_mod
+
     if item_id == PARTNER:
         return None
     harness = root / "config" / item_id / "harness.json"
     config = load_harness(harness, check_cross_file=False)
     workdir = resolve_workdir(config.workdir, root) if config.workdir else root / "wt" / item_id
+
+    if workdir.is_dir() and any(workdir.iterdir()):
+        return workdir
+    if repo_mod.load_repo(root) is not None:
+        return repo_mod.create_worktree(root, item_id, workdir, env=None)
     workdir.mkdir(parents=True, exist_ok=True)
     return workdir
 

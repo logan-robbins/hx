@@ -110,8 +110,11 @@ def instance(tmp_path):
     token.write_text("sk-ant-oat-fake-token\n")
     token.chmod(0o600)
 
+    tested = json.loads(
+        (SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text()
+    )["versions"][0]
     (root / "config" / "claude.json").write_text(
-        json.dumps({"bin": str(FAKE_CLAUDE), "version": "fake-0"}, indent=2) + "\n"
+        json.dumps({"bin": str(FAKE_CLAUDE), "version": tested}, indent=2) + "\n"
     )
 
     # A real git worktree, so `hx complete done`'s clean-worktree check is exercised rather
@@ -294,13 +297,48 @@ def launched(instance, hx, tmux_server):
 
 @pytest.fixture
 def tmux_server(tmp_path):
-    """A real tmux server on a private socket, killed at teardown."""
+    """A real tmux server on a private socket, killed and cleaned up at teardown.
+
+    Every live check ends by killing what it launched (goal build-4 item 7). The teardown
+    asserts it: a session that outlives its test is a leaked agent, and one of those once
+    ended up on the machine's default tmux server, where the lanes themselves run.
+    """
     if shutil.which("tmux") is None:
         pytest.skip("tmux is not installed")
     socket = f"hx-test-{os.getpid()}-{abs(hash(str(tmp_path))) % 100000}"
     command = ["tmux", "-L", socket]
+
     yield command
+
+    # Kill what the test launched, then prove it is gone. A session that survives its own
+    # teardown is a leaked agent; one of those once ended up on the machine's default tmux
+    # server, where the lanes themselves run.
     subprocess.run([*command, "kill-server"], capture_output=True, check=False)
+    listed = subprocess.run(
+        [*command, "list-sessions", "-F", "#{session_name}"],
+        capture_output=True, text=True, check=False,
+    )
+    survivors = [
+        name for name in listed.stdout.split()
+        if name == "partner" or name.startswith(("eng-", "rev-", "qa-"))
+    ]
+    _remove_socket_file(socket)
+    assert not survivors, (
+        f"these sessions outlived the teardown: {survivors}. A live check kills what it "
+        f"launched (goal build-4 item 7)."
+    )
+
+
+def _remove_socket_file(socket: str) -> None:
+    """tmux leaves the socket behind when the server exits; do not litter `/tmp`."""
+    for base in (os.environ.get("TMUX_TMPDIR"), f"/private/tmp/tmux-{os.getuid()}",
+                 f"/tmp/tmux-{os.getuid()}"):
+        if not base:
+            continue
+        try:
+            Path(base, socket).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def wait_for(predicate, *, what: str, limit: float = 30.0, interval: float = 0.05):
@@ -312,3 +350,27 @@ def wait_for(predicate, *, what: str, limit: float = 30.0, interval: float = 0.0
             return value
         time.sleep(interval)
     raise AssertionError(f"timed out after {limit}s waiting for {what}")
+
+
+#: A stand-in for the real `claude` during install tests: it answers `--version` with a bare
+#: version from the package's tested list and does nothing else.
+FAKE_CLAUDE_BIN = """#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then echo "{version} (Claude Code)"; exit 0; fi
+exec {real} "$@"
+"""
+
+
+@pytest.fixture
+def fake_claude_on_path(tmp_path):
+    """Put a fake `claude` first on PATH, pinned to a version the package has tested."""
+    import json as _json
+
+    tested = _json.loads(
+        (SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text()
+    )["versions"][0]
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir(exist_ok=True)
+    binary = bindir / "claude"
+    binary.write_text(FAKE_CLAUDE_BIN.format(version=tested, real=FAKE_CLAUDE))
+    binary.chmod(0o755)
+    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}", "HX_FAKE_CLAUDE_VERSION": tested}

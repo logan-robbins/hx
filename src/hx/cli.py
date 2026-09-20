@@ -26,11 +26,14 @@ from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
 from . import orders as orders_cmd
+from . import push as push_cmd
 from . import read as read_cmd
+from . import repo as repo_cmd
 from . import resume as resume_cmd
 from . import show as show_cmd
 from . import task as task_cmd
 from . import ui_cmd
+from . import upgrade as upgrade_cmd
 from . import wake as wake_cmd
 from .errors import HxError
 
@@ -39,9 +42,6 @@ from .errors import HxError
 #: The build-lane goal that delivers each remaining command
 #: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
 NOT_IMPLEMENTED = {
-    "repo": 4,
-    "push": 4,
-    "upgrade": 4,
     "companion": 6,
     "seam": 7,
     "metrics": 8,
@@ -63,13 +63,16 @@ IMPLEMENTED = {
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
     "orders": orders_cmd.main,
+    "push": push_cmd.main,
     "read": read_cmd.main,
+    "repo": repo_cmd.main,
     "restart": lifecycle.main_restart,
     "resume": resume_cmd.main,
     "show": show_cmd.main,
     "task": task_cmd.main,
     "ui": ui_cmd.main,
     "up": lifecycle.main_up,
+    "upgrade": upgrade_cmd.main,
     "wake": wake_cmd.main,
 }
 
@@ -98,7 +101,8 @@ read-only views:
   orders [--json] / archive [--json]      the order graph, and what has been archived
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
-  install --skeleton-only --root PATH     create the instance layout and skeleton
+  install --root PATH [--claude B] [--repo R]   create the instance (spec 17.2)
+  repo add URL|PATH / push ID / upgrade         the mirror, the one push, the version pin
 
 every command of spec 08:
   {chr(10) + '  '}{'  '.join(COMMANDS)}

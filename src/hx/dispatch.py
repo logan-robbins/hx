@@ -138,6 +138,26 @@ def _reset_run_dir(root: Path, item_id: str) -> None:
     store.atomic_write_json(run / "subagents.json", {})
 
 
+def _reset_worktree(root: Path, item_id: str, env) -> None:
+    """A dispatch is a fresh start, so the worktree goes back to `base_branch` (spec 17.3).
+
+    Only with a mirror: an instance that has no product repo yet has nothing to reset to, and
+    a dispatch there is still valid work.
+    """
+    from . import repo as repo_mod
+    from .config_harness import load_harness, resolve_workdir
+
+    if repo_mod.load_repo(root) is None:
+        return
+    harness = root / "config" / item_id / "harness.json"
+    if not harness.is_file():
+        return
+    config = load_harness(harness, check_cross_file=False)
+    workdir = resolve_workdir(config.workdir, root) if config.workdir else root / "wt" / item_id
+    if (workdir / ".git").exists():
+        repo_mod.reset_worktree(root, item_id, workdir, env=env)
+
+
 def apply_plan(root: Path, plan: Plan, entries: dict[str, dict], ts: str, env) -> dict:
     """Archive, reset, render, rename, goal — for one id."""
     result = {"id": plan.id, "archived": None, "state": None, "goal": None}
@@ -150,6 +170,7 @@ def apply_plan(root: Path, plan: Plan, entries: dict[str, dict], ts: str, env) -
         archived = archive.archive_dispatch(root, plan.id, ts)
         result["archived"] = str(archived.relative_to(root)) if archived else None
         _reset_run_dir(root, plan.id)
+        _reset_worktree(root, plan.id, env)
         # A pipe started before the archive keeps writing into the moved file (spec 03, 11).
         tmux.arm_pane_log(root, plan.id, env)
 

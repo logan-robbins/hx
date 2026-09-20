@@ -1,24 +1,34 @@
-"""`hx install` — create the instance under a given HARNESS_ROOT (spec 17.2).
+"""`hx install` — the one manual command (spec 17.2).
 
-M0 builds step 2 only: the directory layout of spec 03 and a copy of the package skeleton
-(`src/hx/skeleton/**`) into it. Steps 1 and 3-6 — the preflight checks and
-`config/claude.json`, the seed login, the repo mirror, the boot and heartbeat units, and
-`hx launch partner` — land with their milestones, so `--skeleton-only` is required until then.
+Six steps, in order:
 
-The gtm lane owns `templates/`, `companion/`, `PARTNER.md` and `config/CLAUDE.md` inside the
-skeleton. Until those land, install copies what exists and `hx doctor` reports the rest.
+  1. refuse root; check tmux, git, Python; find `claude` and pin a tested version
+  2. create the instance from the package skeleton
+  3. the seed token — the one thing only a human can do
+  4. mirror the product repo, if one was named
+  5. render the boot and heartbeat units into this user's own HOME, without enabling them
+  6. `hx launch partner`, then print `tmux attach -t partner`
+
+After this the human types nothing but chat.
+
+hx reads nothing from the user's `~/.claude` at any point, on any platform: auth is the
+instance token at `seed/token` (spec 11 Auth). `--skeleton-only` stops after step 2, which is
+what the test suites and `hx upgrade` use.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
 
 from . import store
 from .errors import HxError
+from .ids import PARTNER
 from .root import resolve_root
 
 #: Directories of spec 03 that exist in every instance from the moment it is created.
@@ -164,31 +174,150 @@ def install_skeleton(root: Path) -> dict:
     }
 
 
+#: Spec 17.2 step 3 stops here until the human has pasted the token. A distinct exit code, so
+#: a script can tell "waiting for the human" from "something is wrong".
+TOKEN_WAIT_EXIT = 4
+
+
+def preflight(root: Path, claude: str | None, env=None) -> dict:
+    """Step 1: refuse root, check the tools, pin a tested `claude` (spec 17.2 step 1)."""
+    import shutil
+    import subprocess
+    import sys
+
+    from . import claude_bin
+
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        raise HxError(
+            "refuse: hx does not run as root. Every agent launches Claude Code with "
+            "--dangerously-skip-permissions, which Claude Code itself refuses under root or "
+            "sudo (spec 17.2 step 1, 11 Permissions)",
+            exit_code=1,
+        )
+
+    version = sys.version_info
+    if (version.major, version.minor) < (3, 14):
+        raise HxError(f"hx needs Python 3.14 or newer; this is {platform.python_version()}")
+
+    for tool in ("tmux", "git"):
+        if not shutil.which(tool):
+            raise HxError(f"{tool} is not on PATH; hx needs it (spec 17.2 step 1)")
+
+    binary = claude_bin.find_binary(claude)
+    pinned = claude_bin.probe(binary)
+    claude_bin.require_tested(pinned)
+    return {"bin": binary, "version": pinned}
+
+
+def seed_token_path(root: Path) -> Path:
+    return root / "seed" / "token"
+
+
+def check_seed_token(root: Path) -> bool:
+    """Step 3: the token is the one thing hx cannot do for the human (spec 11 Auth).
+
+    Returns True when it is there; tightens its mode to 0600 on the way past.
+    """
+    token = seed_token_path(root)
+    token.parent.mkdir(parents=True, exist_ok=True)
+    if not token.is_file() or not token.read_text().strip():
+        return False
+    token.chmod(0o600)
+    return True
+
+
+def token_instructions(root: Path) -> str:
+    return (
+        "hx needs one long-lived token for this instance. Two steps, both yours:\n"
+        "\n"
+        "  1. claude setup-token\n"
+        f"  2. paste the token it prints into {seed_token_path(root)}\n"
+        "\n"
+        "Then run this command again. hx reads nothing from your own ~/.claude, on any\n"
+        "platform: this token is the whole of an agent's auth (spec 11 Auth)."
+    )
+
+
 def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hx install", add_help=True)
     parser.add_argument("--root", help="HARNESS_ROOT to create (default: $HARNESS_ROOT, else ~/hx)")
+    parser.add_argument("--claude", default=None, help="the claude binary to pin (default: PATH)")
+    parser.add_argument("--repo", default=None, help="the product repo to mirror (spec 17.2 step 4)")
     parser.add_argument(
         "--skeleton-only",
         action="store_true",
-        help="create the layout and copy the package skeleton, and nothing else (spec 17.2 step 2)",
+        help="stop after step 2: the layout and the package skeleton (spec 17.2)",
     )
     args = parser.parse_args(argv)
 
+    env = os.environ if env is None else env
     root = resolve_root(args.root, env)
+
+    # --- step 1 ------------------------------------------------------------------------
+    pin = None
     if not args.skeleton_only:
-        raise HxError(
-            "install: not implemented (build-4); `hx install --skeleton-only --root <path>` "
-            "creates the instance layout and skeleton (spec 17.2 step 2). The preflight "
-            "checks, seed login, repo mirror, boot units and `hx launch partner` land with "
-            "their milestones"
+        pin = preflight(root, args.claude, env)
+        print(f"1. claude {pin['version']} at {pin['bin']}")
+
+    # --- step 2 ------------------------------------------------------------------------
+    result = install_skeleton(root)
+    print(f"2. instance at {result['root']}")
+    for name in result["created"]:
+        print(f"   created  {name}")
+    for name in result["skipped"]:
+        print(f"   kept     {name}")
+    for name in result["missing"]:
+        print(f"   missing  {name}")
+
+    if pin is not None:
+        from . import claude_bin
+
+        claude_bin.write_pin(root, pin["bin"], pin["version"])
+        print(f"   created  {claude_bin.CONFIG}")
+
+    if args.skeleton_only:
+        return 0
+
+    # --- step 3 ------------------------------------------------------------------------
+    if not check_seed_token(root):
+        print()
+        print(token_instructions(root))
+        return TOKEN_WAIT_EXIT
+    print(f"3. seed token at {seed_token_path(root)}, mode 0600")
+
+    # --- step 4 ------------------------------------------------------------------------
+    if args.repo:
+        from . import repo as repo_mod
+
+        config = repo_mod.add(root, args.repo, env=env)
+        print(f"4. mirrored {config['name']} from {config['upstream']} ({config['base_branch']})")
+    else:
+        from . import repo as repo_mod
+
+        existing = repo_mod.load_repo(root)
+        print(
+            f"4. product repo {existing['name']}" if existing
+            else "4. no product repo yet; `hx repo add <url|path>` mirrors one"
         )
 
-    result = install_skeleton(root)
-    print(f"root {result['root']}")
-    for name in result["created"]:
-        print(f"created  {name}")
-    for name in result["skipped"]:
-        print(f"kept     {name}")
-    for name in result["missing"]:
-        print(f"missing  {name}")
+    # --- step 5 ------------------------------------------------------------------------
+    from . import units
+
+    hx_bin = json.loads((root / "config" / "hx.json").read_text()).get("hx_bin", "")
+    home = Path(env.get("HOME") or Path.home())
+    written = units.install_units(root, hx_bin, home)
+    print(f"5. units written to {units.target_dir(home)}")
+    for path in written:
+        print(f"   created  {path.name}")
+    print("   hx does not enable them. To start them at login, run:")
+    for command in units.enable_commands(home):
+        print(f"     {command}")
+
+    # --- step 6 ------------------------------------------------------------------------
+    from . import lifecycle
+
+    launched = lifecycle.launch(root, PARTNER, env=env)
+    print(f"6. partner {launched['session']}")
+    print()
+    print("tmux attach -t partner")
     return 0

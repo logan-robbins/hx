@@ -36,7 +36,7 @@ def test_reports_root_python_tmux_and_git(instance):
 
 def test_reports_the_pinned_binary(instance):
     checks = run_checks(instance)
-    assert any("fake-0" in detail or "reports" in detail for _, check, detail in checks if check == "claude")
+    assert ("claude", OK) in statuses(checks), [c for c in checks if c[1] == "claude"]
 
 
 def test_an_unpinned_instance_only_warns(instance):
@@ -60,7 +60,7 @@ def test_missing_skeleton_files_are_warnings_not_failures(instance):
     warned = {detail for status, check, detail in checks if check == "skeleton" and status == WARN}
     assert "PARTNER.md missing" in warned
     assert "templates/work-item.md missing" in warned
-    assert not [c for c in checks if c[0] == FAIL]
+    assert not [c for c in checks if c[0] == FAIL], [c for c in checks if c[0] == FAIL]
 
 
 def test_a_missing_root_warns_and_says_what_to_run(run_hx, tmp_path):
@@ -76,14 +76,22 @@ def test_a_broken_models_file_fails(instance):
     assert ("models", FAIL) in statuses(checks)
 
 
-def test_a_missing_token_and_an_unwritten_home_are_warnings(instance):
+def test_a_missing_token_fails(instance):
+    """Tightened in build-4: an instance with no token cannot launch anything."""
     (instance / "seed" / "token").unlink()
+    assert ("token", FAIL) in statuses(run_checks(instance))
+
+
+def test_a_home_without_settings_fails(instance):
     home = instance / "run" / "eng-001" / "home"
     home.mkdir(parents=True)
-    checks = run_checks(instance)
-    assert ("token", WARN) in statuses(checks)
-    assert ("home:eng-001", WARN) in statuses(checks)
-    assert not [c for c in checks if c[0] == FAIL]
+    assert ("home:eng-001", FAIL) in statuses(run_checks(instance))
+
+
+def test_an_unreachable_mirror_fails(instance):
+    (instance / "config" / "repo.json").write_text('{"name": "product"}')
+    failures = [c for c in run_checks(instance) if c[0] == FAIL]
+    assert any(check == "repo" for _, check, _ in failures), failures
 
 
 def test_a_token_readable_by_anyone_else_fails(instance):
@@ -102,20 +110,21 @@ def test_a_good_token_is_ok(instance):
     assert ("token", OK) in statuses(run_checks(instance))
 
 
-def test_a_fresh_skeleton_root_exits_0(run_hx, tmp_path):
-    """The Done-when of goal build-1: doctor works on a `--skeleton-only` scratch root."""
+def test_a_fresh_skeleton_root_says_what_is_still_missing(run_hx, tmp_path):
+    """A `--skeleton-only` root is not a working instance: no token, no homes (spec 17.2)."""
     root = tmp_path / "scratch"
     created = run_hx("install", "--skeleton-only", "--root", str(root))
     assert created.returncode == 0, created.stderr
     result = run_hx("doctor", env_extra={"HARNESS_ROOT": str(root)})
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 1, result.stdout
+    assert "seed/token" in result.stdout, "it names the one thing the human has to do"
     assert str(root) in result.stdout
     assert "tmux" in result.stdout and "python" in result.stdout
 
 
 def test_json_form(run_hx, instance):
     result = run_hx("doctor", "--json", env_extra={"HARNESS_ROOT": str(instance)})
-    assert result.returncode == 0, result.stderr
+    assert result.returncode in (0, 1), result.stderr
     payload = json.loads(result.stdout)
     assert payload["root_abs"] == str(instance)
     assert {c["check"] for c in payload["checks"]} >= {"root", "python", "tmux", "git"}

@@ -82,20 +82,23 @@ def test_missing_gtm_files_are_reported_not_fatal(tmp_path, monkeypatch):
     assert set(result["missing"]) <= set(EXPECTED_SKELETON_FILES)
 
 
-def test_cli_requires_skeleton_only_for_now(run_hx, tmp_path):
+def test_install_stops_for_the_seed_token(run_hx, tmp_path, fake_claude_on_path):
+    """Step 3 is the one thing hx cannot do for the human (spec 17.2, 11 Auth)."""
+    from hx.install import TOKEN_WAIT_EXIT
+
     root = tmp_path / "instance"
-    result = run_hx("install", "--root", str(root))
-    assert result.returncode == 2
-    assert "not implemented (build-4)" in result.stderr
-    assert "--skeleton-only" in result.stderr
-    assert not root.exists()
+    result = run_hx("install", "--root", str(root), env_extra=fake_claude_on_path)
+    assert result.returncode == TOKEN_WAIT_EXIT == 4
+    assert "claude setup-token" in result.stdout
+    assert str(root / "seed" / "token") in result.stdout
+    assert (root / "config" / "models.json").is_file(), "steps 1 and 2 still ran"
 
 
 def test_cli_creates_a_scratch_root(run_hx, tmp_path):
     root = tmp_path / "instance"
     result = run_hx("install", "--skeleton-only", "--root", str(root))
     assert result.returncode == 0, result.stderr
-    assert f"root {root}" in result.stdout
+    assert f"instance at {root}" in result.stdout
     assert (root / "adapters" / "claude" / "start.sh").is_file()
 
 

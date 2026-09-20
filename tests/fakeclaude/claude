@@ -99,7 +99,17 @@ def load_script() -> list[dict]:
     return [entry for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
 
 
+#: The pinned version this fake claims to be. `hx install`, `hx upgrade` and `hx doctor` all
+#: read `claude --version` and compare against the package's tested list, so the fake has to
+#: answer it the way the real binary does: `<bare version> (Claude Code)`.
+DEFAULT_VERSION = "2.1.278"
+
+
 def main() -> int:
+    if "--version" in sys.argv[1:]:
+        print(f"{os.environ.get('HX_FAKE_CLAUDE_VERSION', DEFAULT_VERSION)} (Claude Code)")
+        return 0
+
     directory = run_dir()
     (directory / "fake-argv.json").write_text(
         json.dumps(

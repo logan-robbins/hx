@@ -96,10 +96,10 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 installed_version = bare_claude_version(installed.stdout or "")
                 if pinned_version and installed_version and installed_version != pinned_version:
                     checks.append((
-                        WARN,
+                        FAIL,
                         "claude",
                         f"{binary} reports {installed_version} but config/claude.json pins "
-                        f"{pinned_version}; only `hx upgrade` changes the pin (spec 17.6)",
+                        f"{pinned_version}; run `hx upgrade` (spec 17.6)",
                     ))
                 else:
                     checks.append(
@@ -153,7 +153,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     token = root / "seed" / "token"
     if not token.is_file():
         checks.append((
-            WARN, "token",
+            FAIL, "token",
             "seed/token absent; the human runs `claude setup-token` once and pastes the token "
             "there, mode 0600 (spec 11 Auth, 17.2 step 3)",
         ))
@@ -178,15 +178,35 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         checks.append(
             (OK, f"home:{item_id}", "settings.json")
             if target.is_file()
-            else (WARN, f"home:{item_id}", "settings.json missing")
+            else (FAIL, f"home:{item_id}", "settings.json missing; `hx launch` writes it")
         )
 
     repo_json = root / "config" / "repo.json"
-    checks.append(
-        (OK, "repo", repo_json.read_text().strip())
-        if repo_json.is_file()
-        else (WARN, "repo", "config/repo.json absent; `hx repo add <url|path>` mirrors the product repo (spec 17.2 step 4)")
-    )
+    if not repo_json.is_file():
+        checks.append((
+            WARN, "repo",
+            "config/repo.json absent; `hx repo add <url|path>` mirrors the product repo "
+            "(spec 17.2 step 4)",
+        ))
+    else:
+        try:
+            recorded = json.loads(repo_json.read_text())
+            name = recorded["name"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            checks.append((FAIL, "repo", f"config/repo.json is unusable: {exc}"))
+        else:
+            mirror = root / "repos" / f"{name}.git"
+            head = subprocess.run(
+                ["git", "--git-dir", str(mirror), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=False,
+            )
+            if head.returncode == 0:
+                checks.append((OK, "repo", f"{name} at {head.stdout.strip()[:12]}"))
+            else:
+                checks.append((
+                    FAIL, "repo",
+                    f"{mirror} is not readable: {head.stderr.strip() or 'no HEAD'}",
+                ))
 
     return checks
 
