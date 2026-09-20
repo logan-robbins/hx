@@ -4,5 +4,6 @@
 # 2. the whole test suite.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python3 -m pytest tests/guard -q
-python3 -m pytest -q
+PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
+"$PY" -m pytest tests/guard -q
+"$PY" -m pytest -q

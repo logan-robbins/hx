@@ -81,3 +81,11 @@ and environment to a JSON file in the scratch root, accepts pasted input on a re
 and emits scripted hook payloads. M6 onward runs the real pinned binary. The ui and gtm lanes
 use JSON fixtures that conform to `CONTRACTS.md` until the build lane's commands exist, then
 switch to the real commands.
+
+## Python environment
+
+The repo has a shared virtualenv at `.venv` (Python 3.12 from `uv`, `pytest`, and `hx`
+installed editable). Use `.venv/bin/python` for everything (`.venv/bin/python -m pytest`,
+`.venv/bin/hx`, `.venv/bin/python -m hx`). Do not install into the system Python and do not
+add dependencies: hx is stdlib only. If you need another dev tool, ask in
+`handoff/to-orchestrator.md`.
