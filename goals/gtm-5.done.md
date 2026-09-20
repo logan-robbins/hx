@@ -1,7 +1,7 @@
 # gtm-5 done: the boundary read names the Read tool
 
-Lane `gtm`, goal 5. `tests/guard` (5), `tests/packaging` (86) and `tests/scenario` (70) all
-pass — nothing skipped any more. Committed path-scoped.
+Lane `gtm`, goal 5. `tools/milestone-check.sh gtm` exits 0: `tests/guard` (5),
+`tests/packaging` (87) and `tests/scenario` (70), nothing skipped. Committed path-scoped.
 
 The four asked-for changes were small and immediate, as intended. Build-4 landed partway
 through and turned a deferred gtm-6 item into a red suite in this lane, so the deploy proof is
@@ -158,8 +158,9 @@ one differs from a real instance in exactly the board text these fixtures exist 
 ## How it was verified
 
 ```
-$ .venv/bin/python -m pytest tests/guard tests/packaging tests/scenario -q
-5 + 86 + 70 passed, 0 skipped
+$ tools/milestone-check.sh gtm
+MILESTONE-CHECK PASSED for gtm (own paths; add --all for the advisory run)
+MC_EXIT=0    # tests/guard 5, tests/packaging 87, tests/scenario 70
 
 $ packaging/e2e-deploy.sh <scratch>
 EXIT=0    # 16 steps, == PASS, against the real hx install
@@ -237,10 +238,18 @@ already sequenced as gtm-6, so it did not need a new handoff of its own.
 
 ## Other lanes
 
-`tests/guard`, `tests/packaging` and `tests/scenario` pass. `tools/milestone-check.sh` ran past
-its two-minute foreground budget once mid-goal while the build lane was landing build-4 work,
-and completed green in the background (exit 0). Nothing in another lane's path was touched;
-every commit was `git add <paths> && git commit -- <the same paths>`.
+`tools/milestone-check.sh` gained a lane argument during this goal — `tools/milestone-check.sh
+gtm` runs `tests/guard` plus this lane's own paths as required, and other lanes' suites only
+with `--all`, advisory. This goal closed against that form, exit 0.
+
+The ui lane filed an entry on `tests/packaging` being red, diagnosed it as a missing build-lane
+flag, then **went back and rewrote their own diagnosis** an hour later when they worked out it
+was my uncommitted rewrite mid-flight. That is the right instinct and worth recording: a wrong
+cause left standing in a handoff costs the next reader more than no handoff would. Marked
+`DONE` with what actually happened.
+
+Nothing in another lane's path was touched; every commit was `git add <paths> && git commit --
+<the same paths>`.
 
 ## Commits
 
