@@ -4,7 +4,7 @@
 
 Two things exist and are never mixed.
 
-- **Package** `hx`: the autodev rewrite. Python 3.12, zero runtime dependencies, `pyproject.toml`, entry points `hx` and `hx-hook`. Installed with `uv tool install hx` (or `pipx`). Ships `adapters/claude/{install.sh,start.sh}`, `templates/`, `companion/{BASE.md,roles/}`, `skills/{hx-partner,hx-worker}`, `ui/` static files, and the instance skeleton. Upgrading the package never writes into an instance except through `hx upgrade` (17.6).
+- **Package** `hx`: the autodev rewrite. Python 3.14, zero runtime dependencies, `pyproject.toml`, entry points `hx` and `hx-hook`. Installed with `uv tool install hx` (or `pipx`). Ships `adapters/claude/{install.sh,start.sh}`, `templates/`, `companion/{BASE.md,roles/}`, `skills/{hx-partner,hx-worker}`, `ui/` static files, and the instance skeleton. Upgrading the package never writes into an instance except through `hx upgrade` (17.6).
 - **Instance** `HARNESS_ROOT`: the user's data, created by `hx install` (default `/srv/hx` on a server, `~/hx` on a workstation). Holds `config/`, `orders/`, `pods/`, `logs/`, `state/`, `run/`, `archive/`, `seed/`, `repos/`, `wt/` (`03-layout.md`). `config/` is the only part worth committing to the user's own git; everything else is runtime state.
 
 `bin/hx` and `bin/hx-hook` in `03-layout.md` are the package entry points; hook commands in `run/<id>/home/settings.json` reference the absolute path `hx install` recorded in `config/hx.json`, so a package upgrade that moves the binary is followed by `hx upgrade`, not by silently broken hooks.

@@ -1,6 +1,6 @@
 ## 8. `hx` CLI
 
-Zero-dependency Python (3.12, stdlib only: `json`, `fcntl`, `subprocess`, `tempfile`), one file per command group. Renames use same-directory rename. Agent-side commands identify the caller by `HARNESS_ID` from the tmux session env; Partner commands refuse when `HARNESS_ID` is set and is not `partner`; system commands (`hx up`, `hx heartbeat`) run from systemd and cron with no `HARNESS_ID`. The human runs nothing after system setup. No timeouts anywhere: hx waits for the condition it needs. Models are always passed as full ids (`claude-opus-5`), never aliases, which drift. No task text is ever a command-line argument: orders and addenda are files.
+Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempfile`), one file per command group. Renames use same-directory rename. Agent-side commands identify the caller by `HARNESS_ID` from the tmux session env; Partner commands refuse when `HARNESS_ID` is set and is not `partner`; system commands (`hx up`, `hx heartbeat`) run from systemd and cron with no `HARNESS_ID`. The human runs nothing after system setup. No timeouts anywhere: hx waits for the condition it needs. Models are always passed as full ids (`claude-opus-5`), never aliases, which drift. No task text is ever a command-line argument: orders and addenda are files.
 
 | Command | Caller | Effect |
 |---|---|---|

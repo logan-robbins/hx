@@ -84,7 +84,7 @@ switch to the real commands.
 
 ## Python environment
 
-The repo has a shared virtualenv at `.venv` (Python 3.12 from `uv`, `pytest`, and `hx`
+The repo has a shared virtualenv at `.venv` (Python 3.14, the system interpreter, `pytest`, and `hx`
 installed editable). Use `.venv/bin/python` for everything (`.venv/bin/python -m pytest`,
 `.venv/bin/hx`, `.venv/bin/python -m hx`). Do not install into the system Python and do not
 add dependencies: hx is stdlib only. If you need another dev tool, ask in

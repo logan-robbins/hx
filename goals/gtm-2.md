@@ -9,7 +9,7 @@ inside the wheel so `hx install` can render them; move them there from `packagin
 
 1. `packaging/e2e-install.sh`: in a scratch directory (argument), create a fresh `HOME`,
    `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`, `UV_CACHE_DIR` under it; `uv build` the wheel from this
-   repo into the scratch dir; `uv tool install --python 3.12 <wheel>`; run
+   repo into the scratch dir; `uv tool install --python 3.14 <wheel>`; run
    `hx doctor` and `hx install --root <scratch>/hx --skeleton-only` from the installed tool;
    assert every skeleton file you authored in gtm-1 landed byte-identical; assert the fresh
    `HOME/.claude` does not exist afterwards and the real `~/.claude` manifest is unchanged

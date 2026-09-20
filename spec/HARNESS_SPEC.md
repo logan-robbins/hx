@@ -398,7 +398,7 @@ The design question at every critical step: *if this stopped right now, is there
 <!-- BEGIN 08-hx-cli.md -->
 ## 8. `hx` CLI
 
-Zero-dependency Python (3.12, stdlib only: `json`, `fcntl`, `subprocess`, `tempfile`), one file per command group. Renames use same-directory rename. Agent-side commands identify the caller by `HARNESS_ID` from the tmux session env; Partner commands refuse when `HARNESS_ID` is set and is not `partner`; system commands (`hx up`, `hx heartbeat`) run from systemd and cron with no `HARNESS_ID`. The human runs nothing after system setup. No timeouts anywhere: hx waits for the condition it needs. Models are always passed as full ids (`claude-opus-5`), never aliases, which drift. No task text is ever a command-line argument: orders and addenda are files.
+Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempfile`), one file per command group. Renames use same-directory rename. Agent-side commands identify the caller by `HARNESS_ID` from the tmux session env; Partner commands refuse when `HARNESS_ID` is set and is not `partner`; system commands (`hx up`, `hx heartbeat`) run from systemd and cron with no `HARNESS_ID`. The human runs nothing after system setup. No timeouts anywhere: hx waits for the condition it needs. Models are always passed as full ids (`claude-opus-5`), never aliases, which drift. No task text is ever a command-line argument: orders and addenda are files.
 
 | Command | Caller | Effect |
 |---|---|---|
@@ -830,7 +830,7 @@ Editing configuration or personas (the Partner does that on instruction; the hum
 
 Two things exist and are never mixed.
 
-- **Package** `hx`: the autodev rewrite. Python 3.12, zero runtime dependencies, `pyproject.toml`, entry points `hx` and `hx-hook`. Installed with `uv tool install hx` (or `pipx`). Ships `adapters/claude/{install.sh,start.sh}`, `templates/`, `companion/{BASE.md,roles/}`, `skills/{hx-partner,hx-worker}`, `ui/` static files, and the instance skeleton. Upgrading the package never writes into an instance except through `hx upgrade` (17.6).
+- **Package** `hx`: the autodev rewrite. Python 3.14, zero runtime dependencies, `pyproject.toml`, entry points `hx` and `hx-hook`. Installed with `uv tool install hx` (or `pipx`). Ships `adapters/claude/{install.sh,start.sh}`, `templates/`, `companion/{BASE.md,roles/}`, `skills/{hx-partner,hx-worker}`, `ui/` static files, and the instance skeleton. Upgrading the package never writes into an instance except through `hx upgrade` (17.6).
 - **Instance** `HARNESS_ROOT`: the user's data, created by `hx install` (default `/srv/hx` on a server, `~/hx` on a workstation). Holds `config/`, `orders/`, `pods/`, `logs/`, `state/`, `run/`, `archive/`, `seed/`, `repos/`, `wt/` (`03-layout.md`). `config/` is the only part worth committing to the user's own git; everything else is runtime state.
 
 `bin/hx` and `bin/hx-hook` in `03-layout.md` are the package entry points; hook commands in `run/<id>/home/settings.json` reference the absolute path `hx install` recorded in `config/hx.json`, so a package upgrade that moves the binary is followed by `hx upgrade`, not by silently broken hooks.
