@@ -2,7 +2,7 @@
 
 Pulled forward from the end of the plan: M6 live tests need seeded homes and worktrees, and the
 gtm lane's M10 proof (`packaging/e2e-deploy.sh`) needs the whole install. Read
-`goals/build-3.done.md`, `handoff/gtm-to-build.md` (the `--from-user-config` contract, the unit
+`goals/build-3.done.md`, `handoff/gtm-to-build.md` (the unit
 substitution keys `{HARNESS_ROOT}`/`{HX_BIN}` with literal replacement, package-data paths),
 `handoff/orchestrator-to-build.md`, spec 17.2 (all six steps), 17.3, 17.6, 11 (Worktree, Binary
 and version), 08 (`hx repo add`, `hx push`, `hx upgrade`, `hx launch` worktree creation).
