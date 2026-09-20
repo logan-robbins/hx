@@ -54,6 +54,16 @@ as milestones are accepted.
   `### Checks` bash block; the work-item template keeps spec 06's sections, its standing
   instructions, and the five placeholders `CONTRACTS.md` pins; every `AGENTS.md` has exactly
   one `## UPDATES BELOW ONLY`; both `SKILL.md` files have valid frontmatter.
+- `tests/scenario/m8/`: the M8 scenario pack (spec 13) — `chat.md` turn by turn, the Partner's
+  own order and the two workers' orders with a real `after` chain, the addendum that answers
+  the `decision`, both worker personas, the eight `expected/` board states, and a fixture repo
+  with two tripwires that must never load in a harness session. `tests/scenario/test_m8_pack.py`
+  parses every order with the function `hx dispatch` uses, checks the `after` graph is acyclic,
+  and compares each expected board against what the real `hx board` prints for an instance
+  built in that state.
+- `docs/companion-eval.md`: the M7 plan — the recorded-log corpus and where it comes from, five
+  seam points per task, the two metrics `hx metrics` records, the pass bar, and how a prompt
+  change to `companion/BASE.md` or a role file is judged before and after on the same corpus.
 - `.github/workflows/ci.yml`: job `test` on macOS and Linux with tmux, uv and Python 3.14,
   recording `.baseline/` from the runner's own empty `HOME/.claude` before any test runs and
   re-diffing it afterwards; job `package` running `packaging/e2e-install.sh` and uploading the

@@ -31,9 +31,10 @@ hx/
   pyproject.toml             name, version, entry points, package data
   src/hx/                    the package: CLI, hooks, companion, adapters, ui, skeleton, skills
   src/hx/packaging/          launchd plists, systemd units, tested-claude-versions.json
-  tests/                     unit, guard, ui, packaging
+  tests/                     core, guard, ui, packaging, scenario
+  tests/scenario/m8/         the M8 scenario pack: chat, orders, expected boards, fixture repo
   tools/                     claude-home-hash.sh, milestone-check.sh
-  docs/                      deploy.md, two-worlds.md, github-plan.md
+  docs/                      deploy.md, two-worlds.md, companion-eval.md, github-plan.md
   packaging/                 e2e-install.sh
   spec/                      the numbered section files, compile.sh, HARNESS_SPEC.md
   .github/workflows/ci.yml   this plan's CI
@@ -51,6 +52,11 @@ eventually assert the compiled file is current.
 **`tools/` ships whole.** It is not a build artifact: `tools/claude-home-hash.sh` is what the
 `~/.claude` guard test compares against, `tools/milestone-check.sh` is the suite entry point,
 and `ci.yml` calls both. It stays at `tools/` and `ci.yml` keeps pointing there.
+
+**`tests/scenario/` ships.** It is the data the end-to-end milestones run on, including the
+M8 pack's fixture repo and its two deliberate tripwires. A reader who wants to know what hx
+claims to do end to end should be able to read the scenario rather than take the README's word
+for it.
 
 **Two `packaging` locations, deliberately.** `src/hx/packaging/` holds the unit templates and
 the tested-versions list, *inside the wheel*, because `hx install` renders them on a machine

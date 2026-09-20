@@ -48,6 +48,16 @@ export HARNESS_ROOT=~/hx        # or /srv/hx on a server
 hx install
 ```
 
+**Pre-release note:** only the layout step of `hx install` is built today. Plain `hx install`
+stops and tells you so, in as many words:
+
+```
+$ hx install --root ~/hx
+hx: install: not implemented (build-11); `hx install --skeleton-only --root <path>` creates the
+instance layout and skeleton (spec 17.2 step 2). The preflight checks, seed login, repo mirror,
+boot units and `hx launch partner` land with their milestones
+```
+
 This refuses root; checks `tmux`, `git`, Python, and the `claude` binary, recording
 `{bin, version}` in `config/claude.json`; and creates `$HARNESS_ROOT` from the package
 skeleton. The layout part of it runs today — this is real output from the end-to-end check in
@@ -202,6 +212,19 @@ hx board         # one line per id, then invariant violations; exits 1 on any er
 
 Both are safe to run yourself and neither changes anything. A board error is normally the
 Partner's to fix (`hx restart <id>`), and the heartbeat usually gets there first.
+
+One board error is expected and is not a problem: between step 2 and step 6, the instance has
+`config/partner/` but no work item yet, because `hx launch partner` is what creates it. Real
+output at that point:
+
+```
+$ hx board
+(partner: no work item)  -  -  0  -
+config/partner/: no work item (spec 08 board invariants)
+```
+
+`hx board` exits 1 there, correctly — it exits 1 whenever `errors` is non-empty. After step 6
+it exits 0 and stays that way.
 
 Real `hx doctor` output, from the installed tool against an instance that has had step 2 and
 nothing after it — every `warn` names the step that clears it:

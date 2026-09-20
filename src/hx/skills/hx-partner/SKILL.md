@@ -156,9 +156,16 @@ are no longer waiting to be prompted.
 hx board                 # one line per id, partner first, then invariant errors; exit 1 on any error
 hx board --json          # same, structured
 hx show <id>             # work item, step state, context file, stream tails, metrics, subagents
+hx orders                # every order and addendum, with the tasks.json record it produced
+hx archive               # benched bodies and archived dispatches, per id
 hx metrics <id>          # per-seam tool-call counts; how well continuity is actually working
 hx doctor                # tmux, git, pinned claude binary and version, credentials, homes, mirror
 ```
+
+`hx orders` is the one to reach for when you are about to write an order and want to see how
+you scoped the last one, or when a `queued` item's `after` is not what you meant. `hx archive`
+is how you find what a benched id actually delivered, after its work item has been reset.
+All of these take `--json` and none of them changes anything.
 
 You are woken when something changes: `hx complete` sends you `<id> complete: <outcome>;
 hx read <id>`, and `hx heartbeat` (system cron, every 15 minutes) wakes you with a board diff

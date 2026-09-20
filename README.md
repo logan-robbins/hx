@@ -152,6 +152,7 @@ home. `packaging/e2e-install.sh` is that check, and this is its real output:
 
 - [docs/deploy.md](docs/deploy.md) — the one-time setup, then talk to the Partner
 - [docs/two-worlds.md](docs/two-worlds.md) — how your own Claude stays untouched
+- [docs/companion-eval.md](docs/companion-eval.md) — how the Companion gets measured (M7)
 - [docs/github-plan.md](docs/github-plan.md) — how this repository gets published and released
 - [CONTRACTS.md](CONTRACTS.md) — the JSON shapes shared between the CLI and the UI
 - [CHANGELOG.md](CHANGELOG.md)
