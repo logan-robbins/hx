@@ -186,10 +186,11 @@ UI falls back to when a session has died. It is instance state like everything e
 
 ## What is built today
 
-This page describes the finished system. Pre-release, the parts that create an instance are
-still landing: the full `hx install` (the seed-token step, the repo mirror, the sparse worktree
-and the boot units) is build-4, and until it lands `hx install` requires `--skeleton-only` and
-says so. Everything about the *per-agent home* above — the settings file
+This page describes the finished system, and as of 2026-09-20 the install path is built: the
+full `hx install` does the seed-token step, the repo mirror, the sparse worktree and the boot
+units, and `packaging/e2e-deploy.sh` runs the whole thing end to end and passes. What is still
+pre-release is everything the agents do once they are running — the Companion, seams and the
+metrics that judge them. Everything about the *per-agent home* above — the settings file
 key by key, the credential seeding and its refusals, the persona derivation, the launch argv,
 the skills copy — is what `install.sh` and `start.sh` do today, and
 `packaging/e2e-deploy.sh` asserts the rest the moment build-4 lands.
@@ -204,6 +205,8 @@ symlinks into, `~/.claude`.
 Beyond that, `packaging/e2e-deploy.sh` runs the whole install into a `HOME` that did not exist
 a moment ago and asserts that the agent home carries no credentials file, that the worktree has
 no `.claude/`, that the rendered units carry no unsubstituted token, and that the real
-`~/.claude` manifest is unchanged. It plants strings that must not appear anywhere afterwards,
-which is the only way to tell "isolated" from "we did not look". That script is being rewritten
-for the token auth model; until it is, it is gated and skips.
+`~/.claude` manifest is unchanged. It plants a whole fake `~/.claude` — credentials, a
+deny-everything hook, a banner `CLAUDE.md`, a skill — and then greps the finished instance for
+each of those strings, which is the only way to tell "isolated" from "we did not look". It also
+proves the instance token reaches the session as `CLAUDE_CODE_OAUTH_TOKEN` and appears in no
+argv and nowhere under `run/`.

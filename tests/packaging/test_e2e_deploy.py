@@ -11,9 +11,10 @@ It is a shell script for the same reasons `e2e-install.sh` is: it is what a huma
 release, and what it proves is about an *installed* tool, which an in-tree pytest cannot
 establish about itself.
 
-While the full `hx install` is still build-4, the script prints its gate and exits 0 with
-`SKIPPED (waiting on build-4)`, and this test skips with that reason rather than passing
-silently — a green test for a proof that did not run is worse than no test.
+Build-4 landed on 2026-09-20 and the proof runs for real. It still skips, with the reason
+printed, when the machine cannot host it: no `uv`, `git` or `tmux`, or no `claude` binary on
+PATH for the version check `hx install` step 1 performs. Nothing in it ever starts a real
+agent — `HX_CLAUDE_BIN` points every launch at the fake `claude`.
 """
 
 import pathlib
@@ -24,7 +25,8 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "packaging" / "e2e-deploy.sh"
-GATE = "SKIPPED (waiting on build-4)"
+#: The script exits 0 with one of these when the machine cannot host the proof.
+GATES = ("SKIPPED (waiting on build-4)", "SKIPPED (no claude binary)")
 
 
 def test_the_script_is_executable_and_shell_clean():
@@ -40,24 +42,43 @@ def test_the_script_refuses_without_a_scratch_directory():
     assert "usage" in (r.stdout + r.stderr).lower()
 
 
-def test_the_script_never_reads_the_real_claude_home_for_seeding():
-    """`--from-user-config` is pointed at a directory the script builds. If this ever names
-    `$HOME/.claude` as the seed source, the proof would be reading the user's real
-    credentials — which is exactly what the flag exists to make unnecessary here."""
+def test_the_script_seeds_a_token_and_never_reads_a_user_claude_home():
+    """Auth is the instance token; hx reads no user Claude home at all (spec 11 Auth). The
+    proof writes its own token, and the `~/.claude` it creates exists only to prove that
+    nothing in it is ever read."""
     text = SCRIPT.read_text()
-    assert "--from-user-config" in text
-    seed_line = next(line for line in text.splitlines() if "--from-user-config" in line and "$HX" in line)
-    assert "$FAKE_USER" in seed_line, seed_line
-    # The real home appears only as the before/after manifest subject.
-    for line in text.splitlines():
-        if "REAL_CLAUDE_HOME" in line and "from-user-config" in line:
-            pytest.fail(f"the real Claude home is used as a seed source: {line}")
+    assert "--from-user-config" not in text, (
+        "the flag was removed (CONTRACTS.md); the script must not still use it"
+    )
+    assert "seed/token" in text, "the script does not seed a token"
+    assert 'FAKE_USER="$HOME/.claude"' in text, (
+        "the planted home must be inside the *fresh* HOME, never the real one"
+    )
+    for planted in ("USER-CREDENTIALS-LEAKED", "USER-HOOK-LEAKED", "USER-CLAUDE-MD-LEAKED",
+                    "USER-SKILL-LEAKED"):
+        assert text.count(planted) >= 2, (
+            f"{planted} is planted but never asserted against, or vice versa"
+        )
+
+
+def test_the_script_never_launches_a_real_agent():
+    """`hx install` step 6 starts the Partner. With a real binary that would be an unattended
+    agent burning tokens from a test."""
+    text = SCRIPT.read_text()
+    assert 'export HX_CLAUDE_BIN="$FAKE_BIN_EARLY"' in text
+    assert text.index('export HX_CLAUDE_BIN') < text.index('"$HX" install --root "$ROOT"'), (
+        "HX_CLAUDE_BIN must be exported before the first install, which starts the Partner"
+    )
 
 
 def test_end_to_end_deploy(tmp_path, capsys):
-    for tool in ("uv", "git", "tmux"):
+    for tool in ("uv", "git", "tmux", "claude"):
         if shutil.which(tool) is None:
-            pytest.skip(f"{tool} is not on PATH; the deploy proof needs uv, git and tmux")
+            pytest.skip(
+                f"{tool} is not on PATH; the deploy proof needs uv, git, tmux, and a claude "
+                f"binary for the version check in `hx install` step 1 (no agent is started "
+                f"with it — every launch uses the fake claude)"
+            )
 
     scratch = tmp_path / "deploy"
     r = subprocess.run(
@@ -68,13 +89,10 @@ def test_end_to_end_deploy(tmp_path, capsys):
         if r.stderr:
             print(r.stderr)
 
-    if GATE in r.stdout:
-        assert r.returncode == 0, "the gate must exit 0, not fail"
-        gate_line = next(
-            (line.strip() for line in r.stdout.splitlines() if line.strip().startswith("gate")),
-            "",
-        )
-        pytest.skip(f"{GATE}: {gate_line or 'hx install (full) is not built yet'}")
+    for gate in GATES:
+        if gate in r.stdout:
+            assert r.returncode == 0, "a gate must exit 0, not fail"
+            pytest.skip(gate)
 
     assert r.returncode == 0, f"packaging/e2e-deploy.sh exited {r.returncode}"
     assert "== PASS" in r.stdout, "the script exited 0 without reaching its PASS line"
