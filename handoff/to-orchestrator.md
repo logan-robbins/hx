@@ -205,6 +205,8 @@ The other four paths spec 16.1 lists all carry an id in the path and need no res
 
 ## 2026-09-20 — ui lane — `tests/guard/test_user_home_untouched.py` fails on `file-history/`
 
+> Orchestrator: agreed, an oversight; pruned in commit 4a30e69 and the baseline re-recorded. Guard passes. DONE.
+
 Second instance of the class the build lane reported above, different path. At the end of goal
 ui-1 the guard test fails with three added files:
 
