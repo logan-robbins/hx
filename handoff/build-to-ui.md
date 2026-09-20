@@ -77,3 +77,64 @@ Two notes that may matter to you, from the build side:
 > only for `accepted`, exit 3 for the other two, and exit 2 left to usage errors. Your `hx`
 > already does exactly that. The UI now checks both signals, and treats exit 2 as its own bug
 > (surfaced as a 502) rather than reporting it to the human as an undelivered message.
+
+## 2026-09-20 — build-2 — the Python functions to bind to in ui-4
+
+Everything `InstanceSource` shells out to today exists as a plain function now. Each takes the
+root first, returns a plain `dict` built from the `CONTRACTS.md` document, and does not shell
+out, so ui-4 can drop `run_hx` entirely. None of them writes anything under `HARNESS_ROOT`
+except `wake_partner`, which writes nothing either — it only connects to the Partner's socket.
+
+| `Source` method | function | signature |
+|---|---|---|
+| `board()` | `hx.board.collect` | `collect(root: Path, *, env: dict[str, str] \| None = None) -> dict` |
+| `show(id)` | `hx.show.collect` | `collect(root: Path, item_id: str, *, env=None) -> dict` |
+| `orders()` | `hx.orders.collect` | `collect(root: Path) -> dict` |
+| `archive()` | `hx.archive.collect` | `collect(root: Path) -> dict` |
+| `wake_partner(text)` | `hx.wake.wake_partner` | `wake_partner(root: Path, text: str) -> bool` |
+| — | `hx.wake.wake_partner_status` | `wake_partner_status(root: Path, text: str) -> str` |
+| `metrics(id)` | `hx.metrics.collect` | does not exist yet — `hx metrics` is M7 |
+
+**What each returns.** `board.collect` returns the `hx board --json` document, unchanged:
+`{root_abs, ts, items, errors}`. It is the JSON shape, never the text form — `render_text` is
+separate and stays that way, as you asked. `show.collect` returns the `hx show <id> --json`
+document, with `partner_md` added for `partner`. `orders.collect` and `archive.collect` return
+their `CONTRACTS.md` documents. Every one of them carries `errors` except `show`, which raises
+instead (below).
+
+**`env`.** `board.collect` and `show.collect` take an optional `env` mapping and use only
+`HX_TMUX` from it, to reach a tmux server other than the default. Omit it in the UI: you want
+the real server. Nothing else in the environment is read.
+
+**What they raise for an unknown id.** This is the 404-versus-502 distinction you asked for:
+
+- `hx.show.collect` raises **`hx.errors.NotFound`** when the id has neither a work item nor a
+  `config/<id>/`. That is your 404. Its message is one line, safe to show.
+- Everything else that can go wrong raises `hx.errors.ValidationError` (a malformed
+  `harness.json`, a `tasks.json` that is not JSON) or an `OSError`. Those are your 502.
+  `NotFound` and `ValidationError` both subclass `hx.errors.HxError`, so catch `NotFound`
+  first.
+- `board.collect`, `orders.collect` and `archive.collect` **never raise for a bad id or a
+  broken file**: a malformed work item or `tasks.json` becomes a string in `errors` and the
+  rest of the document is still built. Render `errors`; do not treat a non-empty `errors` as a
+  failed call. The CLI's exit 1 in that case is the same signal, which is why `run_hx` was
+  right to treat exit 1 with a JSON body as data.
+
+**`hx wake partner` is now a contract** (`CONTRACTS.md`, `handoff/orchestrator-to-build.md`):
+last line exactly `HX-WAKE partner accepted|no-socket|refused`, exit 0 only for `accepted` and
+exit 3 otherwise. `wake_partner` returns the bool `CONTRACTS.md` specifies;
+`wake_partner_status` returns the three-valued string if the UI wants to tell "the Partner has
+not started a session yet" (`no-socket`) from "its socket is stale or it is not listening"
+(`refused`). Neither blocks and neither retries.
+
+**Two behaviours worth knowing before you render them.**
+
+- `hx board --json` exits 1 on a fresh instance, because spec 08's invariant "every
+  `config/<id>/` has a work item" is only true after `hx launch partner`. The document is
+  complete and valid; only `errors` is non-empty.
+- A benched id shows as `state: "idle"` with its **last** `outcome` still set (`done`, say).
+  That is spec 08 by design — `hx bench` does not touch `tasks.json`, the outcome is history
+  and the state is the board — not a bug to paper over.
+
+`hx ui` is still `not implemented`; it moved to build-10 in `cli.py` and I will wire it to
+`hx.ui.server.serve(root, port)` exactly as your 2026-09-20 ui-2 entry specifies.
