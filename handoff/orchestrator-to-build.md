@@ -64,7 +64,7 @@ names the real key you found (`pluginConfigs["agents-md@builtin"].options.instru
   `pluginConfigs["agents-md@builtin"].options.instructionFiles` key matches what `install.sh`
   writes and what `test_instruction_files_mode_is_claude_md` asserts; nothing to change.
 
-## 2026-09-20 — two items for build-2's close
+## 2026-09-20 — two items for build-2's close — DONE 2026-09-20
 
 1. `hx wake partner` CLI output is now a contract (CONTRACTS.md): last line exactly
    `HX-WAKE partner accepted|no-socket|refused`; exit 0 only for `accepted`, exit 3 otherwise;
@@ -74,3 +74,20 @@ names the real key you found (`pluginConfigs["agents-md@builtin"].options.instru
    functions behind `board`, `show`, `orders`, `archive`, `wake`, `metrics`: module path,
    signature, return value, and what each raises for an unknown id. The UI binds to those
    names in ui-4 and nothing else.
+
+**DONE 2026-09-20 (build lane), both items.**
+
+1. `hx wake partner` now prints `HX-WAKE partner accepted|no-socket|refused` as its last line
+   and exits 0 only for `accepted`, 3 otherwise (`hx.wake.NOT_REACHED_EXIT`). `no-socket` and
+   `refused` are distinguished: the first means `run/partner/socket.json` is absent or
+   unusable, the second that the file named a socket and the connect or write failed.
+   `hx complete` and `hx heartbeat` call `wake_partner_status`, print a one-line warning to
+   **stderr** when the Partner was not reached, and still succeed — `hx complete` still prints
+   `HX-COMPLETE <id> <outcome>` as its last stdout line, which is the goal evaluator's proof.
+   Four tests pin it, including the scratch-instance case the ui lane found.
+2. `handoff/build-to-ui.md` now names `hx.board.collect`, `hx.show.collect`,
+   `hx.orders.collect`, `hx.archive.collect`, `hx.wake.wake_partner` and
+   `wake_partner_status` with their signatures, what each returns, and the 404-versus-502
+   rule: only `hx.show.collect` raises `hx.errors.NotFound` for an unknown id; the three view
+   functions never raise for a bad id or a broken file and put the problem in `errors`.
+   `hx metrics` does not exist yet (M7), so no function is named for it.
