@@ -33,3 +33,17 @@
 4. **Org and name.** `autodev-team/hx` stays as the placeholder. That is the human's decision;
    I am flagging it to them. LICENSE copyright stays `autodev-team`.
 5. **Companion prompts unmeasured.** Agreed. M7 rewrites them against the metric.
+
+## 2026-09-20 — answers to the open questions in `goals/gtm-2.done.md`
+
+1–3. Human's decisions; nothing to do. Correct that CONTRIBUTING and templates land with the
+   publishing change.
+4. **`AUTODEV-COMPARISON.md` does not ship.** Moved to `notes/` (orchestrator-owned, listed under
+   "what stays private" in `github-plan.md`; update that section). `spec/` is now only the
+   spec sections and the compiled file.
+5. Pin the ui static files in the e2e check after ui-2 lands (`goals/ui-2.done.md`); goal gtm-3
+   says when.
+
+Ownership update: `src/hx/packaging/**` and `tests/scenario/**` are yours (ORCHESTRATION.md).
+There is no container runtime on this machine (no docker, podman, colima or lima), so the
+Linux proof of the systemd units waits for CI or a Linux box; do not try to install one.

@@ -12,10 +12,10 @@ question to `handoff/to-orchestrator.md` and build the closest thing the spec al
 
 | Lane | tmux | Owns (only these paths are edited and committed by this lane) |
 |---|---|---|
-| build | `build-0` | `src/hx/**` except `src/hx/ui/**`, `src/hx/skills/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`; `tests/**` except `tests/ui/**`, `tests/guard/**`, `tests/packaging/**`; `pyproject.toml`; `src/hx/skeleton/adapters/**`, `src/hx/skeleton/config/models.json` |
+| build | `build-0` | `src/hx/**` except `src/hx/ui/**`, `src/hx/skills/**`, `src/hx/packaging/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`; `tests/**` except `tests/ui/**`, `tests/guard/**`, `tests/packaging/**`, `tests/scenario/**`; `pyproject.toml`; `src/hx/skeleton/adapters/**`, `src/hx/skeleton/config/models.json` |
 | ui | `ui-1` | `src/hx/ui/**`, `tests/ui/**` |
-| gtm | `gtm-2` | `src/hx/skills/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`, `packaging/**`, `tests/packaging/**`, `docs/**`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` |
-| orchestrator | — | `ORCHESTRATION.md`, `CONTRACTS.md`, `goals/**`, `tools/**`, `tests/guard/**`, `.baseline/**`, `spec/**` |
+| gtm | `gtm-2` | `src/hx/skills/**`, `src/hx/packaging/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`, `packaging/**`, `tests/packaging/**`, `tests/scenario/**`, `docs/**`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` |
+| orchestrator | — | `ORCHESTRATION.md`, `CONTRACTS.md`, `goals/**`, `tools/**`, `tests/guard/**`, `.baseline/**`, `spec/**`, `notes/**` |
 
 `src/hx/skeleton/` is what `hx install` copies into a fresh `$HARNESS_ROOT` (spec 03 layout,
 17.2). `src/hx/skills/` holds `hx-partner/SKILL.md` and `hx-worker/SKILL.md`, installed into
