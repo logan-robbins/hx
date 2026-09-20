@@ -113,40 +113,34 @@ beside it are authoritative. Milestones and their acceptance tests are in
   which ships inside the wheel so `hx install` can check it without a checkout.
 - Tested on macOS and Linux.
 
-What works end to end today is the packaging path: the wheel builds, installs as a uv tool into
-a home that did not exist a moment ago, and creates an instance — without touching any Claude
-home. `packaging/e2e-install.sh` is that check, and this is its real output:
+What works end to end today is the whole install path. `packaging/e2e-deploy.sh` builds the
+wheel, installs it as a uv tool into a `HOME` that did not exist a moment ago, runs the full
+`hx install`, mirrors a product repo, cuts a sparse worktree, launches an agent into tmux,
+renders the boot units, moves the version pin, and pushes a branch — then proves it touched no
+Claude home of yours. Nineteen steps; this is the end of a real run:
 
 ```
-== 3. uv build
-   ok  hx_harness-0.1.0-py3-none-any.whl
+== 13. wt/eng-001 is a worktree without the product's .claude/
+   ok  …/hx/wt/eng-001 holds the product and no .claude/
+   ok  on branch agent/eng-001, cut from the mirror
 
-== 4. the wheel carries the package data hx install needs
-   ok  59 entries, all 23 required files present
+== 16. hx upgrade refuses a version the suite has not passed on
+   ok  refused 9.9.9 (exit 5), naming 2.1.278 as the way out
+   ok  config/claude.json unchanged by the refusal
 
-== 5. uv tool install
-   ok  hx        -> …/uv/bin/hx
-   ok  hx-hook   -> …/uv/bin/hx-hook
+== 18. hx push lands one branch upstream and moves no other ref
+   ok  exactly one ref upstream: refs/heads/agent/eng-001
+   ok  it matches the mirror, and the source checkout was never contacted
 
-== 7. hx install --skeleton-only
-   ok  19 files created under …/e2e/hx
-
-== 8. every skeleton file landed byte-identical
-   ok  18 files identical to src/hx/skeleton/
-
-== 9. a fresh instance installs the Partner and no worker
-   ok  config/ holds: partner
-
-== 10. the fresh HOME has no .claude
-   ok  …/e2e/home/.claude does not exist
-
-== 11. the real ~/.claude is unchanged
+== 19. the real ~/.claude is unchanged
    ok  /Users/…/.claude manifest identical before and after
 
-== PASS  wheel built, installed, instance created, no Claude home touched
+== PASS  full install, mirror, sparse worktree, launch, units — no Claude home touched
 ```
 
-(Scratch paths elided for width; steps 0–2 and 6 set up the sandbox and run `hx doctor`.)
+What is still unproven is everything the agents do once they are running: the Companion, seams,
+and the metrics that judge them. That is M6–M8, and it needs a live Claude Code rather than a
+packaging script.
 
 ## Docs
 

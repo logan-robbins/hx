@@ -80,7 +80,8 @@ exports it as `CLAUDE_CODE_OAUTH_TOKEN` for the session it launches.
 Consequences worth being explicit about:
 
 - your `~/.claude/.credentials.json` is never opened, and neither is the macOS Keychain, where
-  Claude Code actually keeps your login;
+  Claude Code actually keeps your login. There is no flag that would make it read them:
+  `--from-user-config` was removed;
 - the token is never an argument to anything — not to `env`, not to `tmux -e` — so it cannot
   appear in `ps` output, and it is never written anywhere under `run/`;
 - **agent homes hold no credentials file at all**, so the per-home wipe has nothing to protect
@@ -184,18 +185,37 @@ UI falls back to when a session has died. It is instance state like everything e
 | Goal | None | The `/goal` pointer to a work item |
 | Visibility | Your terminal | `tmux attach` or `hx ui` |
 
-## What is built today
+## Every claim here, and where it is true
 
-This page describes the finished system, and as of 2026-09-20 the install path is built: the
-full `hx install` does the seed-token step, the repo mirror, the sparse worktree and the boot
-units, and `packaging/e2e-deploy.sh` runs the whole thing end to end and passes. What is still
-pre-release is everything the agents do once they are running — the Companion, seams and the
-metrics that judge them. Everything about the *per-agent home* above — the settings file
-key by key, the credential seeding and its refusals, the persona derivation, the launch argv,
-the skills copy — is what `install.sh` and `start.sh` do today, and
-`packaging/e2e-deploy.sh` asserts the rest the moment build-4 lands.
+This page is checked against the code that implements it, not against the spec they both come
+from, and re-checked whenever either moves. As of 2026-09-20 the whole install path is built
+and `packaging/e2e-deploy.sh` runs it end to end, so nothing on this page is written in the
+present tense about something unbuilt.
 
-## How this is verified, not just asserted
+| Claim | Verified in |
+|---|---|
+| a settings file written from scratch per agent, nothing of the user's merged in | `adapters/claude/install.sh` |
+| hooks carry `--id <id>` and the absolute `hook_bin` from `config/hx.json` | `install.sh`, the `hook()` helper |
+| six hook events for the Partner, nine for a worker | `install.sh`, `if not is_partner` |
+| `skipDangerousModePermissionPrompt: true` | `install.sh` |
+| `pluginConfigs["agents-md@builtin"].options.instructionFiles = "claude-md"` | `install.sh` |
+| seven `claudeMdExcludes` globs under `wt/**` and `repos/**` | `install.sh` |
+| `crossSessionInbound: accept` for the Partner alone | `install.sh`, `if is_partner` |
+| one skill per role, copied and not symlinked | `install.sh`, `cp -R` after `rm -rf` |
+| `config/CLAUDE.md` becomes the home's `CLAUDE.md` | `install.sh` |
+| auth is one token at `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`, never in argv | `start.sh`, the `export` before `exec` |
+| both adapters refuse a missing or group-readable token | `install.sh` and `start.sh`, the `token_mode` checks |
+| agent homes hold no credentials file | asserted by `packaging/e2e-deploy.sh` step 14 |
+| the persona is derived immediately before `exec`, above the header only | `start.sh`, the `awk` in `--exec` mode |
+| launch argv is exactly spec 17.4, no prompt argument, no `--resume` | `start.sh` |
+| `DISABLE_AUTOUPDATER=1` and the pinned `bin` from `config/claude.json` | `start.sh` |
+| the dispatch home wipe is exactly `projects/`, `file-history/`, `history.jsonl` | `dispatch.py` `HOME_WIPE` |
+| the worktree is sparse with `'/*' '!/.claude/'`, and `.claude/` is never written at all | `repo.py` `SPARSE_RULES`, and `--no-checkout` before the sparse rules |
+| `keep_claude_dir: true` opts a project back in | `repo.py`, `if not config.get("keep_claude_dir")` |
+| `hx push` sends one explicit refspec to `upstream` and nothing else | `push.py`, `refs/heads/<branch>:refs/heads/<branch>` |
+| `hx upgrade` refuses an untested version before writing anything | `upgrade.py`, `require_tested` before `write_pin` |
+
+## How this is verified, not just asserted## How this is verified, not just asserted
 
 A guard test records a manifest of the user's Claude configuration surface before any test
 runs and fails on any difference afterwards. It runs in every milestone check, not only at the
