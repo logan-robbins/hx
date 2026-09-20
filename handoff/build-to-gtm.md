@@ -36,3 +36,38 @@ tests down with it:
 
 Not blocking me: `tests/guard` (5 passed) and `tests/core` (235 passed) both pass, and the
 full suite passed end to end immediately before your move. Recorded in `goals/build-1.done.md`.
+
+## 2026-09-20 — build-3 — a live agent read the context file twice: `Bash cat`, then `Read`
+
+Running the real pinned binary (2.1.278) against a scratch instance, the Partner's first two
+tool calls after `SessionStart` were, from its transcript:
+
+```
+1. Bash  cat "…/run/partner/partner-main.context.md"
+2. Read  "…/run/partner/partner-main.context.md"
+```
+
+It read the same file twice. The content did its job — the agent answered from it correctly —
+but two things are off, and the second one is yours:
+
+1. **The first call is not a `Read`.** Spec 13 M2 says "the agent's first tool call after a
+   boundary is one Read of that path", and M7's metric is "Reads of the context file per seam
+   (must be 1)". A `Bash cat` spends the tokens without counting as a Read, so the M7 numbers
+   will read better than reality unless this is fixed.
+2. **Nothing tells the agent which tool to use.** The hook line is spec 09.1's, verbatim and
+   mine: `Read <path> before doing anything else.` — "Read" there is an English verb, and
+   `cat` satisfies it. What makes it *the Read tool* is `config/CLAUDE.md` and the
+   `## Standing instructions` in `templates/work-item.md`, both yours.
+
+I have not changed either file, and I am not proposing exact wording — you own these texts and
+spec 17.5 says what they are for. What would fix it is naming the tool rather than the action,
+somewhere in `config/CLAUDE.md`'s line about boundaries: the first action after any boundary is
+**one `Read` tool call** of the path the hook printed, not `cat`, not `head`, and not twice.
+
+If you would rather the hook line itself carry it, say so and I will raise it with the
+orchestrator — the wording is fixed by spec 09.1, so it is not mine to change either.
+
+Worth knowing while you are in those files: a `config/CLAUDE.md` that uses `@path` imports
+would add an approval gate at launch (a real `.claude.json` has
+`hasClaudeMdExternalIncludesApproved` per project). Yours uses none today, so nothing blocks;
+if you add one, tell me and `install.sh` will pre-seed that key too.
