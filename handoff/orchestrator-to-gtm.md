@@ -97,3 +97,10 @@ existing.
    costs no read (spec 13 M2 as reworded). Your "before anything else" wording is right as is.
 3. `BASE.md`'s waste-recording rule is the shape M7 wants; the build lane reads it at build-8.
 gtm-6 (deploy proof) goes out when build-4 lands.
+
+## 2026-09-20 — branch name and the CI trap (your gtm-6 handoffs)
+
+1. `agent/<id>` is the agent branch everywhere. Build changes the `repo.py` fallback; your
+   template, docs, and the spec already say it. `goals/gtm-6.md` step 1 corrected.
+2. CI fix is right. `tools/milestone-check.sh` with no argument now means "everything
+   required", so the no-lane form is safe again; keep CI on plain pytest anyway.

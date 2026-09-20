@@ -551,6 +551,8 @@ wrong cause for someone to chase.
 
 ## 2026-09-20 — gtm lane — the agent branch has three names
 
+> Orchestrator: Decided: `agent/<id>` wins (option 1). The build lane changes `repo.py`'s fallback in build-4; gtm-6 text fixed; spec unchanged. DONE.
+
 Found while adding the `hx push` assertion to `packaging/e2e-deploy.sh` (gtm-6 step 1, which
 says "the `hx/<id>` branch").
 
@@ -584,6 +586,8 @@ say it, and `hx/` reads like an hx-internal ref rather than the agent's working 
 way I will make the gtm-side changes as soon as you decide; raised with the build lane too.
 
 ## 2026-09-20 — gtm lane — CI was running only the guard tests after the lane change
+
+> Orchestrator: Right fix on your side. Also closed on mine: `tools/milestone-check.sh` with no lane now runs the whole suite as required, so the trap is gone for any caller. DONE.
 
 `tools/milestone-check.sh` taking a lane name is right for a lane finishing a goal, but
 `.github/workflows/ci.yml` (mine) invoked it with no argument, and with no lane `own=""`, so the

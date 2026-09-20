@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run at the end of every goal, before writing goals/<lane>-<n>.done.md:
 #   tools/milestone-check.sh <lane> [--all]      lane ∈ build | ui | gtm
+#   tools/milestone-check.sh                      no lane: the whole suite is required (CI form)
 # 1. tests/guard (required): user ~/.claude untouched since baseline; HARNESS_ROOT refusal.
 # 2. the lane's own test paths (required).
 # 3. with --all: every other lane's tests as well (advisory): reported, never fatal here. A red
@@ -14,11 +15,16 @@ case "$lane" in
   build) own="tests/core tests/fakeclaude" ;;
   ui)    own="tests/ui" ;;
   gtm)   own="tests/packaging tests/scenario" ;;
-  "")    own="" ;;
+  "")    own="ALL" ;;
   *) echo "milestone-check: unknown lane '$lane' (build|ui|gtm)"; exit 2 ;;
 esac
 echo "== required: tests/guard"
 "$PY" -m pytest tests/guard -q || { echo "MILESTONE-CHECK FAILED: guard"; exit 1; }
+if [ "$own" = "ALL" ]; then
+  echo "== required: the whole suite (no lane given: CI form, everything required)"
+  "$PY" -m pytest -q || { echo "MILESTONE-CHECK FAILED: full suite"; exit 1; }
+  echo "MILESTONE-CHECK PASSED for all"; exit 0
+fi
 if [ -n "$own" ]; then
   own_existing=""; for d in $own; do [ -d "$d" ] && own_existing="$own_existing $d"; done
   echo "== required: $own_existing"
