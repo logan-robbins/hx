@@ -79,9 +79,10 @@ call the CLI. Published names are stable; unpublished ones may be renamed withou
 ## Finishing a goal
 
 1. Read and apply any `handoff/*-to-<lane>.md` entries addressed to you.
-2. `tools/milestone-check.sh` passes (guard tests plus the full suite). A failing test in another
-   lane's path is reported in a handoff entry, not fixed by you, and does not block you if your
-   own tests and the guard tests pass; say so in the done file.
+2. `tools/milestone-check.sh <lane>` passes: `tests/guard` and your lane's own test paths are
+   required; every other lane's tests run as advisory and are never fatal. A red advisory suite
+   is another lane mid-commit: report it in a handoff entry, do not fix it, do not wait for it,
+   and say so in the done file. "Passes" in any goal text means exactly this.
 3. Everything committed with explicit paths.
 4. Write `goals/<lane>-<n>.done.md`: what was built, how it was verified (exact commands and
    their last lines), what was verified live against Claude Code and what only against the fake,

@@ -5,6 +5,9 @@ Sent after build-4 landed. Read `goals/gtm-4.done.md` (yours), `goals/build-4.do
 
 ## Build
 
+0. `tests/packaging/test_e2e_deploy.py` still asserts the old `--from-user-config` seeding; it and
+   `packaging/e2e-deploy.sh` (half-rewritten, uncommitted since gtm-5) change together here.
+
 1. `packaging/e2e-deploy.sh <scratch>` runs to PASS. Tighten it: assert the install stops with exit 4
    until a fake `seed/token` is placed, then proceeds, and that `start.sh` (fake `claude`)
    receives `CLAUDE_CODE_OAUTH_TOKEN` in its env and no credentials file exists in any home; assert `hx upgrade` refuses a

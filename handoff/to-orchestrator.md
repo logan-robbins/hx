@@ -494,3 +494,57 @@ gtm lane (`handoff/build-to-gtm.md`): the agent used `Bash cat` and then `Read`,
 file twice. M7's metric counts Reads, so it would under-count. The fix is wording in
 `config/CLAUDE.md`, which is gtm's; if you would rather spec 09.1's hook line name the tool
 instead, that line is yours to change and I will follow it.
+
+
+## 2026-09-20 — ui lane — `tools/milestone-check.sh` cannot exit 0 for anyone while gtm's script is mid-rewrite
+
+> Orchestrator: both decided. Done = guard + own paths; `tools/milestone-check.sh <lane>` now runs the rest as advisory and never fails on it. ORCHESTRATION.md updated. Your close of ui-5 was right. DONE.
+
+Raising this to you because it is not fixable inside any one lane and it currently blocks the
+*done condition of every lane*, which is phrased as "`tools/milestone-check.sh` passes".
+
+**What is true right now.** `tests/packaging/test_e2e_deploy.py` is committed;
+`packaging/e2e-deploy.sh` is **uncommitted and modified** in the shared working tree:
+
+```
+$ git status --short -- packaging/
+ M packaging/e2e-deploy.sh                  # mtime 15:41
+$ grep -c from-user-config packaging/e2e-deploy.sh
+0
+$ stat -f %Sm tests/packaging/test_e2e_deploy.py
+14:17
+```
+
+`test_the_script_never_reads_the_real_claude_home_for_seeding` asserts `"--from-user-config" in
+text`, where `text` is the contents of that script. The committed test and the half-rewritten
+script disagree. `test_end_to_end_deploy` exits `-15` (SIGTERM), i.e. the script is being
+killed rather than failing on its own.
+
+Nothing is wrong with either lane's *intent* — gtm is mid-goal. The problem is structural: we
+share one working tree, and `milestone-check.sh` runs the whole suite, so **one lane's
+uncommitted half-edit makes every other lane's completion gate red**, no matter how green that
+lane's own paths are.
+
+**I have changed nothing outside `src/hx/ui/**` and `tests/ui/**`.** ORCHESTRATION.md is
+explicit that another lane's failing test is reported, not fixed, and "does not block you if
+your own tests and the guard tests pass". Mine do: `tests/guard` 5 passed, `tests/ui` 338
+passed 1 skipped, and goal ui-5's own wording is "`milestone-check.sh` has passed for
+`tests/guard` and `tests/ui`", which holds. So I have closed ui-5 on that reading and said so
+in `goals/ui-5.done.md`.
+
+**What I think needs deciding, since it will recur every time two lanes are in flight:**
+
+1. Whether the done condition means the whole suite or the lane's own paths plus `tests/guard`.
+   ORCHESTRATION.md says the latter; the goal text says the former; they are read as
+   contradictory by anything checking mechanically.
+2. Whether `milestone-check.sh` should report other lanes' failures separately from the
+   caller's own — e.g. run `tests/guard`, then the lane's paths, then the rest as advisory —
+   so a lane can tell "I broke something" from "someone else is mid-commit".
+
+I have not touched `tools/**`; that is yours.
+
+**One correction on my own record**, since it is in `handoff/ui-to-gtm.md` and gtm may read it:
+my first diagnosis of this failure said `packaging/e2e-deploy.sh` was calling an `hx install`
+flag the build lane had not shipped. That was wrong — the flag is absent from the *script*,
+which the *test* requires. I have corrected that entry in place rather than leaving a plausible
+wrong cause for someone to chase.

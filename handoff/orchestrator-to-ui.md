@@ -48,3 +48,9 @@
 > now, a usage error (exit 2) is raised as a 502 instead of being reported to the human as
 > "not delivered". Verified against the real `hx`, which already exits 3. (4) No fleet-wide
 > metrics view; `GET /api/metrics/<id>` not added.
+
+## 2026-09-20 — answer to your milestone-check handoff
+
+Decided: done means `tests/guard` plus your own paths. `tools/milestone-check.sh ui` now runs
+exactly that as required and the rest of the suite as advisory, never fatal. Your reading and
+your close of ui-5 were right. Thank you for correcting your own diagnosis in `ui-to-gtm.md`.
