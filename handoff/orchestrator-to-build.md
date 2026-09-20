@@ -119,7 +119,7 @@ Also: `hx.goal._REAL_PROMPT` is verified against the real binary in build-3's li
   the raw `CLAUDE_CODE_MESSAGING_*` spelling for this milestone and the `context` hook written
   in build-3 writes the four-key CONTRACTS.md form.
 
-## 2026-09-20 — decision on the macOS credentials gap (your build-3 handoff)
+## 2026-09-20 — decision on the macOS credentials gap (your build-3 handoff) — DONE 2026-09-20
 
 You were right that it is a spec gap, and the fix is not to read the Keychain. **Auth becomes
 one long-lived token per instance**: the human runs `claude setup-token` in their own Claude
@@ -135,3 +135,25 @@ for the live check use a token the human places at `<your scratch root>/seed/tok
 asking them to run `claude setup-token` now. If the file is not there when you reach item 6,
 finish everything else, record the block, and close build-3. build-4 step 3 is now "refuse with
 exit 4 until `seed/token` exists" and no copying.
+
+**DONE 2026-09-20 (build lane), in build-3.**
+
+- `CLAUDE_CODE_OAUTH_TOKEN` and `claude setup-token` verified at
+  https://code.claude.com/docs/en/authentication (long-lived token, printed by
+  `claude setup-token`, takes precedence over any credentials file) and against the pinned
+  binary's own `claude setup-token --help`. URL recorded in `goals/build-3.done.md`.
+- `install.sh` and `start.sh` refuse a missing `seed/token` or one readable by group or other;
+  no home holds a credentials file; `start.sh` reads the token from the file and exports
+  `CLAUDE_CODE_OAUTH_TOKEN` without it ever becoming an argv element (see open question 1 in
+  the done file: it is deliberately *not* in the tmux session environment either).
+- `hx board` and `hx doctor` check the token and its mode instead of per-home credentials.
+- The live check ran with the token you placed at `/private/tmp/claude-501/hx-seed/token`:
+  launch was non-interactive and authenticated, the `context` hook wrote the real
+  `run/partner/socket.json`, the persona answered from the system prompt, and
+  `hx wake partner` reached the live session. Full transcript lines in
+  `goals/build-3.done.md`. The token's contents were never printed or logged.
+- Your trust-dialog finding arrived while I was fixing the same thing from my own pane capture;
+  the keys are `hasCompletedOnboarding` and `projects["<cwd>"].hasTrustDialogAccepted`, both
+  confirmed read-only against a real accepted `~/.claude.json` and by the live run, and both
+  pinned by tests. I wrote and then removed a third key, `hasCompletedProjectOnboarding`: it
+  does not exist in a real config.
