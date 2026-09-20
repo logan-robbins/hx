@@ -62,7 +62,7 @@ $ ./tools/milestone-check.sh build
 MILESTONE-CHECK PASSED for build (own paths; add --all for the advisory run)
 
 $ .venv/bin/python -m pytest tests/core
-452 passed
+440 passed
 ```
 
 Every M4 criterion in spec 13 has a test in `tests/core/test_streams.py`: three parallel
@@ -158,9 +158,9 @@ parent's prompt as the subagent's first message. Raised for a spec decision in
 
 ## Open questions
 
-1. **Spec 07.3 section 2 for subagent streams** — above. Either reword it, or tell me to build
-   the `PreToolUse(Agent)` stash with an explicit "best effort, only when one Agent call is in
-   flight" rule.
+1. **Spec 07.3 section 2 for subagent streams** — **answered at close**: no stash, and 07.3 is
+   reworded to the wording hx already writes. Item 7's "Partner turn" was the goal's error;
+   the worker run is the right check. Both confirmed in `handoff/orchestrator-to-build.md`.
 2. **`subagent-result` returns `additionalContext` on `PostToolUse`.** The docs list
    `additionalContext` for `PostToolUse`, and spec 09.1 says to return the digest that way, but
    I have not seen it injected in a live run — the second run's digests were placeholders, so

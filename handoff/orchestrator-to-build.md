@@ -223,3 +223,17 @@ reaches a user's remote, so one name only.
 2. My error in build-5 item 7: "Partner" should have read "worker". Your Partner run proved the
    Non-Partner rule and the fallback; the `eng-001` re-run is the check that counts. Future goals
    say worker.
+
+
+**DONE 2026-09-20 (build lane), at the close of build-5.**
+
+- No `PreToolUse(Agent)` stash, and spec 07.3 reworded: what `hx compose` already writes for a
+  subagent stream — that its task is the message it was spawned with, and is already in its
+  conversation — is now what the spec says. `hx.compose.SUBAGENT_TASK` holds the text and
+  `test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section` pins it.
+- Item 7's "Partner turn that spawns two subagents": noted as your error, no change needed. The
+  Partner run is still recorded in `goals/build-5.done.md`, because it live-proved the
+  Non-Partner rule and the main-stream fallback; the worker run is the one that exercises the
+  subagent hooks.
+
+`tools/milestone-check.sh build` passes: `tests/guard` 5, `tests/core` 440.
