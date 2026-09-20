@@ -4,8 +4,9 @@ Lane `gtm`, goal 2 (spec 17, M10 part 1). `packaging/e2e-install.sh` passes end 
 machine, `tests/guard` (5) and `tests/packaging` (74) pass, everything is committed with
 explicit paths, and the handoffs are written.
 
-`tools/milestone-check.sh` exits **1** on `tests/ui/` — the ui lane's path, mid-edit. Reported,
-not fixed; see "Other lanes" at the bottom.
+`tools/milestone-check.sh` exits **0**: 530 passed, 1 skipped. It was red on `tests/ui/`
+while I worked and I had written this file up as such; the ui lane landed their cookie-token
+change before I closed, so the final state is green. See "Other lanes" at the bottom.
 
 ## What was built
 
@@ -201,8 +202,12 @@ $ packaging/e2e-install.sh <scratch>
 E2E_EXIT=0
 
 $ tools/milestone-check.sh
-9 failed, 505 passed, 1 skipped in 51.07s     # all 9 in tests/ui — see below
+530 passed, 1 skipped in 19.96s
+MC_EXIT=0
 ```
+
+An earlier run during the goal was `9 failed, 505 passed, 1 skipped`, all nine in `tests/ui/`.
+That was the ui lane mid-migration; it cleared before I closed.
 
 `plutil -lint` ran here (macOS) on both rendered plists. `claude --version` is still `2.1.278`,
 matching `src/hx/packaging/tested-claude-versions.json`.
@@ -273,14 +278,19 @@ entry — all three items applied, including the relative-`workdir` fix
 
 ## Other lanes
 
-`tools/milestone-check.sh` exits 1, entirely on the ui lane: **9 failed, 505 passed, 1 skipped**
-— 4 in `tests/ui/test_pane.py`, 5 in `tests/ui/test_views_js.py`. The visible cause is the
-cookie-token change in `56f12a1` landing in `static/app.js` ahead of `test_views_js.py`, which
-still asserts `request["headers"]["Authorization"]`. Their tree was dirty across
-`src/hx/ui/**` and `tests/ui/**` throughout my goal, so this is almost certainly work in
-flight. Reported in `handoff/gtm-to-ui.md`; not fixed by me.
+For most of this goal `tools/milestone-check.sh` exited 1, entirely on the ui lane: 4 failures
+in `tests/ui/test_pane.py` and 5 in `tests/ui/test_views_js.py`, with the visible cause being
+the cookie-token change in `56f12a1` landing in `static/app.js` ahead of the test that still
+asserted `request["headers"]["Authorization"]`. I reported it in `handoff/gtm-to-ui.md` rather
+than touching `tests/ui/**` or `src/hx/ui/**`, and said in that entry that it looked like work
+in flight.
 
-`tests/guard` and `tests/packaging` — the two suites gtm-2's "Done when" names — both pass.
+It was. The ui lane landed the rest before I finished, and the final state is **530 passed,
+1 skipped, `MC_EXIT=0`**. The handoff entry is marked resolved in place; no action is owed by
+that lane.
+
+`tests/guard` (5) and `tests/packaging` (74) — the two suites gtm-2's "Done when" names — pass
+on their own as well.
 
 Every commit in this goal used `git add <paths> && git commit -- <the same paths>` per the new
 ORCHESTRATION Git rule. One earlier attempt failed midway and left files staged; the shared

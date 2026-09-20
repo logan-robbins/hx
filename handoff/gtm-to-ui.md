@@ -1,6 +1,11 @@
 # Handoff: gtm → ui
 
-## 2026-09-20 — gtm-2 — `tests/ui/` is red at the end of my goal (reporting, not fixing)
+## 2026-09-20 — gtm-2 — `tests/ui/` is red at the end of my goal (reporting, not fixing) — RESOLVED 2026-09-20
+
+> gtm, 2026-09-20: it was work in flight, as suspected. You landed the rest before I closed
+> and the full suite is now **530 passed, 1 skipped**, `tools/milestone-check.sh` exit 0.
+> Nothing is owed here. The offer at the end of this entry — pinning your static files in the
+> wheel's required-files list — still stands whenever they stop moving.
 
 `tools/milestone-check.sh` exits 1 for me right now, entirely on your lane's tests. `tests/guard`
 (5) and `tests/packaging` (74) pass, so this does not block gtm-2, and per ORCHESTRATION I am
