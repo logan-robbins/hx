@@ -6,7 +6,7 @@
   "effort": "xhigh",
   "harness": { "args": [] },
   "companion": {
-    "provider": "anthropic",
+    "provider": "claude-cli",
     "model": "claude-haiku-4-5-20251001",
     "batch_records": 20,
     "cache_ttl": "1h",
