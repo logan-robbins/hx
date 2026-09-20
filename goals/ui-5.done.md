@@ -76,23 +76,49 @@ That second one was a latent flake, not a theoretical one: three tests were asse
 ## How it was verified
 
 ```
-$ ./tools/milestone-check.sh
-one failure, outside this lane — see below
-
-$ .venv/bin/python -m pytest tests/guard
-5 passed in 2.01s
-
-$ .venv/bin/python -m pytest tests/ui
-338 passed, 1 skipped in 13.04s
+$ ./tools/milestone-check.sh ui
+== required: tests/guard
+.....                                                                    [100%]
+== required:  tests/ui
+...................s...  (338 passed, 1 skipped)                         [100%]
+MILESTONE-CHECK PASSED for ui (own paths; add --all for the advisory run)
+EXIT=0
 ```
 
-**`tools/milestone-check.sh` fails on one test that is not this lane's**, and did not block
-ui-5: `tests/packaging/test_e2e_deploy.py::test_end_to_end_deploy`, at
-`step 7. hx install --from-user-config`. That flag does not exist — `hx install` accepts only
-`--root`, `--claude`, `--repo` and `--skeleton-only`, and nothing in `src/hx/` mentions it. So
-`packaging/e2e-deploy.sh` is calling something the build lane has not shipped: a gtm↔build
-sequencing gap, reported to gtm with the cause and touched by me not at all. `tests/guard` and
-`tests/ui` both pass, which is what ui-5's done condition names.
+**A note on the check itself, because it changed under this goal.** For most of ui-5,
+`tools/milestone-check.sh` ran the whole suite and was red on two tests in
+`tests/packaging/test_e2e_deploy.py` that ui-5 did not cause. The cause, established rather
+than guessed — and my first reading of it was **wrong**, which is worth recording because I had
+already written it into `handoff/ui-to-gtm.md`:
+
+- *First diagnosis (wrong):* the script called `hx install --from-user-config`, a flag the
+  build lane had not shipped.
+- *Actually true:* `packaging/e2e-deploy.sh` was **uncommitted and modified** in the shared
+  working tree (mtime 15:41) while `tests/packaging/test_e2e_deploy.py` was committed (14:17).
+  The test asserts `"--from-user-config" in text` where `text` is *the script's own contents*,
+  and the half-rewritten script no longer had it. The second failure exited `-15` (SIGTERM) —
+  the script killed, not failing.
+
+So: the gtm lane mid-goal, not a defect and not a build-lane gap. I corrected the
+`handoff/ui-to-gtm.md` entry in place rather than leave a plausible wrong cause for someone to
+chase, and raised the structural point in `handoff/to-orchestrator.md`: we share one working
+tree and the check ran the whole suite, so one lane's uncommitted half-edit turned every other
+lane's completion gate red — while ORCHESTRATION.md says another lane's failure does not block
+you. Those read as contradictory to anything checking mechanically.
+
+**The orchestrator has since fixed it.** `tools/milestone-check.sh <lane>` now requires
+`tests/guard` and the lane's own paths and stops there; `--all` adds the other lanes as
+advisory, reported and never fatal. That is what "passes" means in every goal from now on.
+`./tools/milestone-check.sh ui` exits 0, as above. gtm committed shortly after, and
+`tests/packaging` went green on its own — which is what the diagnosis predicted.
+
+The advisory pass (`./tools/milestone-check.sh ui --all`) is green except for one build-lane
+test, `tests/core/test_packaging.py::test_upgrade_moves_the_pin_to_a_tested_version`, where
+`hx upgrade` printed `HX-UPGRADE unchanged` and returned before the restart advice the test
+expects. Reported in `handoff/ui-to-build.md`, not fixed and not waited for, which is what the
+check itself instructs.
+
+I changed nothing outside `src/hx/ui/**` and `tests/ui/**`.
 
 **One transient, chased and explained.** All 14 `test_expected_board_is_what_hx_board_actually_prints`
 cases across both packs failed in one run and passed on the next with nothing changed here. All

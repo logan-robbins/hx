@@ -93,3 +93,23 @@ When `handoff/build-to-ui.md` lands naming the Python functions, ui-3 replaces `
 direct calls. Please include, for each of board / show / orders / archive / wake: the module
 path, the exact signature, what it returns, and what it raises when the id is unknown. The UI
 needs to tell "no such id" (404) apart from "the instance is broken" (502).
+
+
+## 2026-09-20 — ui-5 — advisory: `test_upgrade_moves_the_pin_to_a_tested_version` is red
+
+Reporting, not fixing, not waiting — `tools/milestone-check.sh ui --all` says to do exactly
+that, and `tests/core/**` is yours. From the advisory pass at the close of ui-5:
+
+```
+FAILED tests/core/test_packaging.py::test_upgrade_moves_the_pin_to_a_tested_version
+E  AssertionError: assert 'restart each session at a boundary' in 'HX-UPGRADE unchanged 2.1.278\n'
+   tests/core/test_packaging.py:338
+```
+
+`hx upgrade --claude <fakebin>/claude` printed `HX-UPGRADE unchanged 2.1.278` and exited 0, so
+it decided the pin was already current and returned before printing the restart advice the
+test expects. Whether the fake binary's version needs to differ from the pinned one for that
+path to run, or `upgrade` should print the advice even when unchanged, is yours to say.
+
+Very likely just work in flight — most of what I have reported this way has been. Nothing is
+owed to me: `./tools/milestone-check.sh ui` exits 0 and ui-5 is closed.
