@@ -115,22 +115,33 @@
   "subagents": {},
   "metrics": {
     "id": "partner",
+    "stream": "partner-main",
+    "dispatched": "2026-09-20T09:15:00Z",
     "seams": [
       {
+        "seq": 1104,
         "ts": "2026-09-20T12:20:00Z",
-        "prompt_version": {
-          "base": "9c1f2ab",
-          "role": "7ae0c92"
-        },
+        "source": "clear",
+        "prompt_version": "base-3/partner-1",
         "context_tokens_before": 158220,
         "context_file_bytes": 3310,
-        "context_file_reads": 1,
-        "tool_calls_next_10_turns": {
-          "reads_of_working_set_files": 1,
-          "other": 9
+        "working_set_size": 2,
+        "next_10_turns": {
+          "turns": 10,
+          "tool_calls": 10,
+          "reads_of_context_file": 1,
+          "reads_of_working_set": 1,
+          "other": 8
         }
       }
-    ]
+    ],
+    "totals": {
+      "seams": 1,
+      "tool_calls": 10,
+      "reads_of_context_file": 1,
+      "reads_of_working_set": 1,
+      "other": 8
+    }
   },
   "pane": {
     "session": "partner",

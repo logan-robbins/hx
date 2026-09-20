@@ -496,7 +496,140 @@ function stepState(handle, state) {
   );
 }
 
-function streamCard(stream) {
+/* Spec 07.4: `reads_of_context_file` must be 1 per seam, and every read of a
+ * file already in the working set is waste. Those are the two things the table
+ * exists to show, so a seam failing either is marked. */
+function seamIsBad(next) {
+  if (!next) return false;
+  return next.reads_of_context_file !== 1 || next.reads_of_working_set > 0;
+}
+
+function seamWhy(next) {
+  if (!next) return null;
+  const reasons = [];
+  if (next.reads_of_context_file === 0) reasons.push("never read its context file");
+  else if (next.reads_of_context_file > 1) reasons.push("read the context file " + next.reads_of_context_file + " times");
+  if (next.reads_of_working_set > 0) {
+    reasons.push("re-read " + next.reads_of_working_set + " working-set file" +
+      (next.reads_of_working_set === 1 ? "" : "s"));
+  }
+  return reasons.length ? reasons.join("; ") : null;
+}
+
+const METRICS_COLUMNS = [
+  "seq", "ts", "source", "prompt", "ctx tokens before", "context file",
+  "working set", "turns", "tool calls", "ctx-file reads", "working-set reads", "other",
+];
+
+function number(value) {
+  return value === null || value === undefined ? "—" : Number(value).toLocaleString();
+}
+
+function metricsRow(seam) {
+  const next = seam.next_10_turns || {};
+  const bad = seamIsBad(next);
+  const why = seamWhy(next);
+  return el(
+    "tr",
+    { class: bad ? "bad-row" : "", title: why || null },
+    el("td", { class: "num", text: number(seam.seq) }),
+    el("td", {}, el("span", { class: "sub", text: clock(seam.ts) })),
+    el("td", {}, pill(seam.source, "none")),
+    el("td", {}, el("span", { class: "sub", text: seam.prompt_version || "—" })),
+    el("td", { class: "num", text: number(seam.context_tokens_before) }),
+    el("td", { class: "num", text: number(seam.context_file_bytes) + " B" }),
+    el("td", { class: "num", text: number(seam.working_set_size) }),
+    el("td", { class: "num" + (next.turns < 10 ? " short" : ""), text: number(next.turns) }),
+    el("td", { class: "num", text: number(next.tool_calls) }),
+    el("td", { class: "num" + (next.reads_of_context_file === 1 ? "" : " bad-cell"), text: number(next.reads_of_context_file) }),
+    el("td", { class: "num" + (next.reads_of_working_set > 0 ? " bad-cell" : ""), text: number(next.reads_of_working_set) }),
+    el("td", { class: "num", text: number(next.other) })
+  );
+}
+
+function metricsTotals(totals) {
+  if (!totals) return null;
+  return el(
+    "tr",
+    { class: "totals" },
+    el("td", { text: "totals" }),
+    el("td", { text: "" }),
+    el("td", { text: (totals.seams === 1 ? "1 seam" : totals.seams + " seams") }),
+    el("td", { text: "" }),
+    el("td", { text: "" }),
+    el("td", { text: "" }),
+    el("td", { text: "" }),
+    el("td", { text: "" }),
+    el("td", { class: "num", text: number(totals.tool_calls) }),
+    el("td", { class: "num" + (totals.reads_of_context_file === totals.seams ? "" : " bad-cell"), text: number(totals.reads_of_context_file) }),
+    el("td", { class: "num" + (totals.reads_of_working_set > 0 ? " bad-cell" : ""), text: number(totals.reads_of_working_set) }),
+    el("td", { class: "num", text: number(totals.other) })
+  );
+}
+
+function renderMetrics(metrics) {
+  const seams = (metrics && metrics.seams) || [];
+  if (!seams.length) return el("p", { class: "notyet", text: "not yet" });
+  const flagged = seams.filter((seam) => seamIsBad(seam.next_10_turns));
+  return el(
+    "article",
+    { class: "card" },
+    el("p", {
+      class: "meta",
+      text: [
+        metrics.stream || "",
+        "dispatched " + clock(metrics.dispatched),
+        seams.length + (seams.length === 1 ? " seam" : " seams"),
+      ].filter(Boolean).join("  ·  "),
+    }),
+    flagged.length
+      ? el("p", {
+          class: "metrics-warn",
+          text: flagged.length + " of " + seams.length +
+            " seams did not hand over cleanly: every seam should be exactly one read of the " +
+            "context file and no re-reads of the working set (spec 07.4).",
+        })
+      : el("p", { class: "metrics-ok", text: "every seam handed over cleanly." }),
+    el(
+      "div",
+      { class: "scroll" },
+      el(
+        "table",
+        { class: "metrics" },
+        el("thead", {}, el("tr", {}, METRICS_COLUMNS.map((name) => el("th", { text: name })))),
+        el("tbody", {}, seams.map(metricsRow)),
+        el("tfoot", {}, metricsTotals(metrics.totals))
+      )
+    )
+  );
+}
+
+/** The metrics entry for a seam record in a stream tail, by `seq`. */
+function seamMetrics(metrics, seq) {
+  const seams = (metrics && metrics.seams) || [];
+  return seams.find((seam) => seam.seq === seq) || null;
+}
+
+/* Spec 16.2: "A seam appears as a marker in the stream tail with the context
+ * file size and the tool calls of the ten turns that followed." Those counts
+ * live in the metrics document, keyed by the seam's `seq`. */
+function seamFollowUp(seam) {
+  // The tail can outrun the metrics document; say so rather than imply zero.
+  if (!seam) return el("span", { class: "followup unknown", text: "next 10 turns: not yet" });
+  const next = seam.next_10_turns || {};
+  const why = seamWhy(next);
+  return el(
+    "span",
+    { class: "followup" + (seamIsBad(next) ? " bad" : ""), title: why || null },
+    el("span", { class: "lbl", text: next.turns === 10 ? "next 10 turns: " : "next " + next.turns + " turns: " }),
+    el("span", { text: number(next.tool_calls) + " tool calls" }),
+    el("span", { class: "sub", text: " · " + number(next.reads_of_context_file) + " ctx-file" }),
+    el("span", { class: "sub", text: " · " + number(next.reads_of_working_set) + " working-set" }),
+    el("span", { class: "sub", text: " · " + number(next.other) + " other" })
+  );
+}
+
+function streamCard(stream, metrics) {
   return el(
     "article",
     { class: "card" },
@@ -527,6 +660,7 @@ function streamCard(stream) {
             record.event === "seam"
               ? el("span", { class: "sub", text: "context file " + (record.context_file_bytes || 0) + " B" })
               : null,
+            record.event === "seam" ? seamFollowUp(seamMetrics(metrics, record.seq)) : null,
             record.input ? el("pre", { class: "excerpt", text: String(record.input) }) : null,
             record.output ? el("pre", { class: "excerpt out", text: String(record.output) }) : null,
             el("div", {
@@ -637,7 +771,10 @@ function renderAgent(payload) {
       )
     ),
 
-    section("streams", orNotYet(payload.streams, (streams) => streams.map(streamCard))),
+    section(
+      "streams",
+      orNotYet(payload.streams, (streams) => streams.map((stream) => streamCard(stream, payload.metrics)))
+    ),
 
     section(
       "subagents",
@@ -667,10 +804,7 @@ function renderAgent(payload) {
       )
     ),
 
-    section(
-      "metrics",
-      orNotYet(payload.metrics, (metrics) => el("pre", { text: JSON.stringify(metrics, null, 2) }))
-    ),
+    section("metrics", renderMetrics(payload.metrics)),
 
     section(
       "pane · " + (pane.session || payload.id),

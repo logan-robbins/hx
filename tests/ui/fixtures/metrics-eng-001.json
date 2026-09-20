@@ -1,0 +1,94 @@
+{
+  "id": "eng-001",
+  "stream": "eng-001-main",
+  "dispatched": "2026-09-20T12:00:00Z",
+  "seams": [
+    {
+      "seq": 96,
+      "ts": "2026-09-20T12:07:41Z",
+      "source": "startup",
+      "prompt_version": "base-3/engineer-2",
+      "context_tokens_before": 0,
+      "context_file_bytes": 1840,
+      "working_set_size": 0,
+      "next_10_turns": {
+        "turns": 10,
+        "tool_calls": 12,
+        "reads_of_context_file": 1,
+        "reads_of_working_set": 0,
+        "other": 11
+      }
+    },
+    {
+      "seq": 203,
+      "ts": "2026-09-20T12:24:02Z",
+      "source": "clear",
+      "prompt_version": "base-3/engineer-2",
+      "context_tokens_before": 151902,
+      "context_file_bytes": 2184,
+      "working_set_size": 4,
+      "next_10_turns": {
+        "turns": 10,
+        "tool_calls": 17,
+        "reads_of_context_file": 1,
+        "reads_of_working_set": 3,
+        "other": 13
+      }
+    },
+    {
+      "seq": 318,
+      "ts": "2026-09-20T12:38:55Z",
+      "source": "compact",
+      "prompt_version": "base-3/engineer-2",
+      "context_tokens_before": 168430,
+      "context_file_bytes": 3960,
+      "working_set_size": 7,
+      "next_10_turns": {
+        "turns": 10,
+        "tool_calls": 9,
+        "reads_of_context_file": 0,
+        "reads_of_working_set": 0,
+        "other": 9
+      }
+    },
+    {
+      "seq": 401,
+      "ts": "2026-09-20T12:46:12Z",
+      "source": "restart",
+      "prompt_version": "base-4/engineer-2",
+      "context_tokens_before": 143221,
+      "context_file_bytes": 4102,
+      "working_set_size": 8,
+      "next_10_turns": {
+        "turns": 10,
+        "tool_calls": 21,
+        "reads_of_context_file": 2,
+        "reads_of_working_set": 1,
+        "other": 18
+      }
+    },
+    {
+      "seq": 412,
+      "ts": "2026-09-20T12:50:00Z",
+      "source": "resume",
+      "prompt_version": "base-4/engineer-2",
+      "context_tokens_before": 48211,
+      "context_file_bytes": 2184,
+      "working_set_size": 9,
+      "next_10_turns": {
+        "turns": 3,
+        "tool_calls": 5,
+        "reads_of_context_file": 1,
+        "reads_of_working_set": 0,
+        "other": 4
+      }
+    }
+  ],
+  "totals": {
+    "seams": 5,
+    "tool_calls": 64,
+    "reads_of_context_file": 5,
+    "reads_of_working_set": 4,
+    "other": 55
+  }
+}

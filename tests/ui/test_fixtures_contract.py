@@ -235,3 +235,93 @@ def test_the_archive_fixture_reuses_the_contract_entry_shape():
         for entry in item["archive"]:
             assert set(entry) == {"ts", "path", "digest"}
             assert entry["path"] == f"archive/{item['id']}/{entry['ts']}"
+
+
+# -- hx metrics --json (CONTRACTS.md) ------------------------------------
+
+SOURCES = {"clear", "compact", "restart", "resume", "startup"}
+SEAM_KEYS = {
+    "seq", "ts", "source", "prompt_version", "context_tokens_before",
+    "context_file_bytes", "working_set_size", "next_10_turns",
+}
+NEXT_KEYS = {"turns", "tool_calls", "reads_of_context_file", "reads_of_working_set", "other"}
+TOTALS_KEYS = {"seams", "tool_calls", "reads_of_context_file", "reads_of_working_set", "other"}
+
+
+@pytest.fixture(scope="module")
+def metrics():
+    return load("metrics-eng-001.json")
+
+
+def test_the_metrics_document_has_the_contract_shape(metrics):
+    assert set(metrics) == {"id", "stream", "dispatched", "seams", "totals"}
+    assert ID_RE.match(metrics["id"])
+    assert metrics["stream"] == f"{metrics['id']}-main", "one entry per seam in the main stream"
+    assert TS_RE.match(metrics["dispatched"])
+    assert set(metrics["totals"]) == TOTALS_KEYS
+
+
+def test_every_seam_has_the_contract_shape(metrics):
+    for seam in metrics["seams"]:
+        assert set(seam) == SEAM_KEYS, seam["seq"]
+        assert set(seam["next_10_turns"]) == NEXT_KEYS
+        assert seam["source"] in SOURCES
+        assert isinstance(seam["seq"], int)
+        assert isinstance(seam["context_tokens_before"], int)
+        assert isinstance(seam["context_file_bytes"], int)
+        assert isinstance(seam["working_set_size"], int)
+        assert 0 < seam["next_10_turns"]["turns"] <= 10, "fewer than 10 when the stream ended sooner"
+
+
+def test_seams_are_in_stream_order(metrics):
+    seqs = [seam["seq"] for seam in metrics["seams"]]
+    assert seqs == sorted(seqs)
+    assert len(set(seqs)) == len(seqs), "one entry per seam record"
+
+
+def test_each_seams_tool_calls_add_up(metrics):
+    for seam in metrics["seams"]:
+        next_10 = seam["next_10_turns"]
+        assert next_10["tool_calls"] == (
+            next_10["reads_of_context_file"] + next_10["reads_of_working_set"] + next_10["other"]
+        ), seam["seq"]
+
+
+def test_the_totals_are_the_sum_of_the_seams(metrics):
+    assert metrics["totals"]["seams"] == len(metrics["seams"])
+    for key in TOTALS_KEYS - {"seams"}:
+        assert metrics["totals"][key] == sum(s["next_10_turns"][key] for s in metrics["seams"]), key
+
+
+def test_the_fixture_covers_every_case_the_table_marks(metrics):
+    """A clean seam, a missed read, a double read, working-set waste, a short window."""
+    windows = [seam["next_10_turns"] for seam in metrics["seams"]]
+    assert any(w["reads_of_context_file"] == 1 and w["reads_of_working_set"] == 0 for w in windows)
+    assert any(w["reads_of_context_file"] == 0 for w in windows)
+    assert any(w["reads_of_context_file"] > 1 for w in windows)
+    assert any(w["reads_of_working_set"] > 0 for w in windows)
+    assert any(w["turns"] < 10 for w in windows)
+    assert {seam["source"] for seam in metrics["seams"]} == SOURCES, "every source form"
+
+
+def test_show_carries_exactly_the_metrics_document(metrics):
+    """CONTRACTS.md: "the `metrics` object of `hx show --json` is exactly this document"."""
+    assert load("show-eng-001.json")["metrics"] == metrics
+
+
+def test_the_partner_show_metrics_are_a_valid_document():
+    partner = load("show-partner.json")["metrics"]
+    assert set(partner) == {"id", "stream", "dispatched", "seams", "totals"}
+    assert partner["id"] == "partner"
+    assert partner["stream"] == "partner-main"
+    for seam in partner["seams"]:
+        assert set(seam) == SEAM_KEYS
+        assert seam["source"] in SOURCES
+
+
+def test_a_seam_in_the_stream_tail_has_a_metrics_entry(metrics):
+    """Spec 16.2 renders the tail marker from the metrics document, keyed by seq."""
+    main = next(s for s in load("show-eng-001.json")["streams"] if s["handle"] == "eng-001-main")
+    tail_seams = [record["seq"] for record in main["tail"] if record["event"] == "seam"]
+    assert tail_seams, "the fixture has a seam in the tail to render"
+    assert set(tail_seams) <= {seam["seq"] for seam in metrics["seams"]}

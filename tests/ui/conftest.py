@@ -167,6 +167,18 @@ def scratch_ui(scratch_tree):
 
 HX = Path(sys.executable).parent / "hx"
 
+ORDER = """## Order
+Stand in for a dispatched order while the ui lane runs against a real instance.
+
+## Definition of done
+- The board renders this item.
+
+### Checks
+```bash
+true
+```
+"""
+
 WORK_ITEM = """---
 id: {id}
 pod: {pod}
@@ -231,11 +243,21 @@ def build_instance(root: Path) -> Path:
         (pod_dir / f"{agent_id}-working.md").write_text(
             WORK_ITEM.format(id=agent_id, pod=pod, after=after), encoding="utf-8"
         )
+    # Orders, and the tasks.json records they produced. `partner`'s file still
+    # matches what was dispatched; `eng-001`'s was edited afterwards, so the
+    # Orders view has both `file_matches_record` cases against real data.
+    orders = root / "orders"
+    orders.mkdir(parents=True, exist_ok=True)
+    (orders / "partner.md").write_text(ORDER, encoding="utf-8")
+    (orders / "eng-001.md").write_text(
+        ORDER + "\n## Order addendum, typed into the file after dispatch\nRescope to the board only.\n",
+        encoding="utf-8",
+    )
     (root / "tasks.json").write_text(
         json.dumps(
             {
                 agent_id: {
-                    "order": "## Order\nStand in.\n",
+                    "order": ORDER,
                     "after": [],
                     "addenda": [],
                     "outcome": None,

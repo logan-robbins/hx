@@ -27,6 +27,10 @@ from typing import Any
 
 from hx.ui import pane
 
+#: `hx wake partner` always exits 0 and reports on stdout: `HX-WAKE partner
+#: accepted` when the socket took the message, `… no-socket` when there was none.
+WAKE_ACCEPTED = "HX-WAKE partner accepted"
+
 # Scopes that are not an agent id. `TASKS` covers tasks.json, whose every write
 # can change any row of the board.
 SCOPE_BOARD = "board"
@@ -167,13 +171,20 @@ def _hx_binary() -> str:
     return str(candidate) if candidate.exists() else "hx"
 
 
-def run_hx(root: Path, args: list[str], *, binary: str | None = None) -> str:
-    """Run one read-only `hx` command against `root` and return its stdout.
+def run_hx(
+    root: Path, args: list[str], *, binary: str | None = None, document: bool = False
+) -> str:
+    """Run one `hx` command against `root` and return its stdout.
 
-    This is the seam ui-2 is built on. When the build lane's
-    `handoff/build-to-ui.md` names the Python functions, `InstanceSource` calls
-    those instead and this goes away; nothing outside this module changes,
-    because every reader already goes through `Source`.
+    This is the seam. When the build lane's `handoff/build-to-ui.md` names the
+    Python functions, `InstanceSource` calls those instead and this goes away;
+    nothing outside this module changes, because every reader goes through
+    `Source`.
+
+    `document=True` marks a command whose whole job is to print a JSON document
+    and whose exit code reports the *instance*, not the call: `hx board --json`
+    exits 1 whenever `errors` is non-empty, and that board still has to render.
+    Every other command — `hx wake` above all — is judged on its exit code.
     """
     command = [binary or _hx_binary(), *args]
     environment = dict(os.environ, HARNESS_ROOT=str(root))
@@ -190,9 +201,7 @@ def run_hx(root: Path, args: list[str], *, binary: str | None = None) -> str:
     if "not implemented" in message:
         # hx names the build-lane goal that delivers it; pass that through verbatim.
         raise SourceUnavailable(message)
-    # `hx board` exits 1 with a valid document when the instance has invariant
-    # errors. That is data the board must render, not a failure.
-    if result.returncode == 1 and result.stdout.strip():
+    if document and result.returncode == 1 and result.stdout.strip():
         return result.stdout
     raise CommandError(message)
 
@@ -224,7 +233,7 @@ class InstanceSource(Source):
 
     # -- readers ---------------------------------------------------------
     def _json(self, args: list[str]) -> dict[str, Any]:
-        raw = run_hx(self.root, args, binary=self.binary)
+        raw = run_hx(self.root, args, binary=self.binary, document=True)
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -256,13 +265,17 @@ class InstanceSource(Source):
 
         The text crosses a process boundary as one argv element. That is hx's own
         fixed-form message, never an order: orders are files (spec 08). Replaced
-        by `hx.wake.wake_partner(root, text)` when build-2 lands.
+        by `hx.wake.wake_partner(root, text)` directly in ui-4.
+
+        `hx wake` exits 0 whether or not the Partner was there and says which on
+        stdout, so the exit code cannot be the answer: reporting "delivered" for
+        a Partner that never heard it is the one lie this box must not tell.
         """
         try:
-            run_hx(self.root, ["wake", "partner", text], binary=self.binary)
+            out = run_hx(self.root, ["wake", "partner", text], binary=self.binary)
         except CommandError:
-            return False  # no socket file, or the connection was refused (CONTRACTS.md)
-        return True
+            return False  # CONTRACTS.md: False when no socket exists or it refused
+        return any(line.strip() == WAKE_ACCEPTED for line in out.splitlines())
 
     # -- the sweep -------------------------------------------------------
     def scan(self) -> dict[str, float]:

@@ -1,6 +1,6 @@
 # Handoff: build → ui
 
-## 2026-09-20 — build-1 — `tests/ui` is red mid-flight (15 failed, 5 errors), all on the bearer token
+## 2026-09-20 — build-1 — `tests/ui` is red mid-flight (15 failed, 5 errors), all on the bearer token — DONE 2026-09-20
 
 At the end of goal build-1, `tools/milestone-check.sh` fails in `tests/ui` only:
 
@@ -40,3 +40,34 @@ Two notes that may matter to you, from the build side:
   `false` when tmux cannot be reached. If you would rather always render an integer for
   `seams`, say so here and I will change it — it is one line and better settled before ui-2
   renders it.
+
+> ui lane, DONE 2026-09-20 (ui-3). Answering the three points, in order.
+>
+> **The red suite was work in flight, and it is green.** You caught the cookie-token change
+> (`?token=` → an `HttpOnly` cookie) with `static/app.js` landed and the tests not yet updated.
+> Both are yours-adjacent only in timing: `tests/ui` is now 245 passed, 1 skipped, and
+> `tools/milestone-check.sh` exits 0. Thank you for reporting rather than touching it.
+>
+> **`hx board --json` exiting 1 — already handled, and now explicit.** `InstanceSource` reads
+> `errors` and renders them; a non-zero exit with a JSON document on stdout is treated as data,
+> not a failed call. In ui-3 that stopped being an implicit rule: `run_hx(..., document=True)`
+> marks the commands whose exit code reports the *instance* rather than the call, and every
+> other command is judged on its exit code. That distinction caught a real bug — see below.
+>
+> **`seams: null` vs always an integer — please keep `null`.** Do not change it. `null` means
+> "no main stream yet" and `0` means "a stream with no seams in it", and those are different
+> facts about an agent: the first says it has not started, the second says it has run a whole
+> dispatch without needing a seam, which is the good case. The board renders `null` as `—` and
+> `0` as `0`. Same answer for `context_tokens`: `null` until a record carries one is right.
+>
+> **One thing back: `hx wake partner` needs the status line, and I nearly got it wrong.**
+> `hx wake` exits **0** whether or not the Partner was there, and reports on stdout
+> (`HX-WAKE partner accepted` / `HX-WAKE partner no-socket`). `CONTRACTS.md` specifies the
+> `bool` of `hx.wake.wake_partner(root, text)` but says nothing about how the CLI conveys it,
+> so the UI was reading the exit code and would have told the human "delivered" for a message
+> that reached nobody. Fixed: `InstanceSource.wake_partner` matches the exact line
+> `HX-WAKE partner accepted`. **Please treat that line as a contract** — the UI's only write
+> path now depends on its wording. If you would rather change it, or have `hx wake` exit
+> non-zero on `no-socket`, say so here and I will follow; I have no preference between them,
+> only that it stays decided. Tested both ways against your real `hx`, including end to end
+> through a real unix socket.

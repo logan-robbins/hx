@@ -24,16 +24,23 @@ STATIC = REPO / "src" / "hx" / "ui" / "static"
 node = pytest.mark.skipif(shutil.which("node") is None, reason="no node on PATH")
 
 
-@pytest.fixture(scope="module")
-def rendered():
+def render(overrides=None, tmp_path=None):
+    """Run the real `static/app.js` under node and return what each view produced."""
     if shutil.which("node") is None:
         pytest.skip("no node on PATH")
-    result = subprocess.run(
-        ["node", str(RENDER), str(FIXTURES), str(STATIC)],
-        capture_output=True, text=True, check=False, cwd=REPO,
-    )
+    argv = ["node", str(RENDER), str(FIXTURES), str(STATIC)]
+    if overrides is not None:
+        path = tmp_path / "overrides.json"
+        path.write_text(json.dumps(overrides), encoding="utf-8")
+        argv.append(str(path))
+    result = subprocess.run(argv, capture_output=True, text=True, check=False, cwd=REPO)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
+
+
+@pytest.fixture(scope="module")
+def rendered():
+    return render()
 
 
 @node
@@ -244,7 +251,7 @@ def test_the_agent_view_renders_subagents_and_metrics_and_the_pane(rendered):
     text = rendered["views"]["agent"]["text"]
     for claude_id, handle in show["subagents"].items():
         assert claude_id in text and handle in text
-    assert "tool_calls_next_10_turns" in text, "hx metrics is rendered"
+    assert rendered["views"]["agent"]["metrics"] is not None, "hx metrics is rendered"
     for line in show["pane"]["lines"]:
         assert line in text
 
@@ -294,3 +301,245 @@ def test_the_chat_box_posts_the_trimmed_text_and_nothing_else(rendered):
 def test_the_chat_box_reports_delivery_and_clears(rendered):
     assert "delivered" in rendered["wakeStatus"]
     assert rendered["wakeCleared"] is True
+
+
+# -- metrics (spec 07.4, CONTRACTS.md `hx metrics --json`) ---------------
+
+def metrics_document():
+    return json.loads((FIXTURES / "metrics-eng-001.json").read_text())
+
+
+def test_the_metrics_table_has_a_column_per_contract_field(rendered):
+    table = rendered["views"]["agent"]["metrics"]
+    assert table is not None, "metrics render as a table, not as raw JSON"
+    assert table["headers"] == [
+        "seq", "ts", "source", "prompt", "ctx tokens before", "context file",
+        "working set", "turns", "tool calls", "ctx-file reads", "working-set reads", "other",
+    ]
+
+
+def test_one_row_per_seam_in_order(rendered):
+    seams = metrics_document()["seams"]
+    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    assert len(rows) == len(seams)
+    for row, seam in zip(rows, seams):
+        cells = [cell["text"] for cell in row["cells"]]
+        assert cells[0] == str(seam["seq"])
+        assert cells[2] == seam["source"]
+        assert cells[3] == seam["prompt_version"]
+        assert cells[4] == f"{seam['context_tokens_before']:,}"
+        assert cells[5] == f"{seam['context_file_bytes']:,} B"
+        assert cells[6] == str(seam["working_set_size"])
+        next_10 = seam["next_10_turns"]
+        assert cells[7] == str(next_10["turns"])
+        assert cells[8] == str(next_10["tool_calls"])
+        assert cells[9] == str(next_10["reads_of_context_file"])
+        assert cells[10] == str(next_10["reads_of_working_set"])
+        assert cells[11] == str(next_10["other"])
+
+
+def test_a_seam_is_marked_when_it_did_not_hand_over_cleanly(rendered):
+    """Red on `reads_of_context_file != 1` or any `reads_of_working_set`."""
+    seams = metrics_document()["seams"]
+    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    for row, seam in zip(rows, seams):
+        next_10 = seam["next_10_turns"]
+        bad = next_10["reads_of_context_file"] != 1 or next_10["reads_of_working_set"] > 0
+        assert ("bad-row" in row["class"]) is bad, seam["seq"]
+    assert sum(1 for row in rows if "bad-row" in row["class"]) == 3, "the fixture has three"
+
+
+@pytest.mark.parametrize(
+    "seq, offending, why",
+    [
+        (203, ["3"], "re-read 3 working-set files"),
+        (318, ["0"], "never read its context file"),
+        (401, ["2", "1"], "read the context file 2 times; re-read 1 working-set file"),
+    ],
+)
+def test_the_offending_number_is_marked_and_explained(rendered, seq, offending, why):
+    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    row = next(r for r in rows if r["cells"][0]["text"] == str(seq))
+    assert [c["text"] for c in row["cells"] if "bad-cell" in c["class"]] == offending
+    assert row["title"] == why, "hovering says why, so the colour is not the only signal"
+
+
+def test_a_clean_seam_marks_nothing(rendered):
+    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    for seq in ("96", "412"):
+        row = next(r for r in rows if r["cells"][0]["text"] == seq)
+        assert row["class"] == ""
+        assert row["title"] is None
+        assert not [c for c in row["cells"] if "bad-cell" in c["class"]]
+
+
+def test_a_stream_that_ended_early_shows_its_real_turn_count(rendered):
+    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    row = next(r for r in rows if r["cells"][0]["text"] == "412")
+    turns = row["cells"][7]
+    assert turns["text"] == "3", "next_10_turns.turns is fewer than 10 when the stream ended sooner"
+    assert "short" in turns["class"], "and is marked as a partial window"
+
+
+def test_the_totals_row_matches_the_contract_totals(rendered):
+    totals = metrics_document()["totals"]
+    cells = [cell["text"] for cell in rendered["views"]["agent"]["metrics"]["totals"]["cells"]]
+    assert cells[0] == "totals"
+    assert cells[2] == f"{totals['seams']} seams"
+    assert cells[8] == str(totals["tool_calls"])
+    assert cells[9] == str(totals["reads_of_context_file"])
+    assert cells[10] == str(totals["reads_of_working_set"])
+    assert cells[11] == str(totals["other"])
+
+
+def test_the_totals_row_marks_the_fleet_level_waste(rendered):
+    """One context-file read per seam is the target; any working-set read is waste."""
+    totals = rendered["views"]["agent"]["metrics"]["totals"]
+    marked = [cell["text"] for cell in totals["cells"] if "bad-cell" in cell["class"]]
+    assert marked == ["4"], "5 ctx-file reads over 5 seams is right; 4 working-set reads is not"
+
+
+def test_the_metrics_section_says_how_many_seams_were_dirty(rendered):
+    warn = rendered["views"]["agent"]["warn"]
+    assert len(warn) == 1
+    assert warn[0].startswith("3 of 5 seams did not hand over cleanly")
+    assert not rendered["views"]["agent"]["ok"]
+
+
+def test_a_clean_run_says_so_instead(tmp_path):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    for seam in show["metrics"]["seams"]:
+        seam["next_10_turns"]["reads_of_context_file"] = 1
+        seam["next_10_turns"]["reads_of_working_set"] = 0
+    show["metrics"]["totals"]["reads_of_context_file"] = len(show["metrics"]["seams"])
+    show["metrics"]["totals"]["reads_of_working_set"] = 0
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    assert agent["ok"] == ["every seam handed over cleanly."]
+    assert not agent["warn"]
+    assert not [row for row in agent["metrics"]["rows"] if row["class"]]
+    assert not [c for c in agent["metrics"]["totals"]["cells"] if "bad-cell" in c["class"]]
+
+
+def test_an_agent_with_no_seams_yet_reads_not_yet(tmp_path):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["metrics"] = {"id": "eng-001", "stream": "eng-001-main", "dispatched": None,
+                       "seams": [], "totals": {"seams": 0, "tool_calls": 0,
+                                               "reads_of_context_file": 0,
+                                               "reads_of_working_set": 0, "other": 0}}
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    assert agent["metrics"] is None
+    assert agent["notYet"] > 0
+
+
+# -- seams in the stream tail (spec 16.2) --------------------------------
+
+def test_a_seam_record_shows_the_turns_that_followed_it(rendered):
+    """Spec 16.2: the marker carries the context file size and the ten turns after."""
+    followups = rendered["views"]["agent"]["followups"]
+    assert len(followups) == 1, "one seam record in the fixture's tails"
+    text = followups[0]["text"]
+    seam = next(s for s in metrics_document()["seams"] if s["seq"] == 412)
+    next_10 = seam["next_10_turns"]
+    assert text.startswith("next 3 turns: "), "the real window, not a hardcoded 10"
+    assert f"{next_10['tool_calls']} tool calls" in text
+    assert f"{next_10['reads_of_context_file']} ctx-file" in text
+    assert f"{next_10['reads_of_working_set']} working-set" in text
+    assert f"{next_10['other']} other" in text
+    assert "context file 2184 B" in rendered["views"]["agent"]["text"]
+
+
+def test_a_clean_seam_marker_is_not_marked(rendered):
+    assert rendered["views"]["agent"]["followups"][0]["class"] == "followup"
+    assert rendered["views"]["agent"]["followups"][0]["title"] is None
+
+
+def test_a_dirty_seam_marker_is_marked_and_explained(tmp_path):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    seam = next(s for s in show["metrics"]["seams"] if s["seq"] == 412)
+    seam["next_10_turns"]["reads_of_working_set"] = 2
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    followup = agent["followups"][0]
+    assert "bad" in followup["class"]
+    assert followup["title"] == "re-read 2 working-set files"
+    assert "2 working-set" in followup["text"]
+
+
+def test_a_seam_with_no_metrics_entry_says_not_yet(tmp_path):
+    """The tail can outrun the metrics document; it must not render a wrong number."""
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["metrics"]["seams"] = [s for s in show["metrics"]["seams"] if s["seq"] != 412]
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    assert agent["followups"][0]["text"] == "next 10 turns: not yet"
+    assert "context file 2184 B" in agent["text"], "the size still comes from the record itself"
+
+
+def test_records_that_are_not_seams_keep_their_rendering(rendered):
+    """Only the seam record gained anything; the rest of the tail is unchanged."""
+    text = rendered["views"]["agent"]["text"]
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    main = next(s for s in show["streams"] if s["handle"] == "eng-001-main")
+    for record in main["tail"]:
+        if record["event"] == "seam":
+            continue
+        assert record["tool"] in text
+        assert str(record["input"]) in text
+        assert f"exit {record['exit']}" in text
+    assert len(rendered["views"]["agent"]["followups"]) == 1
+
+
+# -- the views against a real instance -----------------------------------
+
+def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
+    """Fixtures are hand-written; a real instance is full of nulls and empties.
+
+    `hx show --json` on a fresh instance returns `metrics: null`, no streams, no
+    step state and an empty context file, which is exactly the shape the
+    hand-written fixtures do not have. The views have to survive it.
+    """
+    from hx.ui.data import InstanceSource
+
+    source = InstanceSource(instance_root)
+    overrides = {
+        "/api/board": source.board(),
+        "/api/orders": source.orders(),
+        "/api/archive": source.archive(),
+        "/api/show/partner": source.show("partner"),
+        "/api/show/eng-001": source.show("eng-001"),
+    }
+    rendered = render(overrides, tmp_path)
+
+    assert rendered["banner"] is None, "no view failed"
+
+    agent = rendered["views"]["agent"]
+    assert agent["headings"] == [
+        "eng-001 · work item", "step state", "context file", "streams",
+        "subagents", "metrics", "pane · eng-001",
+    ]
+    assert agent["metrics"] is None, "a fresh instance has no seams yet"
+    assert agent["notYet"] > 0, "and the empty sections say so"
+    assert not agent["warn"] and not agent["ok"], "no metrics verdict without metrics"
+
+    partner = rendered["views"]["partner"]
+    assert "PARTNER.md" in partner["headings"]
+    assert "chat" in partner["headings"]
+    assert "tmux attach -t partner" in partner["text"]
+    assert len(partner["rows"]) == len(overrides["/api/board"]["items"])
+
+    board = rendered["views"]["board"]
+    assert [row["cells"][0].split("pods/")[0] for row in board["rows"]] == ["partner", "eng-001"]
+    assert board["errorBlocks"], "a scratch instance has invariant errors and the board shows them"
+
+
+def test_the_orders_view_shows_a_real_file_edited_since_dispatch(instance_root, tmp_path):
+    """The badge, against a real `orders/<id>.md` that no longer matches tasks.json."""
+    from hx.ui.data import InstanceSource
+
+    source = InstanceSource(instance_root)
+    orders = source.orders()
+    by_id = {order["id"]: order for order in orders["orders"]}
+    assert by_id["partner"]["file_matches_record"] is True
+    assert by_id["eng-001"]["file_matches_record"] is False
+
+    rendered = render({"/api/board": source.board(), "/api/orders": orders}, tmp_path)
+    labels = [pill["text"] for pill in rendered["views"]["orders"]["pills"]]
+    assert labels.count("file edited since dispatch") == 1, "exactly the one that drifted"

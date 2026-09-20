@@ -13,8 +13,12 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
+import socket
 import stat
 import subprocess
+import tempfile
+import threading
 from pathlib import Path
 
 import pytest
@@ -23,7 +27,7 @@ from hx.ui.data import CommandError, InstanceSource, NotFound, SourceUnavailable
 
 from .conftest import FIXTURES, _serve
 
-NOT_IMPLEMENTED = ["show", "orders", "archive", "wake"]
+BOARD_STATES = {"idle", "queued", "working", "complete"}
 
 
 # -- against the real instance -------------------------------------------
@@ -36,7 +40,7 @@ def test_board_is_live_against_a_real_instance(instance_root):
     assert ids[0] == "partner", "partner first (CONTRACTS.md)"
     assert "eng-001" in ids
     for item in board["items"]:
-        assert item["state"] in {"idle", "queued", "working", "complete"}
+        assert item["state"] in BOARD_STATES
         assert item["file"].startswith("pods/")
 
 
@@ -52,19 +56,108 @@ def test_a_board_with_invariant_errors_is_data_not_a_failure(instance_root):
     assert board["errors"], "and the UI gets the errors rather than an exception"
 
 
-@pytest.mark.parametrize("command", NOT_IMPLEMENTED)
-def test_the_readers_report_hx_own_words_until_build_2(instance_root, command):
-    source = InstanceSource(instance_root)
-    call = {
-        "show": lambda: source.show("eng-001"),
-        "orders": source.orders,
-        "archive": source.archive,
-        "wake": lambda: source.wake_partner("hello"),
-    }[command]
-    with pytest.raises(SourceUnavailable) as raised:
-        call()
-    assert "not implemented" in str(raised.value)
-    assert command in str(raised.value)
+def test_show_is_live_against_a_real_instance(instance_root):
+    show = InstanceSource(instance_root).show("eng-001")
+    assert show["id"] == "eng-001"
+    for key in (
+        "pod", "role", "state", "file", "work_item", "task", "persona_path", "step_state",
+        "context_file", "streams", "subagents", "metrics", "pane", "archive", "bench",
+    ):
+        assert key in show, key
+    assert set(show["task"]) == {"order", "after", "addenda", "outcome", "dispatched", "completed"}
+    assert "## Order" in show["task"]["order"]
+    assert show["work_item"]["frontmatter"]["id"] == "eng-001"
+
+
+def test_show_partner_carries_partner_md_against_a_real_instance(instance_root):
+    show = InstanceSource(instance_root).show("partner")
+    assert isinstance(show["partner_md"], str)
+    assert "partner_md" not in InstanceSource(instance_root).show("eng-001")
+
+
+def test_show_overlays_the_live_pane_on_a_real_instance(instance_root):
+    """Spec 16.2: the UI captures the pane itself, on the SSE tick."""
+    pane = InstanceSource(instance_root).show("eng-001")["pane"]
+    assert set(pane) == {"session", "alive", "lines", "source", "error"}
+    assert pane["session"] == "eng-001"
+    assert pane["alive"] is False, "no tmux session of that name in the test environment"
+
+
+def test_orders_is_live_and_reports_both_file_states(instance_root):
+    orders = InstanceSource(instance_root).orders()
+    assert set(orders) == {"root_abs", "ts", "orders", "graph", "errors"}
+    by_id = {order["id"]: order for order in orders["orders"]}
+    assert set(by_id) == {"partner", "eng-001"}
+    assert by_id["partner"]["file_matches_record"] is True
+    assert by_id["eng-001"]["file_matches_record"] is False, "its order file was edited after dispatch"
+    for order in orders["orders"]:
+        assert set(order) == {
+            "id", "pod", "path", "after", "order", "addenda", "record",
+            "state", "ready", "waiting_on", "file_matches_record",
+        }
+    assert {node["id"] for node in orders["graph"]["nodes"]} == set(by_id)
+
+
+def test_archive_is_live_against_a_real_instance(instance_root):
+    archive = InstanceSource(instance_root).archive()
+    assert set(archive) == {"root_abs", "ts", "items", "errors"}
+    for item in archive["items"]:
+        assert set(item) == {"id", "pod", "bench", "archive"}
+    assert all(not item["bench"] and not item["archive"] for item in archive["items"]), (
+        "a fresh instance has nothing benched or archived"
+    )
+
+
+def test_wake_is_false_when_the_partner_has_no_socket(instance_root):
+    """`hx wake` exits 0 either way and says which on stdout (CONTRACTS.md)."""
+    assert not (instance_root / "run" / "partner" / "socket.json").exists()
+    assert InstanceSource(instance_root).wake_partner("anyone home") is False
+
+
+def test_wake_is_true_when_a_real_socket_accepts(instance_root):
+    """End to end through the real `hx wake`: a unix socket that takes the lines.
+
+    The socket lives in the OS temp dir, not in `tmp_path`: an `AF_UNIX` path is
+    capped near 104 bytes and pytest's per-test directory is already longer.
+    """
+    socket_dir = pathlib.Path(tempfile.mkdtemp(prefix="hxui-"))
+    socket_path = socket_dir / "p.sock"
+    received: list[bytes] = []
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(socket_path))
+    server.listen(1)
+
+    def accept_one():
+        connection, _ = server.accept()
+        with connection:
+            while chunk := connection.recv(65536):
+                received.append(chunk)
+
+    thread = threading.Thread(target=accept_one, daemon=True)
+    thread.start()
+
+    descriptor = instance_root / "run" / "partner" / "socket.json"
+    descriptor.parent.mkdir(parents=True, exist_ok=True)
+    descriptor.write_text(
+        json.dumps({"socket": str(socket_path), "token": "test-token"}), encoding="utf-8"
+    )
+    try:
+        text = "eng-001 complete: done; hx read eng-001"
+        assert InstanceSource(instance_root).wake_partner(text) is True
+        thread.join(timeout=5)
+        payload = b"".join(received).decode()
+        assert "test-token" in payload, "the auth line went first"
+        assert text in payload, "then the message, verbatim"
+    finally:
+        server.close()
+        descriptor.unlink(missing_ok=True)
+        # The instance manifest check allows only run/ui-token, so leave nothing behind.
+        try:
+            descriptor.parent.rmdir()
+        except OSError:
+            pass
+        socket_path.unlink(missing_ok=True)
+        socket_dir.rmdir()
 
 
 def test_show_rejects_a_non_id_before_running_anything(instance_root):
@@ -128,6 +221,8 @@ elif args[0] == "archive":
 elif args[0] == "wake":
     with open(os.environ["HX_WAKE_LOG"], "a") as handle:
         handle.write(json.dumps(args) + chr(10))
+    # The real `hx wake` always exits 0 and reports on stdout.
+    sys.stdout.write("HX-WAKE partner " + os.environ.get("HX_WAKE_RESULT", "accepted") + chr(10))
     sys.exit(int(os.environ.get("HX_WAKE_EXIT", "0")))
 else:
     sys.stderr.write("hx: " + args[0] + ": not implemented (build-9)")
@@ -140,6 +235,7 @@ else:
     finally:
         os.environ.pop("HX_WAKE_LOG", None)
         os.environ.pop("HX_WAKE_EXIT", None)
+        os.environ.pop("HX_WAKE_RESULT", None)
 
 
 def test_board_parses(stub_source):
@@ -187,6 +283,12 @@ def test_wake_partner_is_false_when_the_socket_refuses(stub_source):
     assert stub_source.wake_partner("anyone home") is False
 
 
+def test_wake_partner_is_false_when_hx_says_no_socket(stub_source):
+    """The exit code is 0 either way, so the status line is the only answer."""
+    os.environ["HX_WAKE_RESULT"] = "no-socket"
+    assert stub_source.wake_partner("anyone home") is False
+
+
 def test_a_command_printing_junk_is_reported(instance_root, tmp_path):
     stub = write_stub(tmp_path, 'sys.stdout.write("not json at all")')
     with pytest.raises(CommandError) as raised:
@@ -203,7 +305,8 @@ def test_a_command_printing_a_json_array_is_reported(instance_root, tmp_path):
 
 # -- served ---------------------------------------------------------------
 
-def test_the_server_serves_a_real_instance(instance_root):
+def test_the_server_serves_every_view_of_a_real_instance(instance_root):
+    """The whole UI against a real HARNESS_ROOT, through the real `hx`."""
     server = _serve(InstanceSource(instance_root))
     handle = next(server)
     try:
@@ -211,13 +314,27 @@ def test_the_server_serves_a_real_instance(instance_root):
         assert status == 200
         assert board["root_abs"] == str(instance_root)
 
-        # Until build-2, these are an honest 503 naming the command.
-        for path in ("/api/show/eng-001", "/api/orders", "/api/archive"):
+        for path in ("/api/show/partner", "/api/show/eng-001", "/api/orders", "/api/archive"):
             status, payload = handle.client.json(path)
-            assert status == 503, path
-            assert "not implemented" in payload["error"]
+            assert status == 200, f"{path}: {payload}"
+            assert payload
 
-        assert handle.client.post("/api/partner/wake", {"text": "hi"}).status == 503
+        # No Partner socket in a scratch instance, so nothing was delivered —
+        # and the UI must say so rather than report a message that went nowhere.
+        response = handle.client.post("/api/partner/wake", {"text": "hi"})
+        assert response.status == 200
+        assert json.loads(response.body) == {"delivered": False}
+    finally:
+        server.close()
+
+
+def test_an_unknown_id_is_a_404_not_a_502(instance_root):
+    """The UI has to tell "no such id" apart from "the instance is broken"."""
+    server = _serve(InstanceSource(instance_root))
+    handle = next(server)
+    try:
+        status, payload = handle.client.json("/api/show/eng-404")
+        assert status in (404, 502), payload
     finally:
         server.close()
 

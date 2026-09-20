@@ -1,7 +1,11 @@
 /* Render every view of src/hx/ui/static/app.js against tests/ui/fixtures and
  * print what came out as JSON, for tests/ui/test_views_js.py to assert on.
  *
- *   node tests/ui/js/render.js <fixtures dir> <static dir>
+ *   node tests/ui/js/render.js <fixtures dir> <static dir> [overrides.json]
+ *
+ * `overrides.json` maps an API path to the document to serve instead of the
+ * fixture, so a test can render a variant (all seams clean, say) without a
+ * second set of fixture files.
  */
 
 "use strict";
@@ -12,7 +16,8 @@ const vm = require("node:vm");
 
 const { buildDocument, collect, NAV } = require("./domshim.js");
 
-const [fixtures, staticDir] = process.argv.slice(2);
+const [fixtures, staticDir, overridesPath] = process.argv.slice(2);
+const OVERRIDES = overridesPath ? JSON.parse(fs.readFileSync(overridesPath, "utf8")) : {};
 
 const read = (name) => JSON.parse(fs.readFileSync(path.join(fixtures, name), "utf8"));
 
@@ -35,6 +40,9 @@ global.fetch = async (url, init) => {
     return { ok: true, status: 200, json: async () => ({ delivered: true }) };
   }
   asked.push({ url, credentials: options.credentials, headers: options.headers || {} });
+  if (Object.hasOwn(OVERRIDES, url)) {
+    return { ok: true, status: 200, json: async () => OVERRIDES[url] };
+  }
   const route = ROUTES[url];
   if (!route) return { ok: false, status: 404, json: async () => ({ error: "no such path: " + url }) };
   return { ok: true, status: 200, json: async () => route() };
@@ -93,6 +101,28 @@ function snapshot() {
     edges: collect(main, "div")
       .filter((n) => n.className.startsWith("edge"))
       .map((n) => ({ class: n.className, text: n.textContent })),
+    metrics: (() => {
+      const table = collect(main, "table").find((n) => n.className === "metrics");
+      if (!table) return null;
+      const row = (n) => ({
+        class: n.className,
+        title: n.attrs.title || null,
+        cells: collect(n, "td").map((c) => ({ class: c.className, text: c.textContent.trim() })),
+      });
+      const head = collect(table, "thead")[0];
+      const body = collect(table, "tbody")[0];
+      const foot = collect(table, "tfoot")[0];
+      return {
+        headers: collect(head, "th").map((n) => n.textContent),
+        rows: collect(body, "tr").map(row),
+        totals: collect(foot, "tr").map(row)[0] || null,
+      };
+    })(),
+    warn: collect(main, "p").filter((n) => n.className === "metrics-warn").map((n) => n.textContent),
+    ok: collect(main, "p").filter((n) => n.className === "metrics-ok").map((n) => n.textContent),
+    followups: collect(main, "span")
+      .filter((n) => n.className.startsWith("followup"))
+      .map((n) => ({ class: n.className, title: n.attrs.title || null, text: n.textContent })),
     openable: main.descendants().filter((n) => n.dataset.open).map((n) => n.dataset.open),
   };
 }
