@@ -56,6 +56,16 @@ def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: 
         [sys.executable, "-m", "hx", "install", "--skeleton-only", "--root", str(root)],
         check=True, capture_output=True, text=True, env=hx_env(),
     )
+    # Auth is one instance token at seed/token, mode 0600 (spec 11 Auth, CONTRACTS.md), and
+    # `hx board` reports a missing or world-readable one as an invariant error. A scratch
+    # instance without it would differ from a real one in the board text, which is the whole
+    # thing these fixtures exist to compare.
+    seed = root / "seed"
+    seed.mkdir(parents=True, exist_ok=True)
+    token = seed / "token"
+    token.write_text("scenario-fixture-token-not-a-real-credential\n")
+    token.chmod(0o600)
+
     worker_template = root / "templates" / "worker"
     tasks: dict[str, dict] = {}
 

@@ -7,9 +7,9 @@ second copy. Everything that separates a harness session from your own session i
 configuration passed at launch — a different config directory, a different working directory,
 a pinned version — so there is no shared state to leak through.
 
-The short answer: **hx reads your `~/.claude` at most once, at install, and only if you ask it
-to, to copy one file. It never writes there. It never touches your checkouts. It never pushes
-to your remote unless you tell the Partner to.**
+The short answer: **hx never reads your `~/.claude` at all — not your credentials file, not
+your Keychain login, not on any platform. It never writes there either. It never touches your
+checkouts. It never pushes to your remote unless you tell the Partner to.**
 
 The long answer follows. Every claim in it was checked against
 `adapters/claude/install.sh` and `adapters/claude/start.sh` — the two scripts that actually
@@ -62,8 +62,9 @@ Yours load normally. In a harness session there is exactly one CLAUDE.md —
 
 Yours accumulate in `~/.claude`, as always. Each harness home has its own, and `hx dispatch`
 wipes exactly `home/projects/`, `home/file-history/`, and `home/history.jsonl` when it starts a
-new task on that id. `settings.json`, `.credentials.json`, `agents/`, `skills/`, `plugins/`,
-and `agent-memory/` are siblings of those and survive.
+new task on that id. `settings.json`, `agents/`, `skills/`, `plugins/` and `agent-memory/` are
+siblings of those and survive. There is no credentials file in an agent home to protect or to
+wipe — auth is the instance token, exported into the session env at launch.
 
 Claude Code's auto memory is keyed by git repo. Without a config directory per agent, every
 worktree of the same product repo would share one memory pool — including yours. The per-agent
@@ -71,16 +72,24 @@ home is what prevents that.
 
 ## Credentials
 
-Your credentials are read once, at `hx install --from-user-config <path>`, and copied into
-`$HARNESS_ROOT/seed/home/.credentials.json` at mode 0600. **That is the only file taken.** Not
-your `settings.json`, not your `CLAUDE.md`, not your skills or agents or hooks — only the
-credentials, plus the bypass-permissions acceptance merged into the harness's own settings.
-Otherwise you log `seed/home` in yourself, once, and your own `~/.claude` is not read at all.
+**Nothing of yours is read.** The harness authenticates with one long-lived token of its own:
+you run `claude setup-token` once in your own Claude, and paste the result into
+`$HARNESS_ROOT/seed/token` at mode 0600. `start.sh` reads that file in its own process and
+exports it as `CLAUDE_CODE_OAUTH_TOKEN` for the session it launches.
 
-Every agent home is seeded from `seed/home`, and `install.sh` refuses to write a home when
-`seed/home/.credentials.json` is missing rather than producing one that would stop at a login
-prompt on first launch. `start.sh` refuses again at launch for the same reason. Those copies
-refresh independently of yours, and nothing is ever written back.
+Consequences worth being explicit about:
+
+- your `~/.claude/.credentials.json` is never opened, and neither is the macOS Keychain, where
+  Claude Code actually keeps your login;
+- the token is never an argument to anything — not to `env`, not to `tmux -e` — so it cannot
+  appear in `ps` output, and it is never written anywhere under `run/`;
+- **agent homes hold no credentials file at all**, so the per-home wipe has nothing to protect
+  and a copied home carries no secret;
+- both `install.sh` and `start.sh` refuse outright when `seed/token` is missing or is readable
+  by group or other, rather than producing an instance that would stop at a login prompt.
+
+Revoking the harness's access is therefore one token, revoked in one place, with nothing of
+yours entangled in it.
 
 ## Permissions
 
@@ -167,7 +176,7 @@ UI falls back to when a session has died. It is instance state like everything e
 | Skills | Your `~/.claude/skills` | `hx-partner` or `hx-worker` only |
 | CLAUDE.md | Yours and the repo's | `config/CLAUDE.md` only; the repo's excluded |
 | Memory and transcripts | Yours, accumulating | Per home, wiped at each dispatch |
-| Credentials | Yours | A copy from `seed/home`, refreshed independently |
+| Credentials | Yours (Keychain or `~/.claude/.credentials.json`) | One token in `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`; yours never read |
 | Permissions | Whatever you chose | Bypass, always; guard hook instead |
 | Working dir | Your checkout | `wt/<id>`, sparse, without the repo's `.claude/` |
 | System prompt | Default | Default + `run/<id>/persona.md` |
@@ -178,9 +187,9 @@ UI falls back to when a session has died. It is instance state like everything e
 ## What is built today
 
 This page describes the finished system. Pre-release, the parts that create an instance are
-still landing: the full `hx install` (the seed login, `--from-user-config`, the repo mirror,
-the sparse worktree and the boot units) is build-4, and until it lands `hx install` requires
-`--skeleton-only` and says so. Everything about the *per-agent home* above — the settings file
+still landing: the full `hx install` (the seed-token step, the repo mirror, the sparse worktree
+and the boot units) is build-4, and until it lands `hx install` requires `--skeleton-only` and
+says so. Everything about the *per-agent home* above — the settings file
 key by key, the credential seeding and its refusals, the persona derivation, the launch argv,
 the skills copy — is what `install.sh` and `start.sh` do today, and
 `packaging/e2e-deploy.sh` asserts the rest the moment build-4 lands.
@@ -193,10 +202,8 @@ end. A second guard test asserts that hx refuses a `HARNESS_ROOT` that is, or re
 symlinks into, `~/.claude`.
 
 Beyond that, `packaging/e2e-deploy.sh` runs the whole install into a `HOME` that did not exist
-a moment ago, pointed at a **fake** user Claude home it builds for the purpose — one carrying a
-deny-everything hook, a banner `CLAUDE.md` and a skill, all of which must *not* be copied. It
-then asserts that only the credentials were taken, that the fake home is byte-identical before
-and after, that the agent home carries none of those planted strings, that the worktree has no
-`.claude/`, that the rendered units carry no unsubstituted token, and that the real `~/.claude`
-manifest is unchanged. Planting strings that must not appear is the only way to tell "isolated"
-from "we did not look".
+a moment ago and asserts that the agent home carries no credentials file, that the worktree has
+no `.claude/`, that the rendered units carry no unsubstituted token, and that the real
+`~/.claude` manifest is unchanged. It plants strings that must not appear anywhere afterwards,
+which is the only way to tell "isolated" from "we did not look". That script is being rewritten
+for the token auth model; until it is, it is gated and skips.

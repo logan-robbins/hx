@@ -27,9 +27,8 @@ Upgrading the package never writes into your instance except through `hx upgrade
 - **The `claude` binary**, at a version in the package's tested list, which ships inside the
   wheel as `hx/packaging/tested-claude-versions.json`. `hx install` checks this and stops with
   the version to install if yours is not listed.
-- **A Claude account you are willing to log a second config directory into.** The harness uses
-  its own credentials, seeded from a home you log into once. You can reuse your existing
-  credentials instead — see step 3.
+- **A Claude account.** The harness authenticates with a long-lived token of its own that you
+  generate in one command — see step 3. Your own login is never read.
 
 ## 1. Install the package
 
@@ -91,33 +90,24 @@ created  .gitignore
 Partner copies into `config/<id>/` when you ask it for another agent; you never do that
 yourself.
 
-## 3. Seed the login
+## 3. Seed the token
 
-`hx install` runs, once, interactively:
-
-```bash
-CLAUDE_CONFIG_DIR=$HARNESS_ROOT/seed/home claude
-```
-
-Log in and accept bypass permissions. `seed/home` is the only Claude home a human ever types
-into; every agent home is copied from it. This is the step that makes every later launch
-non-interactive.
-
-If you would rather not log in a second time:
+The harness needs credentials of its own. It does not borrow yours: hx never reads
+`~/.claude`, never reads a credentials file, and never reads the macOS Keychain, where Claude
+Code actually stores your login. Two steps, once:
 
 ```bash
-hx install --from-user-config ~/.claude
+claude setup-token                     # your own Claude, interactive; prints a token
+$EDITOR $HARNESS_ROOT/seed/token       # paste it, one line
 ```
 
-which copies the credentials out of the directory you name instead — your own `~/.claude`, or
-any other Claude home you have logged in. It takes a path so that it can be pointed somewhere
-else, which is how the deploy proof tests it without going near your real one.
+`hx install` prints exactly those two steps, sets the file to mode 0600, and stops with exit 4
+until it exists. From then on `start.sh` reads that file in its own process and exports it as
+`CLAUDE_CODE_OAUTH_TOKEN` for each session it launches — never as an argument to anything, so
+it cannot show up in `ps`, and never written anywhere under `run/`.
 
-It **reads** that directory and never writes to it, and it takes exactly one file from it:
-`.credentials.json`. Your settings, your `CLAUDE.md`, your skills, agents and hooks are not
-copied — copying your settings wholesale would drag your hooks and permission rules into every
-agent and quietly break it. The bypass-permissions acceptance is set in the harness's own
-settings rather than lifted from yours.
+Agent homes hold no credentials file at all. Revoking the harness's access later is one token,
+in one place, with nothing of yours entangled in it.
 
 ## 4. Point it at your repo
 
@@ -212,7 +202,7 @@ line-by-line version.
 ## If something is wrong
 
 ```bash
-hx doctor        # tmux, git, the pinned binary and its version, seed credentials,
+hx doctor        # tmux, git, the pinned binary and its version, the seed token and its mode,
                  # every agent home's settings, mirror reachability
 hx board         # one line per id, then invariant violations; exits 1 on any error
 ```
@@ -255,7 +245,7 @@ ok    skeleton      config/partner/SUBAGENTS.md
 ok    skeleton      config/partner/harness.json
 ok    skeleton      templates/work-item.md
 ok    models        2 model(s): claude-opus-5, claude-sonnet-5
-warn  seed          seed/home/.credentials.json absent; `hx install` runs the seed login (spec 17.2 step 3)
+warn  seed          seed/token absent; paste the `claude setup-token` output there (spec 17.2 step 3)
 warn  home:partner  run/<id>/home absent; `hx launch` runs adapters/claude/install.sh
 warn  repo          config/repo.json absent; `hx repo add <url|path>` mirrors the product repo (spec 17.2 step 4)
 ```
