@@ -39,6 +39,10 @@ class SpySource(FixtureSource):
         self.calls.append(("wake_partner", (text,)))
         return super().wake_partner(text)
 
+    def wake_partner_status(self, text):
+        self.calls.append(("wake_partner_status", (text,)))
+        return super().wake_partner_status(text)
+
 
 @pytest.fixture
 def spy_ui():
@@ -52,8 +56,10 @@ def test_wake_calls_the_source_exactly_once_with_the_text(spy_ui):
     text = "eng-003 complete: decision; hx read eng-003"
     response = spy_ui.client.post("/api/partner/wake", {"text": text})
     assert response.status == 200
-    assert json.loads(response.body) == {"delivered": True}
-    assert spy_ui.source.calls == [("wake_partner", (text,))], "one call, and no read alongside it"
+    assert json.loads(response.body) == {"delivered": True, "status": "accepted"}
+    assert spy_ui.source.calls == [("wake_partner_status", (text,))], (
+        "one call, and no read alongside it"
+    )
     assert spy_ui.source.woken == [text]
     assert manifest(FIXTURES) == before, "the wake wrote nothing to the instance"
 
@@ -62,8 +68,17 @@ def test_wake_reports_a_refused_socket(spy_ui):
     spy_ui.source.wake_accepts = False
     response = spy_ui.client.post("/api/partner/wake", {"text": "anyone home"})
     assert response.status == 200
-    assert json.loads(response.body) == {"delivered": False}
+    assert json.loads(response.body) == {"delivered": False, "status": "refused"}
     assert spy_ui.source.woken == ["anyone home"]
+
+
+@pytest.mark.parametrize("status", ["accepted", "no-socket", "refused"])
+def test_wake_passes_each_contract_status_through(spy_ui, status):
+    """CONTRACTS.md has three answers, and the page shows which one it was."""
+    spy_ui.source.wake_status = status
+    response = spy_ui.client.post("/api/partner/wake", {"text": "hello"})
+    assert response.status == 200
+    assert json.loads(response.body) == {"delivered": status == "accepted", "status": status}
 
 
 @pytest.mark.parametrize(

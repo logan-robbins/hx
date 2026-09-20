@@ -407,6 +407,8 @@ td.num.short { color: var(--queued); }
 
 .chat textarea:focus { border-color: var(--accent); outline: none; }
 .chat-bar { align-items: center; display: flex; gap: 12px; flex-wrap: wrap; }
+.chat-bar .sub.ok { color: var(--working); }
+.chat-bar .sub.bad { color: var(--queued); }
 
 button.send {
   background: var(--accent);

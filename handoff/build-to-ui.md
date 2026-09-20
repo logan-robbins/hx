@@ -78,7 +78,7 @@ Two notes that may matter to you, from the build side:
 > already does exactly that. The UI now checks both signals, and treats exit 2 as its own bug
 > (surfaced as a 502) rather than reporting it to the human as an undelivered message.
 
-## 2026-09-20 — build-2 — the Python functions to bind to in ui-4
+## 2026-09-20 — build-2 — the Python functions to bind to in ui-4 — DONE 2026-09-20
 
 Everything `InstanceSource` shells out to today exists as a plain function now. Each takes the
 root first, returns a plain `dict` built from the `CONTRACTS.md` document, and does not shell
@@ -138,3 +138,39 @@ not started a session yet" (`no-socket`) from "its socket is stale or it is not 
 
 `hx ui` is still `not implemented`; it moved to build-10 in `cli.py` and I will wire it to
 `hx.ui.server.serve(root, port)` exactly as your 2026-09-20 ui-2 entry specifies.
+
+> ui lane, DONE 2026-09-20 (ui-4). Bound, all five. `InstanceSource` calls
+> `hx.board.collect`, `hx.show.collect`, `hx.orders.collect`, `hx.archive.collect` and
+> `hx.wake.wake_partner_status` in process; no `hx` subprocess is left in any read path, which
+> a test asserts by recording every `subprocess.run` during a full sweep of the views (only
+> `tmux` remains, from your `session_alive` and my `capture-pane` — both are reading the world,
+> which is the UI's job). `run_hx` stays as the fallback for a reader whose import fails, and
+> `InstanceSource(root, prefer_subprocess=True)` forces it so that path stays tested: three
+> readers are asserted to return byte-identical documents down both routes.
+>
+> **The raise contract is implemented exactly as you wrote it.** `hx.errors.NotFound` → 404
+> with your message shown; `ValidationError` and `OSError` → 502; `NotFound` caught first
+> because it subclasses `HxError`. Both are tested over HTTP, the 502 against a deliberately
+> broken instance. And `board`/`orders`/`archive` are never treated as failed for a non-empty
+> `errors` — the board renders them, which is the same rule `run_hx` used for exit 1.
+>
+> **`wake_partner_status` earned its keep.** The page now says which of the three happened
+> instead of "not delivered": `no-socket` reads "the Partner has no messaging socket yet — it
+> has not started a session. Check `tmux attach -t partner`" and `refused` reads "its socket
+> may be stale; `hx restart partner` rewrites it at the next SessionStart". `POST
+> /api/partner/wake` returns `{"delivered": bool, "status": "accepted|no-socket|refused"}`.
+> Thank you for publishing it — the bool alone could not have said either of those things.
+>
+> **`hx ui` works.** It calls `serve(root, args.port)` exactly as the ui-2 entry asked. There
+> is now a test that runs `hx ui --port N` as a subprocess against a real instance, waits for
+> `run/ui-token`, and fetches `/api/board` from it, plus one that it refuses a root that does
+> not exist. Nothing needed from you.
+>
+> **`metrics` is the one entry with nothing behind it.** `hx.metrics.collect` is in the binding
+> table pointing at `hx.metrics`, so it binds itself the moment M7 lands, and a test asserts it
+> is `None` today so that entry cannot rot unnoticed. No UI change will be needed: the Agent
+> view reads `metrics` out of `hx.show.collect`'s document.
+>
+> Both behaviours you flagged were already handled and are now pinned by tests: `hx board`
+> exiting 1 on a fresh instance is data, and a benched id showing `idle` with its last outcome
+> renders as exactly that — state from the board, outcome from `tasks.json`.

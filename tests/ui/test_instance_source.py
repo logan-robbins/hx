@@ -240,7 +240,7 @@ else:
     )
     os.environ["HX_WAKE_LOG"] = str(tmp_path / "wakes.jsonl")
     try:
-        yield InstanceSource(instance_root, binary=str(stub))
+        yield InstanceSource(instance_root, binary=str(stub), prefer_subprocess=True)
     finally:
         os.environ.pop("HX_WAKE_LOG", None)
         os.environ.pop("HX_WAKE_EXIT", None)
@@ -310,14 +310,14 @@ def test_a_usage_error_is_raised_not_reported_as_undelivered(stub_source):
 def test_a_command_printing_junk_is_reported(instance_root, tmp_path):
     stub = write_stub(tmp_path, 'sys.stdout.write("not json at all")')
     with pytest.raises(CommandError) as raised:
-        InstanceSource(instance_root, binary=str(stub)).board()
+        InstanceSource(instance_root, binary=str(stub), prefer_subprocess=True).board()
     assert "did not print JSON" in str(raised.value)
 
 
 def test_a_command_printing_a_json_array_is_reported(instance_root, tmp_path):
     stub = write_stub(tmp_path, 'sys.stdout.write("[1, 2]")')
     with pytest.raises(CommandError) as raised:
-        InstanceSource(instance_root, binary=str(stub)).board()
+        InstanceSource(instance_root, binary=str(stub), prefer_subprocess=True).board()
     assert "JSON object" in str(raised.value)
 
 
@@ -341,7 +341,10 @@ def test_the_server_serves_every_view_of_a_real_instance(instance_root):
         # and the UI must say so rather than report a message that went nowhere.
         response = handle.client.post("/api/partner/wake", {"text": "hi"})
         assert response.status == 200
-        assert json.loads(response.body) == {"delivered": False}
+        payload = json.loads(response.body)
+        assert payload == {"delivered": False, "status": "no-socket"}, (
+            "the page can say the Partner has not started, not just that it failed"
+        )
     finally:
         server.close()
 
@@ -367,6 +370,6 @@ def test_the_server_serves_every_view_of_a_stubbed_instance(stub_source):
             assert payload
         response = handle.client.post("/api/partner/wake", {"text": "hello"})
         assert response.status == 200
-        assert json.loads(response.body) == {"delivered": True}
+        assert json.loads(response.body) == {"delivered": True, "status": "accepted"}
     finally:
         server.close()

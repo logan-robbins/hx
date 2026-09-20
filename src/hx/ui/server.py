@@ -31,7 +31,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
 
-from hx.ui.data import FixtureSource, InstanceSource, NotFound, Source, SourceError, SourceUnavailable
+from hx.ui.data import (
+    WAKE_ACCEPTED,
+    FixtureSource,
+    InstanceSource,
+    NotFound,
+    Source,
+    SourceError,
+    SourceUnavailable,
+)
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -297,14 +305,16 @@ class UIHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.BAD_REQUEST, "text must be a non-empty string")
             return
         try:
-            delivered = self.source.wake_partner(text)
+            status = self.source.wake_partner_status(text)
         except SourceUnavailable as exc:
             self._error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
             return
         except SourceError as exc:
             self._error(HTTPStatus.BAD_GATEWAY, str(exc))
             return
-        self._json(HTTPStatus.OK, {"delivered": bool(delivered)})
+        # `status` tells a Partner that has never started (`no-socket`) from one
+        # that is not listening (`refused`); `delivered` stays the plain answer.
+        self._json(HTTPStatus.OK, {"delivered": status == WAKE_ACCEPTED, "status": status})
 
     # -- handlers ----------------------------------------------------------
     def _index(self) -> None:

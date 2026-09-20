@@ -17,6 +17,8 @@ filesystem, and its readers are plugged into the build lane's `hx board --json`,
 
 from __future__ import annotations
 
+import functools
+import importlib
 import json
 import os
 import re
@@ -27,11 +29,13 @@ from typing import Any
 
 from hx.ui import pane
 
-#: `hx wake partner` reports on stdout and in its exit code (CONTRACTS.md):
-#: `HX-WAKE partner accepted` with exit 0, or `… no-socket` / `… refused` with
-#: exit 3. Exit 2 is a usage error — the UI calling hx wrong, which is a bug to
-#: surface rather than a message to report as undelivered.
-WAKE_ACCEPTED = "HX-WAKE partner accepted"
+#: `hx wake partner` reports on stdout and in its exit code (CONTRACTS.md): the
+#: last line is exactly `HX-WAKE partner accepted|no-socket|refused`, with exit 0
+#: only for `accepted` and exit 3 for the other two. Exit 2 is a usage error —
+#: the UI calling hx wrong, a bug to surface rather than an undelivered message.
+WAKE_PREFIX = "HX-WAKE partner"
+WAKE_ACCEPTED = "accepted"
+WAKE_STATUSES = (WAKE_ACCEPTED, "no-socket", "refused")
 WAKE_NOT_DELIVERED = 3
 
 # Scopes that are not an agent id. `TASKS` covers tasks.json, whose every write
@@ -87,6 +91,16 @@ class Source:
         """The UI's only write. True when the socket accepted the message."""
         raise NotImplementedError
 
+    def wake_partner_status(self, text: str) -> str:
+        """`accepted`, `no-socket` or `refused` (CONTRACTS.md).
+
+        The three-valued form, so the page can tell "the Partner has not started
+        a session yet" from "its socket is stale or it is not listening" — two
+        different things for the human to do something about. Sources that only
+        know the bool answer `accepted` or `refused`.
+        """
+        return WAKE_ACCEPTED if self.wake_partner(text) else "refused"
+
     def scan(self) -> dict[str, float]:
         """`{scope: latest mtime}` over the paths spec 16.1 watches."""
         raise NotImplementedError
@@ -109,6 +123,7 @@ class FixtureSource(Source):
         self.directory = Path(directory)
         self.woken: list[str] = []
         self.wake_accepts = True
+        self.wake_status: str | None = None
 
     def _read(self, name: str) -> dict[str, Any]:
         path = self.directory / name
@@ -141,8 +156,13 @@ class FixtureSource(Source):
         return self._read("archive.json")
 
     def wake_partner(self, text: str) -> bool:
+        return self.wake_partner_status(text) == WAKE_ACCEPTED
+
+    def wake_partner_status(self, text: str) -> str:
         self.woken.append(text)
-        return self.wake_accepts
+        if self.wake_status is not None:
+            return self.wake_status
+        return WAKE_ACCEPTED if self.wake_accepts else "refused"
 
     def scan(self) -> dict[str, float]:
         table: dict[str, float] = {}
@@ -213,13 +233,55 @@ def run_hx(
     raise CommandError(message, result.returncode)
 
 
+#: The build lane's published functions (`handoff/build-to-ui.md`, build-2). Each
+#: takes the root first, returns the `CONTRACTS.md` document as a plain dict, and
+#: shells out to nothing. Imported lazily so a half-built tree cannot stop the UI
+#: from starting, and so the subprocess fallback below stays a live path.
+PUBLISHED = {
+    "board": ("hx.board", "collect"),
+    "show": ("hx.show", "collect"),
+    "orders": ("hx.orders", "collect"),
+    "archive": ("hx.archive", "collect"),
+    "wake": ("hx.wake", "wake_partner_status"),
+    # `hx metrics` is M7. Nothing to bind yet; `hx.show.collect` is what fills the
+    # `metrics` block of its own document, so this lights up without a UI change.
+    "metrics": ("hx.metrics", "collect"),
+}
+
+
+@functools.cache
+def published(name: str):
+    """The published function, or None when the build lane has not shipped it."""
+    module, attribute = PUBLISHED[name]
+    try:
+        return getattr(importlib.import_module(module), attribute)
+    except (ImportError, AttributeError):
+        return None
+
+
+def harness_errors() -> tuple[type[BaseException], type[BaseException]]:
+    """`(NotFound, HxError)` from `hx.errors`, or stand-ins that never match."""
+    try:
+        from hx.errors import HxError, NotFound as HxNotFound
+    except ImportError:  # pragma: no cover - the package is always importable here
+        class _Never(Exception):
+            pass
+
+        return _Never, _Never
+    return HxNotFound, HxError
+
+
 class InstanceSource(Source):
-    """A live `HARNESS_ROOT`, read through `hx` itself.
+    """A live `HARNESS_ROOT`, read through hx itself.
 
     Spec 16: the UI shows what `hx board --json` and `hx show <id> --json` show,
-    "read through the same code", so this composes nothing of its own. The one
-    exception is the pane, which spec 16.2 refreshes on the SSE tick and which
-    `hx.ui.pane` captures directly.
+    "read through the same code", so this composes nothing of its own. Since ui-4
+    that is literal — it calls the same functions the CLI calls, in process. The
+    one exception is the pane, which spec 16.2 refreshes on the SSE tick and
+    which `hx.ui.pane` captures directly.
+
+    `run_hx` remains as the fallback for any reader whose function is not
+    importable, and `prefer_subprocess=True` forces it so that path stays tested.
     """
 
     #: Spec 16.1: the mtimes swept once a second. `recursive` walks the tree.
@@ -233,10 +295,40 @@ class InstanceSource(Source):
     #: run/<id>/turn and run/<id>/goal, one level under run/.
     RUN_MARKERS = ("turn", "goal")
 
-    def __init__(self, root: Path | str, *, binary: str | None = None, tmux_socket: str | None = None) -> None:
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        binary: str | None = None,
+        tmux_socket: str | None = None,
+        prefer_subprocess: bool = False,
+    ) -> None:
         self.root = Path(root)
         self.binary = binary
         self.tmux_socket = tmux_socket
+        self.prefer_subprocess = prefer_subprocess
+
+    # -- binding ---------------------------------------------------------
+    def bound(self, name: str):
+        """The published function for this reader, or None to use the fallback."""
+        return None if self.prefer_subprocess else published(name)
+
+    @staticmethod
+    def _translate(call):
+        """Run a published function, mapping its raises to the UI's own.
+
+        `handoff/build-to-ui.md`: `hx.errors.NotFound` is "no such id" and is the
+        404; everything else — a malformed `harness.json`, an unreadable file —
+        is the instance being broken and is the 502. `NotFound` subclasses
+        `HxError`, so it is caught first.
+        """
+        not_found, hx_error = harness_errors()
+        try:
+            return call()
+        except not_found as exc:
+            raise NotFound(str(exc)) from exc
+        except (hx_error, OSError) as exc:
+            raise CommandError(str(exc)) from exc
 
     # -- readers ---------------------------------------------------------
     def _json(self, args: list[str]) -> dict[str, Any]:
@@ -250,43 +342,65 @@ class InstanceSource(Source):
         return value
 
     def board(self) -> dict[str, Any]:
-        return self._json(["board", "--json"])
+        collect = self.bound("board")
+        if collect is None:
+            return self._json(["board", "--json"])
+        return self._translate(lambda: collect(self.root))
 
     def show(self, agent_id: str) -> dict[str, Any]:
         if id_of(agent_id) != agent_id:
             raise NotFound(f"not an agent id: {agent_id!r}")
-        document = self._json(["show", agent_id, "--json"])
+        collect = self.bound("show")
+        if collect is None:
+            document = self._json(["show", agent_id, "--json"])
+        else:
+            document = self._translate(lambda: collect(self.root, agent_id))
         # Spec 16.2: the pane is re-read on the SSE tick, so the UI captures it
         # itself rather than showing whatever `hx show` happened to catch.
         document["pane"] = pane.capture(self.root, agent_id, socket=self.tmux_socket)
         return document
 
     def orders(self) -> dict[str, Any]:
-        return self._json(["orders", "--json"])
+        collect = self.bound("orders")
+        if collect is None:
+            return self._json(["orders", "--json"])
+        return self._translate(lambda: collect(self.root))
 
     def archive(self) -> dict[str, Any]:
-        return self._json(["archive", "--json"])
+        collect = self.bound("archive")
+        if collect is None:
+            return self._json(["archive", "--json"])
+        return self._translate(lambda: collect(self.root))
 
-    def wake_partner(self, text: str) -> bool:
-        """The UI's only write.
+    # -- the one write ---------------------------------------------------
+    def wake_partner_status(self, text: str) -> str:
+        """`accepted`, `no-socket` or `refused` (CONTRACTS.md).
 
-        The text crosses a process boundary as one argv element. That is hx's own
-        fixed-form message, never an order: orders are files (spec 08). Replaced
-        by `hx.wake.wake_partner(root, text)` directly in ui-4.
-
-        Both signals are checked, because reporting "delivered" for a Partner
-        that never heard it is the one lie this box must not tell: the exact
-        `HX-WAKE partner accepted` line, and exit 3 for the two undelivered
-        cases. Any other failure is the UI calling hx wrong, and is raised so it
-        surfaces as a 502 instead of a quiet "not delivered".
+        The text crosses no process boundary at all now: `wake_partner_status`
+        is called in process. It is hx's own fixed-form message either way,
+        never an order — orders are files (spec 08).
         """
+        status = self.bound("wake")
+        if status is None:
+            return self._wake_by_subprocess(text)
+        return self._translate(lambda: status(self.root, text))
+
+    def _wake_by_subprocess(self, text: str) -> str:
+        """The fallback. `hx wake` exits 0 only for `accepted`, 3 otherwise."""
         try:
             out = run_hx(self.root, ["wake", "partner", text], binary=self.binary)
         except CommandError as exc:
-            if exc.returncode == WAKE_NOT_DELIVERED:
-                return False  # CONTRACTS.md: no socket file, or the connection was refused
-            raise
-        return any(line.strip() == WAKE_ACCEPTED for line in out.splitlines())
+            if exc.returncode != WAKE_NOT_DELIVERED:
+                raise  # exit 2 is the UI calling hx wrong; surface it
+            out = str(exc)
+        for line in reversed(out.splitlines()):
+            found = line.strip().removeprefix(WAKE_PREFIX).strip()
+            if line.strip().startswith(WAKE_PREFIX) and found in WAKE_STATUSES:
+                return found
+        return "refused"
+
+    def wake_partner(self, text: str) -> bool:
+        return self.wake_partner_status(text) == WAKE_ACCEPTED
 
     # -- the sweep -------------------------------------------------------
     def scan(self) -> dict[str, float]:

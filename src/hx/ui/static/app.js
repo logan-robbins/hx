@@ -87,6 +87,11 @@ function head(payload) {
   });
 }
 
+/** "1 edge", "2 edges" — a count the human reads, not a template. */
+function count(n, one, many) {
+  return n + " " + (n === 1 ? one : many || one + "s");
+}
+
 function section(title, ...body) {
   return el("section", {}, el("h2", { text: title }), body.flat());
 }
@@ -262,7 +267,7 @@ function renderBoard(payload) {
   return [
     head(payload),
     errors(payload.errors),
-    section("board · " + items.length + " items", boardTable(payload)),
+    section("board · " + count(items.length, "item"), boardTable(payload)),
   ];
 }
 
@@ -311,7 +316,7 @@ function renderOrders(payload) {
     head(payload),
     errors(payload.errors),
     section(
-      "after graph · " + edges.length + " edges",
+      "after graph · " + count(edges.length, "edge"),
       edges.length
         ? el(
             "div",
@@ -362,7 +367,7 @@ function renderArchive(payload) {
     head(payload),
     errors(payload.errors),
     section(
-      "archive · " + items.length + " ids",
+      "archive · " + count(items.length, "id"),
       items.length
         ? items.map((item) =>
             el(
@@ -579,7 +584,7 @@ function renderMetrics(metrics) {
       text: [
         metrics.stream || "",
         "dispatched " + clock(metrics.dispatched),
-        seams.length + (seams.length === 1 ? " seam" : " seams"),
+        count(seams.length, "seam"),
       ].filter(Boolean).join("  ·  "),
     }),
     flagged.length
@@ -638,7 +643,7 @@ function streamCard(stream, metrics) {
       { class: "order-head" },
       el("span", { class: "name", text: stream.handle }),
       pill(stream.open ? "open" : "closed", stream.open ? "working" : "complete"),
-      el("span", { class: "sub", text: stream.records + " records  ·  " + stream.path })
+      el("span", { class: "sub", text: count(stream.records, "record") + "  ·  " + stream.path })
     ),
     stream.digest ? el("p", {}, el("strong", { text: "digest: " }), stream.digest) : null,
     el("h3", { text: "tail" }),
@@ -764,9 +769,13 @@ function renderAgent(payload) {
           { class: "card" },
           el("p", {
             class: "meta",
-            text: file.path + "  ·  seam " + clock(file.seam_ts) + "  ·  " + (file.text || "").length + " chars",
+            // `hx show` names the path before the file exists, so say "not composed
+            // yet" rather than reporting a real path with zero bytes in it.
+            text: file.path + (file.text === null || file.text === undefined
+              ? "  ·  not composed yet"
+              : "  ·  seam " + clock(file.seam_ts) + "  ·  " + count(file.text.length, "char")),
           }),
-          el("pre", { text: file.text || "" })
+          file.text ? el("pre", { text: file.text }) : null
         )
       )
     ),
@@ -815,7 +824,8 @@ function renderAgent(payload) {
           "p",
           { class: "meta" },
           el("span", { class: "dot" + (pane.alive ? "" : " off"), text: pane.alive ? "● live" : "● dead" }),
-          "  " + (pane.lines || []).length + " lines" + (pane.source ? "  ·  from the " + pane.source : "")
+          "  " + count((pane.lines || []).length, "line") +
+            (pane.source ? "  ·  from the " + pane.source : "")
         ),
         pane.error ? el("p", { class: "pane-error", text: pane.error }) : null,
         orNotYet(pane.lines, (lines) => el("pre", { class: "pane", text: lines.join("\n") }))
@@ -825,6 +835,17 @@ function renderAgent(payload) {
 }
 
 /* -- partner ----------------------------------------------------------- */
+
+/* The three answers `hx wake partner` can give (CONTRACTS.md), said in terms of
+ * what the human can do about each. `no-socket` and `refused` are different
+ * problems: one Partner has never started, the other is not listening. */
+const WAKE_SAID = {
+  accepted: "delivered; the reply appears in the pane below",
+  "no-socket": "not delivered: the Partner has no messaging socket yet — it has not started a " +
+    "session. Check `tmux attach -t partner`.",
+  refused: "not delivered: the Partner's socket refused the connection — it may be stale. " +
+    "`hx restart partner` rewrites it at the next SessionStart.",
+};
 
 function chatBox() {
   const input = el("textarea", {
@@ -846,9 +867,10 @@ function chatBox() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
-      status.textContent = result.delivered
+      status.textContent = WAKE_SAID[result.status] || (result.delivered
         ? "delivered; the reply appears in the pane below"
-        : "not delivered: no Partner socket, or the connection was refused";
+        : "not delivered");
+      status.className = "sub " + (result.delivered ? "ok" : "bad");
       if (result.delivered) input.value = "";
     } catch (error) {
       status.textContent = "failed: " + error.message;
@@ -904,7 +926,8 @@ function renderPartner(payload) {
           "p",
           { class: "meta" },
           el("span", { class: "dot" + (pane.alive ? "" : " off"), text: pane.alive ? "● live" : "● dead" }),
-          "  " + (pane.lines || []).length + " lines" + (pane.source ? "  ·  from the " + pane.source : "")
+          "  " + count((pane.lines || []).length, "line") +
+            (pane.source ? "  ·  from the " + pane.source : "")
         ),
         pane.error ? el("p", { class: "pane-error", text: pane.error }) : null,
         orNotYet(pane.lines, (lines) => el("pre", { class: "pane", text: lines.join("\n") }))
