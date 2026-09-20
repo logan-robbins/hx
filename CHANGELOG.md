@@ -44,6 +44,10 @@ as milestones are accepted.
   lints the rendered output — `plutil -lint` where it exists, `plistlib` everywhere, an INI
   parse for systemd — and checks both platforms agree on the 900 s heartbeat and cover exactly
   `hx up` and `hx heartbeat`.
+- `tests/packaging/test_docs_match_reality.py`: builds a real instance and compares
+  `docs/deploy.md`'s `$ hx doctor` block — 23 rows — against what `hx doctor` prints, so the
+  doc cannot go stale silently. It compares `(status, name)` pairs rather than whole lines,
+  because the detail column is paths and versions that differ per machine.
 - `tests/packaging/test_ci_workflow.py`: validates `.github/workflows/ci.yml` with `actionlint`
   when present, otherwise a minimal structural YAML parser with its own negative tests, then
   asserts what CI must do.
@@ -57,6 +61,12 @@ as milestones are accepted.
 
 ### Changed
 
+- **The Companion is a `claude -p` session**, not an API client. `provider: claude-cli` in both
+  shipped `harness.json` files: the same pinned binary, the same `seed/token`, a bare config
+  home at `run/<id>/companion-home` with no hooks, no skills and no CLAUDE.md, and **no
+  tools**. A subscription-only instance gets a Companion with no API key. `companion/BASE.md`
+  now opens with its output contract — one JSON object, the eleven keys in a table, empty forms
+  spelled out, and what happens to a malformed answer.
 - **Auth is one long-lived token per instance**, not a copy of the user's credentials.
   `claude setup-token` once, pasted into `$HARNESS_ROOT/seed/token` at mode 0600, exported as
   `CLAUDE_CODE_OAUTH_TOKEN` by `start.sh`. `--from-user-config` is gone. hx reads nothing from
@@ -71,6 +81,15 @@ as milestones are accepted.
   token and the exact two commands the human runs, the real rendered unit paths, the
   `launchctl` / `systemctl --user` lines, a healthy `hx doctor`, and an `hx upgrade` section
   with the real refusal and acceptance output.
+- `docs/two-worlds.md` and `README.md` reflect M4: the raw stream written one line per tool
+  call, a stream per subagent opened and renamed when it stops, the `agent_id → sNNN` map
+  assigned under a lock, `run/<id>/turn` after every turn, and the pane log. The claim table
+  gains six rows, including that `context_tokens` is input plus cache reads rather than output
+  and that the seam marker is touched only on the main stream.
+- The `hx-worker` and `hx-partner` skills carry M4's behaviours as the agent sees them — a
+  subagent's task is the message it was spawned with, the digest is all that crosses back, and
+  the turn has to end before the harness can deliver a goal or take a seam — each checked
+  against the hooks in the tree rather than against the spec.
 - `.github/workflows/ci.yml`: the `package` job runs `packaging/e2e-deploy.sh` as well as
   `e2e-install.sh`, and on Linux runs `systemd-analyze --user verify` over the rendered units
   — the only place a real systemd ever sees them. The `test` job runs the full suite directly
