@@ -1,0 +1,19 @@
+{
+  "id": "eng-001",
+  "pod": "engineers",
+  "role": "engineer",
+  "model": "claude-opus-5",
+  "effort": "xhigh",
+  "workdir": "wt/eng-001",
+  "branch": "agent/eng-001",
+  "harness": { "args": [] },
+  "companion": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "batch_records": 20,
+    "cache_ttl": "1h",
+    "state_budget_tokens": 10000,
+    "seam_min_context_tokens": 60000,
+    "seam_min_interval_s": 600
+  }
+}
