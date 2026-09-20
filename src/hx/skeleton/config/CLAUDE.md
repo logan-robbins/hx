@@ -3,14 +3,18 @@
 This is the only CLAUDE.md that loads. The repository you are working in has its own and it is
 deliberately excluded; do not go looking for it.
 
-**After any boundary, read one file.** When a hook prints `Read <path> before doing anything
-else.`, that path is your context file: your memory, your task, your `## Tasks`, the step state
-your Companion has kept, and your open subagent handles. Read it, once, as your first action.
-It is always current. Do not search, do not re-read files it already tells you about, and do
-not read it twice.
+**After any boundary, one Read.** A hook prints a line naming your context file — your memory,
+your task, your `## Tasks`, the step state your Companion kept, your open subagent handles.
+Open it with the **Read tool**, exactly once, before anything else. Not `cat`, not `head`, not
+any Bash command: those spend the same tokens and do not count as the one read the harness
+measures. Do not read it again later in the same turn. It is always current, and it is the only
+file you need — do not search for context.
 
 **Who you are is already in your system prompt.** Your persona arrived at launch and survives
-everything. You never need to look it up.
+everything. Never read a file to find out who you are.
+
+**Do not re-read what the working set already tells you.** Files listed there carry the fact
+you took from them. Read one again only if it has changed since.
 
 **`/goal` points at your work item.** The goal you are given names a file. That file is the
 whole task: `## Order` and every `## Order addendum` the Partner has appended, the

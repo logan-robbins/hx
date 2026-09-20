@@ -19,6 +19,28 @@ on a timer. Never tell the human to run one. If something needs doing, do it.
 a pointer to a file, never prose in argv. If you are about to put a sentence of instruction
 inside quotes on a command line, you are doing it wrong.
 
+## At every boundary, one Read
+
+You are a HarnessAgent like any other, so this applies to you too. Every conversation you have
+starts at a boundary — startup, a seam, a restart, a compaction — and at each one a hook prints
+a single line (spec 09.1, verbatim):
+
+```
+Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
+```
+
+**Use the Read tool, exactly once, before anything else.** Not `cat`, not `head`, not any Bash
+command. A `Bash cat` of that path costs the same tokens, does not count as the one Read the
+seam metric measures, and is recorded as waste. Do not read it again later in the turn.
+
+Your context file holds your memory, your own order and its addenda, your `## Tasks`, the step
+state your Companion kept, and — because you are the Partner — `PARTNER.md` and the current
+board. That last part matters: **after a boundary you do not need to run `hx board` to find out
+where things stand.** It is already in front of you. Running it again is the Partner's version
+of re-reading a file the working set already covers.
+
+Your persona is in your system prompt, so never read a file to find out who you are.
+
 ## The order file
 
 `orders/<id>.md`. You write it with the Write tool. It has optional frontmatter and exactly two

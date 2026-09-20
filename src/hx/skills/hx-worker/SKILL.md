@@ -14,13 +14,19 @@ with your system prompt at launch and is always there; you never look it up.
 ### 1. The boundary
 
 Every conversation you have starts at a boundary: dispatch, resume, a seam, a restart, a
-compaction. At every one of them a hook prints a single line:
+compaction. At every one of them a hook prints a single line (spec 09.1, verbatim):
 
 ```
-Read <path> before doing anything else.
+Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
-That path is your context file. **Read it, once, as your first action.** It holds, in order:
+**Use the Read tool, exactly once, before anything else.** Not `cat`, not `head`, not any Bash
+command. A `Bash cat` of that path spends the same tokens, does not count as the one Read the
+seam metric measures, and is recorded against you as waste — the harness is trying to find out
+whether one composed file is enough, and a shell read makes the answer look better than it is.
+Do not read it a second time later in the turn.
+
+That path is your context file. It holds, in order:
 
 1. Your memory — what you wrote below `## UPDATES BELOW ONLY` in your `AGENTS.md`
 2. Your task — the verbatim `## Order` and every addendum
@@ -30,8 +36,9 @@ That path is your context file. **Read it, once, as your first action.** It hold
 5. Your open subagent handles
 
 It is always current, it is composed fresh at each boundary, and it is the only file you need.
-Do not search for context. Do not re-read files your step state already has notes on. Do not
-read the context file twice — once per boundary, and the rest is work.
+Do not search for context. Do not re-read a file your `working_set` already carries a note
+about unless it has changed since — the note is there so you do not have to. One Read per
+boundary, and the rest is work.
 
 Your persona is not in it, because it is in your system prompt already.
 

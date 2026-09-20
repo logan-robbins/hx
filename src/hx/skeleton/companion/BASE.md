@@ -139,6 +139,28 @@ and fill only what they leave out. Its commits set `closed_steps[].commit`. When
 of the stream and the agent's own `## Tasks` disagree, follow `## Tasks` and note the
 discrepancy in the open step's `next`.
 
+## Reads, and reads that do not count
+
+The seam metric counts **Read-tool calls**: one Read of the context file per boundary, and
+Reads of `working_set` files in the ten turns after a seam as waste (spec 07.4, 13 M7). It
+counts the tool, not the intent, so a `Bash` command that reads a file — `cat`, `head`, `less`,
+`sed -n`, `python -c 'open(...)'` — spends the tokens without appearing in the metric at all.
+Left unrecorded, that makes the numbers look better than the behaviour.
+
+So record it. When the agent reads a file through `Bash` rather than with the Read tool:
+
+- a `Bash` read of the **context file** is a boundary failure. Put it in `dead_ends` as
+  `read the context file with Bash <cmd> instead of the Read tool (seq N)`, with the seq. It
+  is not a step and it closes nothing.
+- a `Bash` read of a file already in `working_set.files` is the same waste a re-Read would be,
+  and is recorded the same way: a `dead_ends` line naming the file and the seq, so M7 sees it
+  when it reads the state rather than only the tool counts.
+
+Keep these entries even under budget pressure until the task completes — they are the evidence
+that the context file was not enough, or was not trusted, which is the whole question M7 is
+asking. Do not editorialise beyond the one line, and never withhold one because the agent got
+the right answer anyway.
+
 ## The seam marker
 
 A seam is `/clear` plus rehydration from the context file. You request one by writing

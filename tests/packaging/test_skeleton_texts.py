@@ -35,6 +35,8 @@ SKILL_FILES = [
     SKILLS / "hx-worker" / "SKILL.md",
 ]
 
+SPEC_HOOKS = REPO / "spec" / "09-hooks.md"
+
 MUTABLE_HEADER = "## UPDATES BELOW ONLY"
 
 
@@ -369,13 +371,92 @@ def test_global_claude_md_covers_what_spec_17_5_requires_of_it():
     text = (SKELETON / "config" / "CLAUDE.md").read_text()
     for fragment in ("/goal", "work item", "hx complete"):
         assert fragment in text, f"config/CLAUDE.md does not mention {fragment!r}"
-    assert "Read" in text and "first action" in text, (
-        "config/CLAUDE.md must say the first action after a boundary is one Read of the "
-        "path the hook printed"
+
+
+def test_global_claude_md_names_the_read_tool_and_forbids_cat():
+    """A live run (build-3, Claude Code 2.1.278) had an agent `Bash cat` the context file and
+    then `Read` it. "Read" as an English verb is satisfied by `cat`; naming the tool is what
+    makes the difference, and a `Bash` read spends the tokens without counting toward the M7
+    metric. This paragraph is what has to say so."""
+    text = (SKELETON / "config" / "CLAUDE.md").read_text()
+    boundary = next(
+        (para for para in text.split("\n\n") if "boundary" in para and "Read" in para), ""
     )
+    assert boundary, "config/CLAUDE.md has no paragraph about the boundary read"
+    assert "Read tool" in boundary, (
+        "the boundary paragraph must name the Read *tool*, not just the action: "
+        f"{boundary!r}"
+    )
+    assert "`cat`" in boundary, "the boundary paragraph must forbid `cat` by name"
+    for forbidden in ("once", "before anything else"):
+        assert forbidden in boundary, f"the boundary paragraph does not say {forbidden!r}"
+    assert "working set" in text, (
+        "config/CLAUDE.md must say that files the working set already covers are not re-read"
+    )
+
+
+def test_global_claude_md_stays_short():
+    """It is loaded into every turn of every agent, so length is a running cost."""
+    lines = (SKELETON / "config" / "CLAUDE.md").read_text().splitlines()
+    assert len(lines) <= 60, f"config/CLAUDE.md is {len(lines)} lines; keep it short"
 
 
 def test_partner_md_ships_as_the_partners_initial_state_doc():
     text = (SKELETON / "PARTNER.md").read_text()
     assert text.strip(), "PARTNER.md is empty"
     assert "## Open questions for the human" in text, text[:200]
+
+
+# ----------------------------------------------------------- the boundary hook line
+
+
+def spec_09_1_context_line() -> str:
+    """The stdout line the `context` hook prints, taken from spec 09.1 itself.
+
+    Reading it out of the spec rather than hard-coding it is the point: when the orchestrator
+    rewords that line, these tests fail and the skills get updated, instead of quietly
+    quoting something the hook no longer prints.
+    """
+    row = next(
+        line for line in SPEC_HOOKS.read_text().splitlines()
+        if line.startswith("| `context` |")
+    )
+    match = re.search(r"print one line to stdout: `([^`]+)`", row)
+    assert match, f"spec 09.1's `context` row no longer names the stdout line:\n{row}"
+    return match.group(1)
+
+
+def test_spec_09_1_still_names_a_context_line():
+    line = spec_09_1_context_line()
+    assert "Read tool" in line, (
+        f"spec 09.1's hook line no longer names the Read tool: {line!r}. If that is "
+        "deliberate, the skills and config/CLAUDE.md need the same change."
+    )
+
+
+@pytest.mark.parametrize("path", SKILL_FILES, ids=_ids(SKILL_FILES))
+def test_skill_quotes_the_hook_line_verbatim(path):
+    """Both skills show the agent the line it will actually see. A paraphrase here is worse
+    than nothing: the agent would be looking for text that never appears."""
+    assert spec_09_1_context_line() in path.read_text(), (
+        f"{path} does not quote spec 09.1's context line verbatim"
+    )
+
+
+@pytest.mark.parametrize("path", SKILL_FILES, ids=_ids(SKILL_FILES))
+def test_skill_boundary_step_names_the_read_tool_and_forbids_cat(path):
+    text = path.read_text()
+    assert "Use the Read tool" in text, f"{path}: the boundary step does not name the Read tool"
+    assert "`cat`" in text, f"{path}: the boundary step does not forbid `cat` by name"
+
+
+def test_companion_base_records_a_bash_read_as_waste():
+    """spec 07.4 / 13 M7 count Read-tool calls, so a `Bash cat` is invisible to the metric
+    unless the Companion writes it down."""
+    text = (SKELETON / "companion" / "BASE.md").read_text()
+    assert "Read-tool calls" in text, "companion/BASE.md does not say the metric counts the tool"
+    assert "dead_ends" in text.split("Reads, and reads that do not count")[-1], (
+        "companion/BASE.md does not say where a Bash read of a tracked file is recorded"
+    )
+    for fragment in ("`cat`", "context file"):
+        assert fragment in text.split("Reads, and reads that do not count")[-1], fragment
