@@ -1,7 +1,10 @@
 /* Render every view of src/hx/ui/static/app.js against tests/ui/fixtures and
  * print what came out as JSON, for tests/ui/test_views_js.py to assert on.
  *
- *   node tests/ui/js/render.js <fixtures dir> <static dir> [overrides.json]
+ *   node tests/ui/js/render.js <fixtures dir> <static dir> [overrides.json] [ids]
+ *
+ * `ids` is a comma-separated list of agent ids to open in turn; each one's
+ * snapshot lands in `views.agents[<id>]`. Default: eng-001.
  *
  * `overrides.json` maps an API path to the document to serve instead of the
  * fixture, so a test can render a variant (all seams clean, say) without a
@@ -16,7 +19,8 @@ const vm = require("node:vm");
 
 const { buildDocument, collect, NAV } = require("./domshim.js");
 
-const [fixtures, staticDir, overridesPath] = process.argv.slice(2);
+const [fixtures, staticDir, overridesPath, openIds] = process.argv.slice(2);
+const OPEN = (openIds || "eng-001").split(",").filter(Boolean);
 const OVERRIDES = overridesPath ? JSON.parse(fs.readFileSync(overridesPath, "utf8")) : {};
 
 const read = (name) => JSON.parse(fs.readFileSync(path.join(fixtures, name), "utf8"));
@@ -140,9 +144,14 @@ function snapshot() {
   // The Agent view with no id yet is a picker; opening an id from the board fills it.
   await show("agent");
   out.views.agentPicker = snapshot();
-  await show("board");
-  await open("eng-001");
-  out.views.agent = snapshot();
+  out.views.agents = {};
+  for (const id of OPEN) {
+    await show("board");
+    await open(id);
+    out.views.agents[id] = snapshot();
+  }
+  // The first one opened stays as `views.agent`, which existing tests read.
+  out.views.agent = out.views.agents[OPEN[0]];
 
   await show("partner");
   out.views.partner = snapshot();

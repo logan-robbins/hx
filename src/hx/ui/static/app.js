@@ -102,8 +102,17 @@ function section(title, ...body) {
  * with textContent, so nothing a HarnessAgent writes into a work item can
  * inject markup into this page. */
 
+/* Code spans first, so nothing inside backticks is re-read as emphasis. The
+ * underscore form is what the context file uses (`_source: …_`, `_none yet_`,
+ * handoff/build-to-ui.md build-3); it is deliberately intraword-safe, so
+ * `working_set` and `file_matches_record` stay literal. */
+const INLINE_SOURCE =
+  "(`[^`]+`)|(\\*\\*[^*]+\\*\\*)|(\\*[^*]+\\*)|((?<![\\w\\\\])_(?!\\s)([^_]+?)(?<!\\s)_(?![\\w]))";
+
 function inline(text, into) {
-  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  // A fresh matcher per call: `inline` recurses for `_…_`, and a shared /g regex
+  // would have its `lastIndex` clobbered by the inner pass and never terminate.
+  const pattern = new RegExp(INLINE_SOURCE, "g");
   let last = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
@@ -111,11 +120,29 @@ function inline(text, into) {
     const token = match[0];
     if (token.startsWith("`")) into.append(el("code", { text: token.slice(1, -1) }));
     else if (token.startsWith("**")) into.append(el("strong", { text: token.slice(2, -2) }));
-    else into.append(el("em", { text: token.slice(1, -1) }));
+    else if (token.startsWith("*")) into.append(el("em", { text: token.slice(1, -1) }));
+    // `_…_` may wrap a code span, as `_source: \`path\`_` does, so recurse.
+    else into.append(inline(token.slice(1, -1), el("em", {})));
     last = match.index + token.length;
   }
   if (last < text.length) into.append(text.slice(last));
   return into;
+}
+
+/** The `|---|:--:|` row that makes the line above it a table header. */
+const TABLE_RULE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+
+function tableCells(line) {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function alignOf(rule) {
+  const left = rule.startsWith(":");
+  const right = rule.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  return null;
 }
 
 function markdown(text) {
@@ -132,6 +159,37 @@ function markdown(text) {
       while (index < lines.length && !lines[index].startsWith("```")) body.push(lines[index++]);
       index++;
       out.push(el("pre", { class: "code", "data-lang": language || null, text: body.join("\n") }));
+      continue;
+    }
+
+    // A GFM table: a pipe row, then a row of dashes with optional colons. Both
+    // are required, so a lone line with pipes in it stays a paragraph.
+    if (line.includes("|") && TABLE_RULE.test(lines[index + 1] || "")) {
+      const header = tableCells(line);
+      const align = tableCells(lines[index + 1]).map(alignOf);
+      index += 2;
+      const rows = [];
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        rows.push(tableCells(lines[index++]));
+      }
+      out.push(
+        el(
+          "div",
+          { class: "scroll" },
+          el(
+            "table",
+            { class: "md" },
+            el("thead", {}, el("tr", {}, header.map((cell, n) =>
+              inline(cell, el("th", { class: align[n] || null }))
+            ))),
+            el("tbody", {}, rows.map((row) =>
+              el("tr", {}, header.map((_, n) =>
+                inline(row[n] === undefined ? "" : row[n], el("td", { class: align[n] || null }))
+              ))
+            ))
+          )
+        )
+      );
       continue;
     }
 
@@ -273,6 +331,21 @@ function renderBoard(payload) {
 
 /* -- orders ------------------------------------------------------------ */
 
+/* Three states, not two. `hx orders` reports `file_matches_record: false` both
+ * when the file differs from what was dispatched and when there is no file at
+ * all — but `order` is null only in the second case, and "edited" would be a
+ * lie about a file that does not exist. */
+function orderFileBadge(order) {
+  if (!order.record) return null; // never dispatched: nothing to compare against
+  if (order.order === null || order.order === undefined) {
+    return el("span", { class: "pill bad", text: "order file missing" });
+  }
+  if (order.file_matches_record === false) {
+    return el("span", { class: "pill bad", text: "file edited since dispatch" });
+  }
+  return null;
+}
+
 function orderCard(order) {
   const record = order.record;
   const children = [
@@ -285,9 +358,7 @@ function orderCard(order) {
       order.waiting_on && order.waiting_on.length
         ? el("span", { class: "wait", text: "waits on " + order.waiting_on.join(", ") })
         : null,
-      order.file_matches_record === false
-        ? el("span", { class: "pill bad", text: "file edited since dispatch" })
-        : null
+      orderFileBadge(order)
     ),
     el("p", {
       class: "meta",
@@ -680,6 +751,22 @@ function streamCard(stream, metrics) {
   );
 }
 
+/* Spec 16.2's Agent view is per id, and the only way to reach another one used
+ * to be back through the Board. The ids ride along with the view instead. */
+function idSwitcher(ids, current) {
+  if (!ids || ids.length < 2) return null;
+  return el(
+    "div",
+    { class: "switcher" },
+    el("span", { class: "sub", text: "agent:" }),
+    ids.map((id) =>
+      id === current
+        ? el("span", { class: "switch on", text: id })
+        : el("button", { class: "switch", "data-open": id, text: id })
+    )
+  );
+}
+
 function renderAgent(payload) {
   if (payload.__picker) {
     return [
@@ -700,6 +787,7 @@ function renderAgent(payload) {
   for (const stream of payload.streams || []) if (stream.digest) digests[stream.handle] = stream.digest;
 
   return [
+    idSwitcher(payload.__ids, payload.id),
     el(
       "p",
       { class: "meta" },
@@ -775,7 +863,11 @@ function renderAgent(payload) {
               ? "  ·  not composed yet"
               : "  ·  seam " + clock(file.seam_ts) + "  ·  " + count(file.text.length, "char")),
           }),
-          file.text ? el("pre", { text: file.text }) : null
+          // It is markdown with a fixed section order (spec 07.3,
+          // handoff/build-to-ui.md build-3), and it is what the agent reads —
+          // so render it, rather than showing the `_source:_` lines as
+          // preformatted text.
+          file.text ? el("div", { class: "context" }, markdown(file.text)) : null
         )
       )
     ),
@@ -824,8 +916,7 @@ function renderAgent(payload) {
           "p",
           { class: "meta" },
           el("span", { class: "dot" + (pane.alive ? "" : " off"), text: pane.alive ? "● live" : "● dead" }),
-          "  " + count((pane.lines || []).length, "line") +
-            (pane.source ? "  ·  from the " + pane.source : "")
+          "  " + count((pane.lines || []).length, "line") + "  ·  " + paneSource(pane.source)
         ),
         pane.error ? el("p", { class: "pane-error", text: pane.error }) : null,
         orNotYet(pane.lines, (lines) => el("pre", { class: "pane", text: lines.join("\n") }))
@@ -846,6 +937,13 @@ const WAKE_SAID = {
   refused: "not delivered: the Partner's socket refused the connection — it may be stale. " +
     "`hx restart partner` rewrites it at the next SessionStart.",
 };
+
+/** Where the pane text came from, said in words rather than "from the none". */
+function paneSource(source) {
+  if (source === "session") return "from the session";
+  if (source === "log") return "from the log";
+  return "no session, no log";
+}
 
 function chatBox() {
   const input = el("textarea", {
@@ -926,8 +1024,7 @@ function renderPartner(payload) {
           "p",
           { class: "meta" },
           el("span", { class: "dot" + (pane.alive ? "" : " off"), text: pane.alive ? "● live" : "● dead" }),
-          "  " + count((pane.lines || []).length, "line") +
-            (pane.source ? "  ·  from the " + pane.source : "")
+          "  " + count((pane.lines || []).length, "line") + "  ·  " + paneSource(pane.source)
         ),
         pane.error ? el("p", { class: "pane-error", text: pane.error }) : null,
         orNotYet(pane.lines, (lines) => el("pre", { class: "pane", text: lines.join("\n") }))
@@ -944,9 +1041,13 @@ const VIEWS = {
   archive: { load: () => api("/api/archive"), render: renderArchive },
   agent: {
     load: async () => {
-      if (agentId) return api("/api/show/" + encodeURIComponent(agentId));
+      // The board comes along either way: with no id chosen it is the picker,
+      // and with one chosen it is the switcher in the header.
       const board = await api("/api/board");
-      return { __picker: true, ids: (board.items || []).map((item) => item.id) };
+      const ids = (board.items || []).map((item) => item.id);
+      if (!agentId) return { __picker: true, ids };
+      const show = await api("/api/show/" + encodeURIComponent(agentId));
+      return Object.assign({}, show, { __ids: ids });
     },
     render: renderAgent,
   },

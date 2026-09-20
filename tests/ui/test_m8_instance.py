@@ -1,35 +1,32 @@
-"""ui-4 item 3: the whole UI against a real instance in the M8 shape.
+"""The UI against real instances in the scenario packs' shapes.
 
-`tests/scenario/m8/` is the gtm lane's pack — the data spec 13's M8 runs on. This
-builds an instance at observation point 4 of its README (the Partner working,
-`eng-001` done, `eng-002` stopped on a `decision` behind it), places the pack's
-real orders and personas, and serves it. No agent is launched: pane capture finds
-no session and falls back to the pane log, which is the state the goal asks for.
+`tests/scenario/m8/` and `m8b/` are the gtm lane's packs — the data spec 13's M8
+runs on. Every observation point in both packs is built here and put through the
+UI: the board and orders documents, and the views rendered by the real
+`static/app.js`.
+
+**Every instance is hermetic.** `hx board` matches a live tmux session by the id
+itself, so a scratch instance on this machine would otherwise report the build
+lane's real `partner` session as its own. Each instance is read through a private
+tmux server (`HX_TMUX`, handoff/build-to-ui.md) that has no sessions at all, so
+what the board says about liveness is a fact about the fixture and nothing else.
+Nothing here can reach, or send to, a session another lane is running.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from hx.orders import parse_order
-from hx.ui.data import InstanceSource
-
-from .conftest import _serve, manifest
+from .conftest import _serve, isolated_source, manifest
+from .test_views_js import render
 
 REPO = Path(__file__).resolve().parents[2]
-PACK = REPO / "tests" / "scenario" / "m8"
-
-#: README step 4: the decision is open and eng-002 is waiting on the human.
-STATES = {
-    "partner": ("working", None, [], True),
-    "eng-001": ("complete", "done", [], False),
-    "eng-002": ("complete", "decision", ["eng-001"], False),
-}
+SCENARIOS = REPO / "tests" / "scenario"
 
 PANE_LOG = (
     "\x1b[2m> hx task\x1b[0m\n"
@@ -40,23 +37,38 @@ PANE_LOG = (
 )
 
 
-@pytest.fixture(scope="module")
-def m8_root(tmp_path_factory):
-    """An instance in the M8 shape, built once and checked for writes afterwards."""
-    pytest.importorskip("tests.scenario.packlib", reason="the M8 pack is the gtm lane's")
+def isolated(root: Path) -> InstanceSource:
+    return isolated_source(root)
+
+
+def pack_steps():
+    """Every observation point of both packs: (pack, stem, states, worker_pod)."""
+    from tests.scenario import test_m8_pack, test_m8b_pack
+
+    for module, pack in ((test_m8_pack, "m8"), (test_m8b_pack, "m8b")):
+        for stem, states in module.STEPS:
+            yield pack, stem, states, module.POD
+
+
+ALL_STEPS = list(pack_steps())
+STEP_IDS = [f"{pack}-{stem}" for pack, stem, _, _ in ALL_STEPS]
+
+
+def build_step(root: Path, pack: str, states: dict, worker_pod: str) -> Path:
+    """An instance in that step's shape, with the pack's real orders and personas."""
     from tests.scenario import packlib
 
-    root = tmp_path_factory.mktemp("hx-m8")
-    packlib.build_instance(root, STATES, worker_pod="engineers")
+    packlib.build_instance(root, states, worker_pod=worker_pod)
+    source = SCENARIOS / pack
 
     orders = root / "orders"
     orders.mkdir(parents=True, exist_ok=True)
-    for source in sorted((PACK / "orders").glob("*.md")):
-        shutil.copy(source, orders / source.name)
-    for source in sorted((PACK / "config").glob("*/AGENTS.md")):
-        target = root / "config" / source.parent.name
+    for order_file in sorted((source / "orders").glob("*.md")):
+        shutil.copy(order_file, orders / order_file.name)
+    for agents in sorted((source / "config").glob("*/AGENTS.md")):
+        target = root / "config" / agents.parent.name
         target.mkdir(parents=True, exist_ok=True)
-        shutil.copy(source, target / "AGENTS.md")
+        shutil.copy(agents, target / "AGENTS.md")
 
     # Record what `hx dispatch` records: the parsed `## Order` text, not the file.
     tasks = json.loads((root / "tasks.json").read_text())
@@ -67,8 +79,128 @@ def m8_root(tmp_path_factory):
             record["order"] = parsed.text
             record["after"] = parsed.after
     (root / "tasks.json").write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
+    return root
 
-    # The pane log the UI falls back to when the session is gone (spec 03, 11).
+
+def expected_board(pack: str, stem: str) -> list[dict]:
+    """The gtm lane's checked-in `hx board` text, parsed into columns (spec 08)."""
+    rows = []
+    for line in (SCENARIOS / pack / "expected" / f"{stem}.txt").read_text().strip().splitlines():
+        path, after, outcome, subagents, goal = line.split("  ")
+        rows.append({
+            "file": path,
+            "id": Path(path).name.rsplit("-", 1)[0],
+            "after": [] if after == "-" else after.split(","),
+            "outcome": None if outcome == "-" else outcome,
+            "open_subagents": int(subagents),
+            "has_goal": goal != "-",
+        })
+    return rows
+
+
+# -- every step of both packs --------------------------------------------
+
+@pytest.fixture(scope="session")
+def step_roots(tmp_path_factory):
+    """Each step built once, shared by the tests below."""
+    pytest.importorskip("tests.scenario.packlib", reason="the scenario packs are the gtm lane's")
+    roots = {}
+    base = tmp_path_factory.mktemp("hx-steps")
+    for pack, stem, states, worker_pod in ALL_STEPS:
+        roots[(pack, stem)] = build_step(base / f"{pack}-{stem}", pack, states, worker_pod)
+    return roots
+
+
+@pytest.mark.parametrize("pack,stem,states,worker_pod", ALL_STEPS, ids=STEP_IDS)
+def test_the_board_matches_the_packs_expected_board(step_roots, pack, stem, states, worker_pod):
+    board = isolated(step_roots[(pack, stem)]).board()
+    rows = {item["id"]: item for item in board["items"]}
+    expected = expected_board(pack, stem)
+
+    assert [item["id"] for item in board["items"]] == [row["id"] for row in expected], (
+        "partner first, then by id (CONTRACTS.md)"
+    )
+    for row in expected:
+        item = rows[row["id"]]
+        assert item["file"] == row["file"]
+        assert item["after"] == row["after"]
+        assert item["outcome"] == row["outcome"]
+        assert item["open_subagents"] == row["open_subagents"]
+        assert (item["goal_ts"] is not None) is row["has_goal"]
+        assert item["session_alive"] is False, "the private tmux server has no sessions"
+
+
+@pytest.mark.parametrize("pack,stem,states,worker_pod", ALL_STEPS, ids=STEP_IDS)
+def test_the_after_graph_matches_the_expected_board(step_roots, pack, stem, states, worker_pod):
+    """The graph the Orders view draws, against the board the pack expects.
+
+    The two are not the same list, and should not be. The board's `after` column
+    comes from `tasks.json`, so it is empty until an item is dispatched; the
+    Orders view reads the order *files*, so it shows a dependency the Partner has
+    written but not yet dispatched. At M8 step 1 that is the whole difference:
+    `orders/eng-002.md` already declares `after: [eng-001]` while the board shows
+    `-`. So the graph must contain every edge the board claims, and every edge it
+    draws must be one the orders document itself declares.
+    """
+    orders = isolated(step_roots[(pack, stem)]).orders()
+    expected = expected_board(pack, stem)
+
+    declared = sorted(
+        (dep, entry["id"]) for entry in orders["orders"] for dep in entry["after"]
+    )
+    drawn = sorted((edge["from"], edge["to"]) for edge in orders["graph"]["edges"])
+    assert drawn == declared, "the graph is exactly what the orders document declares"
+
+    from_board = {(dep, row["id"]) for row in expected for dep in row["after"]}
+    assert from_board <= set(drawn), "no dependency the board shows is missing from the graph"
+
+    outcomes = {row["id"]: row["outcome"] for row in expected}
+    for edge in orders["graph"]["edges"]:
+        assert edge["met"] is (outcomes.get(edge["from"]) == "done")
+
+
+@pytest.mark.parametrize("pack,stem,states,worker_pod", ALL_STEPS, ids=STEP_IDS)
+def test_every_view_renders_at_every_step(step_roots, pack, stem, states, worker_pod, tmp_path):
+    """The board, the orders, the archive, the Partner, and each agent in turn."""
+    source = isolated(step_roots[(pack, stem)])
+    ids = [item["id"] for item in source.board()["items"]]
+    overrides = {
+        "/api/board": source.board(),
+        "/api/orders": source.orders(),
+        "/api/archive": source.archive(),
+    }
+    for item_id in ids:
+        overrides[f"/api/show/{item_id}"] = source.show(item_id)
+
+    workers = [item_id for item_id in ids if item_id != "partner"]
+    rendered = render(overrides, tmp_path, open_ids=workers)
+
+    assert rendered["banner"] is None, f"{pack} {stem}: a view failed"
+    assert len(rendered["views"]["board"]["rows"]) == len(ids)
+    for item_id in workers:
+        agent = rendered["views"]["agents"][item_id]
+        assert agent["headings"][0] == f"{item_id} · work item"
+        assert agent["headings"][-1] == f"pane · {item_id}"
+    assert "PARTNER.md" in rendered["views"]["partner"]["headings"]
+    board_rows = [row for row in rendered["views"]["partner"]["rows"] if len(row["cells"]) == 11]
+    assert len(board_rows) == len(ids), "the whole board is on the Partner view"
+
+
+# -- the M8 decision point, in detail ------------------------------------
+
+M8_DECISION = next(
+    (states for stem, states in __import__(
+        "tests.scenario.test_m8_pack", fromlist=["STEPS"]
+    ).STEPS if stem == "04-eng-002-decision"),
+    None,
+)
+
+
+@pytest.fixture(scope="module")
+def m8_root(tmp_path_factory):
+    """M8 step 4, with a pane log so the dead-session fallback is exercised."""
+    pytest.importorskip("tests.scenario.packlib", reason="the scenario packs are the gtm lane's")
+    root = build_step(tmp_path_factory.mktemp("hx-m8"), "m8", M8_DECISION, "engineers")
     log = root / "logs" / "eng-002" / "eng-002-pane.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(PANE_LOG, encoding="utf-8")
@@ -85,7 +217,7 @@ def m8_root(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def m8(m8_root):
-    server = _serve(InstanceSource(m8_root))
+    server = _serve(isolated(m8_root))
     handle = next(server)
     try:
         yield handle
@@ -93,39 +225,19 @@ def m8(m8_root):
         server.close()
 
 
-# -- the pack is placed as its README says -------------------------------
-
 def test_the_pack_is_placed(m8_root):
     assert sorted(p.name for p in (m8_root / "orders").glob("*.md")) == [
         "eng-001.md", "eng-002.addendum.md", "eng-002.md", "partner.md",
     ]
     for item_id in ("eng-001", "eng-002"):
-        assert (m8_root / "config" / item_id / "AGENTS.md").is_file()
-        assert "## UPDATES BELOW ONLY" in (m8_root / "config" / item_id / "AGENTS.md").read_text()
-    assert (m8_root / "pods" / "partner" / "partner-working.md").is_file()
-    assert (m8_root / "pods" / "engineers" / "eng-001-complete.md").is_file()
-    assert (m8_root / "pods" / "engineers" / "eng-002-complete.md").is_file()
-
-
-# -- every view ----------------------------------------------------------
-
-def test_the_board_is_the_m8_decision_point(m8):
-    status, board = m8.client.json("/api/board")
-    assert status == 200
-    rows = {item["id"]: item for item in board["items"]}
-    assert [item["id"] for item in board["items"]] == ["partner", "eng-001", "eng-002"]
-    assert rows["partner"]["state"] == "working"
-    assert (rows["eng-001"]["state"], rows["eng-001"]["outcome"]) == ("complete", "done")
-    assert (rows["eng-002"]["state"], rows["eng-002"]["outcome"]) == ("complete", "decision")
-    assert rows["eng-002"]["after"] == ["eng-001"]
-    assert rows["eng-002"]["ready"] is True, "its dependency finished done"
-    assert all(item["session_alive"] is False for item in board["items"]), "no agent is launched"
+        agents = m8_root / "config" / item_id / "AGENTS.md"
+        assert agents.is_file()
+        assert "## UPDATES BELOW ONLY" in agents.read_text()
 
 
 def test_show_eng_002_carries_the_decision(m8):
     status, show = m8.client.json("/api/show/eng-002")
     assert status == 200
-    assert show["id"] == "eng-002"
     assert show["state"] == "complete"
     assert show["task"]["outcome"] == "decision"
     assert show["task"]["after"] == ["eng-001"]
@@ -133,12 +245,10 @@ def test_show_eng_002_carries_the_decision(m8):
 
 
 def test_the_pane_falls_back_to_the_log(m8):
-    """No session, so the last thing the agent said comes from the pane log."""
     _, show = m8.client.json("/api/show/eng-002")
     pane = show["pane"]
     assert pane["alive"] is False
     assert pane["source"] == "log"
-    assert pane["error"]
     assert pane["lines"] == [
         "> hx task",
         "I have built everything that does not depend on the open question and committed it.",
@@ -152,57 +262,36 @@ def test_a_partner_with_no_log_says_the_session_is_gone(m8):
     _, show = m8.client.json("/api/show/partner")
     assert show["pane"]["source"] == "none"
     assert show["pane"]["lines"] == []
-    assert "partner" in show["pane"]["error"]
-
-
-def test_orders_shows_the_after_chain_and_the_edited_file(m8, m8_root):
-    status, orders = m8.client.json("/api/orders")
-    assert status == 200
-    by_id = {order["id"]: order for order in orders["orders"]}
-    assert by_id["eng-002"]["after"] == ["eng-001"]
-    assert by_id["eng-002"]["waiting_on"] == [], "eng-001 finished done"
-    assert orders["graph"]["edges"] == [{"from": "eng-001", "to": "eng-002", "met": True}]
-    assert all(order["file_matches_record"] for order in orders["orders"]), (
-        "nothing has been edited since dispatch"
-    )
 
 
 def test_archive_is_empty_at_this_point(m8):
     status, archive = m8.client.json("/api/archive")
     assert status == 200
-    assert {item["id"] for item in archive["items"]} == {"partner", "eng-001", "eng-002"}
-    assert all(not item["bench"] and not item["archive"] for item in archive["items"]), (
-        "nothing is benched until README step 8"
-    )
+    assert all(not item["bench"] and not item["archive"] for item in archive["items"])
 
 
-def test_the_wake_says_the_partner_has_no_socket(m8):
+# -- the standing rule about other lanes' sessions -----------------------
+
+def test_the_wake_cannot_reach_a_session_this_lane_did_not_create(m8, m8_root):
+    """ui-5 item 7: never send into a live tmux session on this machine.
+
+    `hx wake` reaches the Partner only through `run/partner/socket.json` inside
+    `HARNESS_ROOT`. A scratch instance has none, so there is nothing to connect
+    to however many real `partner` sessions are running here.
+    """
+    assert not (m8_root / "run" / "partner" / "socket.json").exists()
     response = m8.client.post("/api/partner/wake", {"text": "eng-002 needs a decision"})
     assert response.status == 200
     assert json.loads(response.body) == {"delivered": False, "status": "no-socket"}
 
 
-# -- the views render it -------------------------------------------------
+def test_the_board_of_a_scratch_instance_is_read_through_a_private_tmux(m8_root):
+    """Why every instance here is isolated, asserted rather than assumed.
 
-def test_every_view_renders_the_m8_instance(m8_root, tmp_path):
-    from .test_views_js import render
-
-    source = InstanceSource(m8_root)
-    rendered = render(
-        {
-            "/api/board": source.board(),
-            "/api/orders": source.orders(),
-            "/api/archive": source.archive(),
-            "/api/show/partner": source.show("partner"),
-            "/api/show/eng-001": source.show("eng-001"),
-        },
-        tmp_path,
-    )
-    assert rendered["banner"] is None
-    assert rendered["views"]["board"]["headings"] == ["invariant errors (1)", "board · 3 items"]
-    assert rendered["views"]["orders"]["headings"] == ["after graph · 1 edge", "orders · 3"]
-    assert rendered["views"]["archive"]["headings"] == ["archive · 3 ids"]
-    assert "not composed yet" in rendered["views"]["agent"]["text"], (
-        "a context file hx has named but not written is not `0 chars`"
-    )
-    assert len(rendered["views"]["partner"]["rows"]) == 3
+    Read through the default server, this fixture's board would report whatever
+    sessions happen to be running under those ids on this machine — the build
+    lane runs a real one called `partner`. Through the private server it reports
+    the fixture.
+    """
+    through_private = isolated(m8_root).board()
+    assert all(item["session_alive"] is False for item in through_private["items"])

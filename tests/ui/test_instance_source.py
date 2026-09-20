@@ -25,7 +25,7 @@ import pytest
 
 from hx.ui.data import CommandError, InstanceSource, NotFound, SourceUnavailable, run_hx
 
-from .conftest import FIXTURES, _serve
+from .conftest import DEAD_TMUX, FIXTURES, _serve, isolated_source
 
 BOARD_STATES = {"idle", "queued", "working", "complete"}
 
@@ -77,10 +77,10 @@ def test_show_partner_carries_partner_md_against_a_real_instance(instance_root):
 
 def test_show_overlays_the_live_pane_on_a_real_instance(instance_root):
     """Spec 16.2: the UI captures the pane itself, on the SSE tick."""
-    pane = InstanceSource(instance_root).show("eng-001")["pane"]
+    pane = isolated_source(instance_root).show("eng-001")["pane"]
     assert set(pane) == {"session", "alive", "lines", "source", "error"}
     assert pane["session"] == "eng-001"
-    assert pane["alive"] is False, "no tmux session of that name in the test environment"
+    assert pane["alive"] is False, "the private tmux server has no sessions"
 
 
 def test_orders_is_live_and_reports_both_file_states(instance_root):
@@ -262,11 +262,12 @@ def test_show_parses_and_carries_the_contract_keys(stub_source):
 
 def test_show_overlays_a_live_pane_capture(stub_source):
     """Spec 16.2: the pane is re-read on the SSE tick, so the UI captures it itself."""
+    stub_source.tmux_socket = DEAD_TMUX
     show = stub_source.show("eng-001")
     pane = show["pane"]
     assert set(pane) == {"session", "alive", "lines", "source", "error"}
     assert pane["session"] == "eng-001"
-    assert pane["alive"] is False, "no tmux session of that name in the test environment"
+    assert pane["alive"] is False, "the private tmux server has no sessions"
     assert pane["source"] == "none"
     # The fixture's own canned pane lines were replaced, not merged.
     assert pane["lines"] == []

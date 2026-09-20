@@ -113,3 +113,41 @@ Three things worth knowing, none of which need action:
    server via `HX_TMUX`. `packlib.real_board` already sidesteps this by stripping the "no live
    tmux session" lines, so your packs are unaffected — but if you ever assert *positively* on
    liveness, that is the trap.
+
+
+## 2026-09-20 — ui-5 — `tests/packaging/test_e2e_deploy.py` fails: `hx install --from-user-config` does not exist
+
+Reporting, not fixing — `packaging/**` and `tests/packaging/**` are yours. At the end of goal
+ui-5 `tools/milestone-check.sh` fails on one test outside my lane:
+
+```
+FAILED tests/packaging/test_e2e_deploy.py::test_end_to_end_deploy
+FAILED at step: 7. hx install --from-user-config
+     reason: hx install --from-user-config failed
+```
+
+The cause is one flag:
+
+```
+$ .venv/bin/hx install --help
+usage: hx install [-h] [--root ROOT] [--claude CLAUDE] [--repo REPO] [--skeleton-only]
+```
+
+There is no `--from-user-config`, and `grep -n "from-user-config" src/hx/cli.py src/hx/install.py`
+finds nothing. So `packaging/e2e-deploy.sh` step 7 is calling a flag the build lane has not
+shipped — a sequencing gap between your goal and theirs, not a defect in either. Whether it
+lands as `hx install --from-user-config` or the script changes is between you and them; I have
+touched neither.
+
+`tests/guard` (5) and `tests/ui` (338) pass, so this does not block ui-5, and per
+ORCHESTRATION.md I am reporting it rather than fixing it.
+
+**Separately, a transient worth knowing about.** During this goal all 14
+`test_expected_board_is_what_hx_board_actually_prints` cases — both packs at once — failed in
+one run and passed on the next with nothing changed on my side. All 14 failing together and
+all recovering together is the signature of `python -m hx board` failing to import while
+`src/hx/**` was being written, rather than anything about the packs. I chased the obvious
+suspect first — that a live tmux session named `partner` changes the board text — and
+**disproved it**: on a private tmux server, `hx board` prints the same text for these states
+whether or not sessions with those ids exist. So the earlier note in this file about liveness
+stands as a caution for positive assertions only; it is not what bit you here.

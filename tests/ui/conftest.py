@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import uuid
 import json
 import subprocess
 import sys
@@ -272,6 +273,21 @@ def build_instance(root: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+#: A tmux server name that is never started, so `has-session` always fails.
+#: `hx board` matches a live session by the id itself, so without this a scratch
+#: instance would report whatever session another lane is running under that id —
+#: the build lane runs a real one called `partner` on this machine.
+DEAD_TMUX = f"hx-ui-none-{uuid.uuid4().hex[:8]}"
+ISOLATED_ENV = {"HX_TMUX": f"tmux -L {DEAD_TMUX}"}
+
+
+def isolated_source(root):
+    """`InstanceSource` that cannot see, or be confused by, another lane's tmux."""
+    from hx.ui.data import InstanceSource
+
+    return InstanceSource(root, env=ISOLATED_ENV, tmux_socket=DEAD_TMUX)
 
 
 @pytest.fixture(scope="session")

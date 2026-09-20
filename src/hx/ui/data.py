@@ -199,7 +199,12 @@ def _hx_binary() -> str:
 
 
 def run_hx(
-    root: Path, args: list[str], *, binary: str | None = None, document: bool = False
+    root: Path,
+    args: list[str],
+    *,
+    binary: str | None = None,
+    document: bool = False,
+    env: dict[str, str] | None = None,
 ) -> str:
     """Run one `hx` command against `root` and return its stdout.
 
@@ -216,6 +221,8 @@ def run_hx(
     command = [binary or _hx_binary(), *args]
     environment = dict(os.environ, HARNESS_ROOT=str(root))
     environment.pop("HARNESS_ID", None)  # the UI is not an agent; spec 08
+    if env:
+        environment.update(env)
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=False, env=environment)
     except OSError as exc:
@@ -302,11 +309,19 @@ class InstanceSource(Source):
         binary: str | None = None,
         tmux_socket: str | None = None,
         prefer_subprocess: bool = False,
+        env: dict[str, str] | None = None,
     ) -> None:
         self.root = Path(root)
         self.binary = binary
         self.tmux_socket = tmux_socket
         self.prefer_subprocess = prefer_subprocess
+        # `hx.board.collect` and `hx.show.collect` read only `HX_TMUX` from this,
+        # to reach a tmux server other than the default (handoff/build-to-ui.md).
+        # A server leaves it unset: it wants the real one. A test sets it, with a
+        # matching `tmux_socket`, so a scratch instance cannot see — or be
+        # confused by — sessions another lane happens to be running under the
+        # same ids on the same machine.
+        self.env = env
 
     # -- binding ---------------------------------------------------------
     def bound(self, name: str):
@@ -332,7 +347,7 @@ class InstanceSource(Source):
 
     # -- readers ---------------------------------------------------------
     def _json(self, args: list[str]) -> dict[str, Any]:
-        raw = run_hx(self.root, args, binary=self.binary, document=True)
+        raw = run_hx(self.root, args, binary=self.binary, document=True, env=self.env)
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -345,7 +360,7 @@ class InstanceSource(Source):
         collect = self.bound("board")
         if collect is None:
             return self._json(["board", "--json"])
-        return self._translate(lambda: collect(self.root))
+        return self._translate(lambda: collect(self.root, env=self.env))
 
     def show(self, agent_id: str) -> dict[str, Any]:
         if id_of(agent_id) != agent_id:
@@ -354,7 +369,7 @@ class InstanceSource(Source):
         if collect is None:
             document = self._json(["show", agent_id, "--json"])
         else:
-            document = self._translate(lambda: collect(self.root, agent_id))
+            document = self._translate(lambda: collect(self.root, agent_id, env=self.env))
         # Spec 16.2: the pane is re-read on the SSE tick, so the UI captures it
         # itself rather than showing whatever `hx show` happened to catch.
         document["pane"] = pane.capture(self.root, agent_id, socket=self.tmux_socket)
@@ -388,7 +403,7 @@ class InstanceSource(Source):
     def _wake_by_subprocess(self, text: str) -> str:
         """The fallback. `hx wake` exits 0 only for `accepted`, 3 otherwise."""
         try:
-            out = run_hx(self.root, ["wake", "partner", text], binary=self.binary)
+            out = run_hx(self.root, ["wake", "partner", text], binary=self.binary, env=self.env)
         except CommandError as exc:
             if exc.returncode != WAKE_NOT_DELIVERED:
                 raise  # exit 2 is the UI calling hx wrong; surface it

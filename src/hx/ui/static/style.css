@@ -337,6 +337,9 @@ code {
 
 pre code { background: none; padding: 0; }
 pre.code { border-left: 3px solid var(--accent); }
+.context { border-left: 3px solid var(--line); padding-left: 14px; }
+.context h3.md, .context h4.md { color: var(--accent); margin-top: 14px; }
+
 .addendum-block { border-left: 3px solid var(--accent); padding-left: 12px; margin: 8px 0; }
 
 /* -- metrics ----------------------------------------------------------- */
@@ -431,7 +434,82 @@ button.send[disabled] { cursor: default; opacity: 0.5; }
   padding-top: 12px;
 }
 
+/* -- markdown tables --------------------------------------------------- */
+table.md {
+  border-collapse: collapse;
+  margin: 8px 0;
+  min-width: 0;
+  width: auto;
+}
+
+table.md th, table.md td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  white-space: normal;
+}
+
+table.md th {
+  background: var(--panel-2);
+  color: var(--ink);
+  font: 600 12px/1.4 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+table.md td { font-size: 13px; }
+table.md .right { text-align: right; }
+table.md .center { text-align: center; }
+
+/* -- the agent id switcher --------------------------------------------- */
+.switcher {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.switch {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--accent);
+  cursor: pointer;
+  font: 600 12px/1 var(--mono);
+  padding: 6px 10px;
+}
+
+.switch:hover { background: var(--panel-2); }
+
+.switch.on {
+  background: var(--panel-2);
+  border-color: var(--accent);
+  color: var(--ink);
+  cursor: default;
+}
+
+/* -- the id column stays put while the board scrolls ------------------- */
+.scroll table thead th:first-child,
+.scroll table td.id {
+  background: var(--bg);
+  left: 0;
+  position: sticky;
+  z-index: 2;
+}
+
+.scroll table thead th:first-child { z-index: 3; }
+.scroll table td.id { border-right: 1px solid var(--line); }
+.scroll table tbody tr:hover td.id { background: var(--panel-2); }
+.scroll table tbody tr.partner td.id { background: #1a2030; }
+/* The markdown tables are narrow and unpinned; only the wide board needs this. */
+.scroll table.md thead th:first-child,
+.scroll table.md td.id { position: static; background: none; }
+
 @media (max-width: 640px) {
   main { padding: 14px 16px; }
   .banner { margin: 0 16px 12px; }
+  /* Let the nav take its own row rather than shoving LIVE onto one. */
+  .bar { gap: 10px 14px; }
+  nav { flex-basis: 100%; order: 3; }
+  .live { order: 2; margin-left: auto; }
 }

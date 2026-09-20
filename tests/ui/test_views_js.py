@@ -24,8 +24,11 @@ STATIC = REPO / "src" / "hx" / "ui" / "static"
 node = pytest.mark.skipif(shutil.which("node") is None, reason="no node on PATH")
 
 
-def render(overrides=None, tmp_path=None):
-    """Run the real `static/app.js` under node and return what each view produced."""
+def render(overrides=None, tmp_path=None, open_ids=None):
+    """Run the real `static/app.js` under node and return what each view produced.
+
+    `open_ids` are the agents to open in turn; each lands in `views.agents[id]`.
+    """
     if shutil.which("node") is None:
         pytest.skip("no node on PATH")
     argv = ["node", str(RENDER), str(FIXTURES), str(STATIC)]
@@ -33,6 +36,10 @@ def render(overrides=None, tmp_path=None):
         path = tmp_path / "overrides.json"
         path.write_text(json.dumps(overrides), encoding="utf-8")
         argv.append(str(path))
+    elif open_ids:
+        argv.append("")
+    if open_ids:
+        argv.append(",".join(open_ids))
     result = subprocess.run(argv, capture_output=True, text=True, check=False, cwd=REPO)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
@@ -61,7 +68,9 @@ def test_the_page_pulls_nothing_from_a_cdn():
 
 def test_every_view_renders_without_an_error_banner(rendered):
     assert rendered["banner"] is None
-    assert set(rendered["views"]) == {"board", "orders", "archive", "agentPicker", "agent", "partner"}
+    assert set(rendered["views"]) == {
+        "board", "orders", "archive", "agentPicker", "agent", "agents", "partner",
+    }
     assert rendered["navigation"] == ["board", "orders", "archive", "agent", "partner"]
 
 
@@ -205,10 +214,18 @@ def test_the_agent_view_renders_the_work_item_sections(rendered):
     addendum = show["task"]["addenda"][0]["text"].replace("`", "")
     assert addendum in text.replace("`", ""), "the addendum is rendered beneath the order"
 
-    tasks = [item for item in agent["listItems"] if item["class"].startswith("task")]
-    assert len(tasks) == 4, "the four `## Tasks` checkboxes"
-    assert sum(1 for t in tasks if "done" in t["class"]) == 2
-    assert sum(1 for t in tasks if "open" in t["class"]) == 2
+    # The context file carries its own `## Tasks` copy and renders too, so match
+    # the work item's four by their text rather than counting the page.
+    tasks = {item["text"] for item in agent["listItems"] if item["class"].startswith("task")}
+    body_tasks = [
+        line.strip("- ").strip()
+        for line in findSectionText(show, "Tasks").splitlines()
+        if line.strip()
+    ]
+    assert len(body_tasks) == 4
+    for line in body_tasks:
+        label = line.replace("[x]", "").replace("[ ]", "").strip().replace("`", "")
+        assert any(label in task for task in tasks), label
 
 
 def test_the_agent_view_renders_step_state(rendered):
@@ -232,7 +249,26 @@ def test_the_agent_view_renders_the_context_file_with_its_seam(rendered):
     text = rendered["views"]["agent"]["text"]
     assert show["context_file"]["path"] in text
     assert "seam 12:50:00Z" in text
-    assert any(show["context_file"]["text"] == block["text"] for block in rendered["views"]["agent"]["pre"])
+    # Rendered as markdown since ui-5, so match its prose rather than the blob.
+    plain = text.replace("`", "")
+    for line in (
+        "Prefer same-directory renames; spec 08 forbids timeouts anywhere.",
+        "Also refuse an id with no config/<id>/ directory; exit 1 and name it.",
+        "open: st7 refuse an id with no config/<id>/",
+    ):
+        assert line in plain, line
+
+
+def findSectionText(show, name):
+    """The named `## ` section of the work-item body."""
+    current, lines = None, []
+    for line in show["work_item"]["body"].splitlines():
+        if line.startswith("## "):
+            current = line[3:].strip()
+            continue
+        if current == name:
+            lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def test_the_agent_view_renders_every_stream_tail_and_marks_the_seam(rendered):
@@ -523,7 +559,10 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
     assert "PARTNER.md" in partner["headings"]
     assert "chat" in partner["headings"]
     assert "tmux attach -t partner" in partner["text"]
-    assert len(partner["rows"]) == len(overrides["/api/board"]["items"])
+    # PARTNER.md renders its own markdown tables now, so count board rows only:
+    # the board has one cell per COLUMNS entry.
+    board_rows = [row for row in partner["rows"] if len(row["cells"]) == 11]
+    assert len(board_rows) == len(overrides["/api/board"]["items"])
 
     board = rendered["views"]["board"]
     assert [row["cells"][0].split("pods/")[0] for row in board["rows"]] == ["partner", "eng-001"]
@@ -543,3 +582,234 @@ def test_the_orders_view_shows_a_real_file_edited_since_dispatch(instance_root, 
     rendered = render({"/api/board": source.board(), "/api/orders": orders}, tmp_path)
     labels = [pill["text"] for pill in rendered["views"]["orders"]["pills"]]
     assert labels.count("file edited since dispatch") == 1, "exactly the one that drifted"
+
+
+# -- ui-5: the orchestrator's browser pass -------------------------------
+
+def order_with(record, order_text):
+    return {
+        "id": "eng-009", "pod": "engineers", "path": "orders/eng-009.md", "after": [],
+        "order": order_text, "addenda": [], "record": record, "state": "working" if record else None,
+        "ready": True, "waiting_on": [], "file_matches_record": None if record is None else
+        (order_text is not None and order_text == record["order"]),
+    }
+
+
+def orders_payload(entry):
+    return {
+        "root_abs": "/srv/hx", "ts": "2026-09-20T13:10:00Z", "orders": [entry],
+        "graph": {"nodes": [], "edges": []}, "errors": [],
+    }
+
+
+RECORD = {
+    "order": "## Order\nDo the thing.\n", "after": [], "addenda": [],
+    "outcome": None, "dispatched": "2026-09-20T12:00:00Z", "completed": None,
+}
+
+
+def badges(rendered):
+    return [pill["text"] for pill in rendered["views"]["orders"]["pills"]]
+
+
+def test_an_order_file_that_matches_gets_no_badge(tmp_path):
+    entry = order_with(RECORD, RECORD["order"])
+    assert entry["file_matches_record"] is True
+    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
+    assert "file edited since dispatch" not in badges(rendered)
+    assert "order file missing" not in badges(rendered)
+
+
+def test_an_edited_order_file_says_edited(tmp_path):
+    entry = order_with(RECORD, RECORD["order"] + "\nAnd one more thing.\n")
+    assert entry["file_matches_record"] is False
+    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
+    assert "file edited since dispatch" in badges(rendered)
+    assert "order file missing" not in badges(rendered)
+
+
+def test_a_missing_order_file_says_missing_not_edited(tmp_path):
+    """`hx orders` reports `file_matches_record: false` for both; only one is an edit."""
+    entry = order_with(RECORD, None)
+    entry["path"] = None
+    assert entry["file_matches_record"] is False
+    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
+    assert "order file missing" in badges(rendered)
+    assert "file edited since dispatch" not in badges(rendered), (
+        "a file that does not exist was not edited"
+    )
+
+
+def test_an_undispatched_order_gets_neither_badge(tmp_path):
+    entry = order_with(None, "## Order\nNot dispatched yet.\n")
+    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
+    assert "order file missing" not in badges(rendered)
+    assert "file edited since dispatch" not in badges(rendered)
+    assert "not dispatched" in badges(rendered)
+
+
+# -- markdown tables -----------------------------------------------------
+
+SKELETON_PARTNER = REPO / "src" / "hx" / "skeleton" / "PARTNER.md"
+
+
+def test_the_skeleton_partner_md_tables_render_as_tables(tmp_path):
+    """`PARTNER.md`'s fleet table was showing as raw pipes."""
+    show = json.loads((FIXTURES / "show-partner.json").read_text())
+    show["partner_md"] = SKELETON_PARTNER.read_text()
+    rendered = render({"/api/show/partner": show}, tmp_path)
+    partner = rendered["views"]["partner"]
+
+    assert "|---|" not in partner["text"], "no separator row leaked through as text"
+    assert "| id |" not in partner["text"]
+    for header in ("what it is for", "asked in chat", "what landed"):
+        assert header in partner["headers"], f"{header!r} is a table header now"
+
+
+def test_a_table_renders_one_cell_per_header(tmp_path):
+    show = json.loads((FIXTURES / "show-partner.json").read_text())
+    show["partner_md"] = (
+        "# Fleet\n\n"
+        "| id | role | notes |\n"
+        "|---|:---:|---:|\n"
+        "| eng-001 | engineer | first |\n"
+        "| eng-002 | engineer |\n"
+    )
+    rendered = render({"/api/show/partner": show}, tmp_path)
+    rows = [row for row in rendered["views"]["partner"]["rows"] if len(row["cells"]) == 3]
+    assert [cell["text"] if isinstance(cell, dict) else cell for cell in rows[0]["cells"]] == [
+        "eng-001", "engineer", "first",
+    ]
+    short = rows[1]["cells"]
+    assert len(short) == 3, "a short row is padded rather than shifting the columns"
+    assert (short[2]["text"] if isinstance(short[2], dict) else short[2]) == ""
+
+
+def test_a_lone_pipe_line_is_still_a_paragraph(tmp_path):
+    """Only a header followed by a rule row is a table."""
+    show = json.loads((FIXTURES / "show-partner.json").read_text())
+    show["partner_md"] = "Use `a | b` to pipe.\n"
+    rendered = render({"/api/show/partner": show}, tmp_path)
+    assert "Use a | b to pipe." in rendered["views"]["partner"]["text"]
+
+
+# -- pane wording --------------------------------------------------------
+
+def test_a_pane_with_no_session_and_no_log_says_so(tmp_path):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["pane"] = {"session": "eng-001", "alive": False, "lines": [], "source": "none", "error": "gone"}
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    assert "no session, no log" in agent["text"]
+    assert "from the none" not in agent["text"]
+
+
+@pytest.mark.parametrize("source, said", [("session", "from the session"), ("log", "from the log")])
+def test_the_other_two_pane_sources_keep_their_wording(tmp_path, source, said):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["pane"] = {"session": "eng-001", "alive": source == "session",
+                    "lines": ["a line"], "source": source, "error": None}
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    assert said in agent["text"]
+
+
+# -- the agent id switcher -----------------------------------------------
+
+def test_the_agent_view_offers_every_other_id(rendered):
+    board = json.loads((FIXTURES / "board.json").read_text())
+    ids = [item["id"] for item in board["items"]]
+    agent = rendered["views"]["agent"]
+    assert agent["openable"] == [i for i in ids if i != "eng-001"], (
+        "every id but the one being shown, which is not a button"
+    )
+    assert "eng-001" in agent["text"]
+
+
+def test_the_switcher_opens_another_agent(tmp_path):
+    board = json.loads((FIXTURES / "board.json").read_text())
+    overrides = {"/api/board": board}
+    for name in ("eng-001", "partner"):
+        overrides[f"/api/show/{name}"] = json.loads((FIXTURES / f"show-{name}.json").read_text())
+    rendered = render(overrides, tmp_path, open_ids=["eng-001"])
+    # The switcher is what `openable` lists, and clicking one is what the M8
+    # tests do for every worker; here it is enough that it is reachable.
+    assert rendered["views"]["agents"]["eng-001"]["openable"], "other ids are offered"
+
+
+def test_a_single_id_fleet_has_no_switcher(tmp_path):
+    board = json.loads((FIXTURES / "board.json").read_text())
+    board["items"] = [item for item in board["items"] if item["id"] == "eng-001"]
+    board["errors"] = []
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    rendered = render({"/api/board": board, "/api/show/eng-001": show}, tmp_path,
+                      open_ids=["eng-001"])
+    assert rendered["views"]["agents"]["eng-001"]["openable"] == [], (
+        "nothing to switch to, so no switcher"
+    )
+
+
+# -- narrow width (CSS only, so asserted as rules rather than pixels) -----
+
+STYLE = STATIC / "style.css"
+
+
+def css() -> str:
+    return STYLE.read_text(encoding="utf-8")
+
+
+def test_the_board_id_column_is_sticky_while_the_table_scrolls():
+    """At 375 px the board scrolls in its own container; the id must stay put."""
+    text = css()
+    assert ".scroll table td.id" in text
+    block = text.split(".scroll table thead th:first-child,")[1].split("}")[0]
+    assert "position: sticky" in block
+    assert "left: 0" in block
+    assert "background:" in block, "a transparent sticky cell shows the rows sliding under it"
+
+
+def test_the_markdown_tables_are_not_pinned():
+    """Only the wide board needs a sticky column; a PARTNER.md table does not."""
+    assert ".scroll table.md td.id { position: static; background: none; }" in css()
+
+
+def test_the_nav_wraps_without_pushing_live_onto_its_own_line():
+    narrow = css().split("@media (max-width: 640px)")[1]
+    assert "nav { flex-basis: 100%; order: 3; }" in narrow
+    assert ".live { order: 2; margin-left: auto; }" in narrow, (
+        "LIVE stays on the title row; the nav takes the row below"
+    )
+
+
+def test_every_view_keeps_a_side_gutter():
+    """Nothing may sit flush against a 375 px edge."""
+    assert "main {" in css()
+    narrow = css().split("@media (max-width: 640px)")[1]
+    assert "main { padding: 14px 16px; }" in narrow
+
+
+def test_the_context_file_renders_as_markdown(tmp_path):
+    """build-3: it has a fixed section order and is meant to be read, not dumped."""
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["context_file"] = {
+        "path": "run/eng-001/eng-001-main.context.md",
+        "seam_ts": "2026-09-20T12:50:00Z",
+        "text": (
+            "# Context for eng-001-main\n\n"
+            "## Memory\n_source: `config/eng-001/AGENTS.md`_\n\nPrefer same-directory renames.\n\n"
+            "## Tasks\n- [x] Read spec 08.\n- [ ] Refuse an unknown id.\n\n"
+            "## Step state\n_none yet_\n"
+        ),
+    }
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+
+    text = agent["text"]
+    for heading in ("Context for eng-001-main", "Memory", "Step state"):
+        assert heading in text, heading
+    assert "_source:" not in text, "the source line is rendered, not shown as raw markdown"
+    assert "config/eng-001/AGENTS.md" in [code["text"] for code in agent["code"]], (
+        "the file it came from renders as code"
+    )
+    context_tasks = [item for item in agent["listItems"] if item["class"].startswith("task")]
+    assert len(context_tasks) >= 2, "the `## Tasks` section renders as checkboxes"
+    assert not any(
+        block["text"].startswith("# Context for") for block in agent["pre"]
+    ), "no longer dumped into a <pre>"
