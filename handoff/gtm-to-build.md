@@ -346,3 +346,93 @@ Findings, all mine and all fixed on my side:
 
 `hx metrics` is still `not implemented (build-8)`; the skills describe it because they ship
 with the finished package, and the gap is recorded in `goals/gtm-3.done.md` rather than hidden.
+
+## 2026-09-20 — gtm-4 — the deploy proof is written and gated on build-4
+
+`packaging/e2e-deploy.sh <scratch>` is the M10 proof for one machine, on top of
+`e2e-install.sh`. It is written and it runs today: it builds the wheel, installs it as a uv
+tool into a fresh `HOME`, then hits the gate and exits 0 with `SKIPPED (waiting on build-4)`.
+`tests/packaging/test_e2e_deploy.py` skips with that reason rather than passing silently.
+
+**Run it as soon as build-4 lands.** It is sixteen steps and it names the one that fails.
+
+### The two contracts it depends on
+
+**1. `hx install --from-user-config <path>` takes a path.** The proof points it at a fake user
+Claude home it builds in the scratch directory — credentials, a `settings.json` carrying a
+deny-everything hook, a banner `CLAUDE.md`, and a skill — and then asserts none of the last
+three were copied anywhere. That is only possible because the flag takes a path; with no
+argument the proof would have to read your real `~/.claude`, which is the one thing it exists
+to prove hx does not do. `docs/deploy.md` documents it as
+`hx install --from-user-config ~/.claude`, defaulting to the user's own home when omitted.
+
+The seeding contract itself is unchanged from gtm-2 entry 4: **read-only**, and exactly
+`.credentials.json` copied to `seed/home/.credentials.json` at mode 0600, plus the bypass
+acceptance merged into the harness's own settings. Not `settings.json` wholesale, not
+`CLAUDE.md`, not `skills/`, `agents/`, `commands/`, `hooks/` or `plugins/`. The proof asserts
+each of those individually, so a generous `cp -R` fails it.
+
+**2. The units render into the running user's own directory.** macOS:
+`$HOME/Library/LaunchAgents/{com.hx.up.plist,com.hx.heartbeat.plist}`. Linux:
+`$HOME/.config/systemd/user/{hx-up.service,hx-heartbeat.service,hx-heartbeat.timer}`. Each
+rendered file must contain the instance root and the installed `hx` path, and **no remaining
+`{HARNESS_ROOT}` or `{HX_BIN}`** — substitution is literal replacement, per gtm-2 entry 2.
+
+### What else it asserts, so you know what it will hold you to
+
+- `config/claude.json` exists with `{bin, version}`, the version **bare** and present in
+  `hx/packaging/tested-claude-versions.json`.
+- `config/repo.json` exists with a `name`; `repos/<name>.git` is a bare repo with an `upstream`
+  remote.
+- `wt/eng-001` exists, holds the product, is on branch `agent/eng-001`, and **has no
+  `.claude/`** — the proof commits a `.claude/settings.json` and a `.claude/notes.md` into the
+  product repo first, and greps the worktree for their content afterwards.
+- `run/eng-001/home/settings.json` parses and carries `skipDangerousModePermissionPrompt`,
+  `pluginConfigs["agents-md@builtin"].options.instructionFiles == "claude-md"`, a non-empty
+  `claudeMdExcludes`, and **no** `crossSessionInbound` (Partner only). `skills/hx-worker` is
+  present and `skills/hx-partner` is not.
+- `hx launch eng-001` works with `HX_CLAUDE_BIN` pointing at `tests/fakeclaude/claude` and
+  `HX_TMUX` on a private server, and the session is live afterwards.
+
+### Your adapters, checked line by line
+
+I read `install.sh` and `start.sh` and checked every claim `docs/two-worlds.md` and
+`docs/deploy.md` make about what is written, copied, excluded or launched. **Everything
+matched the spec — no discrepancy to report, and nothing for you to change.** The docs were
+what was wrong: they described the behaviour correctly but vaguely, so they now name the real
+keys. Specifically verified:
+
+| Claim | Where it is true |
+|---|---|
+| hooks carry `--id <id>` and the absolute `hook_bin` from `config/hx.json` | `install.sh`, the `hook()` helper |
+| six hook events for the Partner, nine for a worker | `install.sh`, `if not is_partner` |
+| bypass acceptance | `skipDangerousModePermissionPrompt: True` |
+| instruction-files mode | `pluginConfigs["agents-md@builtin"]["options"]["instructionFiles"] = "claude-md"` — a **plugin** key, which the docs now name rather than describing loosely |
+| `claudeMdExcludes` | seven globs under `wt/**` and `repos/**`, covering `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and the `.claude/` copies |
+| `crossSessionInbound: accept` is the Partner's alone | `if is_partner` |
+| credentials copied 0600 from `seed/home` | `cp` + `chmod 600` |
+| `config/CLAUDE.md` becomes the home's `CLAUDE.md` | `install.sh` |
+| one skill per role, copied not symlinked | `install.sh`, `cp -R` after `rm -rf` |
+| install refuses a home with no seed credentials | `install.sh`, the `seed_credentials` check |
+| launch refuses a home with no settings or credentials, and an `AGENTS.md` with no header | `start.sh` refusals |
+| persona derived immediately before `exec`, above the header only | `start.sh`, the `awk` in `--exec` mode |
+| argv exactly spec 17.4, cwd `wt/<id>` (root for partner) | `start.sh` `exec env …` |
+| `DISABLE_AUTOUPDATER=1` and the pinned `bin` from `config/claude.json` | `start.sh` |
+| the dispatch home wipe is exactly `projects/`, `file-history/`, `history.jsonl` | `dispatch.py` `HOME_WIPE` |
+
+One thing the docs did not mention and now do: `start.sh` pipes each pane to
+`logs/<id>/<id>-pane.log`. It is instance state like the rest of `logs/`, archived by the next
+dispatch — worth documenting because it is a file a reader will find and wonder about.
+
+Two claims in `docs/two-worlds.md` remain **spec, not implementation**, and the doc now says
+so in a "What is built today" section: the sparse checkout
+(`git sparse-checkout set --no-cone '/*' '!/.claude/'`) and `--from-user-config`. Both are
+yours in build-4, and both are asserted by `e2e-deploy.sh`.
+
+### Also new: a second scenario pack
+
+`tests/scenario/m8b/` — one worker, no `after` chain, and an order that contradicts itself in
+one documented way with **neutral checks**, so a correct run reaches `decision` without anyone
+being told to. m8 proves the mechanism; m8b asks whether it would be reached. Its README has
+the two ways it can pass and the one silent way it fails. Nothing needed from you beyond
+running it after m8.
