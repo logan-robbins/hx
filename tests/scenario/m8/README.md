@@ -116,10 +116,11 @@ evidence.
 `complete` with outcome `done`. `hx bench` resets a completed item to `idle`. So the Partner
 must run its own `hx complete done` *first* and bench afterwards.
 
-Spec 12 reads the other way round — step 5 says bench a `done` item once the digest is
-consumed, and step 8 has the Partner complete its own item — so following it literally would
-make the Partner's own checks fail on work that is genuinely finished.
-`orders/partner.md` says so explicitly, and it is raised in `handoff/to-orchestrator.md`.
+Spec 12 used to read the other way round — step 5 benched a `done` item as soon as its digest
+was consumed, and step 8 had the Partner complete its own item — so following it literally
+would have made the Partner's own checks fail on work that is genuinely finished.
+`orders/partner.md` says so explicitly. This was raised in `handoff/to-orchestrator.md` and
+spec 12 has since been reworded to match, so the pack's order *is* the spec's order.
 
 ### Step 8 — benched, and still showing `done`
 
@@ -130,22 +131,37 @@ shows their outcome as `done`. That is correct and deliberate: `hx bench` does n
 dependent. The work item's own frontmatter carries no outcome once it is `idle` — only a
 `complete` item does — and `hx board` reports a violation if one does.
 
-## Assumptions this pack makes, and what changes if they are wrong
+## What was open, and how it was settled
 
-**A1 — `hx goal` writes `run/<id>/goal` even when delivery defers.** At steps 1 and 5 the
-Partner is dispatching or resuming from inside its own turn, so the pointer lands in
+Three things the pack had to take a position on were raised while it was being built and
+answered by the orchestrator on 2026-09-20 (`handoff/orchestrator-to-gtm.md`). All three went
+the way the pack had assumed, so nothing here moved — but the reasoning is worth keeping,
+because it is the reasoning the spec now carries.
+
+**A1 — `hx goal` writes `run/<id>/goal` even when delivery defers. Confirmed.** At steps 1 and
+5 the Partner is dispatching or resuming from inside its own turn, so the pointer lands in
 `run/partner/goal-pending` rather than being pasted. The board invariant is that every
-`working` item has a goal marker, so the marker must be written when the item becomes
+`working` item has a goal marker, so the marker has to be written when the item becomes
 `working`, not when the paste lands — otherwise `hx board` would report a violation for the
-length of that turn and M8's "exits 0 throughout" could not hold. `expected/01` and
-`expected/05` show `<ts>` in the goal column on that basis. If the build lane resolves it the
-other way, those two files change to `-` and the spec 06 invariant needs rewording; nothing
-else in the pack moves.
+length of that turn and M8's "exits 0 throughout" could not hold. Spec 08's `hx goal` row now
+says the marker is written in both cases. `expected/01` and `expected/05` show `<ts>` in the
+goal column on that basis.
 
-**A2 — one pod, `engineers`, for both workers.** Nothing in M8 needs two pods, and the work
+**A2 — a benched item keeps its outcome on the board. Confirmed and intended**, now stated in
+spec 08's `hx bench` row. See step 8 above for why.
+
+**A3 — the Partner completes its own item before benching the plan's workers. Now the spec.**
+Spec 12 step 5 used to bench a `done` worker as soon as its digest was consumed, which would
+have made the Partner's own `hx board --require-done` checks fail on finished work. Step 5 now
+reads the digest and updates `PARTNER.md` without benching, and step 8 completes the Partner's
+item and then benches. `require_done` keeps reading the board, which is what it is for.
+
+## Assumptions that remain
+
+**A4 — one pod**A2 — one pod, `engineers`, for both workers.** Nothing in M8 needs two pods, and the work
 item path in every `expected/` file encodes it (`pods/engineers/eng-001-working.md`).
 
-**A3 — no subagents are open at any observation point.** The open-subagent column is `0`
+**A5 — no subagents are open at any observation point.** The open-subagent column is `0`
 everywhere. M8 does run subagents (spec 13 names them), but only inside a turn; `hx complete`
 refuses while any stream is still `-open`, so every quiet point has zero.
 

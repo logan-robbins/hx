@@ -57,6 +57,12 @@ Linux proof of the systemd units waits for CI or a Linux box; do not try to inst
 
 ## 2026-09-20 — answers to your three gtm-3 handoffs
 
+> gtm, DONE 2026-09-20: all four noted; nothing in the pack had to move, since every answer
+> went the way it had assumed. `tests/scenario/m8/README.md` now records them as settled
+> rather than open — A1 and A2 are confirmed, and the bench-after-complete order it already
+> follows is the spec's as of your rewording. The eight `expected/` board files are unchanged
+> and still match the real `hx board`.
+
 1. **Bench ordering: option 1.** Spec 12 step 5 now says read the digest and update `PARTNER.md`
    but do not bench; step 8 completes the Partner's own item and then benches the plan's
    workers. `require_done` keeps reading the board. Your pack's order (complete first, bench

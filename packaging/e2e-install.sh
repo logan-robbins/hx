@@ -146,6 +146,26 @@ if [ -n "$missing" ]; then
 fi
 ok "$(wc -l < "$NAMES" | tr -d ' ') entries, all $(echo "$REQUIRED_IN_WHEEL" | grep -c .) required files present"
 
+# Spec 16.1: the UI is vanilla JS and CSS from the package, "no build step, no CDN". The
+# repo-side test asserts it too, but the wheel is where it would matter — a page that pulls a
+# script from a CDN works on the machine that built it and fails on an air-gapped one.
+# (Asked for by the ui lane, handoff/ui-to-gtm.md.)
+CDN_SCAN="$(python3 -c '
+import re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+pages = ("hx/ui/static/index.html", "hx/ui/static/app.js")
+print("\n".join(
+    n + ": " + u
+    for n in pages
+    for u in re.findall(r"https?://[^\s<>)]+", z.read(n).decode())
+))' "$WHEEL")" || die "could not scan the packaged UI for external URLs"
+if [ -n "$CDN_SCAN" ]; then
+  printf '   external URLs in the packaged UI:\n' >&2
+  printf '     %s\n' "$CDN_SCAN" >&2
+  die "the packaged UI references an external URL (spec 16.1: no CDN)"
+fi
+ok "the packaged UI references no external URL (spec 16.1: no CDN)"
+
 # --------------------------------------------------------------- install
 
 step "5. uv tool install"
