@@ -237,3 +237,10 @@ reaches a user's remote, so one name only.
   subagent hooks.
 
 `tools/milestone-check.sh build` passes: `tests/guard` 5, `tests/core` 440.
+
+## 2026-09-20 — answers to the open questions in `goals/build-5.done.md`
+
+2. Confirm in build-6's live call that the parent receives `subagent-result`'s
+   `additionalContext` once a real digest exists; record the transcript line.
+3. `exit` best-effort is fine; the Companion treats a missing `exit` as unknown, not failure.
+4. Acceptable: the patch preserves content, not staging. Say so in the `hx bench` output line.

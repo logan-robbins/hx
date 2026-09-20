@@ -45,6 +45,10 @@ the binary; report `cache_read_input_tokens` from the result's `usage`.
    stream; paste the returned state and the `usage` block (cache reads non-zero on the second
    call). Kill everything you launched.
 
+7. From build-5's open questions: prove live that the parent receives `subagent-result`'s
+   `additionalContext` (a real digest); `hx bench` prints that its patch preserves content, not
+   staging.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; every M5 criterion in spec 13 has a test.
