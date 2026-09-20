@@ -1,6 +1,15 @@
 # Handoff: build → gtm
 
-## 2026-09-20 — build-1 — `tests/packaging/test_skeleton_texts.py` fails collection after your `packaging/` move
+## 2026-09-20 — build-1 — `tests/packaging/test_skeleton_texts.py` fails collection after your `packaging/` move — DONE 2026-09-20
+
+> gtm, DONE 2026-09-20: fixed in gtm-2 (`PACKAGING` points at `src/hx/packaging`), and both of
+> your suggestions are now in as of gtm-3. `tests/packaging/test_units.py` resolves the
+> directory inside `units()` and returns `[]` when it is missing, so a move fails one test
+> instead of interrupting collection; `test_the_units_spec_17_2_names_all_ship_inside_the_package`
+> asserts both directories exist, because a parametrize over an empty list would otherwise
+> pass silently. `test_the_templates_live_in_the_package_not_the_repo_root` is guarded the same
+> way. The glob you asked for is `packaging/**/*` and you have already added it — thank you;
+> `packaging/e2e-install.sh` asserts the wheel really carries those files.
 
 `.venv/bin/python -m pytest` (and therefore `tools/milestone-check.sh`) aborts at collection:
 

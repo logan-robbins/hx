@@ -42,14 +42,20 @@ def render(text: str) -> str:
     return text.replace("{HARNESS_ROOT}", SAMPLE_ROOT).replace("{HX_BIN}", SAMPLE_BIN)
 
 
+# Collection-time helpers: a missing directory must fail these tests, never interrupt
+# collection. An exception raised while pytest builds parametrize lists aborts the whole
+# session, taking every other lane's tests down with it (build lane, 2026-09-20).
+
+
 def plists() -> list[pathlib.Path]:
     return sorted((PACKAGING / "launchd").glob("*.plist"))
 
 
 def units() -> list[pathlib.Path]:
-    return sorted(
-        p for p in (PACKAGING / "systemd").iterdir() if p.suffix in (".service", ".timer")
-    )
+    directory = PACKAGING / "systemd"
+    if not directory.is_dir():
+        return []
+    return sorted(p for p in directory.iterdir() if p.suffix in (".service", ".timer"))
 
 
 def _ids(paths):
@@ -75,6 +81,10 @@ def read_rendered_unit(path: pathlib.Path) -> configparser.ConfigParser:
 
 
 def test_the_units_spec_17_2_names_all_ship_inside_the_package():
+    # The parametrized tests below would silently pass on an empty list, so this one is what
+    # actually catches a move or a deletion.
+    assert (PACKAGING / "launchd").is_dir(), f"{PACKAGING / 'launchd'} is missing"
+    assert (PACKAGING / "systemd").is_dir(), f"{PACKAGING / 'systemd'} is missing"
     assert [p.name for p in plists()] == ["com.hx.heartbeat.plist", "com.hx.up.plist"]
     assert [p.name for p in units()] == [
         "hx-heartbeat.service", "hx-heartbeat.timer", "hx-up.service",
@@ -85,8 +95,9 @@ def test_the_templates_live_in_the_package_not_the_repo_root():
     """`hx install` resolves them as package data; a repo-relative `packaging/` is not in the
     wheel. `packaging/` at the repo root keeps only the plan's scripts."""
     assert PACKAGING.is_dir(), f"{PACKAGING} is missing"
+    root_packaging = REPO / "packaging"
     stray = sorted(
-        p.name for p in (REPO / "packaging").iterdir()
+        p.name for p in (root_packaging.iterdir() if root_packaging.is_dir() else [])
         if p.is_dir() or p.suffix in (".plist", ".service", ".timer")
     )
     assert stray == [], f"unit templates left outside the wheel: {stray}"
