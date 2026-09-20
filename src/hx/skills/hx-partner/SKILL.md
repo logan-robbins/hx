@@ -166,11 +166,15 @@ An ask from the human becomes your own order, exactly like a worker's:
    `### Checks` that prove it (`hx board --require-done …`).
 2. `hx dispatch partner orders/partner.md`.
 
-Your pane is mid-turn when you run it, so the pointer lands in `run/partner/goal-pending` and
-your `stop` hook pastes it at the end of the turn. From the next turn you are working under a
-goal. Nothing is archived and nothing is wiped — your session, streams, and step state are
+Your pane is mid-turn when you run it, so `hx goal` cannot paste into it. It leaves
+`run/partner/goal-pending`, and the hook that runs at the end of your turn delivers it — which
+is why **you have to let the turn end**. Do not sit waiting for the goal to appear inside the
+turn that asked for it; finish, and it arrives. From the next turn you are working under a
+goal.
+
+Nothing is archived and nothing is wiped — your session, streams, and step state are
 continuous. Human prompts in the same chat keep working at any point; the goal just means you
-are no longer waiting to be prompted.
+are no longer waiting to be prompted. The same is true of `hx resume partner`.
 
 ## Watching
 
@@ -188,6 +192,12 @@ hx doctor                # tmux, git, pinned claude binary and version, credenti
 you scoped the last one, or when a `queued` item's `after` is not what you meant. `hx archive`
 is how you find what a benched id actually delivered, after its work item has been reset.
 All of these take `--json` and none of them changes anything.
+
+`hx show <id>` is where the subagent picture is: each worker's streams, one per subagent
+(`<id>-sNNN`, open or closed), and the digest each closed one produced. You do not read a
+worker's raw stream — that is the Companion's, and it is the one reader — but the open-subagent
+count on the board tells you why a worker has not completed yet. `hx complete` refuses while any
+stream is still open, so "still has subagents running" is a normal state, not a stuck one.
 
 You are woken when something changes: `hx complete` sends you `<id> complete: <outcome>;
 hx read <id>`, and `hx heartbeat` (system cron, every 15 minutes) wakes you with a board diff

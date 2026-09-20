@@ -98,20 +98,41 @@ notes come back to you — that only works if the fact was worth recording when 
 Use them freely, for bounded separable pieces: a survey, an independent module, a test pass.
 
 - Each one gets its own context file automatically, built from `config/<id>/SUBAGENTS.md`, its
-  prompt, and its own step state. A hook hands it the path. You do not have to brief it on the
-  harness.
-- Each one gets its own stream, `<id>-sNNN`, and its own Companion state.
+  own step state, and a pointer to its task. A hook hands it the path with the same line you
+  get at a boundary, so it reads one file with the Read tool and starts. You do not have to
+  brief it on the harness.
+- **Its task is the message you spawned it with**, which is already in its conversation — the
+  context file says so rather than repeating it. So that message is the whole of what it knows
+  about the job: write it as you would write an order, not as a one-line handle.
+- Each one gets its own stream, `logs/<id>/<id>-sNNN-open.jsonl`, renamed to `-closed.jsonl`
+  when it stops, and its own Companion state. Handles are assigned under a lock, so three
+  subagents starting at once get three streams rather than colliding on one.
 - **Size each to finish inside one window.** No hook fires on a subagent's own compaction, so a
   subagent that compacts mid-task loses the harness's continuity support. Tell it to commit as
   it goes; `SUBAGENTS.md` already does, but scoping is yours.
 - Results come back as a completion notification in a later turn, with a Companion-written
-  digest of what it did, what it committed, and what it left open. That digest is all that
-  crosses back.
+  digest of what it did, what it committed, and what it left open, handed to you on the
+  `Agent` tool result. **That digest is all that crosses back** — not its transcript, not its
+  stream, not its step state. Anything you need that the digest omits is gone.
 - Subagents share your worktree. Give them non-overlapping scopes.
 
 `hx complete` refuses while any subagent stream is still open, so let them finish.
 
-### 7. Seams
+### 7. What happens at the end of every turn
+
+You will not see any of this, but it explains the shape of the rest.
+
+A hook runs after each of your turns. It records the turn and whether background work is still
+running; it delivers a `/goal` pointer if one was owed to your pane (which is how the Partner
+dispatches itself from inside its own turn); and it takes a seam if one is pending and nothing
+is running in the background.
+
+Two consequences for you. **Finishing your turn is what lets the harness act** — a turn that
+never ends is a seam never taken and a goal never delivered. And **background work delays a
+seam**, not forever, but a seam is only taken when nothing is running, so leaving background
+tasks alive across many turns keeps pushing it out.
+
+### 8. Seams
 
 Your conversation will be cut and rebuilt. That is a seam: `/clear` plus rehydration from your
 context file. It is normal, planned, and cheap, and it happens at a turn boundary with no
@@ -121,7 +142,7 @@ You do not trigger it, you do not prevent it, and you will not notice it happeni
 simply find yourself at step 1 again. It costs nothing if `## Tasks` is current and your work
 is committed. Everything in sections 3, 4 and 5 exists for this moment.
 
-### 8. Finishing
+### 9. Finishing
 
 ```bash
 hx complete done        # checks run, worktree must be clean, no open subagent stream
@@ -140,7 +161,7 @@ that header is yours — a hook will refuse the edit.
 `HX-COMPLETE <id> <outcome>` as its last line, and that line, in your transcript, is what
 proves you are done.
 
-### 9. `HX-CHECK-FAILED`
+### 10. `HX-CHECK-FAILED`
 
 `hx complete done` is machine-checked. If a check exits non-zero, the worktree is dirty, or a
 subagent stream is open, it prints:
@@ -159,7 +180,7 @@ many times as it takes.
 Do not edit the `### Checks` block to make it pass — it is in `## Order`, it is the Partner's,
 and a hook will refuse you.
 
-### 10. When `done` is not available
+### 11. When `done` is not available
 
 `blocked`, `decision`, and `exhausted` run no checks. They are honest answers and using one is
 better than forcing a `done` that is not true.
