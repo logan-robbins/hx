@@ -407,3 +407,60 @@ point of the step is that the skills match reality. What I could not do is run a
 `hx launch`, which runs `install.sh` and `start.sh` and needs the pinned `claude` binary and
 seeded credentials. That is M6+ territory and stays for gtm-4 or for M8 itself. Recorded in the
 done file as what remains.
+
+## 2026-09-20 — build lane — the live check is blocked on macOS: there is no `~/.claude/.credentials.json`
+
+`goals/build-3.md` item 6 asks for a live Claude Code session against a scratch root, seeded by
+"`hx install --from-user-config`-equivalent copying of your own session's credentials
+**read-only**". That cannot be done on this machine, and the reason is a gap in spec 11 and
+17.2, not in the goal.
+
+**What I found.** On macOS, Claude Code keeps no credentials file at all:
+
+```
+$ ls ~/.claude/.credentials.json
+ls: /Users/loganrobbins/.claude/.credentials.json: No such file or directory
+
+$ security find-generic-password -s "Claude Code-credentials"
+keychain: "/Users/loganrobbins/Library/Keychains/login.keychain-db"
+class: "genp"   "svce"<blob>="Claude Code-credentials"
+```
+
+The credential is a login-Keychain item. There is nothing to copy read-only.
+
+**And a scratch config dir is not logged in**, so the Keychain item is not simply picked up by
+any config dir:
+
+```
+$ CLAUDE_CONFIG_DIR=<scratch>/home DISABLE_AUTOUPDATER=1 claude -p "Reply with exactly: LIVE-OK"
+Not logged in · Please run /login
+
+$ ls -a <scratch>/home
+.claude.json  backups  projects  sessions        # no .credentials.json
+```
+
+`~/.claude` was byte-identical before and after both probes (same
+`tools/claude-home-hash.sh | shasum` value), and `tests/guard` passes.
+
+**What this means for the spec, which is the part that needs your decision.**
+
+1. **`hx install --from-user-config` (17.2 step 3) cannot work on macOS as written.** It says
+   it "copies credentials from `~/.claude`". There is no such file to copy. Either the flag is
+   Linux-only, or it has to read the Keychain, which is a different and much more sensitive
+   operation than a file copy and one I would not implement without you saying so explicitly.
+2. **The per-home credential model (11 Auth, 17.3) may not hold on macOS either.** After the
+   interactive seed login, `seed/home/.credentials.json` may still never appear, because the
+   login writes to the Keychain. If so, `install.sh`'s refusal and `start.sh`'s refusal on a
+   missing `.credentials.json` are both checking for a file that will not exist, and
+   "Credentials are per home ... a copy from `seed/home`" needs rewriting for macOS. I could
+   not test this without performing an interactive login, which is the human's to do.
+3. The Linux path is presumably fine — `.credentials.json` is the documented location there —
+   so this may be a "macOS needs its own paragraph" fix rather than a design change.
+
+**What I did instead**, so build-3 is not left without its live evidence: I verified
+`hx.goal._REAL_PROMPT` against the real pinned binary by capturing live tmux panes read-only,
+which needed no credentials and wrote nothing. It found a real bug; see
+`goals/build-3.done.md`. The rest of item 6 — that SessionStart prints the context path, that
+the first tool call is one Read of it, and that the agent answers "who are you" from the
+persona with zero Reads — is **not done** and needs either a human `/login` into
+`seed/home`, or your decision on (1).
