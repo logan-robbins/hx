@@ -1,0 +1,61 @@
+{
+  "root_abs": "/srv/hx",
+  "ts": "2026-09-20T13:10:00Z",
+  "items": [
+    {
+      "id": "eng-000",
+      "pod": "engineers",
+      "bench": [
+        {
+          "ts": "2026-09-18T16:20:00Z",
+          "path": "pods/engineers/archive/eng-000-2026-09-18T16:20:00Z.md",
+          "digest": "Split `hx` into one file per command group; `hx board` moved to src/hx/board.py."
+        }
+      ],
+      "archive": [
+        {
+          "ts": "2026-09-18T16:20:00Z",
+          "path": "archive/eng-000/2026-09-18T16:20:00Z",
+          "digest": "Logs and step state of the split dispatch. Two seams, no dead ends."
+        }
+      ]
+    },
+    {
+      "id": "eng-001",
+      "pod": "engineers",
+      "bench": [
+        {
+          "ts": "2026-09-19T10:00:00Z",
+          "path": "pods/engineers/archive/eng-001-2026-09-19T10:00:00Z.md",
+          "digest": "`hx board --json` shipped with the CONTRACTS.md shape; one invariant check per spec 08."
+        }
+      ],
+      "archive": [
+        {
+          "ts": "2026-09-19T10:00:00Z",
+          "path": "archive/eng-001/2026-09-19T10:00:00Z",
+          "digest": "Earlier dispatch: added `hx board --json`. Completed done; logs and step state archived here."
+        }
+      ]
+    },
+    {
+      "id": "eng-003",
+      "pod": "engineers",
+      "bench": [],
+      "archive": [
+        {
+          "ts": "2026-09-17T09:05:00Z",
+          "path": "archive/eng-003/2026-09-17T09:05:00Z",
+          "digest": "First dispatch of eng-003, re-dispatched the same day; nothing was benched."
+        }
+      ]
+    },
+    {
+      "id": "partner",
+      "pod": "partner",
+      "bench": [],
+      "archive": []
+    }
+  ],
+  "errors": []
+}

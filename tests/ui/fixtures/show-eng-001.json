@@ -1,0 +1,284 @@
+{
+  "id": "eng-001",
+  "pod": "engineers",
+  "role": "engineer",
+  "state": "working",
+  "file": "pods/engineers/eng-001-working.md",
+  "work_item": {
+    "frontmatter": {
+      "id": "eng-001",
+      "pod": "engineers",
+      "after": [
+        "eng-000"
+      ],
+      "outcome": null,
+      "dispatched": "2026-09-20T12:00:00Z"
+    },
+    "body": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n\n## Standing instructions\n- Keep `## Tasks` current: mark a task done the moment it is done, add tasks the moment you discover them.\n- Commit each finished sub-task immediately with a descriptive message.\n- Your last action is `hx complete <outcome>`. Nothing after it.\n\n## Tasks\n- [x] Read spec 08 `hx board`; the exit rule is \"exit 0 iff every listed item is complete with outcome done\".\n- [x] Add `--require-done` to the argument parser in `src/hx/board.py`.\n- [ ] Refuse an id that has no `config/<id>/` rather than treating it as not-done.\n- [ ] Tests for the three exit paths in `tests/test_board.py`.\n\n## Deliverables\n- `src/hx/board.py`, `tests/test_board.py`\n\n## Commands\n- `python -m pytest tests/test_board.py -q`\n\n## Open decision\n\n## Digest\n"
+  },
+  "task": {
+    "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n",
+    "after": [
+      "eng-000"
+    ],
+    "addenda": [
+      {
+        "ts": "2026-09-20T12:30:00Z",
+        "text": "Also refuse an id with no `config/<id>/` directory; exit 1 and name it."
+      }
+    ],
+    "outcome": null,
+    "dispatched": "2026-09-20T12:00:00Z",
+    "completed": null
+  },
+  "persona_path": "run/eng-001/persona.md",
+  "step_state": {
+    "eng-001-main": {
+      "seq": 412,
+      "prompt_version": {
+        "base": "9c1f2ab",
+        "role": "4d80e17"
+      },
+      "goal": "hx board --require-done, with the spec 08 exit rule",
+      "constraints": [
+        "stdlib only",
+        "no timeouts"
+      ],
+      "decisions": [
+        {
+          "d": "--require-done takes ids, not a file",
+          "why": "spec 08 shows it inline in the Partner's own ### Checks block",
+          "ev": [
+            401
+          ]
+        }
+      ],
+      "open_steps": [
+        {
+          "id": "st7",
+          "intent": "refuse an id with no config/<id>/",
+          "next": "raise in _require_done before the outcome lookup",
+          "ev": [
+            398,
+            410
+          ]
+        }
+      ],
+      "closed_steps": [
+        {
+          "id": "st6",
+          "outcome": "--require-done parsed and threaded to the board reader",
+          "verified": true,
+          "commit": "1b90c3d",
+          "ev": [
+            390
+          ]
+        }
+      ],
+      "dead_ends": [
+        "reading tasks.json without the flock; two dispatches raced the read"
+      ],
+      "working_set": {
+        "commits": [
+          {
+            "sha": "1b90c3d",
+            "msg": "board: parse --require-done"
+          }
+        ],
+        "dirty": [
+          "src/hx/board.py"
+        ],
+        "files": [
+          {
+            "path": "spec/08-hx-cli.md",
+            "note": "exit 0 iff every listed id is complete/done"
+          }
+        ],
+        "last_failure": "",
+        "hypothesis": ""
+      },
+      "blockers": [],
+      "subagents_open": [
+        "eng-001-s001"
+      ]
+    },
+    "eng-001-s001": {
+      "seq": 40,
+      "prompt_version": {
+        "base": "9c1f2ab",
+        "role": "4d80e17"
+      },
+      "goal": "survey every exit-code assertion already in tests/",
+      "constraints": [],
+      "decisions": [],
+      "open_steps": [
+        {
+          "id": "st1",
+          "intent": "grep the suite",
+          "next": "report the list",
+          "ev": [
+            12
+          ]
+        }
+      ],
+      "closed_steps": [],
+      "dead_ends": [],
+      "working_set": {
+        "commits": [],
+        "dirty": [],
+        "files": [],
+        "last_failure": "",
+        "hypothesis": ""
+      },
+      "blockers": [],
+      "subagents_open": []
+    }
+  },
+  "context_file": {
+    "path": "run/eng-001/eng-001-main.context.md",
+    "text": "# Memory\nPrefer same-directory renames; spec 08 forbids timeouts anywhere.\n\n# Task\n## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n\n## Order addendum 2026-09-20T12:30:00Z\nAlso refuse an id with no `config/<id>/` directory; exit 1 and name it.\n\n# Tasks\n- [x] Read spec 08 `hx board`.\n- [ ] Refuse an unknown id.\n\n# Step state\nopen: st7 refuse an id with no config/<id>/\nclosed: st6 (1b90c3d)\n\n# Open subagents\n- eng-001-s001\n",
+    "seam_ts": "2026-09-20T12:50:00Z"
+  },
+  "streams": [
+    {
+      "handle": "eng-001-main",
+      "path": "logs/eng-001/eng-001-main.jsonl",
+      "open": true,
+      "records": 812,
+      "tail": [
+        {
+          "seq": 410,
+          "ts": "2026-09-20T13:09:31Z",
+          "stream": "eng-001-main",
+          "event": "post_tool",
+          "tool": "Bash",
+          "input": "python -m pytest tests/test_board.py -q",
+          "output": "1 failed, 3 passed",
+          "exit": 1,
+          "agent_id": "a7c21f",
+          "context_tokens": 47880,
+          "ref": {
+            "transcript": "run/eng-001/home/projects/hx/a7c21f.jsonl",
+            "tool_use_id": "tu_410"
+          }
+        },
+        {
+          "seq": 411,
+          "ts": "2026-09-20T13:09:38Z",
+          "stream": "eng-001-main",
+          "event": "post_tool",
+          "tool": "Edit",
+          "input": "src/hx/board.py",
+          "output": "ok",
+          "exit": 0,
+          "agent_id": "a7c21f",
+          "context_tokens": 48102,
+          "ref": {
+            "transcript": "run/eng-001/home/projects/hx/a7c21f.jsonl",
+            "tool_use_id": "tu_411"
+          }
+        },
+        {
+          "seq": 412,
+          "ts": "2026-09-20T13:09:40Z",
+          "stream": "eng-001-main",
+          "event": "seam",
+          "tool": null,
+          "input": null,
+          "output": null,
+          "exit": null,
+          "agent_id": "a7c21f",
+          "context_tokens": 48211,
+          "ref": {
+            "transcript": "run/eng-001/home/projects/hx/a7c21f.jsonl",
+            "tool_use_id": null
+          },
+          "prompt_version": {
+            "base": "9c1f2ab",
+            "role": "4d80e17"
+          },
+          "context_file_bytes": 2184
+        }
+      ]
+    },
+    {
+      "handle": "eng-001-s001",
+      "path": "logs/eng-001/eng-001-s001-open.jsonl",
+      "open": true,
+      "records": 40,
+      "tail": [
+        {
+          "seq": 40,
+          "ts": "2026-09-20T13:08:02Z",
+          "stream": "eng-001-s001",
+          "event": "post_tool",
+          "tool": "Grep",
+          "input": "returncode ==",
+          "output": "tests/test_board.py:41\ntests/test_complete.py:88",
+          "exit": 0,
+          "agent_id": "b0913e",
+          "context_tokens": 11204,
+          "ref": {
+            "transcript": "run/eng-001/home/projects/hx/b0913e.jsonl",
+            "tool_use_id": "tu_s40"
+          }
+        }
+      ],
+      "digest": null
+    },
+    {
+      "handle": "eng-001-s000",
+      "path": "logs/eng-001/eng-001-s000-closed.jsonl",
+      "open": false,
+      "records": 63,
+      "tail": [],
+      "digest": "Read spec 08 and 06 end to end. The exit rule for --require-done is in the 08 table row for `hx board`; nothing in 06 constrains it."
+    }
+  ],
+  "subagents": {
+    "b0913e": "s001",
+    "c41a77": "s000"
+  },
+  "metrics": {
+    "id": "eng-001",
+    "seams": [
+      {
+        "ts": "2026-09-20T12:50:00Z",
+        "prompt_version": {
+          "base": "9c1f2ab",
+          "role": "4d80e17"
+        },
+        "context_tokens_before": 151902,
+        "context_file_bytes": 2184,
+        "context_file_reads": 1,
+        "tool_calls_next_10_turns": {
+          "reads_of_working_set_files": 0,
+          "other": 14
+        }
+      }
+    ]
+  },
+  "pane": {
+    "session": "eng-001",
+    "alive": true,
+    "lines": [
+      "> python -m pytest tests/test_board.py -q",
+      "1 failed, 3 passed in 0.42s",
+      "I need to refuse an unknown id before the outcome lookup."
+    ]
+  },
+  "archive": [
+    {
+      "ts": "2026-09-19T10:00:00Z",
+      "path": "archive/eng-001/2026-09-19T10:00:00Z",
+      "digest": "Earlier dispatch: added `hx board --json`. Completed done; logs and step state archived here."
+    }
+  ],
+  "bench": [
+    {
+      "ts": "2026-09-19T10:00:00Z",
+      "path": "pods/engineers/archive/eng-001-2026-09-19T10:00:00Z.md",
+      "digest": "`hx board --json` shipped with the CONTRACTS.md shape; one invariant check per spec 08."
+    }
+  ]
+}

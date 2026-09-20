@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>hx</title>
+<link rel="stylesheet" href="/static/style.css?token=__TOKEN__">
+<script id="bootstrap" type="application/json">__BOOTSTRAP__</script>
+</head>
+<body>
+<header class="bar">
+  <h1>hx</h1>
+  <nav id="nav">
+    <button data-view="board" class="on">Board</button>
+    <button data-view="orders">Orders</button>
+    <button data-view="archive">Archive</button>
+    <button data-view="agent">Agent</button>
+    <button data-view="partner">Partner</button>
+  </nav>
+  <span id="live" class="live" title="server-sent events">connecting</span>
+</header>
+<p id="banner" class="banner" hidden></p>
+<main id="main" aria-live="polite"></main>
+<script src="/static/app.js?token=__TOKEN__"></script>
+</body>
+</html>

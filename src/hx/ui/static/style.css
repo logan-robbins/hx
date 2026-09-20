@@ -1,0 +1,221 @@
+/* hx UI. Restyled from autodev's web/style.css to the board/agent/partner navigation
+   (spec 16.4). No framework, no CDN, no build step. */
+
+:root {
+  color-scheme: dark light;
+  --bg: #12141a;
+  --panel: #191d26;
+  --panel-2: #20252f;
+  --line: #2c3341;
+  --ink: #e6e9ef;
+  --dim: #98a2b3;
+  --accent: #7aa2f7;
+  --working: #7ee787;
+  --queued: #e3b341;
+  --complete: #79c0ff;
+  --idle: #8b949e;
+  --bad: #ff7b72;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* -- shell ------------------------------------------------------------- */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.bar h1 {
+  margin: 0;
+  font: 600 15px/1 var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+
+nav button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 5px 12px;
+}
+
+nav button:hover { color: var(--ink); background: var(--panel-2); }
+nav button.on { color: var(--ink); background: var(--panel-2); border-color: var(--line); }
+
+.live {
+  margin-left: auto;
+  font: 11px/1 var(--mono);
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.live.on { color: var(--working); }
+.live.off { color: var(--bad); }
+
+main {
+  padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  max-width: 1400px;
+}
+
+/* -- blocks ------------------------------------------------------------ */
+h2 {
+  font: 600 13px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0 0 12px;
+}
+
+section { margin-bottom: 28px; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.meta { color: var(--dim); font: 12px/1.6 var(--mono); }
+
+.banner, .errors {
+  background: rgba(255, 123, 114, 0.12);
+  border: 1px solid var(--bad);
+  border-left-width: 4px;
+  border-radius: 6px;
+  color: #ffd5d2;
+  margin: 0 20px 16px;
+  padding: 10px 14px;
+}
+
+.errors { margin: 0 0 20px; }
+.errors h2 { color: var(--bad); margin-bottom: 8px; }
+.errors ul { margin: 0; padding-left: 20px; }
+.errors li { font-family: var(--mono); font-size: 12px; }
+
+/* -- table ------------------------------------------------------------- */
+.scroll { overflow-x: auto; }
+
+table { border-collapse: collapse; width: 100%; min-width: 900px; }
+
+th, td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+th {
+  color: var(--dim);
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+tbody tr:hover { background: var(--panel-2); }
+tbody tr.partner td { background: rgba(122, 162, 247, 0.08); }
+tbody tr.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: rgba(122, 162, 247, 0.28); } }
+
+td.id { font: 600 13px/1.4 var(--mono); }
+td.num { text-align: right; font-family: var(--mono); }
+.sub { color: var(--dim); font: 11px/1.4 var(--mono); }
+
+/* -- pills ------------------------------------------------------------- */
+.pill {
+  border-radius: 999px;
+  display: inline-block;
+  font: 600 11px/1 var(--mono);
+  padding: 4px 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pill.working  { background: rgba(126, 231, 135, 0.14); color: var(--working); }
+.pill.queued   { background: rgba(227, 179, 65, 0.14);  color: var(--queued); }
+.pill.complete { background: rgba(121, 192, 255, 0.14); color: var(--complete); }
+.pill.idle     { background: rgba(139, 148, 158, 0.14); color: var(--idle); }
+.pill.done     { background: rgba(126, 231, 135, 0.14); color: var(--working); }
+.pill.decision { background: rgba(227, 179, 65, 0.14);  color: var(--queued); }
+.pill.blocked, .pill.exhausted, .pill.bad { background: rgba(255, 123, 114, 0.14); color: var(--bad); }
+.pill.none { background: rgba(139, 148, 158, 0.1); color: var(--dim); }
+
+.dot { color: var(--working); }
+.dot.off { color: var(--bad); }
+
+.wait { color: var(--queued); font-family: var(--mono); font-size: 12px; }
+.met  { color: var(--dim); font-family: var(--mono); font-size: 12px; }
+
+/* -- orders ------------------------------------------------------------ */
+.order-head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.order-head .name { font: 600 14px/1 var(--mono); }
+
+pre {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 12px/1.55 var(--mono);
+  margin: 8px 0 0;
+  overflow-x: auto;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+pre.addendum { border-left: 3px solid var(--accent); }
+
+.graph { display: grid; gap: 6px; }
+
+.edge {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 8px;
+}
+
+.edge .arrow { color: var(--dim); }
+.edge.unmet .arrow { color: var(--queued); }
+
+.empty { color: var(--dim); font-style: italic; }
+
+/* -- shell views (ui-2) ------------------------------------------------ */
+.soon { border-style: dashed; }
+.soon h2 { color: var(--accent); }
+
+@media (max-width: 640px) {
+  main { padding: 14px 16px; }
+  .banner { margin: 0 16px 12px; }
+}

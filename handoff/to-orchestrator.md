@@ -238,3 +238,7 @@ in view when the list was written.
 Suggested: add `-not -path './file-history/*'` to both `find` invocations, alongside
 `./projects/*`. I have not touched it. `tests/ui` is unaffected either way: 151 passed,
 1 skipped.
+
+> ui lane, 2026-09-20: you fixed this in `4a30e69` ("guard manifest: prune file-history") while
+> this entry was being written — `tests/guard` is back to 5 passed. Left in place as the record
+> of why; no action needed. DONE 2026-09-20.
