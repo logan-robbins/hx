@@ -1,0 +1,131 @@
+name: ci
+
+# hx is stdlib-only Python 3.14 that drives real tmux sessions, so CI is deliberately plain:
+# a real interpreter, a real tmux, and the same tools/milestone-check.sh every lane runs
+# locally before finishing a goal.
+#
+# The guard test tests/guard/test_user_home_untouched.py compares ~/.claude against a manifest
+# recorded before the build started. A runner has no such history, so each job records its own
+# baseline from a fresh, empty Claude home and points the test at it through
+# HX_USER_CLAUDE_HOME / HX_CLAUDE_HOME_BASELINE. The assertion CI makes is therefore the real
+# one: nothing in the suite wrote to the Claude home it was given.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tmux (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux
+
+      - name: Install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew list tmux >/dev/null 2>&1 || brew install tmux
+
+      - name: Show tool versions
+        run: |
+          tmux -V
+          git --version
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Create the shared virtualenv
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pytest
+          .venv/bin/python -m pip install -e .
+          .venv/bin/python --version
+
+      # The guard baseline: an empty Claude home, hashed before anything runs. If the suite
+      # writes so much as a settings file into it, test_user_home_untouched fails.
+      - name: Record a guard baseline from a fresh Claude home
+        run: |
+          fresh_home="$RUNNER_TEMP/guard-home"
+          mkdir -p "$fresh_home/.claude"
+          mkdir -p "$RUNNER_TEMP/guard-baseline"
+          tools/claude-home-hash.sh "$fresh_home/.claude" \
+            > "$RUNNER_TEMP/guard-baseline/claude-home.manifest"
+          echo "HX_USER_CLAUDE_HOME=$fresh_home/.claude" >> "$GITHUB_ENV"
+          echo "HX_CLAUDE_HOME_BASELINE=$RUNNER_TEMP/guard-baseline" >> "$GITHUB_ENV"
+
+      # Guard tests first and on their own, so a guard failure is never buried in suite output.
+      - name: Guard tests
+        run: .venv/bin/python -m pytest tests/guard -q
+
+      - name: Full suite (tools/milestone-check.sh)
+        run: tools/milestone-check.sh
+
+  package:
+    name: wheel builds and carries its data files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Build the wheel and sdist
+        run: uv build
+
+      # pyproject declares skeleton/, skills/, and ui/static/ as package data. A wheel that
+      # omits them installs an hx whose `hx install` has nothing to copy, and nothing else in
+      # the suite would notice.
+      - name: The wheel carries the skeleton, the skills, and the tested-versions list
+        run: |
+          wheel=$(ls dist/*.whl)
+          echo "checking $wheel"
+          python - "$wheel" <<'PY'
+          import sys, zipfile
+          names = set(zipfile.ZipFile(sys.argv[1]).namelist())
+          required = [
+              "hx/skeleton/templates/work-item.md",
+              "hx/skeleton/companion/BASE.md",
+              "hx/skeleton/config/CLAUDE.md",
+              "hx/skeleton/PARTNER.md",
+              "hx/skills/hx-partner/SKILL.md",
+              "hx/skills/hx-worker/SKILL.md",
+          ]
+          missing = [n for n in required if n not in names]
+          if missing:
+              print("missing from the wheel:")
+              for n in missing:
+                  print("  " + n)
+              sys.exit(1)
+          print(f"ok: {len(names)} entries, all required data files present")
+          PY
+
+      - name: The wheel installs and exposes its entry points
+        run: |
+          uv tool install --from dist/*.whl hx
+          command -v hx
+          command -v hx-hook
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 14
