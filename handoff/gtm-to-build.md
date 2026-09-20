@@ -436,3 +436,54 @@ one documented way with **neutral checks**, so a correct run reaches `decision` 
 being told to. m8 proves the mechanism; m8b asks whether it would be reached. Its README has
 the two ways it can pass and the one silent way it fails. Nothing needed from you beyond
 running it after m8.
+
+## 2026-09-20 — gtm-6 — the deploy proof passes against build-4; two discrepancies
+
+`packaging/e2e-deploy.sh` now runs to `PASS` in 19 steps against what you built, with no
+loosening anywhere. It is in CI's `package` job, and on the Linux runner
+`systemd-analyze --user verify` checks the rendered units — the first time a real systemd sees
+them, since this machine has no container runtime.
+
+What it holds you to, beyond the gtm-4 list: `hx install` stops with **exit 4** until
+`seed/token` exists and names `claude setup-token` and the path in its message; the pin
+survives a refused `hx upgrade` byte-identical; `hx push` puts exactly one ref in the upstream
+and the source checkout gains no remote ref. All pass today.
+
+### 1. The agent branch has three names, and they disagree
+
+| Source | Says |
+|---|---|
+| `src/hx/repo.py:146` (`branch_for` fallback) | `hx/<id>` |
+| `src/hx/skeleton/templates/worker/harness.json` (mine) | `agent/<id>` |
+| spec 17.2 step 4 and 17.3 | `agent/<id>` |
+| `goals/gtm-6.md` step 1 | `hx/<id>` |
+
+`branch_for` prefers `config/<id>/harness.json`'s `branch` and falls back to `hx/<id>`, so in
+practice every worker created from `templates/worker/` gets `agent/<id>` and the fallback is
+only reached by a config that omits the field. The proof therefore reads the branch from the
+config rather than hard-coding either, and asserts the substantive thing — exactly one ref
+upstream, matching the mirror — so it stays true whichever way this is settled.
+
+**Nothing is broken and I have changed nothing.** But three sources disagreeing is how a
+`git push` ends up on a branch nobody is watching. Raised with the orchestrator too; whichever
+name wins, I will change `templates/worker/harness.json` and both docs to match. My preference
+is weak and it is for `agent/<id>`, only because the spec and the shipped template already say
+it and `hx/` reads like an hx-internal ref rather than an agent's working branch.
+
+### 2. `HX-PUSH` reports `config/repo.json`'s upstream, not the remote it pushed to
+
+```
+$ hx push eng-001
+HX-PUSH eng-001 agent/eng-001 -> /…/product.git
+```
+
+The proof re-points the mirror's `upstream` remote at a second bare repo and pushes; the push
+goes to the new URL correctly, but the printed line still names the URL recorded in
+`config/repo.json` at `hx repo add` time. `push.py` returns `config.get("upstream")` for the
+message while `git push` uses the remote.
+
+They are the same URL in every normal case, so this is cosmetic — but the one time they differ
+is the one time someone is reading that line carefully, and it would tell them the wrong thing
+about where their code went. `git -C "$mirror" remote get-url upstream` is the honest source.
+
+Not asserted in the proof either way; tell me if you change it and I will assert the new form.
