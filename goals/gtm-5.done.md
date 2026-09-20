@@ -1,7 +1,11 @@
 # gtm-5 done: the boundary read names the Read tool
 
-Lane `gtm`, goal 5. Small and immediate, as asked. `tests/guard` (5), `tests/packaging`
-(85 + 1 skipped) and `tests/scenario` (70) all pass; committed path-scoped.
+Lane `gtm`, goal 5. `tests/guard` (5), `tests/packaging` (86) and `tests/scenario` (70) all
+pass — nothing skipped any more. Committed path-scoped.
+
+The four asked-for changes were small and immediate, as intended. Build-4 landed partway
+through and turned a deferred gtm-6 item into a red suite in this lane, so the deploy proof is
+rewritten here too; that is the larger half of what follows.
 
 ## Why this goal existed
 
@@ -110,10 +114,39 @@ Corrected, from the spec rather than from memory:
 - the dispatch-wipe sentence no longer lists `.credentials.json` among the files that survive
   in an agent home, because there is none.
 
-**`packaging/e2e-deploy.sh` still asserts the old seeding contract and is not fixed here.** It
-is gated and skipping, and the orchestrator has sequenced its rewrite as gtm-6. The script and
-its assertions have to change together — splitting them would leave the two disagreeing, which
-is worse than a script that is honestly skipping. Flagged rather than half-done.
+**`packaging/e2e-deploy.sh` — rewritten here after all.** I had left it for gtm-6 as
+sequenced. Then build-4 landed partway through this goal, the gate stopped firing, and the
+proof ran against the real install and failed on the contract it was written for. That turned
+a deferred item into a red suite in my own lane, which is not something to hand on.
+
+Rewritten for token auth: no `--from-user-config`, a two-phase install instead — the first
+stops with exit 4 and is asserted to name the setup-token command and the path to paste into,
+then a token is written at 0600 and the install completes with `--repo`. The fake user home is
+now planted at `$HOME/.claude` **inside the fresh HOME** rather than passed as a seed source,
+which is a stronger assertion than the old one: hx reads no user Claude home at all, so all
+four planted strings must be absent from the finished instance and the home must be
+byte-identical afterwards.
+
+Sixteen steps, `== PASS`, exit 0, against the real `hx install`.
+
+Four things the first real run found, each a fix rather than a test tweak:
+
+1. **`ok "… \`claude setup-token\` …"` ran the backticks as a command substitution** and hung
+   on an interactive login. That is the second time this class of bug has bitten in this
+   script; there are none left in it now, and it is the kind of thing that would have looked
+   like a mysterious CI timeout.
+2. **The fake `claude` cannot pass `hx install` step 1's version check, and should not** — that
+   check is the point of the step. The real binary is pinned into `config/claude.json`, and
+   `HX_CLAUDE_BIN` points every *launch* at the fake, so no real agent ever starts. A separate
+   test asserts that ordering, because install step 6 starts the Partner and getting it wrong
+   would silently run an unattended agent from a test.
+3. **The token appeared under `run/`** — in `fake-argv.json`, the fake recording its own env,
+   which a real binary never writes. Rather than widen the exclusion and lose the assertion,
+   that file now carries the *positive* half: the token reached the session as
+   `CLAUDE_CODE_OAUTH_TOKEN` and appears in no argv.
+4. **The rendered units name `config/hx.json`'s `hx_bin`**, not the uv symlink I happened to
+   invoke. The unit was right and my assertion was wrong — and the unit is right for a reason
+   worth keeping: replacing the symlink must not silently break a booted fleet.
 
 ## One fixture repair
 
@@ -126,7 +159,10 @@ one differs from a real instance in exactly the board text these fixtures exist 
 
 ```
 $ .venv/bin/python -m pytest tests/guard tests/packaging tests/scenario -q
-5 + 85 + 70 passed, 1 skipped (the build-4-gated deploy proof)
+5 + 86 + 70 passed, 0 skipped
+
+$ packaging/e2e-deploy.sh <scratch>
+EXIT=0    # 16 steps, == PASS, against the real hx install
 
 $ .venv/bin/python -m pytest tests/packaging/test_skeleton_texts.py -o addopts= -v
 test_global_claude_md_names_the_read_tool_and_forbids_cat PASSED
@@ -209,6 +245,7 @@ every commit was `git add <paths> && git commit -- <the same paths>`.
 ## Commits
 
 ```
+0c12cb7 gtm: the deploy proof runs for real — build-4 landed mid-goal
 3280fb5 gtm: docs follow the auth change — hx reads nothing of the user's, ever
 50f9142 gtm: the boundary read names the Read tool, from the first live run
 ```
