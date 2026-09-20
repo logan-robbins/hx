@@ -32,10 +32,11 @@ The goal is never prose in a command line — it is a fixed pointer to a work it
 the order it points at can be as long as it needs to be.
 
 **An agent forgets when its context is cut.** So hx never lets Claude's compaction summarizer
-decide what survives. Each agent is paired one-to-one with a small **Companion** model that
-reads the agent's tool-call stream and maintains a bounded, structured *step state*: open steps
-with their next action, closed steps with their commit shas, decisions with reasons, dead ends,
-and the facts the agent had to read a file to learn. At a boundary, hx composes that plus the
+decide what survives. Each agent is paired one-to-one with a small **Companion** — the same
+pinned binary run as a one-shot `claude -p`, on the same token, with no tools and no ability to
+act — which reads the agent's tool-call stream and answers with a bounded, structured *step
+state*: open steps with their next action, closed steps with their commit shas, decisions with
+reasons, dead ends, and the facts the agent had to read a file to learn. At a boundary, hx composes that plus the
 agent's memory, its order, and its own task list into **one file**, and a hook hands over the
 path. The agent reads one file and continues. It does not search, and it does not re-read what
 it already knew.
@@ -92,10 +93,12 @@ $HARNESS_ROOT/
   orders/<id>.md              Partner-written; ## Order + ## Definition of done
   tasks.json                  the control-plane record, written only by hx
   pods/<pod>/<id>-<state>.md  the work item; state is the filename suffix
-  logs/<id>/…                 raw stream, read only by the Companion
+  logs/<id>/<id>-main.jsonl   raw stream, one line per tool call, read only by the Companion
+  logs/<id>/<id>-sNNN-*.jsonl one stream per subagent, open until it stops
   state/<id>/…                step state, written only by the Companion
-  run/<id>/…                  context files, per-agent Claude home, markers
-  wt/<id>/                    sparse worktree from repos/<name>.git
+  run/<id>/…                  context files, per-agent Claude home, turn and goal markers
+  seed/token                  the one credential, mode 0600
+  wt/<id>/                    sparse worktree from repos/<name>.git, branch agent/<id>
 ```
 
 `config/` is the part worth committing to your own git. Everything else is runtime state.

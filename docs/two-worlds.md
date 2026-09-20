@@ -58,6 +58,23 @@ Yours load normally. In a harness session there is exactly one CLAUDE.md —
 (`config/<id>/AGENTS.md`) live outside any worktree for the same reason: Claude Code's own
 `AGENTS.md` discovery cannot see them, and they reach the agent only by the paths hx chooses.
 
+## The Companion's session
+
+Each agent is paired with a small **Companion** model, and it is a Claude Code session too —
+`claude -p`, one shot per batch of records, on the same pinned binary and the same instance
+token. It gets a config home of its own at `run/<id>/companion-home`, and that home is
+deliberately bare: **no hooks, no skills, no CLAUDE.md.** It is not an agent and must not
+behave like one.
+
+It has **no tools**. Its whole input is the composed system prompt plus the state and new
+records on stdin, and its whole output is one JSON object. So it cannot read a file, run a
+command, or touch your machine even by accident — the thing that watches every agent is the
+one participant here with no ability to act.
+
+Its model is `companion.model` in `config/<id>/harness.json`, separate from the agent's, and
+`provider: claude-cli` means it goes through the pinned binary rather than an API key. An
+instance with no API key still gets a Companion.
+
 ## Memory and transcripts
 
 Yours accumulate in `~/.claude`, as always. Each harness home has its own, and `hx dispatch`
@@ -168,6 +185,21 @@ list, your history, or your `/resume` picker, because those live in `~/.claude`.
 UI falls back to when a session has died. It is instance state like everything else under
 `logs/`, archived by the next `hx dispatch`, and it never leaves the instance.
 
+Alongside it, hooks write the rest of what the instance knows about a session, all of it inside
+`$HARNESS_ROOT` and none of it anywhere else:
+
+| File | Written by | Holds |
+|---|---|---|
+| `logs/<id>/<id>-main.jsonl` | the `log` hook, one line per tool call | `seq`, the tool, head excerpts of its input and output, the exit status, `context_tokens`, and a `ref` into Claude Code's own transcript |
+| `logs/<id>/<id>-sNNN-open.jsonl` → `-closed.jsonl` | `subagent-start` / `subagent-stop` | one stream per subagent, opened when it starts and renamed when it stops |
+| `run/<id>/subagents.json` | `subagent-start`, under a lock | the `agent_id → sNNN` map, so two subagents starting at once cannot take the same handle |
+| `run/<id>/turn` | the `stop` hook, after every turn | the turn's timestamp, session id, and whether background work is still running |
+| `state/<id>/<stream>.json` | the Companion | the step state |
+
+The excerpts are bounded and the full payload stays in Claude Code's own transcript inside the
+agent's home, which is wiped at every dispatch. Nothing here is sent anywhere; the Companion is
+the only reader of the streams, and the agent never reads them at all.
+
 ## The whole table
 
 | | Your normal `claude` | A harness session |
@@ -214,6 +246,12 @@ present tense about something unbuilt.
 | `keep_claude_dir: true` opts a project back in | `repo.py`, `if not config.get("keep_claude_dir")` |
 | `hx push` sends one explicit refspec to `upstream` and nothing else | `push.py`, `refs/heads/<branch>:refs/heads/<branch>` |
 | `hx upgrade` refuses an untested version before writing anything | `upgrade.py`, `require_tested` before `write_pin` |
+| one raw record per tool call, on the stream of the thread that made it | the `log` hook; the `agent_id` lookup in `subagents.py` |
+| `context_tokens` is input plus cache reads, not output | `transcripts.py` |
+| the seam marker is touched only on the main stream | the `log` hook — a subagent's window is its own |
+| subagent handles are assigned under a lock | `subagents.py` |
+| a subagent's result reaches its parent only as a digest | `subagent-result`, `PostToolUse(Agent)` |
+| the Companion has no tools, no hooks, no skills and no CLAUDE.md | its home is `run/<id>/companion-home`; `claude -p` with a system prompt and stdin |
 
 ## How this is verified, not just asserted## How this is verified, not just asserted
 

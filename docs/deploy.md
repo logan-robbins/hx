@@ -7,8 +7,13 @@ nothing else.
 
 `hx` is a control plane for a fleet of Claude Code sessions. Each one — including the
 supervising **Partner** — is a full Claude Code instance in its own tmux session, running under
-a `/goal`, with its own config directory, its own worktree, and a small **Companion** model
-that keeps its continuity across context boundaries.
+a `/goal`, with its own config directory and its own worktree.
+
+Each is also paired with a small **Companion**, which runs through the same pinned `claude`
+binary as a one-shot `claude -p` on the same instance token — no API key needed — in a config
+home of its own with no hooks, no skills and no CLAUDE.md, and **no tools at all**. It reads
+the agent's tool-call stream and answers with one JSON object: the bounded step state that lets
+the agent's conversation be cut and rebuilt without losing what it knew.
 
 Two things exist and never mix:
 
@@ -153,7 +158,13 @@ loginctl enable-linger "$USER"      # so the fleet starts without an interactive
 ```
 
 Enable the **timer**, not `hx-heartbeat.service`; the service carries no `[Install]` section on
-purpose. `hx up` launches every configured agent at boot. `hx heartbeat` runs every 900 seconds:
+purpose.
+
+The systemd units are checked by a real `systemd-analyze --user verify` in CI on every change.
+The launchd plists are not, and cannot sensibly be: bootstrapping a real agent on a CI runner
+is a bad idea. They are lint-clean and they parse, and **the two `launchctl bootstrap` commands
+above are the first time launchd itself sees them** — so if either reports an error, that is
+worth telling us about rather than working around. `hx up` launches every configured agent at boot. `hx heartbeat` runs every 900 seconds:
 it reads the board, restarts any `working` item whose tmux session has died, and wakes the
 Partner when something changed. That clock lives outside Claude Code on purpose — a timer
 inside a session would be cleared by `/clear`, and every seam is a `/clear`.
