@@ -9,18 +9,17 @@
 #     systemctl --user enable --now hx-heartbeat.timer
 #
 # Placeholders, substituted by `hx install` and re-rendered by `hx upgrade`:
-#   @HX_BIN@        absolute path of the hx entry point (config/hx.json "hx_bin")
-#   @HARNESS_ROOT@  absolute path of the instance
+#   {HX_BIN}        absolute path of the hx entry point (config/hx.json "hx_bin")
+#   {HARNESS_ROOT}  absolute path of the instance
 
 [Unit]
 Description=hx: heartbeat over the board
-Documentation=file://@HARNESS_ROOT@/docs/deploy.md
 After=hx-up.service
 
 [Service]
 Type=oneshot
-Environment=HARNESS_ROOT=@HARNESS_ROOT@
-WorkingDirectory=@HARNESS_ROOT@
-ExecStart=@HX_BIN@ heartbeat
-StandardOutput=append:@HARNESS_ROOT@/run/hx-heartbeat.log
-StandardError=append:@HARNESS_ROOT@/run/hx-heartbeat.log
+Environment=HARNESS_ROOT={HARNESS_ROOT}
+WorkingDirectory={HARNESS_ROOT}
+ExecStart={HX_BIN} heartbeat
+StandardOutput=append:{HARNESS_ROOT}/run/hx-heartbeat.log
+StandardError=append:{HARNESS_ROOT}/run/hx-heartbeat.log

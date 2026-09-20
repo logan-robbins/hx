@@ -7,14 +7,13 @@
 #     systemctl --user enable --now hx-heartbeat.timer
 #
 # Placeholder, substituted by `hx install` and re-rendered by `hx upgrade`:
-#   @HARNESS_ROOT@  absolute path of the instance
+#   {HARNESS_ROOT}  absolute path of the instance
 #
 # This clock lives outside Claude Code on purpose. A session cron, /loop, or Monitor inside the
 # Partner is cleared by /clear and therefore by every seam; this is not.
 
 [Unit]
 Description=hx: heartbeat over the board every 15 minutes
-Documentation=file://@HARNESS_ROOT@/docs/deploy.md
 
 [Timer]
 Unit=hx-heartbeat.service

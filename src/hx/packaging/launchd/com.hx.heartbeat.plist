@@ -11,8 +11,8 @@
       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hx.heartbeat.plist
 
   Placeholders, substituted by `hx install` and re-rendered by `hx upgrade`:
-    @HX_BIN@        absolute path of the hx entry point (config/hx.json "hx_bin")
-    @HARNESS_ROOT@  absolute path of the instance
+    {HX_BIN}        absolute path of the hx entry point (config/hx.json "hx_bin")
+    {HARNESS_ROOT}  absolute path of the instance
 
   This clock lives outside Claude Code on purpose. A session cron, /loop, or Monitor inside the
   Partner is cleared by /clear and therefore by every seam; this is not.
@@ -24,18 +24,18 @@
 
 	<key>ProgramArguments</key>
 	<array>
-		<string>@HX_BIN@</string>
+		<string>{HX_BIN}</string>
 		<string>heartbeat</string>
 	</array>
 
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>HARNESS_ROOT</key>
-		<string>@HARNESS_ROOT@</string>
+		<string>{HARNESS_ROOT}</string>
 	</dict>
 
 	<key>WorkingDirectory</key>
-	<string>@HARNESS_ROOT@</string>
+	<string>{HARNESS_ROOT}</string>
 
 	<key>StartInterval</key>
 	<integer>900</integer>
@@ -50,9 +50,9 @@
 	<string>Background</string>
 
 	<key>StandardOutPath</key>
-	<string>@HARNESS_ROOT@/run/hx-heartbeat.log</string>
+	<string>{HARNESS_ROOT}/run/hx-heartbeat.log</string>
 
 	<key>StandardErrorPath</key>
-	<string>@HARNESS_ROOT@/run/hx-heartbeat.log</string>
+	<string>{HARNESS_ROOT}/run/hx-heartbeat.log</string>
 </dict>
 </plist>

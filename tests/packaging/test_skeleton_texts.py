@@ -1,8 +1,7 @@
 """The shipped texts, checked against the spec constraints they have to satisfy.
 
-These are prompts, templates, and unit files: nothing imports them, so nothing else in the
-suite notices when one drifts out of the shape the spec (and `hx dispatch`, and `launchctl`,
-and `systemd`) requires of it.
+These are prompts and templates: nothing imports them, so nothing else in the suite notices
+when one drifts out of the shape the spec (and `hx dispatch`) requires of it.
 
 Constraints checked here, with the section each comes from:
 
@@ -12,26 +11,20 @@ Constraints checked here, with the section each comes from:
 * every `AGENTS.md`: exactly one `## UPDATES BELOW ONLY` — spec 03, 04, guard rule 1
 * both `SKILL.md` files: valid frontmatter with `name` and `description` — spec 17.5 and
   code.claude.com/docs/en/skills
-* `packaging/launchd/*.plist`: parse as plists (and pass `plutil -lint` where it exists)
-* `packaging/systemd/*`: parse as INI with the sections systemd requires
-* `packaging/tested-claude-versions.json`: parses, and is a non-empty list of versions —
-  spec 17.2 step 1, 17.6
+
+The unit templates and the tested-versions list moved into the wheel at
+`src/hx/packaging/`; they are covered by `test_units.py`, which renders them first.
 """
 
-import configparser
 import json
 import pathlib
-import plistlib
 import re
-import shutil
-import subprocess
 
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SKELETON = REPO / "src" / "hx" / "skeleton"
 SKILLS = REPO / "src" / "hx" / "skills"
-PACKAGING = REPO / "packaging"
 
 # Order-shaped files: everything `hx dispatch` would have to accept. The work-item template
 # embeds an order rather than being one, so it is checked separately below.
@@ -327,128 +320,6 @@ def test_the_two_skills_spec_17_5_names_are_the_ones_that_ship():
         "spec 17.5: hx ships exactly hx-partner and hx-worker; autodev's operator and GM "
         "skills are dropped"
     )
-
-
-# ------------------------------------------------------------------------ packaging
-
-
-def plists() -> list[pathlib.Path]:
-    return sorted((PACKAGING / "launchd").glob("*.plist"))
-
-
-def units() -> list[pathlib.Path]:
-    return sorted(
-        p for p in (PACKAGING / "systemd").iterdir()
-        if p.suffix in (".service", ".timer")
-    )
-
-
-def test_the_packaging_units_spec_17_2_names_all_exist():
-    assert [p.name for p in plists()] == ["com.hx.heartbeat.plist", "com.hx.up.plist"]
-    assert [p.name for p in units()] == [
-        "hx-heartbeat.service", "hx-heartbeat.timer", "hx-up.service",
-    ]
-
-
-@pytest.mark.parametrize("path", plists(), ids=_ids(plists()))
-def test_plist_parses(path):
-    with path.open("rb") as fh:
-        data = plistlib.load(fh)
-    assert data["Label"] == path.stem, f"{path}: Label {data['Label']!r} != {path.stem!r}"
-    args = data["ProgramArguments"]
-    assert args[0] == "@HX_BIN@", f"{path}: first argument must be the templated binary path"
-    assert args[1] in ("up", "heartbeat"), args
-    assert data["EnvironmentVariables"]["HARNESS_ROOT"] == "@HARNESS_ROOT@"
-
-
-@pytest.mark.parametrize("path", plists(), ids=_ids(plists()))
-def test_plist_passes_plutil_lint_when_available(path):
-    plutil = shutil.which("plutil")
-    if plutil is None:
-        pytest.skip("plutil is macOS-only; plistlib parsing covers the rest")
-    r = subprocess.run([plutil, "-lint", str(path)], capture_output=True, text=True)
-    assert r.returncode == 0, f"{path}: {r.stdout}{r.stderr}"
-
-
-def test_the_heartbeat_plist_runs_every_900_seconds():
-    with (PACKAGING / "launchd" / "com.hx.heartbeat.plist").open("rb") as fh:
-        data = plistlib.load(fh)
-    assert data["StartInterval"] == 900, data.get("StartInterval")
-
-
-def test_the_up_plist_runs_at_load():
-    with (PACKAGING / "launchd" / "com.hx.up.plist").open("rb") as fh:
-        data = plistlib.load(fh)
-    assert data["RunAtLoad"] is True
-
-
-def read_unit(path: pathlib.Path) -> configparser.ConfigParser:
-    """systemd units are INI. `#` starts a comment; duplicate keys are legal, so the parser
-    is configured to keep the last one rather than raise."""
-    parser = configparser.ConfigParser(
-        strict=False, interpolation=None, comment_prefixes=("#", ";"),
-    )
-    parser.optionxform = str
-    parser.read_string(path.read_text(), source=str(path))
-    return parser
-
-
-@pytest.mark.parametrize("path", units(), ids=_ids(units()))
-def test_systemd_unit_parses_as_ini_with_a_unit_section(path):
-    parser = read_unit(path)
-    assert "Unit" in parser, f"{path}: no [Unit] section"
-    assert parser["Unit"].get("Description"), f"{path}: [Unit] has no Description"
-    expected = {".service": "Service", ".timer": "Timer"}[path.suffix]
-    assert expected in parser, f"{path}: no [{expected}] section"
-    for section in parser.sections():
-        assert section in ("Unit", "Service", "Timer", "Install"), f"{path}: [{section}]"
-
-
-@pytest.mark.parametrize(
-    "path", [p for p in units() if p.suffix == ".service"],
-    ids=_ids([p for p in units() if p.suffix == ".service"]),
-)
-def test_systemd_service_execs_the_templated_binary(path):
-    svc = read_unit(path)["Service"]
-    assert svc["ExecStart"].startswith("@HX_BIN@ "), svc["ExecStart"]
-    assert svc["ExecStart"].split()[1] in ("up", "heartbeat"), svc["ExecStart"]
-    assert svc["Environment"] == "HARNESS_ROOT=@HARNESS_ROOT@", svc.get("Environment")
-    assert svc["Type"] == "oneshot", svc.get("Type")
-
-
-def test_systemd_heartbeat_timer_fires_every_900_seconds():
-    timer = read_unit(PACKAGING / "systemd" / "hx-heartbeat.timer")["Timer"]
-    assert timer["OnUnitActiveSec"] == "900", timer.get("OnUnitActiveSec")
-    assert timer["Unit"] == "hx-heartbeat.service", timer.get("Unit")
-
-
-def test_only_the_up_service_and_the_timer_are_enabled_directly():
-    # hx-heartbeat.service is triggered by its timer and must not carry [Install].
-    assert "Install" in read_unit(PACKAGING / "systemd" / "hx-up.service")
-    assert "Install" in read_unit(PACKAGING / "systemd" / "hx-heartbeat.timer")
-    assert "Install" not in read_unit(PACKAGING / "systemd" / "hx-heartbeat.service")
-
-
-@pytest.mark.parametrize("path", plists() + units(), ids=_ids(plists() + units()))
-def test_unit_files_carry_no_absolute_host_paths(path):
-    """Both placeholders are substituted by `hx install`; a real path baked in here would
-    install a fleet pointed at whoever's machine built the package."""
-    text = path.read_text()
-    assert "@HARNESS_ROOT@" in text, f"{path}: nothing templated on HARNESS_ROOT"
-    for bad in ("/Users/", "/home/", "/srv/hx"):
-        assert bad not in text, f"{path}: hard-coded path {bad!r}"
-
-
-def test_tested_claude_versions_parses_and_is_a_non_empty_version_list():
-    data = json.loads((PACKAGING / "tested-claude-versions.json").read_text())
-    assert set(data) == {"versions"}, sorted(data)
-    versions = data["versions"]
-    assert isinstance(versions, list) and versions, "the tested list must not be empty"
-    for v in versions:
-        assert isinstance(v, str) and re.fullmatch(r"\d+\.\d+\.\d+", v), (
-            f"{v!r}: entries are bare version numbers, as `hx install` compares them"
-        )
-    assert len(set(versions)) == len(versions), "duplicate versions in the tested list"
 
 
 # ---------------------------------------------------------------------- companion

@@ -8,8 +8,8 @@
 #     loginctl enable-linger "$USER"      # so it starts without an interactive login
 #
 # Placeholders, substituted by `hx install` and re-rendered by `hx upgrade`:
-#   @HX_BIN@        absolute path of the hx entry point (config/hx.json "hx_bin")
-#   @HARNESS_ROOT@  absolute path of the instance
+#   {HX_BIN}        absolute path of the hx entry point (config/hx.json "hx_bin")
+#   {HARNESS_ROOT}  absolute path of the instance
 #
 # This is a user unit, never a system unit: hx refuses to run as root, and each HarnessAgent
 # launches Claude Code with --dangerously-skip-permissions, which Claude Code itself refuses
@@ -17,19 +17,18 @@
 
 [Unit]
 Description=hx: launch every configured HarnessAgent
-Documentation=file://@HARNESS_ROOT@/docs/deploy.md
 After=default.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-Environment=HARNESS_ROOT=@HARNESS_ROOT@
-WorkingDirectory=@HARNESS_ROOT@
-ExecStart=@HX_BIN@ up
+Environment=HARNESS_ROOT={HARNESS_ROOT}
+WorkingDirectory={HARNESS_ROOT}
+ExecStart={HX_BIN} up
 # tmux sessions must outlive this oneshot unit.
 KillMode=none
-StandardOutput=append:@HARNESS_ROOT@/run/hx-up.log
-StandardError=append:@HARNESS_ROOT@/run/hx-up.log
+StandardOutput=append:{HARNESS_ROOT}/run/hx-up.log
+StandardError=append:{HARNESS_ROOT}/run/hx-up.log
 
 [Install]
 WantedBy=default.target

@@ -9,8 +9,8 @@
       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hx.up.plist
 
   Placeholders, substituted by `hx install` and re-rendered by `hx upgrade`:
-    @HX_BIN@        absolute path of the hx entry point (config/hx.json "hx_bin")
-    @HARNESS_ROOT@  absolute path of the instance
+    {HX_BIN}        absolute path of the hx entry point (config/hx.json "hx_bin")
+    {HARNESS_ROOT}  absolute path of the instance
 
   This is a user agent, never a system daemon: hx refuses to run as root, and each
   HarnessAgent launches Claude Code with bypass permissions, which Claude Code
@@ -23,18 +23,18 @@
 
 	<key>ProgramArguments</key>
 	<array>
-		<string>@HX_BIN@</string>
+		<string>{HX_BIN}</string>
 		<string>up</string>
 	</array>
 
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>HARNESS_ROOT</key>
-		<string>@HARNESS_ROOT@</string>
+		<string>{HARNESS_ROOT}</string>
 	</dict>
 
 	<key>WorkingDirectory</key>
-	<string>@HARNESS_ROOT@</string>
+	<string>{HARNESS_ROOT}</string>
 
 	<key>RunAtLoad</key>
 	<true/>
@@ -46,9 +46,9 @@
 	<string>Background</string>
 
 	<key>StandardOutPath</key>
-	<string>@HARNESS_ROOT@/run/hx-up.log</string>
+	<string>{HARNESS_ROOT}/run/hx-up.log</string>
 
 	<key>StandardErrorPath</key>
-	<string>@HARNESS_ROOT@/run/hx-up.log</string>
+	<string>{HARNESS_ROOT}/run/hx-up.log</string>
 </dict>
 </plist>
