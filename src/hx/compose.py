@@ -90,6 +90,18 @@ def memory(root: Path, item_id: str, stream: str) -> tuple[str, str]:
     return _relative(root, path), path.read_text().strip("\n")
 
 
+#: What a subagent gets in place of the order. Spec 07.3 says "the subagent prompt", but the
+#: `SubagentStart` payload does not carry one: its documented fields are `session_id`,
+#: `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`, and a live run on
+#: 2026-09-20 confirmed there is nothing else to read. The subagent already has the parent's
+#: instruction as its first message, so the section says where its task came from rather than
+#: pretending to repeat it.
+SUBAGENT_TASK = (
+    "Your task is the message you were spawned with, which is already in this conversation.\n"
+    "This file is the rest of what hx has for you.\n"
+)
+
+
 def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[str | None, str]:
     """Section 2. The order as dispatched, plus every addendum `hx resume` appended.
 
@@ -97,7 +109,9 @@ def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[
     order is not its business (spec 07.3).
     """
     if subagent_prompt is not None:
-        return ("the spawn prompt" if subagent_prompt.strip() else None), subagent_prompt
+        if subagent_prompt.strip():
+            return "the spawn prompt", subagent_prompt
+        return None, SUBAGENT_TASK
     work_item = find_work_item(root, item_id)
     if work_item is not None:
         _, body = split_frontmatter_text(work_item.read_text())

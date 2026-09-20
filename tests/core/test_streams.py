@@ -345,3 +345,20 @@ def test_stop_prefers_the_pending_goal_over_the_seam(instance, hx, launched, ord
              {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
     assert not (instance / "run" / "partner" / "goal-pending").exists()
     assert seam_marker(instance, "partner").is_file(), "the seam is still owed"
+
+
+def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(working):
+    """`SubagentStart` carries no prompt; the section says where the task came from.
+
+    Verified live on 2026-09-20: the payload's documented fields are `session_id`,
+    `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`.
+    """
+    result = run_hook(working, "eng-001", "subagent-start",
+                      {"hook_event_name": "SubagentStart", "agent_id": "agent-a",
+                       "agent_type": "Explore", "cwd": "/tmp", "permission_mode": "bypassPermissions"})
+    assert result.returncode == 0, result.stderr
+
+    text = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
+    section = text[text.index("## Task"):text.index("## Step state")]
+    assert "_none yet_" not in section, "an empty task section tells the subagent nothing"
+    assert "already in this conversation" in section

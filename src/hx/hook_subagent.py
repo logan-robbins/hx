@@ -27,7 +27,13 @@ def digest_path(root: Path, item_id: str, stream: str) -> Path:
 
 
 def _spawn_prompt(payload: dict) -> str:
-    """What the parent asked for, from whichever field carries it."""
+    """What the parent asked for, if the payload carries it.
+
+    It usually does not: `SubagentStart`'s documented fields are `session_id`,
+    `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`, and a live run
+    confirmed nothing else arrives. The fields below are checked anyway, because a future
+    version that adds the prompt should start using it without a change here.
+    """
     tool_input = payload.get("tool_input")
     if isinstance(tool_input, dict):
         for key in ("prompt", "description", "task"):

@@ -601,3 +601,46 @@ cannot quietly come back.
 
 No action needed; recorded because the same trap is available to anything else that calls the
 script without an argument.
+
+## 2026-09-20 — build lane — two findings from build-5's live check, one needing a spec decision
+
+### 1. `SubagentStart` carries no prompt, so spec 07.3 section 2 cannot be what it says
+
+Spec 07.3 makes section 2 of a subagent's context file "the verbatim order and every addendum
+from `tasks.json` (**or the subagent prompt**)". There is no subagent prompt to be had at
+`SubagentStart`. Its documented input schema is:
+
+```json
+{"session_id": "abc123", "hook_event_name": "SubagentStart", "agent_id": "agent_456",
+ "agent_type": "security-reviewer", "cwd": "/home/user/my-project", "permission_mode": "default"}
+```
+
+No `tool_input`, no prompt, no `transcript_path`. A live run on 2026-09-20 confirmed it: the
+composed file's Task section came out `_none yet_`.
+
+The prompt does exist in the parent's `PreToolUse(Agent)` payload, which the `guard` hook
+already sees. hx could stash it there and pair it with the next `SubagentStart` — but when two
+`Agent` calls run in parallel, which the live run did, there is nothing in either payload to
+pair them by, and a subagent handed another subagent's task is worse than one handed none.
+
+**What I did, pending your call:** the section now says the task is the message the subagent
+was spawned with and is already in its conversation — which is true, since Claude Code delivers
+the parent's prompt as the subagent's first message. It is honest and useful, and it does not
+invent a correlation. Suggest rewording 07.3 to match, or telling me you want the
+`PreToolUse(Agent)` stash with a documented "best effort when only one is in flight" rule.
+
+### 2. `goals/build-5.md` item 7 asks for a live check the spec forbids
+
+Item 7 says "a Partner turn that spawns two subagents". Spec 09.1 marks `subagent-start`,
+`subagent-stop` and `subagent-result` **Non-Partner**, and `install.sh` implements that: the
+Partner's `settings.json` wires only `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop`,
+`PreCompact`, `PostCompact`. So a Partner turn cannot exercise the subagent hooks, and the run
+I did on the Partner produced no subagent streams — correctly.
+
+That run was not wasted: it live-proved the Non-Partner rule, and it proved the documented
+fallback, because the two real subagents' `Bash` calls landed on `partner-main` carrying their
+real `agent_id`s. I then re-ran the check on `eng-001`, where the hooks apply, and everything
+passed. Details in `goals/build-5.done.md`.
+
+No change needed on my side; flagging so the next goal that says "Partner" about subagents says
+"worker" instead.
