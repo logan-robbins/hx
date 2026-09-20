@@ -190,17 +190,31 @@ def test_the_baseline_is_recorded_before_any_test_runs():
     names = [s.get("name", s.get("uses", "")) for s in steps]
     record = next(i for i, n in enumerate(names) if "baseline" in n.lower())
     guard = next(i for i, n in enumerate(names) if "guard" in n.lower())
-    suite = next(i for i, n in enumerate(names) if "milestone-check" in n.lower())
+    suite = next(i for i, n in enumerate(names) if "full suite" in n.lower())
     assert record < guard < suite, names
     body = steps[record]["run"]
     assert "tools/claude-home-hash.sh" in body
     assert ".baseline/claude-home.manifest" in body
 
 
-def test_the_suite_runs_through_milestone_check():
+def test_ci_runs_every_lane_s_tests_as_required():
+    """`tools/milestone-check.sh <lane>` is the lane form: guard plus that lane's own paths,
+    the rest advisory. CI is nobody's lane, so it runs the whole suite as required — and with
+    no lane argument that script would run the guard tests and nothing else."""
     blob = "\n".join(str(s) for s in workflow()["jobs"]["test"]["steps"])
-    assert "tools/milestone-check.sh" in blob, (
-        "CI must run the same script every lane runs before finishing a goal"
+    assert "pytest -q" in blob, "CI does not run the full suite"
+    assert "tools/milestone-check.sh" not in blob, (
+        "the lane-scoped script would under-run in CI; run pytest over everything instead"
+    )
+    assert "tests/guard" in blob, "the guard tests must still run on their own first"
+
+
+def test_the_package_job_runs_both_release_scripts_and_verifies_the_units():
+    blob = "\n".join(str(s) for s in workflow()["jobs"]["package"]["steps"])
+    assert "packaging/e2e-install.sh" in blob
+    assert "packaging/e2e-deploy.sh" in blob
+    assert "systemd-analyze --user verify" in blob, (
+        "the rendered systemd units are checked by a real systemd nowhere else"
     )
 
 

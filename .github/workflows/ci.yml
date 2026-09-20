@@ -81,8 +81,12 @@ jobs:
       - name: Guard tests
         run: .venv/bin/python -m pytest tests/guard -q
 
-      - name: Full suite (tools/milestone-check.sh)
-        run: tools/milestone-check.sh
+      # NOT `tools/milestone-check.sh`: that script takes a lane name and runs tests/guard
+      # plus that lane's own paths, treating the others as advisory. That is right for a lane
+      # finishing a goal and wrong for CI, which is nobody's lane and where every test is
+      # required. Invoked with no lane it would run the guard tests and nothing else.
+      - name: Full suite (every lane's tests are required here)
+        run: .venv/bin/python -m pytest -q
 
       - name: The suite left the runner's Claude home untouched
         run: |
@@ -90,7 +94,7 @@ jobs:
           diff -u .baseline/claude-home.manifest /tmp/claude-home.after
 
   package:
-    name: wheel builds, installs, and creates an instance
+    name: wheel builds, installs, deploys, and creates an instance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,11 +111,36 @@ jobs:
         with:
           python-version: '3.14'
 
-      # The same script a human runs before a release: build the wheel, install it as a uv tool
-      # into a fresh HOME, run the installed hx, assert the skeleton landed byte-identical and
-      # that no Claude home was touched.
+      # The same two scripts a human runs before a release. e2e-install proves the wheel
+      # builds, installs, and can create a skeleton; e2e-deploy goes the whole way — the full
+      # hx install, the mirror, a sparse worktree, a launch, the rendered units, hx upgrade
+      # and hx push — in a HOME that did not exist a moment ago.
       - name: End-to-end install (packaging/e2e-install.sh)
         run: packaging/e2e-install.sh "$RUNNER_TEMP/e2e"
+
+      - name: End-to-end deploy (packaging/e2e-deploy.sh)
+        run: packaging/e2e-deploy.sh "$RUNNER_TEMP/deploy"
+
+      # The rendered systemd units have never been loaded by a real systemd anywhere else:
+      # this machine has no container runtime and macOS has no systemd. `systemd-analyze` is
+      # on ubuntu-latest, so this is the first and only place they are checked by the thing
+      # that will actually run them.
+      - name: systemd accepts the rendered units
+        run: |
+          if ! command -v systemd-analyze >/dev/null 2>&1; then
+            echo "systemd-analyze is not installed on this runner; skipping" >&2
+            exit 0
+          fi
+          units="$RUNNER_TEMP/deploy/home/.config/systemd/user"
+          if [ ! -d "$units" ]; then
+            echo "no rendered units at $units" >&2
+            exit 1
+          fi
+          ls -l "$units"
+          systemd-analyze --user verify \
+            "$units/hx-up.service" \
+            "$units/hx-heartbeat.service" \
+            "$units/hx-heartbeat.timer"
 
       - name: Collect the wheel
         run: |

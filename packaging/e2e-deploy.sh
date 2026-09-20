@@ -321,7 +321,72 @@ for unit in $UNITS; do
   ok "$unit rendered with HARNESS_ROOT and HX_BIN substituted"
 done
 
-step "16. the real ~/.claude is unchanged"
+# --------------------------------------------------------------- upgrade, and push
+
+step "16. hx upgrade refuses a version the suite has not passed on"
+# Two one-line fakes: one reporting a version that is in the package's tested list, one that
+# is not. The refusal is the whole point of the command (spec 17.6), so it is asserted first
+# and the pin is checked to have survived it.
+TESTED=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["versions"][0])' \
+  "$REPO/src/hx/packaging/tested-claude-versions.json")
+printf '#!/bin/sh\necho "9.9.9 (Claude Code)"\n' > "$FAKE_BIN_DIR/claude-untested"
+printf '#!/bin/sh\necho "%s (Claude Code)"\n' "$TESTED" > "$FAKE_BIN_DIR/claude-tested"
+chmod +x "$FAKE_BIN_DIR/claude-untested" "$FAKE_BIN_DIR/claude-tested"
+
+PIN_BEFORE=$(cat "$ROOT/config/claude.json")
+set +e
+"$HX" upgrade --claude "$FAKE_BIN_DIR/claude-untested" > "$SCRATCH/upgrade-bad.log" 2>&1
+BAD_STATUS=$?
+set -e
+[ "$BAD_STATUS" -ne 0 ] || die "hx upgrade accepted 9.9.9, which is not in the tested list"
+grep -q "not in this package's tested list" "$SCRATCH/upgrade-bad.log" \
+  || { cat "$SCRATCH/upgrade-bad.log" >&2; die "the refusal does not say why"; }
+grep -qF "$TESTED" "$SCRATCH/upgrade-bad.log" \
+  || die "the refusal does not name a version that would be accepted"
+ok "refused 9.9.9 (exit $BAD_STATUS), naming $TESTED as the way out"
+[ "$(cat "$ROOT/config/claude.json")" = "$PIN_BEFORE" ] \
+  || die "a refused upgrade changed config/claude.json; the old pin must survive (spec 17.6)"
+ok "config/claude.json unchanged by the refusal"
+
+step "17. hx upgrade accepts a version that is in the list"
+"$HX" upgrade --claude "$FAKE_BIN_DIR/claude-tested" > "$SCRATCH/upgrade-ok.log" 2>&1 \
+  || { cat "$SCRATCH/upgrade-ok.log" >&2; die "hx upgrade refused $TESTED, which is tested"; }
+sed 's/^/   | /' "$SCRATCH/upgrade-ok.log"
+python3 - "$ROOT/config/claude.json" "$FAKE_BIN_DIR/claude-tested" "$TESTED" <<'PY' || die "the pin was not moved"
+import json, sys
+pin = json.load(open(sys.argv[1]))
+assert pin["bin"] == sys.argv[2], pin
+assert pin["version"] == sys.argv[3], pin
+print(f"   ok  pinned {pin['version']} at {pin['bin']}")
+PY
+
+step "18. hx push lands one branch upstream and moves no other ref"
+UPSTREAM="$SCRATCH/upstream.git"
+git init -q --bare "$UPSTREAM"
+git -C "$MIRROR" remote set-url upstream "$UPSTREAM"
+# The branch hx will push is whatever config/<id>/harness.json says, defaulting to hx/<id>.
+BRANCH=$(python3 -c '
+import json, sys
+cfg = json.load(open(sys.argv[1]))
+print(cfg.get("branch") or "hx/" + cfg["id"])' "$ROOT/config/eng-001/harness.json")
+git -C "$WT" -c user.email=deploy@example.invalid -c user.name=deploy \
+  commit -q --allow-empty -m "work from eng-001"
+BEFORE_REFS=$(git -C "$UPSTREAM" for-each-ref --format='%(refname) %(objectname)' | sort)
+[ -z "$BEFORE_REFS" ] || die "the fresh upstream already has refs"
+
+"$HX" push eng-001 > "$SCRATCH/push.log" 2>&1 \
+  || { cat "$SCRATCH/push.log" >&2; die "hx push eng-001 failed"; }
+sed 's/^/   | /' "$SCRATCH/push.log"
+AFTER_REFS=$(git -C "$UPSTREAM" for-each-ref --format='%(refname)' | sort)
+[ "$AFTER_REFS" = "refs/heads/$BRANCH" ] \
+  || die "upstream refs are [$AFTER_REFS], expected exactly refs/heads/$BRANCH"
+ok "exactly one ref upstream: refs/heads/$BRANCH"
+[ "$(git -C "$UPSTREAM" rev-parse "$BRANCH")" = "$(git -C "$MIRROR" rev-parse "$BRANCH")" ] \
+  || die "the pushed branch does not match the mirror"
+ok "it matches the mirror, and the source checkout was never contacted"
+[ ! -d "$SRC/.git/refs/remotes/upstream" ] || die "the source checkout gained a remote ref"
+
+step "19. the real ~/.claude is unchanged"
 AFTER="$SCRATCH/claude-home.after"
 if [ -d "$REAL_CLAUDE_HOME" ]; then
   "$REPO/tools/claude-home-hash.sh" "$REAL_CLAUDE_HOME" > "$AFTER" || die "could not re-hash"
