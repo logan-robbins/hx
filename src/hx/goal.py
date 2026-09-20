@@ -30,14 +30,31 @@ POINTER = (
     "`HX-COMPLETE {id} <outcome>` appears."
 )
 
-#: Readiness detection, in one place (goal build-2 item 3).
-#:
-#: The fake `claude` prints `hx-fake-idle>` when it is waiting for input. The real Claude Code
-#: TUI draws an input box whose last line is a `>` prompt, optionally inside the box border;
-#: `_REAL_PROMPT` is the pattern to verify against the pinned binary at M6, when the live
-#: suite first runs against it. Until then only the fake's line is authoritative.
+# Readiness detection, in one place (goal build-2 item 3), verified against the pinned binary
+# 2.1.278 on 2026-09-20 by capturing live panes (goal build-3 item 8).
+#
+# What the real TUI actually shows, which is not what the docs suggest:
+#
+#   ──────────────────────────────────────────────────────────────────────
+#   ❯
+#   ──────────────────────────────────────────────────────────────────────
+#     ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents            <- idle
+#     ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · …    <- busy
+#
+# Two things follow, and both matter:
+#
+#   1. The prompt glyph is `❯` (U+276F), not `>`.
+#   2. **The input box is drawn while the session is working**, so the presence of a prompt
+#      says nothing about whether the pane is ready. The status bar is the signal: it carries
+#      `esc to interrupt` exactly while a turn is in flight.
+#
+# So a pane is busy when the status bar offers to interrupt it, and idle when the TUI is up
+# and it does not. Matching on the prompt alone — which is what this did before the live
+# check — would have read every real pane as busy forever, and `hx launch`'s wait has no
+# timeout.
+_BUSY_MARKERS = ("esc to interrupt",)
+_REAL_PROMPT = re.compile(r"^\s*(?:[│|]\s*)?[❯>]\s*(?:[│|]\s*)?$")
 _FAKE_PROMPT = re.compile(r"^\s*hx-fake-idle>\s*$")
-_REAL_PROMPT = re.compile(r"^\s*(?:[│|]\s*)?>\s*(?:[│|]\s*)?$")
 IDLE_PROMPTS = (_FAKE_PROMPT, _REAL_PROMPT)
 
 GOAL_MARKER = "goal"
@@ -62,15 +79,24 @@ def pointer_text(root: Path, item_id: str) -> str:
 
 
 def pane_is_idle(pane_text: str) -> bool:
-    """True when the pane's last non-empty line is an idle prompt.
+    """True when `<id>:main` is waiting for input. One function, by design.
 
-    One function, as goal build-2 item 3 asks, so M6 has a single place to correct once the
-    real TUI's prompt is confirmed against the pinned binary.
+    The real TUI and the fake are told apart by what they draw, not by a flag, so the same
+    detector serves the fake suites and the live binary.
     """
-    for line in reversed(pane_text.split("\n")):
+    lines = pane_text.split("\n")
+
+    # The real TUI: the status bar offers to interrupt exactly while a turn is in flight.
+    if any(marker in line for line in lines for marker in _BUSY_MARKERS):
+        return False
+    if any(_REAL_PROMPT.match(line) for line in lines):
+        return True
+
+    # The fake, and anything else: the last non-empty line is the prompt, or it is not.
+    for line in reversed(lines):
         if line.strip() == "":
             continue
-        return any(pattern.match(line) for pattern in IDLE_PROMPTS)
+        return bool(_FAKE_PROMPT.match(line))
     return False
 
 

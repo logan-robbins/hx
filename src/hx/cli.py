@@ -30,6 +30,7 @@ from . import read as read_cmd
 from . import resume as resume_cmd
 from . import show as show_cmd
 from . import task as task_cmd
+from . import ui_cmd
 from . import wake as wake_cmd
 from .errors import HxError
 
@@ -67,6 +68,7 @@ IMPLEMENTED = {
     "resume": resume_cmd.main,
     "show": show_cmd.main,
     "task": task_cmd.main,
+    "ui": ui_cmd.main,
     "up": lifecycle.main_up,
     "wake": wake_cmd.main,
 }
@@ -94,6 +96,7 @@ read-only views:
   board [--json] [--require-done ID...]   the whole instance, and every invariant
   show ID [--json]                        everything hx knows about one id
   orders [--json] / archive [--json]      the order graph, and what has been archived
+  ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
   install --skeleton-only --root PATH     create the instance layout and skeleton
 

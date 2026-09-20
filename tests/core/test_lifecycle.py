@@ -319,3 +319,61 @@ def test_a_failed_wake_is_a_warning_not_a_failure(instance, hx, launched, orders
     assert result.returncode == 0
     assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE eng-001 done"
     assert "the Partner was not woken (no-socket)" in result.stderr
+
+
+# --- readiness detection, against the real TUI's chrome ------------------------------------------
+#
+# These four strings are the live pane chrome of Claude Code 2.1.278, captured on 2026-09-20
+# from a logged-in session (goal build-3 item 8). They are the record of what the real TUI
+# draws; `hx.goal.pane_is_idle` is judged against them.
+
+REAL_IDLE = "\n".join([
+    "❯ ",
+    "─" * 100,
+    "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+    "",
+])
+REAL_BUSY = "\n".join([
+    "⏺ Bash(tmux capture-pane -p …)",
+    "  ⎿  Running…",
+    "",
+    "· Seasoning… (11m 20s · ↓ 45.1k tokens)",
+    "",
+    "─" * 100,
+    "❯ ",
+    "─" * 100,
+    "  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← for agents"
+    "                    ◎ /goal active (11m)",
+    "",
+])
+
+
+def test_the_real_tui_idle_pane_reads_as_idle():
+    from hx.goal import pane_is_idle
+
+    assert pane_is_idle(REAL_IDLE) is True
+
+
+def test_the_real_tui_busy_pane_reads_as_busy():
+    """The input box is drawn mid-turn, so the prompt alone says nothing (build-3 item 8)."""
+    from hx.goal import pane_is_idle
+
+    assert "❯" in REAL_BUSY, "the prompt is present while the session works"
+    assert pane_is_idle(REAL_BUSY) is False
+
+
+def test_the_prompt_glyph_is_the_one_the_tui_draws():
+    """`❯` (U+276F), not `>`; a pattern matching only `>` never matches a real pane."""
+    from hx.goal import _REAL_PROMPT
+
+    assert _REAL_PROMPT.match("❯ ")
+    assert _REAL_PROMPT.match("❯")
+    assert not _REAL_PROMPT.match("❯ something typed")
+
+
+def test_a_pane_that_has_not_drawn_yet_is_not_idle(instance):
+    """`hx launch` waits rather than pasting into a shell that has not become the TUI."""
+    from hx.goal import pane_is_idle
+
+    assert pane_is_idle("") is False
+    assert pane_is_idle("$ \n") is False

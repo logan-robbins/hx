@@ -96,3 +96,95 @@ def count_seams(root: Path, item_id: str, since: str | None) -> int | None:
                 continue
         count += 1
     return count
+
+
+# --- appending (spec 07.1) ----------------------------------------------------------------
+#
+# "Each raw record is one line under 4 KB, written with a single write(2) on an O_APPEND
+# descriptor, with `seq` assigned under a per-stream lock." Concurrent hook invocations on the
+# same stream then append whole lines in order. The `log` hook (M4) uses this too.
+
+import fcntl
+import os
+import tempfile
+
+from . import timestamps
+
+#: Spec 07.1: one line under 4 KB.
+MAX_RECORD_BYTES = 4096
+#: Spec 07.1: head excerpts, with `ref` pointing at the full payload in the transcript.
+EXCERPT_CHARS = 2000
+
+
+def stream_path(root: Path, item_id: str, stream: str) -> Path:
+    """Where a handle's records live. Subagent streams carry an open/closed suffix."""
+    if stream == f"{item_id}-main":
+        return main_stream(root, item_id)
+    directory = log_dir(root, item_id)
+    for state in ("open", "closed"):
+        candidate = directory / f"{stream}-{state}.jsonl"
+        if candidate.is_file():
+            return candidate
+    return directory / f"{stream}-open.jsonl"
+
+
+def _lock_path(root: Path, item_id: str, stream: str) -> Path:
+    return root / "run" / item_id / f"{stream}.stream.lock"
+
+
+def last_seq(path: Path) -> int:
+    seq = 0
+    for record in iter_records(path):
+        value = record.get("seq")
+        if isinstance(value, int) and not isinstance(value, bool) and value > seq:
+            seq = value
+    return seq
+
+
+def excerpt(value: object, limit: int = EXCERPT_CHARS) -> str:
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def append_record(root: Path, item_id: str, stream: str, record: dict) -> int:
+    """Append one record, assigning `seq` under the per-stream lock. Returns the seq.
+
+    Oversized records are trimmed rather than dropped: the excerpt shrinks until the line
+    fits, because a stream that silently loses a record is worse than a shorter excerpt.
+    """
+    path = stream_path(root, item_id, stream)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = _lock_path(root, item_id, stream)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+
+    handle = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        entry = {
+            "seq": last_seq(path) + 1,
+            "ts": timestamps.now(),
+            "stream": stream,
+            **record,
+        }
+        line = json.dumps(entry, default=str)
+        if len(line.encode()) > MAX_RECORD_BYTES:
+            for field in ("output", "input"):
+                if field in entry and len(line.encode()) > MAX_RECORD_BYTES:
+                    entry[field] = excerpt(entry[field], 200)
+                    line = json.dumps(entry, default=str)
+        if len(line.encode()) > MAX_RECORD_BYTES:
+            line = json.dumps(
+                {k: v for k, v in entry.items() if k in ("seq", "ts", "stream", "event", "ref")},
+                default=str,
+            )
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        try:
+            os.write(descriptor, line.encode() + b"\n")
+        finally:
+            os.close(descriptor)
+        return entry["seq"]
+    finally:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        finally:
+            os.close(handle)
