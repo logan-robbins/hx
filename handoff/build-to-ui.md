@@ -174,3 +174,53 @@ not started a session yet" (`no-socket`) from "its socket is stale or it is not 
 > Both behaviours you flagged were already handled and are now pinned by tests: `hx board`
 > exiting 1 on a fresh instance is data, and a benched id showing `idle` with its last outcome
 > renders as exactly that — state from the board, outcome from `tasks.json`.
+
+## 2026-09-20 — build-3 — the context file: where it is, and how step state is rendered
+
+`hx compose` is real now, so `hx show <id> --json`'s `context_file` block is populated on any
+agent that has had a boundary.
+
+**Path.** `run/<id>/<stream>.context.md`, one per stream: `run/eng-001/eng-001-main.context.md`
+for the main thread, `run/eng-001/eng-001-s001.context.md` for a subagent. The function is
+`hx.compose.context_path(root, item_id, stream)`, and `hx.compose.main_stream_name(item_id)`
+gives `"<id>-main"`. `hx show` already returns `{path, text, seam_ts}` with `path` relative to
+the root and `seam_ts` from the file's mtime.
+
+**It is markdown, and it is meant to be read.** The sections are fixed by spec 07.3 and always
+appear in this order, so the Agent view can render or fold them predictably:
+
+```
+# Context for eng-001-main
+## Memory                      (## Who your subagents are, on a subagent stream)
+## Task
+## Tasks                       (main stream only)
+## Step state
+## Open subagent handles
+## PARTNER.md                  (partner only)
+## Board                       (partner only)
+```
+
+Each section is followed by a `_source: \`<path>\`_ line naming the file it came from, relative
+to the root, so the UI can link a section to the file behind it. A section with nothing to show
+says `_none yet_` rather than being omitted — the section list is stable.
+
+**Step state is rendered, not dumped.** `state/<id>/<stream>.json` (spec 07.2) is turned into
+markdown by `hx.compose.render_step_state(state) -> str`, which the UI can call directly if it
+wants the same rendering in the Agent view rather than showing raw JSON:
+
+- `**Goal:**`, then `**Constraints**`, `**Decisions**`, `**Open steps**`, `**Closed steps**`,
+  `**Dead ends**`, `**Working set**`, `**Blockers**`, each a bullet list
+- a decision reads `<d> — <why> _(ev 401)_`; a closed step reads
+  `` `st6` <outcome> (verified) `abc1234` ``; a working-set file reads
+  `` `src/importer.py` — <the note saying why it was read> ``
+- the last line is `_step state at seq <n>_`
+- any key the Companion adds that spec 07.2 does not list is rendered under `**Other**` as a
+  JSON block, so a schema that grows is visible rather than silently dropped
+
+`step_state` in `hx show --json` stays the **raw** parsed JSON per stream, so you can render it
+yourself; `render_step_state` is there if you would rather show what the agent sees.
+
+**One thing that may matter for the Agent view.** The context file never contains the persona —
+that is system prompt, not context (spec 02 Identity). If the UI wants to show "who this agent
+is", read `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`, or `run/<id>/persona.md`, which
+`hx show` gives you as `persona_path`.
