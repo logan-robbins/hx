@@ -1,0 +1,53 @@
+## 3. Layout
+
+```
+$HARNESS_ROOT/                             # the instance (default /srv/hx on a server, ~/hx on a workstation); config/ is the part worth committing
+  bin/hx                                   # CLI (08-hx-cli.md); the installed package's entry point, path recorded in config/hx.json
+  bin/hx-hook                              # hook entrypoint (09-hooks.md)
+  adapters/claude/install.sh               # writes per-id hook/config files; seeds credentials + bypass acceptance from the harness user's ~/.claude
+  adapters/claude/start.sh                 # derives run/<id>/persona.md, launches Claude Code bare from harness.json
+  templates/work-item.md
+  companion/BASE.md                        # shared companion system prompt
+  companion/roles/<role>.md                # per-role retention rules
+  config/CLAUDE.md                         # the ONE CLAUDE.md: truly global info; installed as the harness user's ~/.claude/CLAUDE.md
+  config/models.json                       # per-model window + seam threshold
+  config/claude.json                       # {bin, version} of the pinned Claude Code binary (17-packaging.md)
+  config/repo.json                         # {name, upstream, base_branch, keep_claude_dir}
+  config/ui.json                           # {port}
+  config/<id>/AGENTS.md                    # persona above the mutable header (→ system prompt); the agent's memory below it (→ context file)
+  config/<id>/SUBAGENTS.md                 # identity for this HarnessAgent's subagents (→ subagent context file)
+  config/<id>/harness.json                 # per-agent config (05-configuration.md)
+  PARTNER.md                               # Partner state doc
+  orders/<id>.md                           # Partner-written order (## Order, ## Definition of done); orders/partner.md too, from the human's chat
+  orders/<id>.addendum.md                  # Partner-written addendum for hx resume
+  tasks.json                               # {"<id>": {order, after, outcome, dispatched, completed}}
+  pods/<pod>/<id>-<state>.md               # work items incl. pods/partner/partner-<state>.md; state is the suffix
+  pods/<pod>/archive/<id>-<ts>.md          # benched bodies
+  logs/<id>/<id>-main.jsonl                # main stream
+  logs/<id>/<id>-sNNN-<open|closed>.jsonl  # subagent streams
+  state/<id>/<stream>.json                 # companion step state per stream
+  state/<id>/<stream>.digest.md            # closed-stream digest (subagent streams), returned to the parent
+  archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
+  run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
+  run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)
+  run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), credentials, auto memory, transcripts
+  run/<id>/subagents.json                  # {"<harness agent_id>": "sNNN"}
+  run/<id>/turn                            # turn-end marker with last background_tasks
+  run/<id>/goal                            # goal-sent marker with ts
+  run/<id>/goal-pending                    # goal owed to a busy pane; consumed by the stop hook
+  run/<id>/seam                            # seam-requested marker (Companion or log hook); removed by hx seam
+  run/partner/socket.json                  # Partner messaging socket + token, rewritten at every SessionStart
+  run/tasks.lock                           # flock target
+  run/ui-token                             # UI bearer token, mode 0600
+  seed/home/                               # the one home a human logs into; credentials copied from here into every run/<id>/home
+  repos/<name>.git                         # bare mirror of the product repo; agent branches live here, never upstream until pushed
+  wt/<id>/                                 # sparse worktree per HarnessAgent from the mirror, without the repo's .claude/ (none for partner)
+```
+
+- `.gitignore`: `pods/`, `logs/`, `state/`, `run/`, `orders/`, `tasks.json`.
+- System setup, once, by the human: install hx, log the harness user's default `~/.claude` in, enable the `hx up` unit. From then on the human only talks to the Partner in `tmux attach -t partner`; every hx command is run by the Partner, a worker, `hx up`, or `hx heartbeat`.
+- The human authors and commits `config/CLAUDE.md`, `config/models.json`, `companion/**`, `templates/**`, and commits `PARTNER.md`.
+- `config/<id>/AGENTS.md` has two writers separated by the mutable header (`## UPDATES BELOW ONLY`). Above it: the project-scoped persona for that id, written by the Partner and edited rarely; it reaches the agent as system prompt via `run/<id>/persona.md`. Below it: that HarnessAgent's own long-term memory, written only by that agent; it reaches the agent in the context file. Neither the human nor the Companion writes this file. It survives seams because it is a file, not context.
+- The work item is the HarnessAgent's own running task list. The agent updates its body frequently as it works; hx owns only the state suffix and the `## Order` addenda.
+- `config/CLAUDE.md` is the only CLAUDE.md that loads. The product repo's own `CLAUDE.md` and `AGENTS.md` are not loaded and are not edited: the harness user's settings set `claudeMdExcludes` for the repo file and instruction-files mode `claude-md`, so nothing in `/work/wt/<id>/` is discovered.
+- Per-agent `run/<id>/home/` isolates each HarnessAgent's hooks, credentials, auto memory, and transcripts, so one agent's memory never pollutes another's and hx can reset it between dispatches.

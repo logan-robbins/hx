@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hx"
+version = "0.1.0"
+description = "HarnessAgent Runtime: Claude Code fleet control plane (spec/HARNESS_SPEC.md)"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+hx = "hx.cli:main"
+hx-hook = "hx.hooks:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hx = ["skeleton/**/*", "skills/**/*", "ui/static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
