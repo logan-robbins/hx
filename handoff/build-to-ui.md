@@ -258,3 +258,50 @@ is", read `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`, or `run/<id>/pe
 > through a private tmux server that has no sessions. Nothing to change in hx; flagging the
 > shape of it because the failure mode is a test that passes or fails depending on what another
 > lane happens to be running.
+
+## 2026-09-20 — build-5 — what the stream records look like now, and the subagent handles
+
+The hooks that write `logs/<id>/**` are real as of build-5, so `hx show <id> --json`'s
+`streams[].tail` and `subagents` are populated on any agent that has done anything. Here is
+what you will actually be rendering.
+
+**Every record** carries `seq` (monotonic per stream, assigned under a per-stream lock), `ts`
+(ISO 8601 UTC, `Z`), `stream` (the handle), and `event`. Lines are one JSON object each, capped
+at 4 KB — excerpts are trimmed to fit rather than the record being dropped, so a `tail` entry
+is always parseable.
+
+**`event` values you will see**, and the fields worth showing for each:
+
+| `event` | Written by | Fields |
+|---|---|---|
+| `boundary` | `context` hook, at every SessionStart | `source` (`startup`/`resume`/`clear`/`compact`), `context_file` |
+| `post_tool` | `log` hook, every tool call | `tool`, `input`, `output` (head excerpts), `exit`, `context_tokens`, `agent_id` when it came from a subagent |
+| `spawned` | main stream, at `SubagentStart` | `handle` (`s001`), `agent_id`, `agent_type` |
+| `open` | the subagent's own stream, first record | `agent_id`, `agent_type`, `input` (the spawn prompt when one is available — see below) |
+| `close` | the subagent's own stream, last record | `output` (its `last_assistant_message`) |
+| `closed` | main stream, at `SubagentStop` | `handle`, `agent_id`, `digest` (absolute path) |
+| `subagent_result` | main stream, at `PostToolUse(Agent)` | `handle`, `agent_id`, `digest` or `null` |
+| `seam` | `hx seam`, build-7 | not written yet |
+
+Every record may carry `ref`, which is `{"transcript": …, "tool_use_id": …}` — a pointer to the
+full payload in Claude Code's own transcript. `input`/`output` are **head excerpts**, capped at
+2000 characters and marked with a trailing `…`; they are not the whole thing, so do not present
+them as complete output. The `ref` is how the Companion gets the rest, and it is there if you
+ever want a "show full result" affordance.
+
+**Handles.** `run/<id>/subagents.json` is `{claude agent_id: "sNNN"}` — the shape `hx show`
+already returns as `subagents`. Streams are `logs/<id>/<id>-sNNN-open.jsonl` while running and
+`-closed.jsonl` after; `hx show`'s `streams[].open` already tells you which, and a closed one
+carries `digest`, the text of `state/<id>/<id>-sNNN.digest.md` or `null`. Until the Companion
+lands (build-6) that file exists but says `_pending companion_`, so expect that string rather
+than a real digest.
+
+**One thing that will look odd and is correct.** A tool call from a subagent hx never saw start
+lands on the **main** stream with its `agent_id` set. That is the deliberate fallback: a record
+on the busy stream beats a record on an invented handle. You will see it for the Partner in
+particular, which by spec 09.1 has no subagent hooks at all — its subagents' tool calls all
+appear on `partner-main` with `agent_id` populated and no `spawned`/`closed` pair around them.
+
+**`context_tokens`** is on `post_tool` records and is input plus cache reads, not output: it is
+the size of the context the next turn has to fit, which is what the seam threshold compares
+against. It is `null` when the transcript had no usage block yet.
