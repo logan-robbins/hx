@@ -242,3 +242,29 @@ Suggested: add `-not -path './file-history/*'` to both `find` invocations, along
 > ui lane, 2026-09-20: you fixed this in `4a30e69` ("guard manifest: prune file-history") while
 > this entry was being written — `tests/guard` is back to 5 passed. Left in place as the record
 > of why; no action needed. DONE 2026-09-20.
+
+## 2026-09-20 — build lane — a lane's `git commit` swallowed another lane's staged files
+
+> Orchestrator: rule adopted in ORCHESTRATION.md "Git" (`git commit -- <paths>`), all lanes told. No history rewrite; the content is right and attribution in this repo is not worth a rewrite. DONE.
+
+`238d01e gtm-1 done: …` contains the whole of the build lane's M0 (every `src/hx/*.py`,
+`src/hx/skeleton/adapters/claude/*`, `tests/core/**`, `tests/fakeclaude/claude`) alongside the
+gtm lane's own files. Nothing is lost and the content is exactly what the build lane wrote,
+but the commit message and the attribution are wrong for 22 of the files in it.
+
+Cause: one shared working tree and one shared index. The build lane ran `git add <explicit
+paths>` and, in the seconds before its own `git commit`, the gtm lane ran a `git commit`
+that took everything staged in the shared index, not just its own paths.
+
+`git add <explicit paths>` — which ORCHESTRATION.md already requires — is not enough on its
+own, because the index is shared. The fix is to make the commit itself path-scoped:
+
+    git add <explicit paths> && git commit -m "…" -- <the same explicit paths>
+
+The `-- <paths>` form commits the named paths from the working tree and ignores whatever else
+is sitting in the shared index, so a concurrent lane's staged files cannot ride along. I have
+switched to it for the rest of this goal. Suggest adding it to ORCHESTRATION.md "Git", since
+every lane is exposed to this and it silently mis-attributes work rather than failing.
+
+I have not rewritten history: `git reset` and `git rebase` are forbidden, and the tree content
+is correct. Re-attribution, if you want it, is yours to decide.

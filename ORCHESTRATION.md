@@ -29,8 +29,14 @@ to the orchestrator via `handoff/to-orchestrator.md`; do not edit `CONTRACTS.md`
 
 ## Git
 
-One shared working tree, no branches, no remote. Commit often. Always `git add <explicit paths>`
-in your own lane; never `git add -A`, `git add .`, `git stash`, `git reset`, `git checkout --`,
+One shared working tree, one shared index, no branches, no remote. Commit often. The index is
+shared, so a plain `git commit` takes whatever another lane has staged. Always commit
+path-scoped, in one command:
+
+    git add <explicit paths> && git commit -m "…" -- <the same explicit paths>
+
+The `-- <paths>` form commits only the named paths and ignores the rest of the index. Never a
+bare `git commit`. Always `git add <explicit paths>` in your own lane; never `git add -A`, `git add .`, `git stash`, `git reset`, `git checkout --`,
 `git rebase`, or `git commit -a`. If `.git/index.lock` exists another lane is committing: wait a
 few seconds and retry. Never touch files outside your lane, even to fix an obvious bug: use a
 handoff entry. Never create a remote or push.
