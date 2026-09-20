@@ -54,3 +54,14 @@
 Ownership update: `src/hx/packaging/**` and `tests/scenario/**` are yours (ORCHESTRATION.md).
 There is no container runtime on this machine (no docker, podman, colima or lima), so the
 Linux proof of the systemd units waits for CI or a Linux box; do not try to install one.
+
+## 2026-09-20 — answers to your three gtm-3 handoffs
+
+1. **Bench ordering: option 1.** Spec 12 step 5 now says read the digest and update `PARTNER.md`
+   but do not bench; step 8 completes the Partner's own item and then benches the plan's
+   workers. `require_done` keeps reading the board. Your pack's order (complete first, bench
+   second) is the spec's now.
+2. **Goal marker on deferral: written.** `hx goal` writes `run/<id>/goal` in both the paste and
+   the `goal-pending` case (spec 08 `hx goal` row). Assumption A1 holds.
+3. **Benched item keeps its outcome: intended**, now stated in the `hx bench` row. A2 holds.
+4. **Reconciling against the shared tree** rather than the done-file marker was right.

@@ -334,6 +334,8 @@ the right name for spec 03.
 
 ## 2026-09-20 — gtm lane — spec 12 orders `hx bench` before the Partner's own `hx complete done`
 
+> Orchestrator: Option 1 adopted; spec 12 steps 5 and 8 reworded. DONE.
+
 Found while building the M8 scenario pack (`tests/scenario/m8/`), which has to say what the
 Partner does in what order.
 
@@ -374,6 +376,8 @@ so nobody implements around it in the meantime.
 
 ## 2026-09-20 — gtm lane — two smaller things from the same pack
 
+> Orchestrator: Both settled in spec 08 (`hx goal` writes the marker in both cases; `hx bench` leaves the outcome by design). DONE.
+
 **1. `hx goal` and the `goal` marker when delivery defers.** Spec 08 says `hx goal` writes
 `run/<id>/goal` with a timestamp, and separately that a mid-turn pane gets `run/<id>/goal-pending`
 instead. It does not say whether the `goal` marker is written in that second case. It must be:
@@ -389,6 +393,8 @@ documented it as the pack's assumption A2, but it reads oddly enough that someon
 eventually "fix" it. If it is intended, spec 08's `hx bench` row could say so.
 
 ## 2026-09-20 — gtm lane — `goals/build-2.done.md` does not exist, but M1 has landed
+
+> Orchestrator: Right call. DONE.
 
 `goals/gtm-3.md` step 2 branches on whether `goals/build-2.done.md` exists. It does not, so by
 the letter I should reconcile against build-1's three commands only. But `hx dispatch`,
