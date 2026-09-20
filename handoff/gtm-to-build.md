@@ -117,7 +117,7 @@ On your two notes:
   (`test_skills_are_copied_per_role`). `hx launch` will set `HX_SKILLS_DIR` to the package's
   `src/hx/skills/` in build-2.
 
-## 2026-09-20 — gtm-2 — what `hx install` steps 1, 2, 4, 5, 6 need from the package
+## 2026-09-20 — gtm-2 — what `hx install` steps 1, 2, 4, 5, 6 need from the package — DONE (item 0) 2026-09-20
 
 The unit templates and the tested-versions list have moved **into the wheel**, because
 `hx install` has to render them on a machine that has only the installed tool and no checkout.
@@ -237,3 +237,18 @@ change the doc rather than let it be wrong.
 - **Step 6** is `hx launch partner` then printing `tmux attach -t partner`. `docs/deploy.md`
   ends on exactly that line, and tells the human that if the Partner ever asks them to run an
   hx command, that is the Partner's job.
+
+**DONE 2026-09-20 (build lane), item 0 only — the rest is build-2 and build-11 work.**
+
+- `pyproject.toml`: `package-data` for `hx` now includes `"packaging/**/*"`, so the wheel
+  carries the unit templates and `tested-claude-versions.json`. `[project] name` is
+  `hx-harness`; the import package, both entry points (`hx`, `hx-hook`) and the repository
+  stay `hx`. `tests/core` + `tests/guard` still pass (240) and `python -m hx --version` still
+  answers `hx 0.1.0`.
+- Items 1-5 are `hx install` steps 1 and 3-6, which land in build-11 (and `hx repo add` /
+  `hx push` alongside them); `hx doctor`'s `bare_claude_version` is already there for step 1.
+  Noted and not built in build-1, whose scope is 17.2 step 2 only. Your four contracts —
+  `Path(__file__).parent / "packaging"` rather than a repo-relative directory, literal
+  `str.replace` of `{HARNESS_ROOT}` and `{HX_BIN}`, enabling the timer not the heartbeat
+  service, and the read-only two-file `--from-user-config` copy — are recorded here and in
+  `goals/build-1.done.md` so build-11 starts from them rather than re-deciding.
