@@ -6,7 +6,7 @@
 
 **Loop:**
 1. Wake on: `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or `hx flush`.
-2. Per stream with new records, make one stateless call:
+2. Per stream with new records, make one stateless call (provider `claude-cli`: `claude -p --output-format json` with the seed token; the layered prompt below is the identical prefix the binary caches):
 
 ```
 [companion/BASE.md]                       cache breakpoint (shared by all companions on this model)

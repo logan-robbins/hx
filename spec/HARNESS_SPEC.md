@@ -202,8 +202,8 @@ Model id strings are placeholders until implementation; they are validated again
   "branch": "agent/eng-001",
   "harness": { "args": ["…"] },
   "companion": {
-    "provider": "anthropic",
-    "model": "…",
+    "provider": "claude-cli",
+    "model": "claude-haiku-4-5-20251001",
     "batch_records": 20,
     "cache_ttl": "1h",
     "state_budget_tokens": 10000,
@@ -221,6 +221,7 @@ Model id strings are placeholders until implementation; they are validated again
 - `adapters/claude/install.sh` derives the per-agent home settings from this file: hooks with the id baked in, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` for the product repo, the bypass acceptance entry; for the Partner, `crossSessionInbound: accept` (messaging itself is on by default). It then writes the bypass acceptance entry directly; auth is the token in `seed/token`, exported into the agent's environment by `start.sh`, so no credentials are copied from anywhere; both stay in `run/<id>/home/` across dispatches. Nothing about launch is interactive. Effort, model, and the persona file are launch flags (`11-adapters.md`); no compaction env vars are set.
 - Validate: `id` equals directory name; `model` exists in `models.json`; `role` has `companion/roles/<role>.md`; `workdir` exists (Partner: no `workdir`, no `branch`). On failure, exit 2.
 - Partner: `"pod": "partner"`, `"role": "partner"`. Validated the same way.
+- `companion.provider` is `claude-cli` (default and the only one built first): the Companion's calls go through the pinned `claude -p` binary with the same `seed/token`, a Companion-only home (`run/<id>/companion-home`: no hooks, no skills, no CLAUDE.md), `--model companion.model`, and the composed system prompt via `--append-system-prompt-file`; the state and new records go in on stdin, never as an argument. Prompt caching is the binary's own on the identical prefix; `usage.cache_read_input_tokens` from the JSON result is what `hx metrics` reports. `anthropic` (Messages API with explicit cache breakpoints and an API key) is a later option for instances that have one; it is not required for a subscription-only deployment.
 <!-- END 05-configuration.md -->
 
 <!-- BEGIN 06-work-items.md -->
@@ -540,7 +541,7 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 
 **Loop:**
 1. Wake on: `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or `hx flush`.
-2. Per stream with new records, make one stateless call:
+2. Per stream with new records, make one stateless call (provider `claude-cli`: `claude -p --output-format json` with the seed token; the layered prompt below is the identical prefix the binary caches):
 
 ```
 [companion/BASE.md]                       cache breakpoint (shared by all companions on this model)
