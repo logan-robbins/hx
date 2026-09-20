@@ -317,3 +317,19 @@ def test_session_alive_uses_tmux(instance, work_item, tmux_server, monkeypatch):
     board = collect(instance, env=env)
     assert {i["id"]: i for i in board["items"]}["eng-001"]["session_alive"] is True
     assert not errors_matching(board, "no live tmux session eng-001")
+
+
+def test_the_pane_log_is_not_a_stream(instance, work_item):
+    """`logs/<id>/<id>-pane.log` is the tmux `pipe-pane` capture (spec 03, 11), not a stream.
+
+    It lands in build-2; the stream regex must ignore it from the start.
+    """
+    work_item("eng-001", "working")
+    goal_marker(instance, "eng-001")
+    logs = instance / "logs" / "eng-001"
+    logs.mkdir(parents=True)
+    (logs / "eng-001-pane.log").write_text("ansi noise\n")
+    (logs / "eng-001-s001-open.jsonl").write_text("")
+    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
+    assert item["open_subagents"] == 1
+    assert item["context_tokens"] is None and item["seams"] is None
