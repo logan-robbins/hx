@@ -252,3 +252,97 @@ change the doc rather than let it be wrong.
   `str.replace` of `{HARNESS_ROOT}` and `{HX_BIN}`, enabling the timer not the heartbeat
   service, and the read-only two-file `--from-user-config` copy — are recorded here and in
   `goals/build-1.done.md` so build-11 starts from them rather than re-deciding.
+
+## 2026-09-20 — gtm-3 — the M8 scenario pack exists; run M8 on it
+
+`tests/scenario/m8/` is the concrete data for spec 13 M8, so the end-to-end test is written
+against files that were checked rather than invented at the last minute. `tests/scenario/**` is
+gtm-owned; the pack is yours to *run*, and if something in it does not fit what you build, say
+so here and I will change the pack rather than you working around it.
+
+Read `tests/scenario/m8/README.md` first — it has the whole sequence, command by command, with
+the spec 06 transition each one causes.
+
+### What is in it
+
+| File | What it is for |
+|---|---|
+| `chat.md` | the four things the human types, and what a correct Partner reply must and must not contain. The human runs no hx command anywhere in it — that is an M8 pass criterion |
+| `orders/partner.md` | the Partner's own order, checks `hx board --require-done eng-001 eng-002` |
+| `orders/eng-001.md` | `--upper` on the fixture CLI |
+| `orders/eng-002.md` | `--lang fr`, `after: [eng-001]`, and the decision it must stop on |
+| `orders/eng-002.addendum.md` | the human's answer, as the Partner should write it |
+| `config/eng-00{1,2}/AGENTS.md` | both personas, header and all |
+| `expected/01..08-*.txt` | the `hx board` text at eight observation points |
+| `repo/` | the product repo: a ten-line stdlib CLI, plus two tripwires |
+
+Every order parses with `hx.orders.parse_order` today — that is asserted, not assumed.
+
+### The eight expected boards are real output, not hand-drawn
+
+`tests/scenario/test_m8_pack.py::test_expected_board_is_what_hx_board_actually_prints` builds a
+scratch instance in each step's state and diffs the real `hx board` against the checked-in
+file. All eight pass against your current `board.py`. If you change the text form, that test
+fails and tells you which step — the expected files are then mine to update, not yours.
+
+It builds the states by writing files rather than by running `hx dispatch`/`hx complete`,
+because it asserts the *shape* of each step. M8 asserts the transitions that produce them.
+
+### Three things I need from you
+
+**1. Does `hx goal` write `run/<id>/goal` when delivery defers to `goal-pending`?**
+
+Spec 08 says `hx goal` pastes the pointer "and write `run/<id>/goal` marker with ts", then says
+that a mid-turn pane gets `run/<id>/goal-pending` instead and the `stop` hook pastes later. It
+does not say whether the `goal` marker is written in that second case.
+
+It has to be, or the board invariant "every `working` item has a `run/<id>/goal` marker" is
+violated for the length of that turn — and M8 requires `hx board` to exit 0 *throughout*. Steps
+1 and 5 of the pack are exactly this case (the Partner dispatching and resuming from inside its
+own turn), and `expected/01` and `expected/05` show `<ts>` in the goal column on that basis.
+It is written up as assumption **A1** in the pack README.
+
+If you implement it the other way, tell me: `expected/01` and `expected/05` change to `-` and
+the spec 06 invariant needs rewording. Do not silently make the pack fit — the invariant is the
+interesting part.
+
+**2. `hx bench` leaves the outcome on the board, and I think that is right.**
+
+After `hx bench`, `expected/08` shows both workers `idle` with outcome `done`. That is your
+current behaviour and it follows from spec 08 (`hx bench` does not touch `tasks.json`, and the
+board's outcome column prefers the tasks entry). It also reads oddly — an `idle` item with an
+outcome — so I want it on the record rather than discovered later: it is cleared by the next
+`hx dispatch` of that id, which is the same mechanism that stops a stale completion satisfying
+a newer dependent. Assumption **A2** in the pack README. Flagged to the orchestrator too.
+
+Related and already correct: `parse_work_item` refuses `outcome:` in the frontmatter of a
+non-`complete` item. My fixture builder hit that and it caught a genuine mistake on my side.
+
+**3. Spec 12 has bench and complete in the wrong order for the Partner.**
+
+Spec 12 step 5 says bench a `done` item once its digest is consumed; step 8 says the Partner
+then runs `hx complete done` on its own item, whose checks are `hx board --require-done …`.
+Followed literally, the Partner benches eng-001 and eng-002 first, `require_done` then sees
+them `idle` rather than `complete`, and the Partner's own completion fails on work that is
+genuinely finished.
+
+The pack completes first and benches second, and `orders/partner.md` says why in as many words.
+Raised in `handoff/to-orchestrator.md` as a spec fix; nothing for you to change in code unless
+the orchestrator decides `require_done` should read `tasks.json` instead of the work item.
+
+### Reconciliation against your CLI, this goal
+
+I ran every command the `hx-partner` and `hx-worker` skills name against a scratch instance.
+Findings, all mine and all fixed on my side:
+
+- `hx orders` and `hx archive` exist and the skill did not mention them. Added.
+- `hx install` without `--skeleton-only` exits 2 with a message naming the flag;
+  `docs/deploy.md` now quotes it verbatim as a pre-release note.
+- `hx board` on a fresh skeleton exits 1 with `config/partner/: no work item`, because
+  `hx launch partner` is what creates it. `docs/deploy.md` now says that is expected between
+  install steps 2 and 6.
+- The `/goal` pointer text in `hx/goal.py` matches spec 06 and the `hx-worker` skill word for
+  word, and `HX-COMPLETE` / `HX-CHECK-FAILED` match. Nothing to change.
+
+`hx metrics` is still `not implemented (build-8)`; the skills describe it because they ship
+with the finished package, and the gap is recorded in `goals/gtm-3.done.md` rather than hidden.
