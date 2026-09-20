@@ -285,3 +285,12 @@ the harness user. `start.sh` exports it as `CLAUDE_CODE_OAUTH_TOKEN` on the tmux
 (never on the command line, never in a file under `run/`). `install.sh` and `start.sh` refuse
 when it is missing or its mode is wider than 0600. hx never reads `~/.claude`, any
 `.credentials.json`, or the macOS Keychain. `--from-user-config` no longer exists.
+
+## `run/<id>/home/.claude.json` (pre-seeded by `install.sh`)
+
+Claude Code's per-config-dir state file. `install.sh` writes it before the first launch so
+nothing about launch is interactive: onboarding marked complete and the workspace trust dialog
+pre-accepted for the agent's cwd (`wt/<id>`, `HARNESS_ROOT` for `partner`). Exact keys are
+verified by the build lane against the binary (build-3 done file) and recorded here once known;
+expected shape: `{"hasCompletedOnboarding": true, "projects": {"<abs cwd>": {"hasTrustDialogAccepted": true}}}`.
+Found live 2026-09-20: without it the pane sits at "Quick safety check … Yes, I trust this folder".

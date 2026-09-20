@@ -22,5 +22,6 @@
 | Binary and version | `config/claude.json` `{bin, version}` recorded by `hx install`; the version must be in the package's tested list; changed only by `hx upgrade` after the M6 live suite passes on it (`17-packaging.md`) |
 | Worktree | `wt/<id>` cut from the bare mirror `repos/<name>.git` with sparse checkout excluding `.claude/`, so the product repo's own hooks and settings never load (`17-packaging.md` 17.3) |
 | Pane log | `start.sh` runs `tmux pipe-pane -o -t <id> 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'` right after launch; the file is the UI's capture fallback when the session is dead and is archived with `logs/<id>/` at the next dispatch |
+| First-launch dialogs | `install.sh` pre-seeds `run/<id>/home/.claude.json` with onboarding complete and the workspace trust dialog accepted for the agent's cwd, so a fresh home never shows the theme, login, or "Quick safety check … trust this folder" prompts (seen live 2026-09-20). Keys per CONTRACTS.md. Nothing about launch is interactive |
 
 Verified 2026-09-20 against the CLI reference, permission-modes, model-config, and cross-session-messaging pages.
