@@ -80,7 +80,7 @@ call the CLI. Published names are stable; unpublished ones may be renamed withou
 
 1. Read and apply any `handoff/*-to-<lane>.md` entries addressed to you.
 2. `tools/milestone-check.sh <lane>` passes: `tests/guard` and your lane's own test paths are
-   required; every other lane's tests run as advisory and are never fatal. A red advisory suite
+   required; every other lane's tests run only with `--all`, as advisory, and are never fatal. A red advisory suite
    is another lane mid-commit: report it in a handoff entry, do not fix it, do not wait for it,
    and say so in the done file. "Passes" in any goal text means exactly this.
 3. Everything committed with explicit paths.
