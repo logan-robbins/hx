@@ -548,3 +548,52 @@ my first diagnosis of this failure said `packaging/e2e-deploy.sh` was calling an
 flag the build lane had not shipped. That was wrong — the flag is absent from the *script*,
 which the *test* requires. I have corrected that entry in place rather than leaving a plausible
 wrong cause for someone to chase.
+
+## 2026-09-20 — gtm lane — the agent branch has three names
+
+Found while adding the `hx push` assertion to `packaging/e2e-deploy.sh` (gtm-6 step 1, which
+says "the `hx/<id>` branch").
+
+| Source | Says |
+|---|---|
+| `src/hx/repo.py` `branch_for` fallback | `hx/<id>` |
+| `src/hx/skeleton/templates/worker/harness.json` (gtm) | `agent/<id>` |
+| spec 17.2 step 4, 17.3, and the `Working dir` row of 17.3's table | `agent/<id>` |
+| `goals/gtm-6.md` step 1 | `hx/<id>` |
+
+`branch_for` prefers `config/<id>/harness.json`'s `branch` field and falls back to `hx/<id>`.
+Every worker the Partner creates from `templates/worker/` therefore gets `agent/<id>`, and the
+fallback is reached only by a config that omits the field — so today the *spec* name wins in
+practice and the *code* default is the one nobody sees.
+
+Nothing is broken and I have changed nothing. The deploy proof reads the branch from the config
+rather than hard-coding either name, and asserts what actually matters (exactly one ref
+upstream, matching the mirror), so it stays correct however this is settled.
+
+It is worth settling, though: `hx push` is the one command that reaches a user's remote, and
+three sources disagreeing about which branch it sends is how work ends up on a ref nobody is
+watching. Two ways to close it, both cheap:
+
+1. **`agent/<id>` wins.** Change `repo.py`'s fallback to match the spec and the template. One
+   line, and the spec needs no edit.
+2. **`hx/<id>` wins.** Change spec 17.2/17.3, my `templates/worker/harness.json`, and the
+   `agent/<id>` mentions in `docs/two-worlds.md` and `docs/deploy.md`.
+
+My preference is weak and it is for (1), only because the spec and the shipped template already
+say it, and `hx/` reads like an hx-internal ref rather than the agent's working branch. Either
+way I will make the gtm-side changes as soon as you decide; raised with the build lane too.
+
+## 2026-09-20 — gtm lane — CI was running only the guard tests after the lane change
+
+`tools/milestone-check.sh` taking a lane name is right for a lane finishing a goal, but
+`.github/workflows/ci.yml` (mine) invoked it with no argument, and with no lane `own=""`, so the
+full-suite step ran `tests/guard` and exited 0. CI would have been green on a broken
+`tests/core` or `tests/ui`.
+
+Fixed on my side: the `test` job now runs `.venv/bin/python -m pytest -q` over everything, with
+a comment saying why it does not use the lane form — CI is nobody's lane and every test is
+required there. `tests/packaging/test_ci_workflow.py` asserts both halves, so the lane script
+cannot quietly come back.
+
+No action needed; recorded because the same trap is available to anything else that calls the
+script without an argument.
