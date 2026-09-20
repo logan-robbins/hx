@@ -213,3 +213,22 @@ def test_the_board_accepts_a_home_install_sh_wrote(instance, work_item):
     work_item("partner", "idle")
     assert run_install(instance, "eng-001").returncode == 0
     assert [e for e in collect(instance)["errors"] if "home" in e] == []
+
+
+def test_python_bin_from_config_hx_json_is_preferred(instance):
+    """CONTRACTS.md `config/hx.json` third key; the adapters read JSON with hx's own Python."""
+    import sys
+
+    (instance / "config" / "hx.json").write_text(
+        json.dumps({"hx_bin": "/opt/hx/bin/hx", "hook_bin": "/opt/hx/bin/hx-hook",
+                    "python_bin": sys.executable})
+    )
+    assert run_install(instance, "eng-001").returncode == 0
+    assert settings_for(instance, "eng-001")["skipDangerousModePermissionPrompt"] is True
+
+
+def test_a_broken_python_bin_is_refused(instance):
+    (instance / "config" / "hx.json").write_text(json.dumps({"python_bin": "/nope/python"}))
+    result = run_install(instance, "eng-001")
+    assert result.returncode != 0
+    assert "/nope/python not found" in result.stderr

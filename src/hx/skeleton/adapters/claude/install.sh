@@ -27,7 +27,14 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
-python=${HX_PYTHON:-python3}
+# The interpreter hx itself runs on, recorded as `python_bin` in config/hx.json
+# (CONTRACTS.md), so the adapters read JSON with the same Python the package was installed on.
+python=${HX_PYTHON:-}
+if [ -z "$python" ] && [ -f "$root/config/hx.json" ]; then
+  python=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("python_bin") or "")' \
+    "$root/config/hx.json" 2>/dev/null || true)
+fi
+[ -n "$python" ] || python=python3
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
 
 seed_credentials=$root/seed/home/.credentials.json

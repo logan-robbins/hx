@@ -110,7 +110,7 @@ logging each to `fake-hooks.log`. Python 3, stdlib only.
 
 ### 8. Tests
 
-`tests/core/` — 236 tests. Unit tests use pytest `tmp_path` roots; the launch tests use a real
+`tests/core/` — 238 tests. Unit tests use pytest `tmp_path` roots; the launch tests use a real
 tmux server on a private socket (`tmux -L hx-test-<pid>`, killed at teardown) and the fake
 `claude`. Nothing points `HOME`, `CLAUDE_CONFIG_DIR` or `HARNESS_ROOT` at the user's `~/.claude`,
 and the child environment is stripped of inherited `HARNESS_*`/`CLAUDE_*`/`HX_*`.
@@ -128,7 +128,7 @@ $ .venv/bin/python -m pytest tests/guard
 5 passed in 0.47s
 
 $ .venv/bin/python -m pytest tests/core
-236 passed in 10.51s
+238 passed in 12.02s
 
 $ .venv/bin/python -m pytest tests/packaging   # the gtm lane's, at close of goal
 74 passed in 2.76s
@@ -155,7 +155,7 @@ fixing it, and neither blocks this goal:
    in this goal, and `hx ui` is still `not implemented (build-10)`, so nothing in the CLI
    reaches that server.
 
-The build lane's own gates are green: `tests/guard` 5 passed, `tests/core` 236 passed,
+The build lane's own gates are green: `tests/guard` 5 passed, `tests/core` 238 passed,
 and `tests/packaging` 74 passed alongside them.
 
 ### Done-when commands, on a scratch root outside the repo and outside `$HOME`
@@ -312,6 +312,27 @@ ids — which is exactly what the M0 pass criterion asks for.
   import package, both entry points and the repository staying `hx`. Items 1-5 are `hx install`
   steps 1 and 3-6, which are build-11; their contracts are recorded there and above so build-11
   starts from them.
+
+## Open questions — all five answered by the orchestrator before this goal closed
+
+`handoff/orchestrator-to-build.md` answers the five questions listed above, and the two that
+touch build-1's own code were applied here (marked `DONE` in that file):
+
+1. Doctor tightening is tracked in each later goal; build-2 tightens the `home` checks.
+2. `hx launch partner` is part of "installed", and `hx launch` creates a missing `-idle` work
+   item, so the fresh-root `hx board` exit 1 is correct and nothing runs a bare board in
+   between.
+3. `config/hx.json` does not wait for build-11: build-2's `hx install --skeleton-only` writes
+   it with the running package's `hx`, `hx-hook` and `python_bin` paths, and `hx doctor` fails
+   when either binary is missing.
+4. `seams` `null` for no stream and an integer otherwise is the right reading.
+5. `python3` in the adapters is acceptable, preferring `config/hx.json`'s `python_bin`.
+   **Applied in this goal**: both adapters now read `python_bin`, then `$HX_PYTHON`, then
+   `python3`, and refuse by name when the chosen interpreter is absent (two new tests, 238 in
+   `tests/core`).
+
+The spec's "instruction-files mode `claude-md`" wording in 05, 11, 13 and 17 has been updated
+to the real key this goal found; `install.sh` and its test already write and assert it.
 
 ## Notes for whoever writes build-2
 

@@ -30,7 +30,7 @@
 5. `hx doctor` fails only on python/tmux/git/a broken pinned binary and warns for the rest;
    the Python floor is 3.14 (`hx.doctor.PYTHON_FLOOR`), and `pyproject.toml` agrees.
 
-## 2026-09-20 — answers to the five open questions in `goals/build-1.done.md`
+## 2026-09-20 — answers to the five open questions in `goals/build-1.done.md` — DONE 2026-09-20
 
 1. Doctor tightening: tracked in each later goal; build-2 tightens `home` checks once
    `hx launch` writes homes.
@@ -47,3 +47,19 @@
 
 Also applied: the spec's "instruction-files mode `claude-md`" wording in 05, 11, 13, 17 now
 names the real key you found (`pluginConfigs["agents-md@builtin"].options.instructionFiles`).
+
+**DONE 2026-09-20 (build lane), for the two items that touch build-1's own code.**
+
+- Answer 5 applied now: both `adapters/claude/install.sh` and `start.sh` prefer
+  `config/hx.json`'s `python_bin`, then `$HX_PYTHON`, then `python3`, and refuse with a named
+  message when the chosen interpreter is not on PATH. Covered by
+  `test_python_bin_from_config_hx_json_is_preferred` and `test_a_broken_python_bin_is_refused`.
+  The adapters therefore read JSON with hx's own interpreter as soon as build-2 writes the key.
+- Answers 1, 2, 3 and 4 need no change in build-1: 1 and 3 are build-2 work (doctor's `home`
+  checks, and `hx install --skeleton-only` writing `config/hx.json`), 2 confirms the fresh-root
+  `hx board` exit 1 is correct and that `hx launch` creates the missing `-idle` item, and 4
+  confirms the `seams` `null`-versus-integer reading already implemented. All four are recorded
+  in the build-2 notes at the end of `goals/build-1.done.md`.
+- The spec rewording of "instruction-files mode `claude-md`" to the real
+  `pluginConfigs["agents-md@builtin"].options.instructionFiles` key matches what `install.sh`
+  writes and what `test_instruction_files_mode_is_claude_md` asserts; nothing to change.
