@@ -12,7 +12,7 @@ that keeps its continuity across context boundaries.
 
 Two things exist and never mix:
 
-- The **package** `hx`: Python 3.14, zero runtime dependencies. Installed with `uv tool install`.
+- The **package** `hx`: Python 3.14, zero runtime dependencies, published as `hx-harness`.
 - The **instance** `$HARNESS_ROOT`: your data. Created by `hx install`. `/srv/hx` on a server,
   `~/hx` on a workstation.
 
@@ -24,9 +24,9 @@ Upgrading the package never writes into your instance except through `hx upgrade
   `--dangerously-skip-permissions` under root or sudo. Every agent here runs with that flag.
 - **`tmux`** and **`git`** on `PATH`.
 - **Python 3.14 or newer.**
-- **The `claude` binary**, at a version in the package's tested list
-  (`packaging/tested-claude-versions.json`). `hx install` checks this and stops with the
-  version to install if yours is not listed.
+- **The `claude` binary**, at a version in the package's tested list, which ships inside the
+  wheel as `hx/packaging/tested-claude-versions.json`. `hx install` checks this and stops with
+  the version to install if yours is not listed.
 - **A Claude account you are willing to log a second config directory into.** The harness uses
   its own credentials, seeded from a home you log into once. You can reuse your existing
   credentials instead — see step 3.
@@ -34,11 +34,12 @@ Upgrading the package never writes into your instance except through `hx upgrade
 ## 1. Install the package
 
 ```bash
-uv tool install hx
-hx --version
+uv tool install hx-harness
 ```
 
-`pipx install hx` works too. Nothing is installed into your `~/.claude`.
+The distribution is named `hx-harness`; the command, the Python package, and the repository are
+all `hx`. `pipx install hx-harness` works too. It installs two entry points, `hx` and
+`hx-hook`, into your uv tool bin directory, and nothing at all into your `~/.claude`.
 
 ## 2. Create the instance
 
@@ -49,8 +50,36 @@ hx install
 
 This refuses root; checks `tmux`, `git`, Python, and the `claude` binary, recording
 `{bin, version}` in `config/claude.json`; and creates `$HARNESS_ROOT` from the package
-skeleton: `config/CLAUDE.md`, `config/models.json`, `config/partner/{AGENTS.md,SUBAGENTS.md,
-harness.json}`, `companion/`, `templates/`, an empty `orders/`, and `pods/partner/`.
+skeleton. The layout part of it runs today — this is real output from the end-to-end check in
+`packaging/e2e-install.sh`, with the paths of that run's scratch directory:
+
+```
+$ hx install --root "$HARNESS_ROOT" --skeleton-only
+root /private/tmp/claude-501/demo/home/hx
+created  PARTNER.md
+created  adapters/claude/install.sh
+created  adapters/claude/start.sh
+created  companion/BASE.md
+created  companion/roles/engineer.md
+created  companion/roles/partner.md
+created  companion/roles/reviewer.md
+created  config/CLAUDE.md
+created  config/models.json
+created  config/partner/AGENTS.md
+created  config/partner/SUBAGENTS.md
+created  config/partner/harness.json
+created  templates/addendum.md
+created  templates/order.md
+created  templates/work-item.md
+created  templates/worker/AGENTS.md
+created  templates/worker/SUBAGENTS.md
+created  templates/worker/harness.json
+created  .gitignore
+```
+
+`partner` is the only agent a fresh instance has. `templates/worker/` is the identity the
+Partner copies into `config/<id>/` when you ask it for another agent; you never do that
+yourself.
 
 ## 3. Seed the login
 
@@ -91,8 +120,9 @@ in `config/repo.json`.
 
 ## 5. Enable the boot and heartbeat units
 
-`hx install` writes these for you, from the templates in `packaging/`, with your instance path
-and the recorded hx binary substituted in.
+`hx install` writes these for you from the templates that ship inside the wheel
+(`hx/packaging/launchd/` and `hx/packaging/systemd/`), substituting `{HARNESS_ROOT}` with your
+instance path and `{HX_BIN}` with the absolute path of the `hx` entry point.
 
 **macOS** (`~/Library/LaunchAgents/`):
 
@@ -148,7 +178,7 @@ observes; it does not operate. Full control — slash commands, interrupts — i
 ## Upgrading
 
 ```bash
-uv tool upgrade hx
+uv tool upgrade hx-harness
 hx upgrade
 ```
 
@@ -172,3 +202,35 @@ hx board         # one line per id, then invariant violations; exits 1 on any er
 
 Both are safe to run yourself and neither changes anything. A board error is normally the
 Partner's to fix (`hx restart <id>`), and the heartbeat usually gets there first.
+
+Real `hx doctor` output, from the installed tool against an instance that has had step 2 and
+nothing after it — every `warn` names the step that clears it:
+
+```
+$ hx doctor
+ok    python        3.14.7 (…/uv/tools/hx-harness/bin/python)
+ok    tmux          tmux 3.7c
+ok    git           git version 2.50.1 (Apple Git-155)
+ok    root          /private/tmp/claude-501/demo/home/hx
+warn  claude        config/claude.json absent; `hx install` records {bin, version} (spec 17.1)
+ok    skeleton      PARTNER.md
+ok    skeleton      adapters/claude/install.sh
+ok    skeleton      adapters/claude/start.sh
+ok    skeleton      companion/BASE.md
+ok    skeleton      companion/roles/partner.md
+ok    skeleton      config/CLAUDE.md
+ok    skeleton      config/models.json
+ok    skeleton      config/partner/AGENTS.md
+ok    skeleton      config/partner/SUBAGENTS.md
+ok    skeleton      config/partner/harness.json
+ok    skeleton      templates/work-item.md
+ok    models        2 model(s): claude-opus-5, claude-sonnet-5
+warn  seed          seed/home/.credentials.json absent; `hx install` runs the seed login (spec 17.2 step 3)
+warn  home:partner  run/<id>/home absent; `hx launch` runs adapters/claude/install.sh
+warn  repo          config/repo.json absent; `hx repo add <url|path>` mirrors the product repo (spec 17.2 step 4)
+```
+
+`doctor` exits 0 here: it fails only on what is actually broken — a missing `tmux` or `git`, a
+Python below 3.14, a pinned `claude` binary that is not executable — and warns for setup steps
+you have not reached yet. (The `python` line's path is elided for width; it is the interpreter
+inside the installed tool.)

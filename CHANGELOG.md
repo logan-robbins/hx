@@ -28,18 +28,35 @@ as milestones are accepted.
     identity the Partner copies into `config/<id>/` to create an agent (spec 05, 17.2).
 - Agent skills `src/hx/skills/hx-partner/SKILL.md` and `src/hx/skills/hx-worker/SKILL.md`,
   installed into agent homes only (spec 17.5).
-- Boot and heartbeat units in `packaging/`: launchd plists for macOS, systemd user units and a
-  900 s timer for Linux, templated on `@HARNESS_ROOT@` and `@HX_BIN@` (spec 17.2).
-- `packaging/tested-claude-versions.json`, the list `hx upgrade` consults before pinning a new
-  Claude Code version (spec 17.6). First entry: `2.1.278`.
+- Boot and heartbeat units in `src/hx/packaging/`, shipped inside the wheel so `hx install` can
+  render them with no checkout present: launchd plists for macOS, systemd user units and a
+  900 s timer for Linux, templated on `{HARNESS_ROOT}` and `{HX_BIN}` (spec 17.2 step 5).
+- `src/hx/packaging/tested-claude-versions.json`, the list `hx install` checks and `hx upgrade`
+  consults before pinning a new Claude Code version (spec 17.2 step 1, 17.6). First entry:
+  `2.1.278`.
+- `packaging/e2e-install.sh`: the release check. Builds the wheel, asserts it carries every
+  package-data file `hx install` needs, installs it with `uv tool install` into a `HOME` that
+  did not exist a moment ago, runs the installed `hx doctor` and `hx install --skeleton-only`,
+  asserts every skeleton file landed byte-identical and that a fresh instance holds only
+  `partner`, and asserts that neither the fresh Claude home nor the real `~/.claude` was
+  touched. Run as a test by `tests/packaging/test_e2e_install.py`.
+- `tests/packaging/test_units.py`: renders each unit template the way `hx install` will, then
+  lints the rendered output — `plutil -lint` where it exists, `plistlib` everywhere, an INI
+  parse for systemd — and checks both platforms agree on the 900 s heartbeat and cover exactly
+  `hx up` and `hx heartbeat`.
+- `tests/packaging/test_ci_workflow.py`: validates `.github/workflows/ci.yml` with `actionlint`
+  when present, otherwise a minimal structural YAML parser with its own negative tests, then
+  asserts what CI must do.
 - `docs/deploy.md`, `docs/two-worlds.md`, `docs/github-plan.md`, `README.md`, `LICENSE` (MIT),
   and this file.
 - `tests/packaging/test_skeleton_texts.py`, which checks the shipped texts against the spec
   constraints: order-shaped examples carry `## Order`, `## Definition of done`, and a non-empty
-  `### Checks` bash block; every `AGENTS.md` has exactly one `## UPDATES BELOW ONLY`; both
-  `SKILL.md` files have valid frontmatter; the launchd plists and systemd units parse; the
-  tested-versions list parses.
-- `.github/workflows/ci.yml`: pytest on macOS and Linux with tmux installed, recording a
-  `.baseline/` in CI from a fresh `HOME` so the guard tests run there.
+  `### Checks` bash block; the work-item template keeps spec 06's sections, its standing
+  instructions, and the five placeholders `CONTRACTS.md` pins; every `AGENTS.md` has exactly
+  one `## UPDATES BELOW ONLY`; both `SKILL.md` files have valid frontmatter.
+- `.github/workflows/ci.yml`: job `test` on macOS and Linux with tmux, uv and Python 3.14,
+  recording `.baseline/` from the runner's own empty `HOME/.claude` before any test runs and
+  re-diffing it afterwards; job `package` running `packaging/e2e-install.sh` and uploading the
+  wheel as an artifact. No secrets, `permissions: contents: read`.
 
 [Unreleased]: https://github.com/autodev-team/hx/commits/main
