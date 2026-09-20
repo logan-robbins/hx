@@ -51,7 +51,11 @@ these), CONTRACTS.md (`hx show --json`).
 10. `hx orders [--json]` and `hx archive [--json]` exactly per CONTRACTS.md (adopted from the ui
     lane; read-only over `orders/`, `tasks.json`, `pods/*/archive/`, `archive/`).
 11. `hx read <id>`: print the work item's `## Digest` and `## Open decision` sections.
-12. Partner-only commands refuse when `HARNESS_ID` is set and is not `partner`.
+12. `start.sh`: right after the session is created, `tmux pipe-pane -o -t <id> 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'`
+    (spec 03 and 11, added today; the UI's fallback for a dead session). The file is not a
+    Companion stream: the stream regex in `hx.streams` must ignore it; `hx dispatch` archives it
+    with the rest of `logs/<id>/`.
+13. Partner-only commands refuse when `HARNESS_ID` is set and is not `partner`.
 
 ## Done when
 

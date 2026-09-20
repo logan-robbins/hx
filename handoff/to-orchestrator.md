@@ -268,3 +268,66 @@ every lane is exposed to this and it silently mis-attributes work rather than fa
 
 I have not rewritten history: `git reset` and `git rebase` are forbidden, and the tree content
 is correct. Re-attribution, if you want it, is yours to decide.
+
+
+## 2026-09-20 — ui lane — ui-2 needs `hx show --json`, which build-2 has not landed yet
+
+> Orchestrator: Ruling: close ui-2 without it; record the 503 and paste `/api/board`. The switch to real commands and functions is ui-3, which goes out after build-2 lands. DONE.
+
+Goal ui-2 item 3 says to call "`.venv/bin/hx board --json` and `hx show <id> --json` via
+subprocess" until `handoff/build-to-ui.md` arrives. `hx board --json` works. The other four
+commands `InstanceSource` needs do not exist yet — `cli.py` answers them with
+`hx: <cmd>: not implemented (build-N)` and exit 2:
+
+| command | `InstanceSource` method | status |
+|---|---|---|
+| `hx board --json` | `board()` | **works today** |
+| `hx show <id> --json` | `show(id)` | not implemented (build-2 item 9) |
+| `hx orders --json` | `orders()` | not implemented (build-2 item 10) |
+| `hx archive --json` | `archive()` | not implemented (build-2 item 10) |
+| `hx wake partner <text>` | `wake_partner(text)` | not implemented (build-2 item 8) |
+
+`goals/build-2.md` delivers all four, and `goals/build-2.done.md` does not exist yet, so
+build-2 is still in flight. This is a sequencing conflict in ui-2, not a disagreement: the
+work is all in build-2, it just has not landed.
+
+**What the ui lane did, rather than guess.** `InstanceSource` is built and tested against the
+subprocess seam exactly as ui-2 specifies, with one runner function behind the `Source`
+interface. Each reader raises `SourceUnavailable` carrying hx's own message when the command
+is not implemented, and the server renders that as a 503 naming the build goal. The parse path
+is tested with a stub `hx` on `PATH` emitting the ui-1 fixtures, so the moment build-2 lands
+these become live with no ui change — and switching from subprocess to the Python functions
+named in `handoff/build-to-ui.md` is a change to one function.
+
+I did **not** compose the `hx show --json` document from files inside the UI. Spec 16 says the
+UI shows "a file under `HARNESS_ROOT` or a tmux pane, read through the same code as
+`hx board --json` and `hx show <id> --json`", so a second implementation of that contract in
+`src/hx/ui/` would be exactly the thing that rule forbids, and it would have to be deleted at
+build-2 anyway.
+
+**Consequence for ui-2's done condition**, which asks for "the `curl` output of
+`/api/show/partner`" against a scratch instance: until build-2 lands that output is the 503.
+The done file records whichever is true when the goal closes, and says which. `/api/board`
+against a real scratch instance works now and is pasted there in full. No ruling needed if
+build-2 lands first; if you would rather ui-2 close without it, say so and I will note it.
+
+## 2026-09-20 — ui lane — spec 03 defines no pane log, so the capture fallback has nothing to read
+
+> Orchestrator: Ruling: the first option. `start.sh` pipes the pane to `logs/<id>/<id>-pane.log`; added to spec 03 and 11 and to build-2 item 12. Your path name is the spec's now. DONE.
+
+ui-2 item 3 asks for "log-file fallback when the session is dead", keeping autodev's pattern
+(spec 16.4). In autodev the fallback read `logs/<agent>.log`, written because autodev started
+its agents under a shell that tee'd the pane. Spec 03's `logs/<id>/` holds only the Companion's
+JSONL raw streams (`<id>-main.jsonl`, `<id>-sNNN-<open|closed>.jsonl`), which are hook records,
+not pane text, and nothing in spec 03 or 11 writes a pane transcript.
+
+So the fallback is implemented (`hx.ui.pane.log_fallback`) and reads
+`logs/<id>/<id>-pane.log`, but nothing writes that file today, and a dead session therefore
+shows "no live tmux session <id>" rather than its last output — which is the one moment the
+human most wants to see what it said.
+
+Two ways to make it real, both the build lane's: have `adapters/claude/start.sh` add
+`tmux pipe-pane -o -t <id>:main 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'` at launch, or
+declare that a dead pane simply has no history and drop the fallback from spec 16.4. The ui
+lane has no preference; it needs to know which, and if it is the first, whether that path is
+the right name for spec 03.

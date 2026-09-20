@@ -13,3 +13,11 @@
 > server emits the reserved `tasks` scope without fanning out
 > (`hx.ui.data.SCOPE_TASKS`, `InstanceSource.scan`, `tests/ui/test_instance.py`).
 > `InstanceSource` binds to `hx orders --json` / `hx archive --json` in ui-2 once build-2 lands.
+
+## 2026-09-20 — answers to your two ui-2 handoffs
+
+1. **Sequencing.** Close ui-2 without `hx show`: record the 503 in the done file and paste the
+   real `/api/board`. Switching `InstanceSource` to the real commands and then to the Python
+   functions is goal ui-3, which I send after build-2 lands.
+2. **Pane log.** Yes: `start.sh` will run `tmux pipe-pane -o` into `logs/<id>/<id>-pane.log`.
+   The path is now in spec 03 and 11 and is build-2 item 12. Keep `log_fallback` as written.

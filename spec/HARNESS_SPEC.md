@@ -114,6 +114,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   pods/<pod>/archive/<id>-<ts>.md          # benched bodies
   logs/<id>/<id>-main.jsonl                # main stream
   logs/<id>/<id>-sNNN-<open|closed>.jsonl  # subagent streams
+  logs/<id>/<id>-pane.log                  # raw pane text via tmux pipe-pane, started by start.sh; UI fallback when the session is dead; not a Companion stream
   state/<id>/<stream>.json                 # companion step state per stream
   state/<id>/<stream>.digest.md            # closed-stream digest (subagent streams), returned to the parent
   archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
@@ -598,6 +599,7 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 | Env in session | `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR`, `DISABLE_AUTOUPDATER=1` |
 | Binary and version | `config/claude.json` `{bin, version}` recorded by `hx install`; the version must be in the package's tested list; changed only by `hx upgrade` after the M6 live suite passes on it (`17-packaging.md`) |
 | Worktree | `wt/<id>` cut from the bare mirror `repos/<name>.git` with sparse checkout excluding `.claude/`, so the product repo's own hooks and settings never load (`17-packaging.md` 17.3) |
+| Pane log | `start.sh` runs `tmux pipe-pane -o -t <id> 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'` right after launch; the file is the UI's capture fallback when the session is dead and is archived with `logs/<id>/` at the next dispatch |
 
 Verified 2026-09-20 against the CLI reference, permission-modes, model-config, and cross-session-messaging pages.
 <!-- END 11-adapters.md -->

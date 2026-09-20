@@ -25,6 +25,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   pods/<pod>/archive/<id>-<ts>.md          # benched bodies
   logs/<id>/<id>-main.jsonl                # main stream
   logs/<id>/<id>-sNNN-<open|closed>.jsonl  # subagent streams
+  logs/<id>/<id>-pane.log                  # raw pane text via tmux pipe-pane, started by start.sh; UI fallback when the session is dead; not a Companion stream
   state/<id>/<stream>.json                 # companion step state per stream
   state/<id>/<stream>.digest.md            # closed-stream digest (subagent streams), returned to the parent
   archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
