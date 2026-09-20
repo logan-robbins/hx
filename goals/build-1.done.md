@@ -130,18 +130,33 @@ $ .venv/bin/python -m pytest tests/guard
 $ .venv/bin/python -m pytest tests/core
 236 passed in 10.51s
 
-$ .venv/bin/python -m pytest                # after the gtm lane began moving packaging/
-ERROR tests/packaging/test_skeleton_texts.py - FileNotFoundError: [Errno 2] N...
-!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+$ .venv/bin/python -m pytest tests/packaging   # the gtm lane's, at close of goal
+74 passed in 2.76s
+
+$ .venv/bin/python -m pytest tests/ui          # the ui lane's, at close of goal
+7 failed, 154 passed, 1 skipped in 3.93s
 ```
 
-`tools/milestone-check.sh` passed end to end (exit 0, guard + all 444 tests of all four lanes)
-immediately before the gtm lane started moving `packaging/**` to `src/hx/packaging/**`. That
-move left `tests/packaging/test_skeleton_texts.py` resolving `PACKAGING` to the now-empty
-top-level `packaging/`, which raises at **import** time and so interrupts collection for the
-whole suite, not just that file. Both paths are the gtm lane's; per ORCHESTRATION.md I
-reported it in `handoff/build-to-gtm.md` rather than fixing it. It does not block this goal:
-`tests/guard` (5) and `tests/core` (236) both pass.
+**State of the full suite at close.** `tools/milestone-check.sh` passed end to end — exit 0,
+`tests/guard` plus all 444 tests of all four lanes — immediately before the gtm and ui lanes
+began their own in-flight changes. Two other-lane breakages appeared during this goal; per
+ORCHESTRATION.md "Finishing a goal" step 2 I reported each in a handoff entry rather than
+fixing it, and neither blocks this goal:
+
+1. **gtm, resolved.** Moving `packaging/**` to `src/hx/packaging/**` left
+   `tests/packaging/test_skeleton_texts.py` resolving `PACKAGING` to the now-empty top-level
+   `packaging/`, which raised at **import** time and interrupted collection for the whole
+   suite, not just that file. Reported in `handoff/build-to-gtm.md`; the gtm lane has since
+   fixed it and `tests/packaging` is 74 passed.
+2. **ui, open at close.** `tests/ui` is 7 failed / 154 passed, every failure a 401 where the
+   test expects 200, while `src/hx/ui/server.py` and `index.html` are modified and
+   `src/hx/ui/pane.py` is untracked — the ui lane's bearer-token work in flight. Reported in
+   `handoff/build-to-ui.md`. The build lane wrote no file under `src/hx/ui/**` or `tests/ui/**`
+   in this goal, and `hx ui` is still `not implemented (build-10)`, so nothing in the CLI
+   reaches that server.
+
+The build lane's own gates are green: `tests/guard` 5 passed, `tests/core` 236 passed,
+and `tests/packaging` 74 passed alongside them.
 
 ### Done-when commands, on a scratch root outside the repo and outside `$HOME`
 
