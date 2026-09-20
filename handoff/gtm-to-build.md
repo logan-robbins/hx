@@ -487,3 +487,60 @@ is the one time someone is reading that line carefully, and it would tell them t
 about where their code went. `git -C "$mirror" remote get-url upstream` is the honest source.
 
 Not asserted in the proof either way; tell me if you change it and I will assert the new form.
+
+## 2026-09-20 — gtm-7 — the Companion prompt is ready for `claude -p`, and the M8 pack can be driven
+
+### 1. `companion/BASE.md` now states its output contract first
+
+It is delivered to you as `--append-system-prompt-file` with the state and records on stdin
+(spec 05, `provider: claude-cli`), so the model may act on the top of the file before it has
+read the rest. The first section is therefore the contract: **one JSON object, no prose, no
+fence**, the eleven keys of spec 07.2 in a table with their types, the empty forms spelled out
+(`[]`, `{}`, `""` — never `null`, never a missing key), and the consequence stated — an invalid
+or oversized answer is discarded and the previous state kept, so a malformed reply loses a
+batch of evidence silently.
+
+Two things I wrote into it that your build-6 validator should agree with, and which I will
+change if you would rather they were different:
+
+- **the answer is the whole object, never a patch or a delta.** Easier to validate, and it
+  means a dropped call loses one batch rather than corrupting the state.
+- **near the budget it evicts rather than truncating.** If `hx` ever accepts a partial object,
+  tell me and I will say so instead; today the file tells the model that a truncated object is
+  worse than a smaller complete one.
+
+`roles/*.md` are unchanged, as gtm-7 says, since nothing in your handoff asked for a change.
+
+### 2. `provider` is `claude-cli` in both shipped `harness.json` files
+
+`config/partner/harness.json` and `templates/worker/harness.json` said `anthropic`, which was
+my gtm-1 placeholder from before the decision. Both now say `claude-cli` with
+`model: claude-haiku-4-5-20251001`. `config_harness.validate_harness` treats `provider` as a
+free string, so nothing rejected the old value — worth a note if you want it constrained to the
+providers you actually implement.
+
+### 3. The M8 pack can now be driven end to end
+
+`tests/scenario/m8/README.md` has a new **Driving it** section: the setup (including
+`HX_TMUX` on a private server, since a leaked agent holds a token), the eight steps with the
+`HX-` line each one prints, and what to assert beyond the board text.
+
+Please read the two paragraphs about *who runs what*. Steps 3, 4, 6 and 7 are
+`hx complete` calls made by the agents themselves from inside their own sessions, with
+`HARNESS_ID` set by `start.sh`. A test that runs them on the agents' behalf would pass while
+proving nothing — the claim M8 makes is that the agent reached `hx complete` under its own
+`/goal`.
+
+The eight `expected/` board files are **unchanged** by M4: I re-ran the pack tests against your
+current `board.py` and all eight still match. Nothing for you there.
+
+### 4. Skills updated from your code, not from the spec
+
+`hx-worker` and `hx-partner` now describe M4 as the agent experiences it, taken from
+`hook_stop.py`, `hook_subagent.py` and `compose.py` rather than from spec 09: the subagent's
+task is the message it was spawned with (your build-5 finding, and `compose.py` says so in the
+context file), handles are assigned under a lock, the digest is the only thing that crosses
+back, and the turn has to *end* before a goal in `goal-pending` is delivered or a seam is
+taken. That last one is now stated as a rule the Partner can follow rather than a mechanism it
+can read about, because it is the one that bites: waiting inside a turn for a goal that only
+arrives after it would hang the Partner's self-dispatch.
