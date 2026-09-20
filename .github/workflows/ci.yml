@@ -81,10 +81,11 @@ jobs:
       - name: Guard tests
         run: .venv/bin/python -m pytest tests/guard -q
 
-      # NOT `tools/milestone-check.sh`: that script takes a lane name and runs tests/guard
-      # plus that lane's own paths, treating the others as advisory. That is right for a lane
-      # finishing a goal and wrong for CI, which is nobody's lane and where every test is
-      # required. Invoked with no lane it would run the guard tests and nothing else.
+      # Plain pytest rather than `tools/milestone-check.sh`. That script takes a lane name
+      # and treats the other lanes as advisory, which is right for a lane finishing a goal and
+      # wrong for CI, where every test is required. Its no-lane form now means "everything
+      # required" and would be safe — but CI stating the requirement itself, rather than
+      # inheriting it from a script whose default has already changed once, is the point.
       - name: Full suite (every lane's tests are required here)
         run: .venv/bin/python -m pytest -q
 

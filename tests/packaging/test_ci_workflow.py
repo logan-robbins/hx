@@ -199,8 +199,10 @@ def test_the_baseline_is_recorded_before_any_test_runs():
 
 def test_ci_runs_every_lane_s_tests_as_required():
     """`tools/milestone-check.sh <lane>` is the lane form: guard plus that lane's own paths,
-    the rest advisory. CI is nobody's lane, so it runs the whole suite as required — and with
-    no lane argument that script would run the guard tests and nothing else."""
+    the rest advisory. CI is nobody's lane, so it runs the whole suite as required. Its
+    no-lane form means "everything required" as of 2026-09-20 and would work — but it has
+    already meant something else once, and CI should state its own requirement rather than
+    inherit it (orchestrator, gtm-6: "keep CI on plain pytest anyway")."""
     blob = "\n".join(str(s) for s in workflow()["jobs"]["test"]["steps"])
     assert "pytest -q" in blob, "CI does not run the full suite"
     assert "tools/milestone-check.sh" not in blob, (
