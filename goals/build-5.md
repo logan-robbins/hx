@@ -1,6 +1,6 @@
 # build-5: Milestone M4 (spec 13): `log`, `subagent-start`, `subagent-stop`, `subagent-result`, `stop`
 
-Read `goals/build-4.done.md` (yours), `handoff/orchestrator-to-build.md`, any other
+Read `goals/build-4.done.md` (yours, including "Notes for whoever writes build-5" and "A leaked agent"), `handoff/orchestrator-to-build.md`, any other
 `handoff/*-to-build.md`, spec 07.1 (raw record shape, 4 KB line cap, excerpt + ref), 07.3
 (subagent context file), 09.1 (the five hooks, payload sources), 09.3 (handshake), 09.4, 13 M4,
 `hx.streams.append_record` (yours, from build-3).
@@ -35,6 +35,12 @@ Read `goals/build-4.done.md` (yours), `handoff/orchestrator-to-build.md`, any ot
 7. Live check (real binary, scratch root, seed token as in build-3): a Partner turn that spawns
    two subagents; confirm the three stream files, the `SubagentStart` context line in a
    subagent transcript, and that `stop` fires after the turn. Kill everything you launched.
+
+8. From build-4's open questions (answered in `handoff/orchestrator-to-build.md`): `hx dispatch`
+   refuses a dirty `wt/<id>` (exit 1, files listed); `hx bench` saves the dirty diff, tracked and
+   untracked, to `pods/<pod>/archive/<id>-<ts>.patch` before resetting the worktree (spec 08
+   updated); `hx doctor` fails when `config/repo.json`'s `base_branch` is not a ref in the
+   mirror. Tests for all three.
 
 ## Done when
 

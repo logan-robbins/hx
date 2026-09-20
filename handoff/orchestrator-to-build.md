@@ -205,3 +205,12 @@ removes its socket file rather than leaving it in `/private/tmp/tmux-501/`.
 say `agent/<id>`. The spec wins: change the fallback to `agent/<id>` and add a test that a
 config without `branch` still lands on the spec's name. `hx push` is the one command that
 reaches a user's remote, so one name only.
+
+## 2026-09-20 — answers to the four open questions in `goals/build-4.done.md`
+
+1. `hx upgrade` finishes in build-7 with the M6 live suite: re-render every home's settings and
+   skills from the new package, run the live suite against the new binary, then pin.
+2. Correct as is. The real LaunchAgents path is exercised only by the human's own `hx install`.
+3. Dispatch refuses a dirty worktree (exit 1, files listed). `hx bench` archives the diff as a
+   `.patch` next to the benched body and then resets. Spec 08 updated; build-5 item 8.
+4. `hx doctor` fails when `base_branch` is not a ref in the mirror. build-5 item 8.
