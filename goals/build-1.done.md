@@ -151,7 +151,9 @@ fixing it, and neither blocks this goal:
 2. **ui, open at close.** `tests/ui` is 7 failed / 154 passed, every failure a 401 where the
    test expects 200, while `src/hx/ui/server.py` and `index.html` are modified and
    `src/hx/ui/pane.py` is untracked — the ui lane's bearer-token work in flight. Reported in
-   `handoff/build-to-ui.md`. The build lane wrote no file under `src/hx/ui/**` or `tests/ui/**`
+   `handoff/build-to-ui.md`. That count is one snapshot of a moving suite: a later run read
+   9 failed / 188 passed, still all in `tests/ui`. Treat it as "open in the ui lane", not as a
+   number. The build lane wrote no file under `src/hx/ui/**` or `tests/ui/**`
    in this goal, and `hx ui` is still `not implemented (build-10)`, so nothing in the CLI
    reaches that server.
 
