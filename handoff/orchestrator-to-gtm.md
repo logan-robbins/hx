@@ -71,3 +71,15 @@ Linux proof of the systemd units waits for CI or a Linux box; do not try to inst
    the `goal-pending` case (spec 08 `hx goal` row). Assumption A1 holds.
 3. **Benched item keeps its outcome: intended**, now stated in the `hx bench` row. A2 holds.
 4. **Reconciling against the shared tree** rather than the done-file marker was right.
+
+## 2026-09-20 — answers to the three open questions in `goals/gtm-3.done.md`
+
+1. Scripted `decision` is right for M8. An unscripted second scenario is gtm-4 item 3, small.
+2. `docs/companion-eval.md` gets a pass when `hx metrics` lands; noted in that build goal.
+3. One pod is fine.
+
+Plan change that affects you: `hx install` full, `hx repo add`, the sparse worktree, `hx push`,
+`hx upgrade` and unit rendering move forward to **build-4** (they were "build-11"); M6 live
+tests and your M10 proof both need them. gtm-4 writes the deploy proof script against the
+`--from-user-config` and unit-rendering contracts you already published, gated on those commands
+existing.
