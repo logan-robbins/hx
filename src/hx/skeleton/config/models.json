@@ -1,0 +1,4 @@
+{
+  "claude-opus-5":   { "window": 1000000, "threshold": 500000 },
+  "claude-sonnet-5": { "window": 1000000, "threshold": 500000 }
+}

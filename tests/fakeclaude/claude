@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""The fake `claude` used by the M0-M5 suites (ORCHESTRATION.md "Fake claude for M0-M5").
+
+It is put on PATH, or pinned in `config/claude.json`, in place of the real binary. It:
+
+  1. records its argv, its environment and its cwd to
+     `$HARNESS_ROOT/run/<id>/fake-argv.json`, so a test can assert the exact launch argv of
+     spec 17.4;
+  2. stays alive reading stdin on a real tmux pane, appending every pasted line to
+     `$HARNESS_ROOT/run/<id>/fake-input.log`, so a test can assert what `hx goal` pasted;
+  3. emits scripted hook payloads, so a test can drive `hx-hook` the way a real session
+     would (used from M1).
+
+Scripted payloads come from a JSON file named by `HX_FAKE_SCRIPT`:
+
+    [{"on": "start", "event": "stop", "payload": {"background_tasks": []}},
+     {"on": "/clear", "event": "context", "payload": {"source": "clear"}}]
+
+`on` is either `start` or the exact pasted line that triggers the payload. Each entry runs
+`$HX_HOOK_BIN --id <id> <event>` with the payload as JSON on stdin and appends the result to
+`$HARNESS_ROOT/run/<id>/fake-hooks.log`. M6 onward runs the real pinned binary instead.
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+RECORDED_ENV_PREFIXES = ("HARNESS_", "CLAUDE_", "HX_")
+RECORDED_ENV_NAMES = ("DISABLE_AUTOUPDATER", "PATH", "PWD", "TMUX")
+
+
+def now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def run_dir() -> Path:
+    root = os.environ.get("HARNESS_ROOT")
+    item_id = os.environ.get("HARNESS_ID", "unknown")
+    base = Path(root) if root else Path(os.environ.get("TMPDIR", "/tmp"))
+    directory = base / "run" / item_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def recorded_env() -> dict[str, str]:
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if name.startswith(RECORDED_ENV_PREFIXES) or name in RECORDED_ENV_NAMES
+    }
+
+
+def emit(entry: dict, target: Path) -> None:
+    hook_bin = os.environ.get("HX_HOOK_BIN")
+    payload = dict(entry.get("payload") or {})
+    payload.setdefault("session_id", "fake-session")
+    payload.setdefault("cwd", os.getcwd())
+    record = {"ts": now(), "event": entry.get("event"), "payload": payload}
+    if not hook_bin:
+        record["error"] = "HX_HOOK_BIN is not set"
+    else:
+        result = subprocess.run(
+            [*hook_bin.split(), "--id", os.environ.get("HARNESS_ID", "unknown"), str(entry.get("event"))],
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        record.update({"exit": result.returncode, "stdout": result.stdout, "stderr": result.stderr})
+    with target.open("a") as handle:
+        handle.write(json.dumps(record) + "\n")
+        handle.flush()
+
+
+def load_script() -> list[dict]:
+    path = os.environ.get("HX_FAKE_SCRIPT")
+    if not path or not Path(path).is_file():
+        return []
+    try:
+        data = json.loads(Path(path).read_text())
+    except json.JSONDecodeError:
+        return []
+    return [entry for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
+
+
+def main() -> int:
+    directory = run_dir()
+    (directory / "fake-argv.json").write_text(
+        json.dumps(
+            {
+                "ts": now(),
+                "argv": sys.argv[1:],
+                "argv0": sys.argv[0],
+                "cwd": os.getcwd(),
+                "pid": os.getpid(),
+                "env": recorded_env(),
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+
+    script = load_script()
+    hooks_log = directory / "fake-hooks.log"
+    for entry in script:
+        if entry.get("on", "start") == "start":
+            emit(entry, hooks_log)
+
+    input_log = directory / "fake-input.log"
+    input_log.touch()
+    # A real pane would show a prompt here; a test waits for this marker before pasting.
+    (directory / "fake-ready").write_text(now() + "\n")
+    sys.stdout.write("fake-claude ready\n")
+    sys.stdout.flush()
+
+    for line in sys.stdin:
+        line = line.rstrip("\n")
+        with input_log.open("a") as handle:
+            handle.write(line + "\n")
+            handle.flush()
+        for entry in script:
+            if entry.get("on") == line:
+                emit(entry, hooks_log)
+        if line.strip() == "/fake-exit":
+            break
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
