@@ -265,3 +265,15 @@ HX-WAKE partner refused
 Exit 0 only for `accepted`; exit 3 for the other two (distinct from usage errors, which exit 2).
 Callers inside hx (`hx complete`, `hx heartbeat`) treat a non-zero wake as a warning, never as
 their own failure. `hx.wake.wake_partner(root, text) -> bool` is unchanged.
+
+## `run/partner/socket.json`
+
+Written by the `context` hook at every SessionStart of the Partner from the environment Claude
+Code exports to hooks; read by `hx.wake`:
+
+```json
+{"socket": "/abs/path/to/socket", "token": "…", "ts": "2026-09-20T14:20:00Z", "session_id": "…"}
+```
+
+Only these four keys. `hx.wake.read_socket` may keep accepting the raw
+`CLAUDE_CODE_MESSAGING_*` spelling for one milestone, then drops it.

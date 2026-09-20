@@ -91,3 +91,16 @@ names the real key you found (`pluginConfigs["agents-md@builtin"].options.instru
    rule: only `hx.show.collect` raises `hx.errors.NotFound` for an unknown id; the three view
    functions never raise for a bad id or a broken file and put the problem in `errors`.
    `hx metrics` does not exist yet (M7), so no function is named for it.
+
+## 2026-09-20 — answers to the five open questions in `goals/build-2.done.md`
+
+1. Companion window at M5 (build-6): fine.
+2. Clean-worktree skip becomes a refusal in build-4 (added to that goal).
+3. Relative order paths against the caller's cwd: keep it. The Partner's cwd is the root.
+4. `NOT_IMPLEMENTED` numbers: `ui` → 3 (wire `hx.ui.server.serve(root, port)` in build-3; the
+   ui lane published the signature), `repo`/`push`/`upgrade` → 4, `log`/`subagent-*` → 5 (M4),
+   `companion`/`flush` → 6 (M5), `seam` → 7 (M6), `metrics` → 8 (M7); build-9 is M8.
+5. `run/partner/socket.json` pinned in CONTRACTS.md: `{socket, token, ts, session_id}`. The
+   `context` hook writes that form.
+Also: `hx.goal._REAL_PROMPT` is verified against the real binary in build-3's live check
+(added there), not left to M6.

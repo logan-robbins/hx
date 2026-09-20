@@ -1,6 +1,8 @@
 # build-3: Milestones M2 and M3 (spec 13): `context` hook, `hx compose`, Claude adapter, `guard`
 
-Read `goals/build-2.done.md` (yours), `handoff/orchestrator-to-build.md`, any other
+Read `goals/build-2.done.md` (yours, including "Notes for whoever writes build-3"),
+`handoff/orchestrator-to-build.md` (answers to your build-2 questions and the renumbering),
+CONTRACTS.md (`run/partner/socket.json`, `HX-WAKE`), any other
 `handoff/*-to-build.md`, then spec 02 (Single-file context, Identity), 07.3 (context file
 sections, in order), 09 (`context`, `guard`, 9.3 handshake, 9.4), 11 (Adapters), 13 M2 and the
 M3 table, 04 (ownership, which the guard enforces).
@@ -47,6 +49,14 @@ M3 table, 04 (ownership, which the guard enforces).
    and that asked "who are you" it answers from the persona with zero Reads. Kill the session
    after. Record the transcript lines in the done file. If credentials cannot be copied without
    touching `~/.claude`, say so and stop at the fake.
+
+7. `hx ui`: call `hx.ui.server.serve(root, port=None)` (published in `handoff/ui-to-build.md`);
+   nothing else. `NOT_IMPLEMENTED` renumbered per `handoff/orchestrator-to-build.md`.
+8. In the live check (item 6), also confirm `hx.goal._REAL_PROMPT` against the real pinned
+   binary: an idle pane must be detected as idle and a mid-turn pane as busy; fix the pattern
+   from what you observe and record the observed prompt lines in the done file. Write
+   `run/partner/socket.json` in the CONTRACTS.md form from the hook environment and prove
+   `hx wake partner` reaches the live session (the message appears in its pane).
 
 ## Done when
 
