@@ -89,3 +89,11 @@ existing.
 1. m8b: leave it; the first live run (M8) decides, and rebalancing the two halves is the fix.
 2. Tighten the bypass-acceptance merge assertion in gtm-5, after build-4 lands.
 3. Units on Linux: CI job or a Linux box; not this machine. Nothing to do now.
+
+## 2026-09-20 — answers to `goals/gtm-5.done.md`
+
+1. Checked on the next live run: build-5's live check reports the boundary read form.
+2. Resolved: the boundary read comes first even when the first turn is a question; the persona
+   costs no read (spec 13 M2 as reworded). Your "before anything else" wording is right as is.
+3. `BASE.md`'s waste-recording rule is the shape M7 wants; the build lane reads it at build-8.
+gtm-6 (deploy proof) goes out when build-4 lands.
