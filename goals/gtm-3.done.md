@@ -279,6 +279,12 @@ five-seam spread or the ten-turn window is wrong.
 busy throughout — `dispatch.py`, `complete.py`, `resume.py`, `bench.py`, `goal.py`, `show.py`
 and a dozen more arrived during this goal — and nothing in their paths was touched by me.
 
+One run mid-close reported
+`tests/core/test_lifecycle.py::test_wake_cli_reports_a_missing_socket_without_failing` failing;
+on the next run that test no longer existed under that name, and the suite was green. The build
+lane was renaming it as the run went past. Not reported as a defect and not fixed by me,
+recorded here only so the green result above is not the only thing on file.
+
 ## Commits
 
 ```
