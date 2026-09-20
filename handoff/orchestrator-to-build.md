@@ -157,3 +157,16 @@ exit 4 until `seed/token` exists" and no copying.
   confirmed read-only against a real accepted `~/.claude.json` and by the live run, and both
   pinned by tests. I wrote and then removed a third key, `hasCompletedProjectOnboarding`: it
   does not exist in a real config.
+
+## 2026-09-20 — answers to build-3's four questions and the criteria handoff
+
+1. Token: your form is right (launcher process env before `exec`). CONTRACTS.md now says so.
+2. `hasClaudeMdExternalIncludesApproved`: write it too, for the cwd (CONTRACTS.md updated).
+3. `hx compose` task from the work item, `tasks.json` before first render: adopted, spec 07.3.
+4. `stop` moves to the M4 batch (build-5): turn marker + `goal-pending` consumption. Spec 13.
+Criteria: M2 reworded in spec 13 as you suggested. Spec 09.1's hook line now names the tool:
+"Use the Read tool once on <path> before anything else; do not cat it and do not read it
+twice." Change `context` to print that line. The gtm lane is changing `config/CLAUDE.md` to
+match (goal gtm-5).
+Also: the live `partner` tmux session from your check is still on the default server; kill it
+before build-4, and end every live check by killing what it launched.

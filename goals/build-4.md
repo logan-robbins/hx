@@ -39,6 +39,10 @@ and version), 08 (`hx repo add`, `hx push`, `hx upgrade`, `hx launch` worktree c
    (guard test stays green and a test asserts no path under `Path.home()/.claude` is opened, by
    patching `open`/`Path.read_*` or by `HOME=tmp_path`).
 
+7. End every live check by killing the tmux sessions it launched; assert in the test teardown
+   that no `partner`/`eng-*` session it created survives. Also pre-seed
+   `hasClaudeMdExternalIncludesApproved` in `.claude.json` (CONTRACTS.md).
+
 ## Done when
 
 - `tools/milestone-check.sh` passes for `tests/guard` and `tests/core`.

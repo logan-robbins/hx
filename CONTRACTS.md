@@ -281,8 +281,9 @@ Only these four keys. `hx.wake.read_socket` may keep accepting the raw
 ## `seed/token`
 
 One line, the token printed by `claude setup-token`, pasted by the human; mode 0600, owned by
-the harness user. `start.sh` exports it as `CLAUDE_CODE_OAUTH_TOKEN` on the tmux session
-(never on the command line, never in a file under `run/`). `install.sh` and `start.sh` refuse
+the harness user. `start.sh` reads it in its own process and exports it as `CLAUDE_CODE_OAUTH_TOKEN`
+immediately before `exec` (never `tmux -e`, never on a command line, never in a file under `run/`;
+`tmux show-environment` and `ps` do not show it). `install.sh` and `start.sh` refuse
 when it is missing or its mode is wider than 0600. hx never reads `~/.claude`, any
 `.credentials.json`, or the macOS Keychain. `--from-user-config` no longer exists.
 
@@ -290,7 +291,7 @@ when it is missing or its mode is wider than 0600. hx never reads `~/.claude`, a
 
 Claude Code's per-config-dir state file. `install.sh` writes it before the first launch so
 nothing about launch is interactive: onboarding marked complete and the workspace trust dialog
-pre-accepted for the agent's cwd (`wt/<id>`, `HARNESS_ROOT` for `partner`). Exact keys are
-verified by the build lane against the binary (build-3 done file) and recorded here once known;
-expected shape: `{"hasCompletedOnboarding": true, "projects": {"<abs cwd>": {"hasTrustDialogAccepted": true}}}`.
+pre-accepted for the agent's cwd (`wt/<id>`, `HARNESS_ROOT` for `partner`). Keys verified read-only against a real accepted config and proved live (build-3):
+`{"hasCompletedOnboarding": true, "projects": {"<abs cwd>": {"hasTrustDialogAccepted": true, "hasClaudeMdExternalIncludesApproved": true}}}`.
+`install.sh` merges into an existing file, never resets it.
 Found live 2026-09-20: without it the pane sits at "Quick safety check … Yes, I trust this folder".

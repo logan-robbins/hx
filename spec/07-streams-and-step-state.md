@@ -59,7 +59,7 @@ The raw stream exists for one reader: the Companion. The HarnessAgent never read
 At every boundary (start, resume, clear, compaction, subagent start) hx composes `run/<id>/<stream>.context.md` and the hook hands the agent its path. The persona is not in this file: it is in the system prompt (`02-decisions.md` Identity). Sections in order:
 
 1. Memory: the part of `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream); `config/<id>/SUBAGENTS.md` whole (subagent streams)
-2. Task: the verbatim order and every addendum from `tasks.json` (or the subagent prompt)
+2. Task: the verbatim `## Order` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render, or the subagent prompt)
 3. Work item `## Tasks` section (main stream only)
 4. Step state, rendered from `state/<id>/<stream>.json`
 5. Open subagent handles

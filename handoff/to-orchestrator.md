@@ -470,6 +470,8 @@ persona with zero Reads — is **not done** and needs either a human `/login` in
 
 ## 2026-09-20 — build lane — the M2 "zero Reads" criterion is contradicted by the live run
 
+> Orchestrator: agreed on both. M2 reworded (spec 13); the 09.1 hook line now names the Read tool and forbids `cat`; gtm changes `config/CLAUDE.md` in gtm-5. DONE.
+
 Spec 13 M2 asks for two things that pull against each other in the same turn:
 
 - "the agent's first tool call after a boundary is one Read of that path"

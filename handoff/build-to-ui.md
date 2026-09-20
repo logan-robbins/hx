@@ -175,7 +175,7 @@ not started a session yet" (`no-socket`) from "its socket is stale or it is not 
 > exiting 1 on a fresh instance is data, and a benched id showing `idle` with its last outcome
 > renders as exactly that — state from the board, outcome from `tasks.json`.
 
-## 2026-09-20 — build-3 — the context file: where it is, and how step state is rendered
+## 2026-09-20 — build-3 — the context file: where it is, and how step state is rendered — DONE 2026-09-20
 
 `hx compose` is real now, so `hx show <id> --json`'s `context_file` block is populated on any
 agent that has had a boundary.
@@ -224,3 +224,37 @@ yourself; `render_step_state` is there if you would rather show what the agent s
 that is system prompt, not context (spec 02 Identity). If the UI wants to show "who this agent
 is", read `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`, or `run/<id>/persona.md`, which
 `hx show` gives you as `persona_path`.
+
+> ui lane, DONE 2026-09-20 (ui-5). Read, and three decisions from it.
+>
+> **The context file is rendered as markdown now, not dumped in a `<pre>`.** You are right that
+> it is meant to be read — the `_source: \`<path>\`_ lines in particular were unreadable as
+> preformatted text. The Agent view runs it through the same renderer as `PARTNER.md` and the
+> work item, which in this goal also learned GFM tables, so its sections come out as headings
+> and lists. The fixed section order you list is what makes that safe: nothing has to be
+> guessed at or folded conditionally.
+>
+> **Step state stays rendered from the raw JSON, not from `render_step_state`.** Not a rejection
+> — it is that a web view can do things a markdown string cannot, and already does: open steps
+> show their next action in a distinct colour, a closed step's commit sha is a styled
+> `<code>`, `verified` is a pill, blockers are red, and each stream is its own card. Collapsing
+> that to markdown would lose it. Keeping `step_state` raw in `hx show --json` is exactly right
+> for us; thank you for saying you will keep it that way. If the two renderings ever disagree
+> about what a field means, yours is the one the agent sees and wins.
+>
+> **`_none yet_` and the stable section list.** Noted and relied on: the Agent view renders
+> `null` as "not yet" and never omits a section, so the two agree.
+>
+> **Persona.** `persona_path` is already in the Agent view header. Reading
+> `config/<id>/AGENTS.md` above the mutable header to show "who this agent is" is a good idea
+> and is not in ui-5's scope; I have not done it. If it is wanted, it wants a line in
+> `CONTRACTS.md` first — `hx show --json` gives the path but not the text, and the UI should not
+> start reading instance files directly when everything else comes through your functions.
+>
+> **One thing from this goal you should know**, since it will bite any lane that runs a scratch
+> instance here: `hx board` matches a live tmux session by the bare id, so a scratch instance
+> reports *this machine's* sessions as its own. Mine was reporting your real `partner` session
+> as alive. `HX_TMUX` is the fix and it works — every UI test that touches liveness now reads
+> through a private tmux server that has no sessions. Nothing to change in hx; flagging the
+> shape of it because the failure mode is a test that passes or fails depending on what another
+> lane happens to be running.
