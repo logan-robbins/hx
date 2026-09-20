@@ -49,10 +49,18 @@ def product_repo(tmp_path):
     return bare
 
 
-def run_install(tmp_path, root, fake_claude_on_path, *args, home=None):
+def run_install(tmp_path, root, fake_claude_on_path, *args, home=None, tmux=None):
+    """Run `hx install`.
+
+    Step 6 is `hx launch partner`, so a full install starts a real tmux session. `tmux` points
+    it at the test's private server; without it the session would land on the machine's default
+    server, where the lanes themselves run — which is exactly how one leaked in build-3.
+    """
     home = home or (tmp_path / "install-home")
     home.mkdir(parents=True, exist_ok=True)
     env = clean_env(HOME=str(home), **fake_claude_on_path)
+    if tmux:
+        env["HX_TMUX"] = " ".join(tmux)
     return subprocess.run(
         [sys.executable, "-m", "hx", "install", "--root", str(root), *args],
         env=env, capture_output=True, text=True,
@@ -62,7 +70,7 @@ def run_install(tmp_path, root, fake_claude_on_path, *args, home=None):
 # --- step 1: preflight ---------------------------------------------------------------------
 
 
-def test_step_1_pins_a_bare_tested_version(tmp_path, fake_claude_on_path):
+def test_step_1_pins_a_bare_tested_version(tmp_path, fake_claude_on_path, tmux_server):
     root = tmp_path / "instance"
     result = run_install(tmp_path, root, fake_claude_on_path, "--skeleton-only")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -70,7 +78,7 @@ def test_step_1_pins_a_bare_tested_version(tmp_path, fake_claude_on_path):
     (root / "seed").mkdir(parents=True, exist_ok=True)
     (root / "seed" / "token").write_text("sk-ant-oat-x\n")
     (root / "seed" / "token").chmod(0o600)
-    result = run_install(tmp_path, root, fake_claude_on_path)
+    result = run_install(tmp_path, root, fake_claude_on_path, tmux=tmux_server)
     pin = json.loads((root / "config" / "claude.json").read_text())
     assert pin["version"] == TESTED[0]
     assert "(Claude Code)" not in pin["version"], "the version is bare (CONTRACTS.md)"
@@ -122,13 +130,13 @@ def test_step_3_stops_until_the_human_pastes_the_token(tmp_path, fake_claude_on_
     assert "~/.claude" in result.stdout, "it says hx reads nothing of the user's"
 
 
-def test_step_3_tightens_the_tokens_mode(tmp_path, fake_claude_on_path):
+def test_step_3_tightens_the_tokens_mode(tmp_path, fake_claude_on_path, tmux_server):
     root = tmp_path / "instance"
     run_install(tmp_path, root, fake_claude_on_path)
     token = root / "seed" / "token"
     token.write_text("sk-ant-oat-x\n")
     token.chmod(0o644)
-    run_install(tmp_path, root, fake_claude_on_path)
+    run_install(tmp_path, root, fake_claude_on_path, tmux=tmux_server)
     assert token.stat().st_mode & 0o777 == 0o600
 
 
@@ -136,7 +144,7 @@ def test_step_3_tightens_the_tokens_mode(tmp_path, fake_claude_on_path):
 
 
 def test_step_5_renders_the_units_into_this_home_without_enabling_them(
-    tmp_path, fake_claude_on_path
+    tmp_path, fake_claude_on_path, tmux_server
 ):
     from hx import units
 
@@ -146,7 +154,7 @@ def test_step_5_renders_the_units_into_this_home_without_enabling_them(
     token = root / "seed" / "token"
     token.write_text("sk-ant-oat-x\n")
     token.chmod(0o600)
-    result = run_install(tmp_path, root, fake_claude_on_path, home=home)
+    result = run_install(tmp_path, root, fake_claude_on_path, home=home, tmux=tmux_server)
 
     directory = units.target_dir(home)
     assert directory.is_dir(), result.stdout + result.stderr

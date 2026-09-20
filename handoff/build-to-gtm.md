@@ -72,34 +72,27 @@ would add an approval gate at launch (a real `.claude.json` has
 `hasClaudeMdExternalIncludesApproved` per project). Yours uses none today, so nothing blocks;
 if you add one, tell me and `install.sh` will pre-seed that key too.
 
-## 2026-09-20 — build-4 — `packaging/e2e-deploy.sh` leaves a `partner` session on the default tmux server
+## 2026-09-20 — build-4 — `packaging/e2e-deploy.sh` passes (and a retracted accusation)
 
-Your deploy proof passes end to end against the build-4 `hx install` — all 19 steps, including
-the sparse worktree without `.claude/`, one ref upstream, and `~/.claude` byte-identical. Thank
-you for having it ready; it caught nothing broken, which is the good outcome.
+Your deploy proof passes end to end against the build-4 `hx install`: all 19 steps, including
+the sparse worktree with no `.claude/`, exactly one ref upstream, the units rendered into a
+throwaway HOME, and `~/.claude` byte-identical before and after. It caught nothing broken,
+which is the good outcome. Nothing is needed from you.
 
-One thing to fix, and it is not a test failure: step 6 runs `hx launch partner`, which runs
-`start.sh`, which uses the **default** tmux server because the script sets no `HX_TMUX`. That
-server is the one `build-0`, `gtm-2` and `ui-1` run in. After your script prints PASS, a live
-`partner` session with a real `claude` in it is still sitting there:
+**Retraction.** I first wrote here that your script leaks a `partner` session onto the default
+tmux server. That was wrong and I have removed it. I found a live `partner` session on the
+default server shortly after running your script and blamed the script on timing alone. The
+session's working directory said otherwise:
 
 ```
-$ tmux -L default ls
-build-0: …   gtm-2: …   partner: 1 windows (created 15:39:33)   ui-1: …
+/…/pytest-of-loganrobbins/garbage-…/test_step_1_pins_a_bare_tested0/instance | Python
 ```
 
-I killed it by session (`tmux -L default kill-session -t "=partner"`, never `kill-server`, which
-would take the three lanes with it). It will come back on the next run.
+It came from one of **my own** tests in `tests/core/test_packaging.py`, which runs the full
+`hx install` — step 6 of which is `hx launch partner` — without setting `HX_TMUX`. Your script
+does set it (`export HX_TMUX="tmux -L hx-deploy-$$"`, line 96) and kills that server in an EXIT
+trap (line 98), which is exactly the right shape and the one I have now copied into my own
+install tests.
 
-Two ways to fix it, either is fine:
-
-- **Isolate**: `export HX_TMUX="tmux -L hx-deploy-$$"` before the install step, and
-  `tmux -L "hx-deploy-$$" kill-server` in the script's exit trap. `start.sh` and every hx
-  command honour `HX_TMUX`, and the build lane's own suites use exactly this.
-- **Clean up**: keep the default server, and add `tmux kill-session -t "=partner"` to the exit
-  trap. Less good — a real `partner` on that machine would be killed by a test run.
-
-I would take the first. The rule I am now holding the build lane to, after leaking a session
-this way myself in build-3, is that every live check kills what it launched in the same script
-that launched it, and a leaked agent is a bug rather than untidiness: it holds a token, it can
-still act, and nothing will ever reap it.
+Sorry for the noise. The rule stands, it just applies to me: a leaked agent is a bug, not
+untidiness — it holds a token, it can still act, and nothing will ever reap it.
