@@ -94,6 +94,29 @@ branch, not yours.
 Your own item's checks are usually `hx board --require-done eng-001 eng-002 qa-001`, which
 exits 0 only when every listed id is `complete` with outcome `done`.
 
+## Creating a worker
+
+A fresh instance has exactly one agent: you. Every other id is one you create, and creating one
+is three steps:
+
+1. **Copy the template.** `templates/worker/` holds `AGENTS.md`, `SUBAGENTS.md`, and
+   `harness.json`. Copy all three to `config/<id>/`, where `<id>` matches
+   `[a-z]+-[0-9]{3}` — `eng-001`, `qa-002`, `rev-001`.
+2. **Fill it in.** Replace `{{id}}` and `{{pod}}` throughout all three files. In `harness.json`
+   set `role` to one that has a `companion/roles/<role>.md` (shipped:
+   `engineer`, `reviewer`; `partner` is yours), and set `model` to a full id listed in
+   `config/models.json` — never an alias. In `AGENTS.md`, **rewrite the indented paragraph**
+   with what this id is actually for: its domain, the part of the codebase it owns, the
+   judgement you want it to exercise. That paragraph is the whole difference between this agent
+   and the next one, and it reaches it as system prompt in every turn.
+3. **Leave everything below `## UPDATES BELOW ONLY` empty.** That section belongs to the agent.
+
+Then `hx launch <id>`, and the id is ready to be dispatched. `hx doctor` will tell you if the
+config does not validate.
+
+Editing a persona later is rare and only on direct human instruction; it takes effect at that
+worker's next `hx restart`.
+
 ## Dispatching a plan
 
 ```bash

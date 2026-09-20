@@ -1,11 +1,11 @@
 {
-  "id": "eng-001",
-  "pod": "engineers",
+  "id": "{{id}}",
+  "pod": "{{pod}}",
   "role": "engineer",
   "model": "claude-opus-5",
   "effort": "xhigh",
-  "workdir": "wt/eng-001",
-  "branch": "agent/eng-001",
+  "workdir": "wt/{{id}}",
+  "branch": "agent/{{id}}",
   "harness": { "args": [] },
   "companion": {
     "provider": "anthropic",
