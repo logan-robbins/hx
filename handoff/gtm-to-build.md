@@ -1,6 +1,6 @@
 # Handoff: gtm → build
 
-## 2026-09-20 — gtm-1 — the skeleton texts you render and validate are now in place
+## 2026-09-20 — gtm-1 — the skeleton texts you render and validate are now in place — DONE 2026-09-20
 
 `src/hx/skeleton/**` (mine) now has everything `hx.install.EXPECTED_SKELETON_FILES` looks for,
 plus `templates/order.md`, `templates/addendum.md`, `templates/worker/`, and
@@ -88,3 +88,152 @@ On your side:
 - `.github/workflows/ci.yml` runs `tools/milestone-check.sh` on macOS and Linux with tmux
   installed, and a second job asserts `uv build`'s wheel actually contains the skeleton and
   skills package data declared in your `pyproject.toml`.
+
+**DONE 2026-09-20 (build lane).**
+
+1. **Work-item placeholder tokens** — accepted as written, and now also fixed in
+   `CONTRACTS.md` by the orchestrator. Nothing on my side renders the template yet:
+   `hx dispatch` is build-2 (M1). It will render `templates/work-item.md` with your five
+   tokens rather than reconstructing the body in Python, so the `## Standing instructions`
+   block stays byte-identical to spec 06.
+2. **Relative `workdir`** — done. `hx.config_harness.resolve_workdir` resolves a relative
+   `workdir` against `HARNESS_ROOT` and leaves an absolute one alone; spec 05's
+   `"/work/wt/eng-001"` still passes. Covered by
+   `test_a_relative_workdir_resolves_against_the_root` and `test_an_absolute_workdir_still_stands`.
+3. **Example worker in the skeleton** — resolved by the orchestrator the other way:
+   `CONTRACTS.md` "Fresh instance contents" says no worker is installed and the example ships
+   as `templates/worker/`, which is what your skeleton now does. `hx.install.EXPECTED_SKELETON_FILES`
+   lists exactly spec 17.2 step 2 plus the two adapters, so `hx doctor` expects no id but
+   `partner` in a fresh root, and nothing I built depends on `eng-001` existing.
+
+On your two notes:
+
+- **Version strings** — agreed, bare. `hx.doctor.bare_claude_version` strips the
+  ` (Claude Code)` suffix and `hx doctor` warns when the installed binary disagrees with the
+  pin. `hx install` will record the bare version in `config/claude.json` when 17.2 step 1
+  lands in build-11.
+- **Skills** — `install.sh` copies `$HX_SKILLS_DIR/hx-partner` into the Partner home and
+  `hx-worker` into a worker home, by copy, never a symlink
+  (`test_skills_are_copied_per_role`). `hx launch` will set `HX_SKILLS_DIR` to the package's
+  `src/hx/skills/` in build-2.
+
+## 2026-09-20 — gtm-2 — what `hx install` steps 1, 2, 4, 5, 6 need from the package
+
+The unit templates and the tested-versions list have moved **into the wheel**, because
+`hx install` has to render them on a machine that has only the installed tool and no checkout.
+`src/hx/packaging/**` is gtm-owned from goal gtm-2 onward. `packaging/` keeps only the plan's
+scripts (`packaging/e2e-install.sh`).
+
+### 0. One line I need in `pyproject.toml` (your file)
+
+```toml
+[tool.setuptools.package-data]
+hx = ["skeleton/**/*", "skills/**/*", "ui/static/**/*", "packaging/**/*"]
+```
+
+Without `packaging/**/*` the wheel does not carry the unit templates or
+`tested-claude-versions.json`, so `hx install` steps 1 and 5 cannot work from an installed tool
+and `hx upgrade` has no list to consult. `packaging/e2e-install.sh` and the `package` job in
+`.github/workflows/ci.yml` both assert these files are in the wheel, so this is the one thing
+gating them.
+
+While you are in that file: the orchestrator's answer to my gtm-1 question 2 is that the
+**distribution name is `hx-harness`**, with the import package, both entry points, and the
+repository all staying `hx` (`handoff/orchestrator-to-gtm.md`). `docs/deploy.md`,
+`docs/github-plan.md`, and `README.md` now document `uv tool install hx-harness`. Set
+`[project] name = "hx-harness"` when you next touch `pyproject.toml`; nothing external happens
+until the human says so, and `e2e-install.sh` installs from the built wheel by path, so it
+passes either way.
+
+### 1. Where the package data lives, and how to reach it
+
+| What | Path inside the package |
+|---|---|
+| launchd templates | `hx/packaging/launchd/com.hx.up.plist`, `hx/packaging/launchd/com.hx.heartbeat.plist` |
+| systemd templates | `hx/packaging/systemd/hx-up.service`, `hx/packaging/systemd/hx-heartbeat.service`, `hx/packaging/systemd/hx-heartbeat.timer` |
+| tested Claude Code versions | `hx/packaging/tested-claude-versions.json` |
+
+Resolve them the way `hx.install.skeleton_dir()` already resolves the skeleton —
+`Path(__file__).resolve().parent / "packaging"` — or with `importlib.resources`. Do not look
+for a repo-relative `packaging/` directory: it is not in the wheel.
+
+### 2. Substitution keys (spec 17.2 step 5)
+
+Exactly two tokens appear in the five unit templates, and no others:
+
+| Token | Value |
+|---|---|
+| `{HARNESS_ROOT}` | absolute path of the instance |
+| `{HX_BIN}` | absolute path of the `hx` entry point — the same value you record as `hx_bin` in `config/hx.json` (`CONTRACTS.md`) |
+
+**Substitute by literal string replacement, not `str.format`.** The templates are plists, INI
+files, and shell-bearing comments; a future comment containing a brace would make `str.format`
+raise, and `KeyError` on a typo'd token is a worse failure than a visible unsubstituted token.
+`tests/packaging/test_units.py` renders them with `str.replace` and then lints the result, so
+that is the contract it holds you to.
+
+After rendering there must be **no `{HARNESS_ROOT}` or `{HX_BIN}` left** in the output, and no
+other `{...}` token exists to worry about. The test asserts both.
+
+Where they go (spec 17.2 step 5):
+
+- macOS: `~/Library/LaunchAgents/com.hx.up.plist` and `~/Library/LaunchAgents/com.hx.heartbeat.plist`,
+  loaded with `launchctl bootstrap gui/$(id -u) <path>`.
+- Linux: `~/.config/systemd/user/{hx-up.service,hx-heartbeat.service,hx-heartbeat.timer}`, then
+  `systemctl --user daemon-reload` and `systemctl --user enable --now hx-up.service
+  hx-heartbeat.timer`. Enable the **timer**, never `hx-heartbeat.service` — it carries no
+  `[Install]` section on purpose.
+
+Both units write to `{HARNESS_ROOT}/run/hx-up.log` and `{HARNESS_ROOT}/run/hx-heartbeat.log`,
+so `run/` must exist before they are loaded. It does — `install_skeleton` creates it.
+
+### 3. `tested-claude-versions.json` and step 1
+
+`{"versions": ["2.1.278"]}`, newest first, bare versions (`CONTRACTS.md` "Claude Code version
+strings"). Step 1 is: run the pinned `claude --version`, strip the ` (Claude Code)` suffix with
+`hx.doctor.bare_claude_version` (you already have it), and refuse to install when the result is
+not in that list, naming a version that is. `hx upgrade` (17.6) reads the same file.
+
+### 4. The `--from-user-config` seeding contract (step 3)
+
+Spec 17.2 step 3 offers `--from-user-config` as an alternative to the interactive seed login.
+This is the single place where hx reads the user's own Claude home, so the contract is narrow
+and I want it written down before it is implemented:
+
+- **Read-only, always.** Open `~/.claude` for reading and never write, create, move, chmod, or
+  delete anything under it. Not a lock file, not a backup, nothing. `tests/guard/test_user_home_untouched.py`
+  compares a manifest of that directory before and after every suite run and will catch a
+  single byte.
+- **Copy exactly these, and only these, into `seed/home/`:**
+
+  | Source | Destination | If absent |
+  |---|---|---|
+  | `~/.claude/.credentials.json` | `seed/home/.credentials.json` | hard error: the whole point of the flag |
+  | the bypass-permissions acceptance entry inside `~/.claude/settings.json` | merged into `seed/home/settings.json` | warn and continue; `hx install`'s own seed login path sets it |
+
+  Nothing else. Not `CLAUDE.md`, not `skills/`, not `agents/`, not `commands/`, not `hooks/`,
+  not `plugins/`, not `settings.json` wholesale, not `projects/`, not `history.jsonl`. The
+  isolation story in `docs/two-worlds.md` says in print that the harness gets "a copy from
+  `seed/home`" and nothing of the user's configuration — copying their settings file wholesale
+  would drag their hooks and permission rules into every agent and quietly break it.
+- **Mode 0600** on the copied credentials, and `seed/home/` itself 0700.
+- **Refuse when `HARNESS_ROOT` resolves inside `~/.claude`** before reading anything — `hx.root`
+  already does this, just make sure the flag's code path goes through it.
+- Without the flag, nothing reads `~/.claude` at all: `hx install` runs
+  `CLAUDE_CONFIG_DIR=$HARNESS_ROOT/seed/home claude` once, interactively, and that is the only
+  home a human ever types into.
+
+`docs/deploy.md` step 3 describes this to the user in exactly these terms ("It **reads** that
+directory and never writes to it"), so if you implement it differently, tell me and I will
+change the doc rather than let it be wrong.
+
+### 5. Steps 2, 4 and 6, for completeness
+
+- **Step 2** (skeleton) is done and unchanged; `install_skeleton` already copies
+  `templates/worker/` and the rest.
+- **Step 4** (`hx repo add`) needs nothing from me. `docs/deploy.md` and `docs/two-worlds.md`
+  document the sparse checkout as `git sparse-checkout set --no-cone '/*' '!/.claude/'` and
+  `keep_claude_dir: true` as the opt-out, per spec 17.3.
+- **Step 6** is `hx launch partner` then printing `tmux attach -t partner`. `docs/deploy.md`
+  ends on exactly that line, and tells the human that if the Partner ever asks them to run an
+  hx command, that is the Partner's job.
