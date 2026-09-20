@@ -6,7 +6,7 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 |---|---|---|
 | `hx launch <id>` | Partner, `hx up` | Idempotent. Create worktree (not for `partner`) and `-idle` work item if missing; run `install.sh` (writes `run/<id>/home/` settings: hooks with id baked in, bypass permissions, instruction-files mode `claude-md`, `claudeMdExcludes`; seeds credentials and the bypass acceptance from the harness user's `~/.claude`); `tmux new-session -d -s <id>` with `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR=run/<id>/home`; run `start.sh` in window `main` (derives `run/<id>/persona.md`, launches bare); run `hx companion <id>` in window `companion`. If the item is already `working` (relaunch after a reboot), `hx goal <id>` once the pane is ready |
 | `hx install` | Human, once | 17-packaging.md 17.2: checks, instance skeleton, seed login, repo mirror, boot and heartbeat units, `hx launch partner` |
-| `hx doctor` | Partner, `hx up` | Check tmux, git, the pinned `claude` binary and version, seed credentials, every home's settings, mirror reachability; exit 1 with the list |
+| `hx doctor` | Partner, `hx up` | Check tmux, git, the pinned `claude` binary and version, `seed/token` present and mode 0600, every home's settings, mirror reachability; exit 1 with the list |
 | `hx repo add <url\|path>` | `hx install`, Partner | Bare mirror at `repos/<name>.git`; `config/repo.json` |
 | `hx push <id>` | Partner, on instruction | `git push upstream agent/<id>` from the mirror; the only command that touches the user's remote |
 | `hx show <id> [--json]` | Partner, UI | Work item, step state, context file, stream tails, metrics, subagent handles for one id |

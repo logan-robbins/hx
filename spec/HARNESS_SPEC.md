@@ -62,6 +62,7 @@ Each file is one section. Edit one file per change; cross-references use file na
 | Background completions from before a `/clear` are delivered into the new conversation as task notifications | Confirmed by live test | E5 |
 | Messaging socket and token are per process, unchanged across `/clear`; a message to a busy session is folded into the in-flight turn; wire format is an auth line then `{"type":"user","message":{"role":"user","content":"…"}}` | Confirmed by live test | E6 |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` governs subagent compaction; `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` alone does nothing on a model with no native autocompact buffer | Confirmed by live test | E8 |
+| On macOS Claude Code stores the login in the login Keychain (`Claude Code-credentials`), not in `.credentials.json`; a fresh `CLAUDE_CONFIG_DIR` is not logged in. Headless auth is `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | Keychain and fresh-dir behaviour confirmed by live probe 2026-09-20 (build lane); the env var and `setup-token` to be re-verified against `docs/en/` by build-3 | build-3 |
 <!-- END 01-terminology.md -->
 
 <!-- BEGIN 02-decisions.md -->
@@ -93,7 +94,7 @@ Each file is one section. Edit one file per change; cross-references use file na
 $HARNESS_ROOT/                             # the instance (default /srv/hx on a server, ~/hx on a workstation); config/ is the part worth committing
   bin/hx                                   # CLI (08-hx-cli.md); the installed package's entry point, path recorded in config/hx.json
   bin/hx-hook                              # hook entrypoint (09-hooks.md)
-  adapters/claude/install.sh               # writes per-id hook/config files; seeds credentials + bypass acceptance from the harness user's ~/.claude
+  adapters/claude/install.sh               # writes per-id hook/config files and the bypass acceptance; copies no credentials
   adapters/claude/start.sh                 # derives run/<id>/persona.md, launches Claude Code bare from harness.json
   templates/work-item.md
   companion/BASE.md                        # shared companion system prompt
@@ -120,7 +121,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
   run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
   run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)
-  run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), credentials, auto memory, transcripts
+  run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), auto memory, transcripts; auth comes from seed/token via env
   run/<id>/subagents.json                  # {"<harness agent_id>": "sNNN"}
   run/<id>/turn                            # turn-end marker with last background_tasks
   run/<id>/goal                            # goal-sent marker with ts
@@ -129,7 +130,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   run/partner/socket.json                  # Partner messaging socket + token, rewritten at every SessionStart
   run/tasks.lock                           # flock target
   run/ui-token                             # UI bearer token, mode 0600
-  seed/home/                               # the one home a human logs into; credentials copied from here into every run/<id>/home
+  seed/token                               # long-lived OAuth token from `claude setup-token`, pasted by the human once, mode 0600; exported as CLAUDE_CODE_OAUTH_TOKEN into every agent env. No Keychain or ~/.claude is ever read
   repos/<name>.git                         # bare mirror of the product repo; agent branches live here, never upstream until pushed
   wt/<id>/                                 # sparse worktree per HarnessAgent from the mirror, without the repo's .claude/ (none for partner)
 ```
@@ -217,7 +218,7 @@ Model id strings are placeholders until implementation; they are validated again
 - `companion.state_budget_tokens` bounds the step state and therefore the context file. Target is roughly 10k tokens: the hypothesis under test is that one intelligently constructed file holding the complete useful memory of the task fits in context and yields maximum quality, so this number is a tuning knob, not a ceiling.
 - `companion.seam_*` are the seam policy: the Companion does not declare a seam before `seam_min_context_tokens` are in use, nor more often than `seam_min_interval_s`. Context size comes from the `usage` block of the latest assistant record in the transcript, which `hx-hook` has the path to. The `models.json` threshold is the hard trigger that does not wait for a step to close.
 - The Companion learns everything it needs about its HarnessAgent (id, role, pod, budgets, seam policy, persona) from a system prompt hx composes at Companion start from this file, `companion/BASE.md`, and `companion/roles/<role>.md`. It does not read config at runtime.
-- `adapters/claude/install.sh` derives the per-agent home settings from this file: hooks with the id baked in, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` for the product repo, the bypass acceptance entry; for the Partner, `crossSessionInbound: accept` (messaging itself is on by default). It then seeds the home's credentials and the bypass acceptance entry from the harness user's own `~/.claude`, logged in once at system setup; both stay in `run/<id>/home/` across dispatches. Nothing about launch is interactive. Effort, model, and the persona file are launch flags (`11-adapters.md`); no compaction env vars are set.
+- `adapters/claude/install.sh` derives the per-agent home settings from this file: hooks with the id baked in, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` for the product repo, the bypass acceptance entry; for the Partner, `crossSessionInbound: accept` (messaging itself is on by default). It then writes the bypass acceptance entry directly; auth is the token in `seed/token`, exported into the agent's environment by `start.sh`, so no credentials are copied from anywhere; both stay in `run/<id>/home/` across dispatches. Nothing about launch is interactive. Effort, model, and the persona file are launch flags (`11-adapters.md`); no compaction env vars are set.
 - Validate: `id` equals directory name; `model` exists in `models.json`; `role` has `companion/roles/<role>.md`; `workdir` exists (Partner: no `workdir`, no `branch`). On failure, exit 2.
 - Partner: `"pod": "partner"`, `"role": "partner"`. Validated the same way.
 <!-- END 05-configuration.md -->
@@ -405,7 +406,7 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 |---|---|---|
 | `hx launch <id>` | Partner, `hx up` | Idempotent. Create worktree (not for `partner`) and `-idle` work item if missing; run `install.sh` (writes `run/<id>/home/` settings: hooks with id baked in, bypass permissions, instruction-files mode `claude-md`, `claudeMdExcludes`; seeds credentials and the bypass acceptance from the harness user's `~/.claude`); `tmux new-session -d -s <id>` with `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR=run/<id>/home`; run `start.sh` in window `main` (derives `run/<id>/persona.md`, launches bare); run `hx companion <id>` in window `companion`. If the item is already `working` (relaunch after a reboot), `hx goal <id>` once the pane is ready |
 | `hx install` | Human, once | 17-packaging.md 17.2: checks, instance skeleton, seed login, repo mirror, boot and heartbeat units, `hx launch partner` |
-| `hx doctor` | Partner, `hx up` | Check tmux, git, the pinned `claude` binary and version, seed credentials, every home's settings, mirror reachability; exit 1 with the list |
+| `hx doctor` | Partner, `hx up` | Check tmux, git, the pinned `claude` binary and version, `seed/token` present and mode 0600, every home's settings, mirror reachability; exit 1 with the list |
 | `hx repo add <url\|path>` | `hx install`, Partner | Bare mirror at `repos/<name>.git`; `config/repo.json` |
 | `hx push <id>` | Partner, on instruction | `git push upstream agent/<id>` from the mirror; the only command that touches the user's remote |
 | `hx show <id> [--json]` | Partner, UI | Work item, step state, context file, stream tails, metrics, subagent handles for one id |
@@ -578,12 +579,12 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 <!-- BEGIN 11-adapters.md -->
 ## 11. Claude Code adapter
 
-`adapters/claude/install.sh <id>` writes the per-agent home and hook wiring from `09-hooks.md` and seeds credentials and bypass acceptance from the harness user's `~/.claude`; `adapters/claude/start.sh <id>` derives the persona file and launches Claude Code bare in window `<id>:main`. The adapter is launchable once the M2–M6 suites pass under it (`13-build-order.md`).
+`adapters/claude/install.sh <id>` writes the per-agent home and hook wiring from `09-hooks.md` and writes the bypass acceptance; it copies no credentials; `adapters/claude/start.sh <id>` derives the persona file and launches Claude Code bare in window `<id>:main`. The adapter is launchable once the M2–M6 suites pass under it (`13-build-order.md`).
 
 | Item | Claude Code |
 |---|---|
 | Config home | `CLAUDE_CONFIG_DIR=/srv/hx/run/<id>/home` in the tmux session env. `install.sh` writes `home/settings.json` (hooks with `--id <id>` baked in, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` for the product repo's `CLAUDE.md`/`AGENTS.md`) and `home/CLAUDE.md` as a copy of `config/CLAUDE.md`. No `.claude/` in the worktree |
-| Auth | Credentials are per home. The human logs the harness user's default `~/.claude` in once at system setup; `install.sh` copies its credentials file and writes the bypass acceptance entry into each `run/<id>/home/`, so no launch is ever interactive. Both survive every dispatch wipe (`08-hx-cli.md`). `start.sh` refuses to launch a home without them. Live experiments hit exactly this gap |
+| Auth | One long-lived OAuth token for the whole instance. The human runs `claude setup-token` once (interactive, human-only) and pastes the result into `$HARNESS_ROOT/seed/token` (mode 0600). `start.sh` exports it as `CLAUDE_CODE_OAUTH_TOKEN` in every agent's tmux session env; agent homes hold no credentials file. hx never reads the user's `~/.claude`, credentials file, or macOS Keychain (where Claude Code stores logins on macOS; confirmed 2026-09-20: a fresh `CLAUDE_CONFIG_DIR` is not logged in). `install.sh` and `start.sh` refuse when `seed/token` is missing or not mode 0600. Nothing about launch is interactive |
 | Permissions | Bypass, always: `--dangerously-skip-permissions` at launch. The harness user is non-root (Claude Code refuses the flag under root/sudo). `permissions.defaultMode` is not used: it is ignored in project/local scope and would silently degrade to manual |
 | Persona | `--append-system-prompt-file /srv/hx/run/<id>/persona.md`. `start.sh` derives the file from `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY` at every launch. The persona is therefore in the system prompt of every turn, survives compaction and `/clear`, and costs no read. Interactive-mode flag; the subagent variant exists only under `-p`, so subagents keep the hook path to their context file |
 | Initial prompt | Never. Claude Code is launched bare; every instruction arrives as the `/goal` pointer pasted by `hx goal` or as a file path from a hook |
@@ -641,7 +642,7 @@ pytest, temp `HARNESS_ROOT` fixtures, hook JSON piped into stdin, recorded raw l
 | M7 | Companion replay eval | From recorded logs, seam at 5 points per task; a fresh HarnessAgent continues from each context file without re-reading files noted in `working_set` or repeating dead ends. Record via `hx metrics`: tool calls in the first 10 turns after each seam, split into Reads of noted files vs. other; Reads of the context file per seam (must be 1) |
 | M8 | End-to-end: Partner + 2 HarnessAgents with subagents | Human tells the Partner what to do in its tmux session → the Partner writes `orders/partner.md` and dispatches itself → decompose → one `hx dispatch` with an `after` chain → work with subagents → seams → one item ends `decision`, the human answers, `hx resume` continues it from its step state → all complete with Digest → Partner wakes → read → `PARTNER.md` update → bench → Partner's `hx complete done` passes `hx board --require-done` and it reports in chat; the human runs no hx command at any point; `hx board` exits 0 throughout; same metrics as M7 recorded per seam |
 | M9 | UI (`16-ui.md`) | Board, agent, Partner, orders, archive views render from `hx board --json` and `hx show --json` fixtures; SSE fires within 1 s of a file change; a message from the Partner page arrives in the Partner pane; no endpoint mutates instance state |
-| M10 | Packaging (`17-packaging.md`) | `uv tool install` from a wheel; `hx install` on a clean macOS and Linux user creates the instance, seeds every home from `seed/home`, mirrors a repo, cuts a sparse worktree without `.claude/`, installs the boot and heartbeat units; the user's `~/.claude`, checkout, and remote are byte-identical before and after a full M8 run; `hx upgrade` refuses a `claude` version the live suite has not passed on |
+| M10 | Packaging (`17-packaging.md`) | `uv tool install` from a wheel; `hx install` on a clean macOS and Linux user creates the instance, exports the token from `seed/token` into every agent environment, mirrors a repo, cuts a sparse worktree without `.claude/`, installs the boot and heartbeat units; the user's `~/.claude`, checkout, and remote are byte-identical before and after a full M8 run; `hx upgrade` refuses a `claude` version the live suite has not passed on |
 
 **M3 tests** (all under bypass permissions):
 
@@ -699,7 +700,7 @@ Nothing here is an option. Each row is a decision already written into the named
 | D17 | `after` dependencies: unmet → `queued`; `hx complete done` promotes dependents; readiness is `tasks.json[dep].outcome == done` | `06-work-items.md`, `08-hx-cli.md` | M1, M8 |
 | D19 | A goal owed to a busy pane is delivered by the `stop` hook from `run/<id>/goal-pending` at the end of that turn; from an idle pane `hx goal` pastes after the prompt appears | `08-hx-cli.md` `hx goal`, `09-hooks.md` `stop` | M6 |
 | D20 | Package and instance are separate: `hx` is a zero-dependency Python package; `HARNESS_ROOT` is the user's instance; upgrades write into an instance only through `hx upgrade` | `17-packaging.md` 17.1, 17.6 | M10 |
-| D21 | Isolation from the user's Claude is by config dir, sparse worktree without the repo's `.claude/`, seed-home credentials, and a pinned binary with the autoupdater off; the user's `~/.claude` is never written | `17-packaging.md` 17.3, `11-adapters.md` | M10 |
+| D21 | Isolation from the user's Claude is by config dir, sparse worktree without the repo's `.claude/`, a seed token in the agent environment, and a pinned binary with the autoupdater off; the user's `~/.claude` is never written | `17-packaging.md` 17.3, `11-adapters.md` | M10 |
 | D22 | The product repo is mirrored bare; worktrees and agent branches live in the mirror; nothing reaches the user's checkout or remote until `hx push` on instruction | `17-packaging.md` 17.2 | M10 |
 | D23 | Skills `hx-partner` and `hx-worker` are installed into each agent home from the package; autodev's operator and GM skills are dropped; nothing is linked into `~/.claude/skills` | `17-packaging.md` 17.5 | M10 |
 | D24 | The UI observes only: SSE on file mtimes, `hx board --json` and `hx show --json` as the data layer, chat through `hx wake partner` with replies from pane capture | `16-ui.md` | M9 |
@@ -843,7 +844,7 @@ Two things exist and are never mixed.
 
 1. Refuse root. Check `tmux`, `git`, Python ≥ 3.14, and the `claude` binary; record `{bin, version}` in `config/claude.json`. The version must be in the package's tested list (the list the M6 live suite last passed on); otherwise install stops and says which version to install.
 2. Create `HARNESS_ROOT` from the skeleton: `config/CLAUDE.md`, `config/models.json`, `config/partner/{AGENTS.md,SUBAGENTS.md,harness.json}`, `companion/`, `templates/`, empty `orders/`, `pods/partner/`.
-3. **Seed login.** Run `CLAUDE_CONFIG_DIR=$HARNESS_ROOT/seed/home claude` once, interactively, for the login and the bypass acceptance; `seed/home` is the only home a human ever types into. `--from-user-config` copies credentials from `~/.claude` instead, for a user who does not want a second login. Every agent home is seeded from `seed/home` by `install.sh` (`11-adapters.md` Auth).
+3. **Seed token.** Print the two steps the human performs: run `claude setup-token` (their own Claude, interactive) and paste the token into `$HARNESS_ROOT/seed/token`; `hx install` then sets mode 0600 and stops with exit 4 until the file exists. There is no `--from-user-config`: hx reads nothing from `~/.claude`, on any platform.
 4. **Mirror the product repo.** `hx repo add <url|path>` creates a bare mirror at `repos/<name>.git` fetched from upstream and records it in `config/repo.json` (`{name, upstream, base_branch, keep_claude_dir: false}`). Worktrees are cut from the mirror at `wt/<id>`; agent branches `agent/<id>` exist only in the mirror. The user's checkout and remote see nothing until the Partner is ordered to push (`hx push <id>` runs `git push upstream agent/<id>` from the mirror). This is the "without messing with the project upstream" guarantee: hx writes nothing into the user's checkout, adds nothing to their repo, and pushes nothing unasked.
 5. Install the boot and heartbeat units: launchd plist on macOS (`hx up` at login, heartbeat `StartInterval` 900), systemd user unit plus timer on Linux. Both call the recorded binary path.
 6. `hx launch partner`; print `tmux attach -t partner`.
@@ -861,7 +862,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Skills | The user's `~/.claude/skills` | `home/skills/hx-partner` or `home/skills/hx-worker` only |
 | CLAUDE.md | The user's and the repo's | `config/CLAUDE.md` only; the repo's is excluded |
 | Memory and transcripts | The user's, accumulating | Per home, wiped at every dispatch |
-| Credentials | The user's | A copy from `seed/home`, refreshed independently |
+| Credentials | The user's login (macOS Keychain or `~/.claude/.credentials.json`) | A long-lived token in `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`; the user's login is never read |
 | Permissions | Whatever the user chose | Bypass, always |
 | Working dir | The user's checkout | `wt/<id>`, a sparse worktree from the mirror, without the repo's `.claude/` |
 | System prompt | Default | Default + `run/<id>/persona.md` |

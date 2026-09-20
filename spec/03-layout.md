@@ -4,7 +4,7 @@
 $HARNESS_ROOT/                             # the instance (default /srv/hx on a server, ~/hx on a workstation); config/ is the part worth committing
   bin/hx                                   # CLI (08-hx-cli.md); the installed package's entry point, path recorded in config/hx.json
   bin/hx-hook                              # hook entrypoint (09-hooks.md)
-  adapters/claude/install.sh               # writes per-id hook/config files; seeds credentials + bypass acceptance from the harness user's ~/.claude
+  adapters/claude/install.sh               # writes per-id hook/config files and the bypass acceptance; copies no credentials
   adapters/claude/start.sh                 # derives run/<id>/persona.md, launches Claude Code bare from harness.json
   templates/work-item.md
   companion/BASE.md                        # shared companion system prompt
@@ -31,7 +31,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
   run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
   run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)
-  run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), credentials, auto memory, transcripts
+  run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), auto memory, transcripts; auth comes from seed/token via env
   run/<id>/subagents.json                  # {"<harness agent_id>": "sNNN"}
   run/<id>/turn                            # turn-end marker with last background_tasks
   run/<id>/goal                            # goal-sent marker with ts
@@ -40,7 +40,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   run/partner/socket.json                  # Partner messaging socket + token, rewritten at every SessionStart
   run/tasks.lock                           # flock target
   run/ui-token                             # UI bearer token, mode 0600
-  seed/home/                               # the one home a human logs into; credentials copied from here into every run/<id>/home
+  seed/token                               # long-lived OAuth token from `claude setup-token`, pasted by the human once, mode 0600; exported as CLAUDE_CODE_OAUTH_TOKEN into every agent env. No Keychain or ~/.claude is ever read
   repos/<name>.git                         # bare mirror of the product repo; agent branches live here, never upstream until pushed
   wt/<id>/                                 # sparse worktree per HarnessAgent from the mirror, without the repo's .claude/ (none for partner)
 ```

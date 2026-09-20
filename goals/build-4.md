@@ -9,15 +9,13 @@ and version), 08 (`hx repo add`, `hx push`, `hx upgrade`, `hx launch` worktree c
 
 ## Build
 
-1. `hx install --root <root> [--from-user-config <dir>]`: step 1 refuse root, check `tmux`,
+1. `hx install --root <root>`: step 1 refuse root, check `tmux`,
    `git`, Python ≥ 3.14, find `claude` on `PATH` (or `--claude <bin>`), bare version must be in
    `src/hx/packaging/tested-claude-versions.json` else stop and say which to install; write
-   `config/claude.json` and `config/hx.json`. Step 2 skeleton (exists). Step 3 seed: with
-   `--from-user-config <dir>` copy exactly `.credentials.json` (hard error if absent) and merge
-   the bypass acceptance key into `seed/home/settings.json` (warn if absent), read-only on the
-   source, `<dir>` may never be under `HARNESS_ROOT`; without the flag, print the exact command
-   the human runs to log the seed home in (`CLAUDE_CONFIG_DIR=<root>/seed/home <claude>` then
-   `/login`) and stop with exit 4 until `seed/home/.credentials.json` exists. Step 4 `hx repo add`
+   `config/claude.json` and `config/hx.json`. Step 2 skeleton (exists). Step 3 seed token: print the two
+   human steps (`claude setup-token`, paste into `<root>/seed/token`), set mode 0600 when the
+   file appears, and stop with exit 4 until it exists. No `--from-user-config`; hx reads nothing
+   from `~/.claude` or the Keychain. Step 4 `hx repo add`
    if `--repo` given. Step 5 render the five unit templates from `src/hx/packaging/` with
    literal replacement into `~/Library/LaunchAgents` or `~/.config/systemd/user` of the current
    `HOME`, never enabling or loading them (print the `launchctl`/`systemctl --user` commands the

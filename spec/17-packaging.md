@@ -13,7 +13,7 @@ Two things exist and are never mixed.
 
 1. Refuse root. Check `tmux`, `git`, Python ≥ 3.14, and the `claude` binary; record `{bin, version}` in `config/claude.json`. The version must be in the package's tested list (the list the M6 live suite last passed on); otherwise install stops and says which version to install.
 2. Create `HARNESS_ROOT` from the skeleton: `config/CLAUDE.md`, `config/models.json`, `config/partner/{AGENTS.md,SUBAGENTS.md,harness.json}`, `companion/`, `templates/`, empty `orders/`, `pods/partner/`.
-3. **Seed login.** Run `CLAUDE_CONFIG_DIR=$HARNESS_ROOT/seed/home claude` once, interactively, for the login and the bypass acceptance; `seed/home` is the only home a human ever types into. `--from-user-config` copies credentials from `~/.claude` instead, for a user who does not want a second login. Every agent home is seeded from `seed/home` by `install.sh` (`11-adapters.md` Auth).
+3. **Seed token.** Print the two steps the human performs: run `claude setup-token` (their own Claude, interactive) and paste the token into `$HARNESS_ROOT/seed/token`; `hx install` then sets mode 0600 and stops with exit 4 until the file exists. There is no `--from-user-config`: hx reads nothing from `~/.claude`, on any platform.
 4. **Mirror the product repo.** `hx repo add <url|path>` creates a bare mirror at `repos/<name>.git` fetched from upstream and records it in `config/repo.json` (`{name, upstream, base_branch, keep_claude_dir: false}`). Worktrees are cut from the mirror at `wt/<id>`; agent branches `agent/<id>` exist only in the mirror. The user's checkout and remote see nothing until the Partner is ordered to push (`hx push <id>` runs `git push upstream agent/<id>` from the mirror). This is the "without messing with the project upstream" guarantee: hx writes nothing into the user's checkout, adds nothing to their repo, and pushes nothing unasked.
 5. Install the boot and heartbeat units: launchd plist on macOS (`hx up` at login, heartbeat `StartInterval` 900), systemd user unit plus timer on Linux. Both call the recorded binary path.
 6. `hx launch partner`; print `tmux attach -t partner`.
@@ -31,7 +31,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Skills | The user's `~/.claude/skills` | `home/skills/hx-partner` or `home/skills/hx-worker` only |
 | CLAUDE.md | The user's and the repo's | `config/CLAUDE.md` only; the repo's is excluded |
 | Memory and transcripts | The user's, accumulating | Per home, wiped at every dispatch |
-| Credentials | The user's | A copy from `seed/home`, refreshed independently |
+| Credentials | The user's login (macOS Keychain or `~/.claude/.credentials.json`) | A long-lived token in `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`; the user's login is never read |
 | Permissions | Whatever the user chose | Bypass, always |
 | Working dir | The user's checkout | `wt/<id>`, a sparse worktree from the mirror, without the repo's `.claude/` |
 | System prompt | Default | Default + `run/<id>/persona.md` |

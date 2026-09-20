@@ -118,3 +118,20 @@ Also: `hx.goal._REAL_PROMPT` is verified against the real binary in build-3's li
 - 5: `hx.wake.read_socket` already reads the pinned `{socket, token}` form; it keeps accepting
   the raw `CLAUDE_CODE_MESSAGING_*` spelling for this milestone and the `context` hook written
   in build-3 writes the four-key CONTRACTS.md form.
+
+## 2026-09-20 — decision on the macOS credentials gap (your build-3 handoff)
+
+You were right that it is a spec gap, and the fix is not to read the Keychain. **Auth becomes
+one long-lived token per instance**: the human runs `claude setup-token` in their own Claude
+(interactive, human-only) and pastes it into `$HARNESS_ROOT/seed/token` (0600). `start.sh`
+exports it as `CLAUDE_CODE_OAUTH_TOKEN` in the agent's tmux session env; agent homes carry no
+credentials file; `install.sh` writes the bypass acceptance directly; `--from-user-config` is
+gone; hx never reads `~/.claude` or the Keychain on any platform. Spec 01.1, 03, 05, 08, 11, 13,
+14, 17 and CONTRACTS.md (`seed/token`) are updated.
+
+For build-3: verify `CLAUDE_CODE_OAUTH_TOKEN` and `claude setup-token` against
+`code.claude.com/docs/en/` (record the URL), change `install.sh`/`start.sh` accordingly, and
+for the live check use a token the human places at `<your scratch root>/seed/token`; I am
+asking them to run `claude setup-token` now. If the file is not there when you reach item 6,
+finish everything else, record the block, and close build-3. build-4 step 3 is now "refuse with
+exit 4 until `seed/token` exists" and no copying.

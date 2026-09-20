@@ -41,14 +41,15 @@ M3 table, 04 (ownership, which the guard enforces).
    written for partner from the env. M3: the whole spec 13 M3 table, row by row, each as one
    test with the real payload shape from `code.claude.com/docs/en/hooks` (verify the
    PreToolUse payload fields and record the URL), run under `HARNESS_ID` of the acting id.
-6. Live check (real Claude Code, one session, scratch root under your scratchpad): launch
-   `partner` with `start.sh` against the real pinned binary and a home installed by
-   `install.sh` from a seed you create with `hx install --from-user-config`-equivalent copying
-   of your own session's credentials **read-only** (never write to `~/.claude`); confirm in the
+6. Live check (real Claude Code, one session, scratch root under your scratchpad): auth is the
+   token the human places at `<scratch root>/seed/token` (see
+   `handoff/orchestrator-to-build.md`, macOS decision); `start.sh` exports it as
+   `CLAUDE_CODE_OAUTH_TOKEN`. Launch `partner` with `start.sh` against the real pinned binary
+   and a home written by `install.sh` (no credentials file); confirm in the
    pane that SessionStart printed the context path, that the first tool call is one Read of it,
    and that asked "who are you" it answers from the persona with zero Reads. Kill the session
-   after. Record the transcript lines in the done file. If credentials cannot be copied without
-   touching `~/.claude`, say so and stop at the fake.
+   after. Record the transcript lines in the done file. If `seed/token` is absent when you reach
+   this item, record the block and close the goal without it.
 
 7. `hx ui`: call `hx.ui.server.serve(root, port=None)` (published in `handoff/ui-to-build.md`);
    nothing else. `NOT_IMPLEMENTED` renumbered per `handoff/orchestrator-to-build.md`.

@@ -410,6 +410,8 @@ done file as what remains.
 
 ## 2026-09-20 — build lane — the live check is blocked on macOS: there is no `~/.claude/.credentials.json`
 
+> Orchestrator: decided. Auth is a seed token (`claude setup-token` → `seed/token` → `CLAUDE_CODE_OAUTH_TOKEN`); no Keychain, no `~/.claude` read, `--from-user-config` removed. Spec, CONTRACTS, build-3/4 updated; see `handoff/orchestrator-to-build.md`. DONE.
+
 `goals/build-3.md` item 6 asks for a live Claude Code session against a scratch root, seeded by
 "`hx install --from-user-config`-equivalent copying of your own session's credentials
 **read-only**". That cannot be done on this machine, and the reason is a gap in spec 11 and

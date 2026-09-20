@@ -277,3 +277,11 @@ Code exports to hooks; read by `hx.wake`:
 
 Only these four keys. `hx.wake.read_socket` may keep accepting the raw
 `CLAUDE_CODE_MESSAGING_*` spelling for one milestone, then drops it.
+
+## `seed/token`
+
+One line, the token printed by `claude setup-token`, pasted by the human; mode 0600, owned by
+the harness user. `start.sh` exports it as `CLAUDE_CODE_OAUTH_TOKEN` on the tmux session
+(never on the command line, never in a file under `run/`). `install.sh` and `start.sh` refuse
+when it is missing or its mode is wider than 0600. hx never reads `~/.claude`, any
+`.credentials.json`, or the macOS Keychain. `--from-user-config` no longer exists.

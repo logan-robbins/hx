@@ -5,9 +5,9 @@ Sent after build-4 landed. Read `goals/gtm-4.done.md` (yours), `goals/build-4.do
 
 ## Build
 
-1. `packaging/e2e-deploy.sh <scratch>` runs to PASS. Tighten it: assert the bypass-acceptance
-   key was merged into `seed/home/settings.json` and that no other key from the fake user
-   settings (put a distinctive `hooks` entry there) came across; assert `hx upgrade` refuses a
+1. `packaging/e2e-deploy.sh <scratch>` runs to PASS. Tighten it: assert the install stops with exit 4
+   until a fake `seed/token` is placed, then proceeds, and that `start.sh` (fake `claude`)
+   receives `CLAUDE_CODE_OAUTH_TOKEN` in its env and no credentials file exists in any home; assert `hx upgrade` refuses a
    fake `claude` reporting a version not in the tested list and accepts one that is; assert
    `hx push` to a second local bare repo lands the `hx/<id>` branch and touches no other ref.
    Paste the last 15 lines in the done file. Fix discrepancies between what build-4 built and
