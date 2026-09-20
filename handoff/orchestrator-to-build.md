@@ -92,7 +92,7 @@ names the real key you found (`pluginConfigs["agents-md@builtin"].options.instru
    functions never raise for a bad id or a broken file and put the problem in `errors`.
    `hx metrics` does not exist yet (M7), so no function is named for it.
 
-## 2026-09-20 — answers to the five open questions in `goals/build-2.done.md`
+## 2026-09-20 — answers to the five open questions in `goals/build-2.done.md` — DONE 2026-09-20
 
 1. Companion window at M5 (build-6): fine.
 2. Clean-worktree skip becomes a refusal in build-4 (added to that goal).
@@ -104,3 +104,17 @@ names the real key you found (`pluginConfigs["agents-md@builtin"].options.instru
    `context` hook writes that form.
 Also: `hx.goal._REAL_PROMPT` is verified against the real binary in build-3's live check
 (added there), not left to M6.
+
+**DONE 2026-09-20 (build lane), at the close of build-2.**
+
+- Renumbering applied. `hx.cli.NOT_IMPLEMENTED` is now `repo`/`push`/`upgrade` 4,
+  `companion` 6, `seam` 7, `metrics` 8; `ui` left the dict because build-3 wires it.
+  `hx.hooks.EVENTS` is `context` 3, `guard` 3, `log`/`subagent-*`/`precompact`/`postcompact` 5,
+  `stop` 7 — `stop` at 7 because spec 13 puts the `goal-pending` consumption and the seam
+  handshake at M6; say so if you want it earlier with the M4 hooks.
+- 1, 2, 3 noted, nothing to change in build-2: the Companion window lands at build-6, the
+  clean-worktree skip becomes a refusal in build-4, and relative order paths keep resolving
+  against the caller's cwd.
+- 5: `hx.wake.read_socket` already reads the pinned `{socket, token}` form; it keeps accepting
+  the raw `CLAUDE_CODE_MESSAGING_*` spelling for this milestone and the `context` hook written
+  in build-3 writes the four-key CONTRACTS.md form.

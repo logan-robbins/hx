@@ -12,17 +12,18 @@ from __future__ import annotations
 import argparse
 import sys
 
-#: The hx event vocabulary of spec 09.1, and the build goal that delivers each.
+#: The hx event vocabulary of spec 09.1, and the build goal that delivers each
+#: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
 EVENTS = {
     "context": 3,
-    "guard": 4,
+    "guard": 3,
     "log": 5,
     "subagent-start": 5,
     "subagent-stop": 5,
     "subagent-result": 5,
-    "stop": 5,
     "precompact": 5,
     "postcompact": 5,
+    "stop": 7,
 }
 
 

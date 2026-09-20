@@ -233,14 +233,19 @@ page and spec 01.1's live test E6.
    is right for the Partner, whose cwd *is* `HARNESS_ROOT` (spec 17.4), and it is what the
    acceptance run above exercises. Anything invoking `hx dispatch` from elsewhere must pass an
    absolute path. Say so if you would rather relative paths resolved against the root.
-4. **`NOT_IMPLEMENTED` numbers after build-4.** I set `repo`, `push` and `upgrade` to `4` per
-   the plan change. `companion` (6), `seam` (7), `metrics` (8) and `ui` (10) are still the old
-   milestone+1 numbers and are now probably wrong, since build-3 covers two milestones. They
-   are one dict in `cli.py`; tell me the numbers and I will set them.
-5. **`run/partner/socket.json` keys are not in CONTRACTS.md.** `hx.wake.read_socket` accepts
-   both `{"socket", "token"}` and `{"CLAUDE_CODE_MESSAGING_SOCKET",
-   "CLAUDE_CODE_MESSAGING_TOKEN"}`, because the `context` hook (M2) writes what Claude Code
-   exported to it. Worth pinning in `CONTRACTS.md` before build-3 writes that hook.
+4. **`NOT_IMPLEMENTED` numbers after build-4.** **Answered and applied at close**: `ui` 3,
+   `repo`/`push`/`upgrade` 4, `log`/`subagent-*` 5, `companion`/`flush` 6, `seam` 7,
+   `metrics` 8, build-9 is M8. `hx.hooks.EVENTS` follows, with `stop` at 7 because spec 13
+   puts the `goal-pending` consumption and the seam handshake at M6.
+5. **`run/partner/socket.json` keys are not in CONTRACTS.md.** **Answered at close**: pinned as
+   `{socket, token, ts, session_id}`; the `context` hook (build-3) writes that form, and
+   `hx.wake.read_socket` keeps accepting the raw `CLAUDE_CODE_MESSAGING_*` spelling for one
+   milestone.
+
+Questions 1, 2 and 3 were answered as written above: the Companion window lands at build-6,
+the clean-worktree skip becomes a refusal in build-4, and relative order paths keep resolving
+against the caller's cwd. `hx.goal._REAL_PROMPT` is verified against the real binary in
+build-3's live check rather than left to M6.
 
 ## Handoff entries written
 

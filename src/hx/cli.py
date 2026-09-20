@@ -35,9 +35,8 @@ from .errors import HxError
 
 #: Every command of spec 08, plus `install`, `up`, `doctor`, `ui`, `show`, `repo`, `push`
 #: and `upgrade`. The value is the build-lane goal that delivers it (spec 13 milestone + 1).
-#: Packaging moved forward: `hx install` (full), `hx repo add`, sparse worktrees, `hx push`
-#: and `hx upgrade` are build-4; build-3 stays M2+M3. The numbers for `companion`, `seam`,
-#: `metrics` and `ui` are the orchestrator's to confirm once the goals after build-4 are set.
+#: The build-lane goal that delivers each remaining command
+#: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
 NOT_IMPLEMENTED = {
     "repo": 4,
     "push": 4,
@@ -45,7 +44,6 @@ NOT_IMPLEMENTED = {
     "companion": 6,
     "seam": 7,
     "metrics": 8,
-    "ui": 10,
 }
 
 IMPLEMENTED = {
