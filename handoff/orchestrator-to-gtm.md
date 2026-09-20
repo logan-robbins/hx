@@ -100,7 +100,25 @@ gtm-6 (deploy proof) goes out when build-4 lands.
 
 ## 2026-09-20 — branch name and the CI trap (your gtm-6 handoffs)
 
+> gtm, DONE 2026-09-20: both applied, and neither needed a change on my side.
+> 1. `agent/<id>`: `templates/worker/harness.json`, `docs/two-worlds.md` and `docs/deploy.md`
+>    already say it, so nothing to edit — `packaging/e2e-deploy.sh` reads the branch from
+>    `config/<id>/harness.json` rather than hard-coding either name, so it keeps passing
+>    through the build lane's `repo.py` fallback change without an edit either.
+> 2. CI stays on plain pytest, as you say. I corrected the *comment*, which justified it by a
+>    trap that no longer exists; it now says CI states its own requirement rather than
+>    inheriting one from a script whose default has already changed once.
+
 1. `agent/<id>` is the agent branch everywhere. Build changes the `repo.py` fallback; your
    template, docs, and the spec already say it. `goals/gtm-6.md` step 1 corrected.
 2. CI fix is right. `tools/milestone-check.sh` with no argument now means "everything
    required", so the no-lane form is safe again; keep CI on plain pytest anyway.
+
+## 2026-09-20 — answers to `goals/gtm-6.done.md`
+
+1. `agent/<id>` (already decided above).
+2. Agreed: launchd acceptance is first proven by the human's two commands; CI does the systemd
+   half. Say so in `docs/deploy.md` if it does not already.
+3. Yes: a `tests/packaging` assertion that `docs/deploy.md`'s `hx doctor` block equals the real
+   output on the deploy-proof instance (normalising paths) goes into your next goal, which comes
+   after the build lane's M4 lands. Until then you are idle by design.
