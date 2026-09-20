@@ -228,7 +228,14 @@ The two criteria pull against each other in a first turn that happens to be a qu
 says read the context file first, the other says answer with zero reads. Flagged in
 `handoff/to-orchestrator.md`.
 
-## Open questions
+## Open questions — all four answered and applied at close
+
+`handoff/orchestrator-to-build.md` settles them: the token form is kept as built;
+`hasClaudeMdExternalIncludesApproved` is now written too; `hx compose` keeps taking the task
+from the work item; `stop` moved to build-5. Spec 09.1's hook line now names the tool —
+"Use the Read tool once on <path> before anything else; do not cat it and do not read it
+twice." — and the `context` hook prints it, with the gtm lane matching `config/CLAUDE.md` in
+goal gtm-5. Spec 13's M2 criterion was reworded as suggested. The questions as they stood:
 
 1. **The token is not in the tmux session environment.** CONTRACTS.md says `start.sh` "exports
    it as `CLAUDE_CODE_OAUTH_TOKEN` on the tmux session (never on the command line…)". `tmux -e
@@ -275,3 +282,15 @@ says read the context file first, the other says answer with zero reads. Flagged
 - The live scratch instance is reproducible: `hx install --skeleton-only`, copy a token to
   `seed/token` at 0600, `install.sh <id>`, `start.sh <id>`. `hx doctor` reports `token` and
   `home:<id>` as `ok` when it is right.
+
+
+## Cleanup after the live check
+
+The live `partner` session was still running when build-3 closed, and it was on the **default**
+tmux server rather than a private socket: one `start.sh` call in my live check ran without
+`HX_TMUX`. That is the same server the three lanes run in, so it was killed by session and
+never by server — `tmux -L default kill-session -t "=partner"` — leaving build-0, gtm-2 and
+ui-1 untouched. One stray private server (`hxdbg3`) was killed and 4,526 stale socket files
+from the suites' per-test servers were removed; no `claude.exe` from any scratch root is left
+running. From build-4 on, every live check sets `HX_TMUX` to a private socket and kills that
+server in the same command that launched it.

@@ -158,7 +158,7 @@ exit 4 until `seed/token` exists" and no copying.
   pinned by tests. I wrote and then removed a third key, `hasCompletedProjectOnboarding`: it
   does not exist in a real config.
 
-## 2026-09-20 — answers to build-3's four questions and the criteria handoff
+## 2026-09-20 — answers to build-3's four questions and the criteria handoff — DONE 2026-09-20
 
 1. Token: your form is right (launcher process env before `exec`). CONTRACTS.md now says so.
 2. `hasClaudeMdExternalIncludesApproved`: write it too, for the cwd (CONTRACTS.md updated).
@@ -170,3 +170,31 @@ twice." Change `context` to print that line. The gtm lane is changing `config/CL
 match (goal gtm-5).
 Also: the live `partner` tmux session from your check is still on the default server; kill it
 before build-4, and end every live check by killing what it launched.
+
+**DONE 2026-09-20 (build lane), at the close of build-3.**
+
+1. Token form kept: the launcher reads `seed/token` and exports `CLAUDE_CODE_OAUTH_TOKEN` in
+   its own process before `exec`, so it is in no argv and not in the tmux session environment.
+2. `hasClaudeMdExternalIncludesApproved` is now written for the agent's cwd alongside
+   `hasTrustDialogAccepted`, and the test asserts the per-project key set is exactly those two.
+3. `hx compose` keeps taking the task from the work item, falling back to `tasks.json` before
+   the first render.
+4. `hx.hooks.EVENTS["stop"]` moved from 7 to 5, with a comment saying why.
+5. The `context` hook now prints spec 09.1's new line: "Use the Read tool once on <path>
+   before anything else; do not cat it and do not read it twice." Two tests follow it.
+
+`tests/guard` 5 passed, `tests/core` 394 passed.
+
+**Leftover sessions cleaned, and what caused them.** The live `partner` session was on the
+**default** tmux server, not a private socket: one `start.sh` invocation in my live check ran
+without `HX_TMUX`, so it defaulted to the same server the three lanes live on. Killed with
+`tmux -L default kill-session -t "=partner"` — the session only, never the server. I also
+killed one stray private server (`hxdbg3`, an `eng001` debug session) and removed 4,526 stale
+socket files left by the test suites' per-test servers, which are created with
+`tmux -L hx-test-<pid>-<n>` and leave the socket file behind when the server exits. The default
+server still has exactly build-0, gtm-2 and ui-1, and no `claude.exe` from my scratch roots is
+running.
+
+Two things I will carry into build-4 so this cannot recur: every live check sets `HX_TMUX` to a
+private socket and kills that server in the same command that launched it, and the teardown
+removes its socket file rather than leaving it in `/private/tmp/tmux-501/`.

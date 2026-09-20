@@ -36,7 +36,8 @@ EVENTS = {
     "subagent-result": 5,
     "precompact": 5,
     "postcompact": 5,
-    "stop": 7,
+    # The turn marker and the `goal-pending` consumption ship with the M4 batch (spec 13).
+    "stop": 5,
 }
 
 IMPLEMENTED = ("context", "guard")

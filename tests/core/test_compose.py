@@ -234,7 +234,10 @@ def test_the_hook_prints_exactly_one_path_line(instance, hx, launched, orders, t
     assert result.returncode == 0, result.stderr
     lines = [line for line in result.stdout.split("\n") if line.strip()]
     assert len(lines) == 1, f"expected one line, got {lines}"
-    assert lines[0] == f"Read {context_file(instance, 'eng-001')} before doing anything else."
+    assert lines[0] == (
+        f"Use the Read tool once on {context_file(instance, 'eng-001')} before anything else; "
+        f"do not cat it and do not read it twice."
+    )
     assert not lines[0].lstrip().startswith("{"), "never JSON, never a leading brace (spec 09.1)"
     assert context_file(instance, "eng-001").is_file()
 
@@ -371,7 +374,7 @@ def test_a_matching_harness_id_is_fine(instance, hx, launched, tmux_server):
     launched("eng-001")
     result = run_hook(instance, "eng-001", "context", {"source": "startup", "cwd": str(instance)},
                       tmux=tmux_server, harness_id="eng-001")
-    assert result.returncode == 0 and result.stdout.startswith("Read ")
+    assert result.returncode == 0 and result.stdout.startswith("Use the Read tool once on ")
 
 
 def test_an_unimplemented_event_names_its_build_goal(instance, hx, launched):

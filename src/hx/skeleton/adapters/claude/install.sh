@@ -159,6 +159,9 @@ project = projects.get(workdir)
 if not isinstance(project, dict):
     project = {}
 project["hasTrustDialogAccepted"] = True
+# A `config/CLAUDE.md` that uses `@path` imports would otherwise prompt for approval of
+# includes outside the project, which is a third interactive gate (CONTRACTS.md).
+project["hasClaudeMdExternalIncludesApproved"] = True
 projects[workdir] = project
 existing["projects"] = projects
 with open(config_json, "w") as handle:

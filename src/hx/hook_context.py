@@ -24,9 +24,13 @@ from . import compose as compose_mod, goal as goal_mod, store, streams, timestam
 from .ids import PARTNER
 from .workitems import find_work_item
 
-#: Spec 09.1, verbatim: "print one line to stdout: `Read <path> before doing anything else.`"
-#: Never JSON, never a leading brace — plain stdout is what `SessionStart` injects as context.
-CONTEXT_LINE = "Read {path} before doing anything else."
+#: Spec 09.1, verbatim. It names the *tool*, because a live agent read the file twice —
+#: `Bash cat` and then `Read` — when the line only named the action (build-3 live check).
+#: Never JSON, never a leading brace: plain stdout is what `SessionStart` injects as context.
+CONTEXT_LINE = (
+    "Use the Read tool once on {path} before anything else; "
+    "do not cat it and do not read it twice."
+)
 
 SOCKET_ENV = "CLAUDE_CODE_MESSAGING_SOCKET"
 TOKEN_ENV = "CLAUDE_CODE_MESSAGING_TOKEN"

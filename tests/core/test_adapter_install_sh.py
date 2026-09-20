@@ -287,8 +287,10 @@ def test_the_folder_trust_dialog_is_pre_accepted_for_the_agents_own_cwd(installe
     projects = config_json(installed, "eng-001")["projects"]
     workdir = str(installed / "wt" / "eng-001")
     assert projects[workdir]["hasTrustDialogAccepted"] is True
+    # A CLAUDE.md with `@path` imports would otherwise prompt for approval (CONTRACTS.md).
+    assert projects[workdir]["hasClaudeMdExternalIncludesApproved"] is True
     # Only keys that exist in a real config are written; nothing invented.
-    assert set(projects[workdir]) == {"hasTrustDialogAccepted"}
+    assert set(projects[workdir]) == {"hasTrustDialogAccepted", "hasClaudeMdExternalIncludesApproved"}
 
 
 def test_the_partners_trusted_directory_is_the_root(instance):
