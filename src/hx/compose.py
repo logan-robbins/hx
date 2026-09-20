@@ -90,8 +90,14 @@ def memory(root: Path, item_id: str, stream: str) -> tuple[str, str]:
     return _relative(root, path), path.read_text().strip("\n")
 
 
-def task(root: Path, item_id: str) -> tuple[str | None, str]:
-    """Section 2. The order as dispatched, plus every addendum `hx resume` appended."""
+def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[str | None, str]:
+    """Section 2. The order as dispatched, plus every addendum `hx resume` appended.
+
+    For a subagent stream it is the spawn prompt instead: that *is* its task, and the parent's
+    order is not its business (spec 07.3).
+    """
+    if subagent_prompt is not None:
+        return ("the spawn prompt" if subagent_prompt.strip() else None), subagent_prompt
     work_item = find_work_item(root, item_id)
     if work_item is not None:
         _, body = split_frontmatter_text(work_item.read_text())
@@ -245,7 +251,9 @@ def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
     return _relative(root, mapping_path), "\n".join(lines)
 
 
-def compose_text(root: Path, item_id: str, stream: str, *, env=None) -> str:
+def compose_text(
+    root: Path, item_id: str, stream: str, *, subagent_prompt: str | None = None, env=None
+) -> str:
     """The whole context file, sections in the order spec 07.3 fixes."""
     main = is_main_stream(item_id, stream)
     parts = [
@@ -259,7 +267,7 @@ def compose_text(root: Path, item_id: str, stream: str, *, env=None) -> str:
     source, text = memory(root, item_id, stream)
     parts.append(_section("Memory" if main else "Who your subagents are", source, text))
 
-    source, text = task(root, item_id)
+    source, text = task(root, item_id, None if main else (subagent_prompt or ""))
     parts.append(_section("Task", source, text))
 
     if main:
@@ -290,14 +298,18 @@ def compose_text(root: Path, item_id: str, stream: str, *, env=None) -> str:
     return "\n".join(parts).rstrip("\n") + "\n"
 
 
-def compose(root: Path, item_id: str, stream: str | None = None, *, env=None) -> Path:
+def compose(
+    root: Path, item_id: str, stream: str | None = None, *, subagent_prompt: str | None = None, env=None
+) -> Path:
     """Write the context file and return its path (spec 08 `hx compose`)."""
     root = Path(root)
     stream = stream or main_stream_name(item_id)
     if not (root / "config" / item_id).is_dir() and find_work_item(root, item_id) is None:
         raise NotFound(f"{item_id}: no work item and no config/{item_id}/; unknown id")
     path = context_path(root, item_id, stream)
-    store.atomic_write_text(path, compose_text(root, item_id, stream, env=env))
+    store.atomic_write_text(
+        path, compose_text(root, item_id, stream, subagent_prompt=subagent_prompt, env=env)
+    )
     return path
 
 

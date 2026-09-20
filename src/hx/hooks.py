@@ -20,7 +20,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import hook_context, hook_guard
+from . import hook_context, hook_guard, hook_log, hook_stop, hook_subagent
 from .errors import HxError
 from .ids import is_id
 from .root import resolve_root
@@ -40,7 +40,21 @@ EVENTS = {
     "stop": 5,
 }
 
-IMPLEMENTED = ("context", "guard")
+IMPLEMENTED = (
+    "context", "guard", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
+)
+
+#: The handlers that produce output on stdout, and what form it takes. `context` prints one
+#: plain line (SessionStart injects stdout); the two subagent hooks must return JSON, because
+#: plain stdout is not injected for them (spec 09.1, docs/en/hooks#subagentstart).
+_HANDLERS = {
+    "context": hook_context.handle,
+    "log": hook_log.handle,
+    "subagent-start": hook_subagent.start,
+    "subagent-stop": hook_subagent.stop,
+    "subagent-result": hook_subagent.result,
+    "stop": hook_stop.handle,
+}
 
 #: `guard` denies on error; every other event allows, because a broken hook must never be the
 #: reason an agent stops working (spec 09.1: "Deny = exit 2 ... Never exit 1").
@@ -113,10 +127,9 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
         check_id(item_id, env)
         payload = read_payload(stdin)
 
-        if event == "context":
-            code, line = hook_context.handle(payload, item_id, root, env=env)
+        if event in _HANDLERS:
+            code, line = _HANDLERS[event](payload, item_id, root, env=env)
             if line:
-                # Exactly one line, never JSON: SessionStart injects plain stdout as context.
                 print(line)
             return code
 

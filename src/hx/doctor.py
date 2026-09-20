@@ -201,7 +201,19 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 capture_output=True, text=True, check=False,
             )
             if head.returncode == 0:
-                checks.append((OK, "repo", f"{name} at {head.stdout.strip()[:12]}"))
+                base = recorded.get("base_branch")
+                verified = subprocess.run(
+                    ["git", "--git-dir", str(mirror), "rev-parse", "--verify", f"{base}^{{commit}}"],
+                    capture_output=True, text=True, check=False,
+                ) if base else None
+                if base and verified is not None and verified.returncode != 0:
+                    checks.append((
+                        FAIL, "repo",
+                        f"config/repo.json base_branch `{base}` is not a ref in {mirror.name}; "
+                        f"worktrees are cut from it (spec 17.3)",
+                    ))
+                else:
+                    checks.append((OK, "repo", f"{name} at {head.stdout.strip()[:12]} ({base})"))
             else:
                 checks.append((
                     FAIL, "repo",

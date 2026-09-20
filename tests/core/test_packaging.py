@@ -425,3 +425,101 @@ def test_harness_json_overrides_the_branch_name(instance):
     config["branch"] = "feature/importer"
     harness.write_text(json.dumps(config))
     assert branch_for(instance, "eng-001") == "feature/importer"
+
+
+# --- build-5 item 8: the three answers from build-4's open questions ---------------------------
+
+
+def test_dispatch_refuses_a_dirty_worktree_and_lists_the_files(
+    instance, hx, product_repo, orders, launched
+):
+    """A dispatch resets the worktree, so it will not throw uncommitted work away."""
+    import shutil
+
+    assert hx("repo", "add", str(product_repo)).returncode == 0
+    shutil.rmtree(instance / "wt" / "eng-001")
+    launched("eng-001")
+
+    workdir = instance / "wt" / "eng-001"
+    (workdir / "src" / "half-done.py").write_text("work in progress\n")
+    orders("eng-001")
+
+    result = hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance)
+    assert result.returncode == 1
+    assert "refuse" in result.stderr
+    assert "half-done.py" in result.stderr, "it lists what would be lost"
+    assert "hx bench" in result.stderr, "and says the way out"
+    assert not (instance / "tasks.json").exists(), "a refused dispatch writes nothing"
+    assert (workdir / "src" / "half-done.py").is_file()
+
+
+def test_dispatch_is_fine_once_the_work_is_committed(instance, hx, product_repo, orders, launched):
+    import shutil
+
+    assert hx("repo", "add", str(product_repo)).returncode == 0
+    shutil.rmtree(instance / "wt" / "eng-001")
+    launched("eng-001")
+
+    workdir = instance / "wt" / "eng-001"
+    (workdir / "src" / "done.py").write_text("finished\n")
+    git("-C", str(workdir), "add", "src/done.py")
+    git("-C", str(workdir), "-c", "user.email=a@b.c", "-c", "user.name=a", "commit", "-qm", "done")
+
+    orders("eng-001")
+    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+
+
+def test_bench_saves_the_dirty_diff_as_a_patch(instance, hx, product_repo, orders, launched):
+    """spec 08: benching frees the id, so what is uncommitted is saved before the reset."""
+    import shutil
+
+    assert hx("repo", "add", str(product_repo)).returncode == 0
+    shutil.rmtree(instance / "wt" / "eng-001")
+    launched("eng-001")
+    orders("eng-001")
+    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
+
+    workdir = instance / "wt" / "eng-001"
+    (workdir / "src" / "app.py").write_text("print('edited but never committed')\n")
+    (workdir / "src" / "brand-new.py").write_text("untracked work\n")
+
+    result = hx("bench", "eng-001")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "patch=" in result.stdout
+
+    patches = list((instance / "pods" / "engineers" / "archive").glob("eng-001-*.patch"))
+    assert len(patches) == 1
+    body = patches[0].read_text()
+    assert "src/app.py" in body, "the tracked change is in the patch"
+    assert "brand-new.py" in body, "and so is the untracked file"
+    assert "edited but never committed" in body
+
+
+def test_bench_writes_no_patch_when_the_worktree_is_clean(instance, hx, product_repo, orders, launched):
+    import shutil
+
+    assert hx("repo", "add", str(product_repo)).returncode == 0
+    shutil.rmtree(instance / "wt" / "eng-001")
+    launched("eng-001")
+    orders("eng-001")
+    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
+
+    result = hx("bench", "eng-001")
+    assert result.returncode == 0
+    assert "patch=" not in result.stdout
+    assert list((instance / "pods" / "engineers" / "archive").glob("*.patch")) == []
+
+
+def test_doctor_fails_when_base_branch_is_not_in_the_mirror(instance, hx, product_repo):
+    from hx.doctor import FAIL, run_checks
+
+    assert hx("repo", "add", str(product_repo)).returncode == 0
+    config_path = instance / "config" / "repo.json"
+    config = json.loads(config_path.read_text())
+    config["base_branch"] = "trunk"
+    config_path.write_text(json.dumps(config))
+
+    failures = [c for c in run_checks(instance) if c[0] == FAIL]
+    assert any("trunk" in detail for _, _, detail in failures), failures

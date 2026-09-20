@@ -81,6 +81,8 @@ def _validate(root: Path, pairs: list[tuple[str, str]], existing: dict[str, dict
                 f"before a dispatch can send the goal (spec 08)"
             )
 
+        _refuse_dirty_worktree(root, item_id)
+
         state = state_of(work_item)
         already = False
         if state != "idle":
@@ -136,6 +138,39 @@ def _reset_run_dir(root: Path, item_id: str) -> None:
                 target.unlink()
 
     store.atomic_write_json(run / "subagents.json", {})
+
+
+def _worktree_of(root: Path, item_id: str) -> Path | None:
+    from .config_harness import load_harness, resolve_workdir
+
+    if item_id == PARTNER:
+        return None
+    harness = root / "config" / item_id / "harness.json"
+    if not harness.is_file():
+        return None
+    config = load_harness(harness, check_cross_file=False)
+    return resolve_workdir(config.workdir, root) if config.workdir else root / "wt" / item_id
+
+
+def _refuse_dirty_worktree(root: Path, item_id: str) -> None:
+    """A dispatch resets the worktree, so it refuses to throw away uncommitted work.
+
+    `hx complete done` already refuses a dirty worktree; this is the other end of the same
+    rule (spec 08, `handoff/orchestrator-to-build.md` answer 3). `hx bench` is the way out:
+    it saves the diff as a patch first.
+    """
+    from .complete import worktree_is_dirty
+
+    workdir = _worktree_of(root, item_id)
+    if workdir is None or not (workdir / ".git").exists():
+        return
+    dirty, listing = worktree_is_dirty(workdir)
+    if dirty:
+        raise Refused(
+            f"refuse: {item_id} has uncommitted work in {workdir}, and a dispatch resets the "
+            f"worktree to the base branch:\n{listing}"
+            f"Commit it, or `hx bench {item_id}`, which saves the diff as a patch first (spec 08)"
+        )
 
 
 def _reset_worktree(root: Path, item_id: str, env) -> None:
