@@ -64,7 +64,15 @@ items. The board is read after all of that, so both workers are present and idle
 
 ### Step 2 — one dispatch, one `after` chain
 
-The whole plan goes in **one** `hx dispatch` call. `eng-002`'s order carries
+The whole plan goes in **one** `hx dispatch` call.
+
+Note what the board's `after` column is: `tasks.json`, not the order files. Before step 2
+nothing is dispatched, so `expected/01` shows `-` for `eng-002` even though
+`orders/eng-002.md` already declares `after: [eng-001]`. The UI's Orders view reads the files
+and shows the edge from the start; the two are different views on purpose, and these expected
+files are the board's.
+
+ `eng-002`'s order carries
 `after: [eng-001]`, so hx renders its body and leaves it `queued` with no goal marker. The
 Partner is not woken when it is promoted — that is the point of `after`.
 
