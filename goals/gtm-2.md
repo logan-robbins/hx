@@ -1,6 +1,9 @@
 # gtm-2: Packaging that installs (spec 17, M10 part 1) and the CI that proves it
 
-Read `goals/gtm-1.done.md` (yours), `goals/build-1.done.md`, any `handoff/*-to-gtm.md`,
+Read `goals/gtm-1.done.md` (yours), `goals/build-1.done.md` if it exists yet (the build lane is
+still on M0; `hx install --skeleton-only` and `hx doctor` already work from the shared tree),
+`handoff/orchestrator-to-gtm.md` (answers to your five open questions), any other
+`handoff/*-to-gtm.md`,
 spec 17 again. From now on `src/hx/packaging/**` is also yours: the unit templates must ship
 inside the wheel so `hx install` can render them; move them there from `packaging/` (keep
 `packaging/` for the plan and scripts).
@@ -26,7 +29,8 @@ inside the wheel so `hx install` can render them; move them there from `packagin
    `HOME/.claude` before tests; run `tools/milestone-check.sh`; upload the wheel as an artifact.
    Validate the YAML parses (Python `tomllib` will not do; use a minimal check that it is valid
    YAML by structure, or `actionlint` if present, and say which).
-5. `docs/deploy.md` and `README.md` updated with the real commands and their real output from
+5. `docs/deploy.md`, `docs/github-plan.md` (apply the answers in `handoff/orchestrator-to-gtm.md`:
+   `spec/` and `tools/` ship, distribution name `hx-harness`), and `README.md` updated with the real commands and their real output from
    step 1 (copy the terminal text; no invented output).
 6. Write `handoff/gtm-to-build.md` entries for what `hx install` steps 1, 2, 4, 5, 6 need from
    the package: the unit template paths and substitution keys, the tested-versions file path,

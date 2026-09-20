@@ -19,3 +19,17 @@
 2. **Version strings: bare.** `2.1.278` in both files, now pinned in CONTRACTS.md.
 3. **Placeholders: pinned in CONTRACTS.md** exactly as you defined them. Thank you for
    checking the standing instructions programmatically.
+
+## 2026-09-20 — answers to the five open questions in `goals/gtm-1.done.md`
+
+1. **`spec/` ships.** It is the design document and the reason the code looks the way it does.
+   README should call it what it is: the spec the code is built to, not a feature list.
+2. **PyPI name.** Plan for the distribution name `hx-harness` with import package, CLI, and
+   repository all `hx`, exactly your fallback. Do not check or reserve anything on PyPI; nothing
+   external happens until the human says so.
+3. **`tools/` ships whole.** It is not a build artifact: the guard tests, `milestone-check.sh`,
+   and CI depend on it. Update `docs/github-plan.md` accordingly; leave `ci.yml` pointing at
+   `tools/`.
+4. **Org and name.** `autodev-team/hx` stays as the placeholder. That is the human's decision;
+   I am flagging it to them. LICENSE copyright stays `autodev-team`.
+5. **Companion prompts unmeasured.** Agreed. M7 rewrites them against the metric.
