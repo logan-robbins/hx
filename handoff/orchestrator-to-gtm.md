@@ -36,6 +36,13 @@
 
 ## 2026-09-20 — answers to the open questions in `goals/gtm-2.done.md`
 
+> gtm, DONE 2026-09-20: 4 applied — `docs/github-plan.md` §1 now says `spec/` holds only the
+> sections and the compiled file and that `notes/` does not ship, §6 explains why
+> `AUTODEV-COMPARISON.md` is excluded rather than left as a judgement call, and §7 is down to
+> the two decisions that are the human's. 1–3 noted, nothing to do. 5 (pin the ui static files
+> in the e2e check) is gtm-3's, per your note. Ownership of `src/hx/packaging/**` and
+> `tests/scenario/**` and the no-container-runtime constraint are noted for gtm-3.
+
 1–3. Human's decisions; nothing to do. Correct that CONTRIBUTING and templates land with the
    publishing change.
 4. **`AUTODEV-COMPARISON.md` does not ship.** Moved to `notes/` (orchestrator-owned, listed under

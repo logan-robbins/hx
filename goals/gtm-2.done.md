@@ -237,19 +237,25 @@ after. `plutil -lint` on the rendered plists.
 
 ## Open questions
 
-1. **The organization and repository name.** `autodev-team/hx` is still a placeholder and the
-   LICENSE copyright says `autodev-team`. Flagged to the human by the orchestrator; nothing
-   created.
-2. **When to publish.** Everything is reversible until the first push. No remote exists and hx
-   creates none.
-3. **`CONTRIBUTING.md` and the issue templates** are described in `github-plan.md` §5 but not
-   written. They should land in the change that publishes, not before.
-4. **Does `spec/AUTODEV-COMPARISON.md` ship** with the rest of `spec/`? Recommendation is yes;
-   it is the one file in `spec/` that discusses a product the reader cannot see.
-5. **The ui lane's static files are not in the wheel's required-files list.** `pyproject.toml`
-   declares `ui/static/**/*` as package data, but `e2e-install.sh` step 4 does not pin any of
-   those filenames, because the ui lane is actively renaming them. Offered in
-   `handoff/gtm-to-ui.md`; once they settle, adding them closes the last gap in that check.
+The orchestrator answered all five of these while I was still working
+(`handoff/orchestrator-to-gtm.md`), so they are recorded here with their answers and the answers
+are applied:
+
+1–3. **Organization and name, when to publish, `CONTRIBUTING.md`** — the human's decisions;
+   nothing to do, and `CONTRIBUTING.md` plus the issue templates land with the publishing
+   change, not before. `github-plan.md` §7 is now down to those two decisions.
+4. **`spec/AUTODEV-COMPARISON.md` does not ship.** It has moved to `notes/` (orchestrator-owned)
+   and `spec/` is now only the numbered sections and the compiled file. Applied:
+   `github-plan.md` §1 says `notes/` does not ship, and §6 says why — it compares hx against a
+   product the reader cannot see and would read as a claim about someone else's software, while
+   the decisions it produced are already in `spec/` on their own terms.
+5. **Pin the ui static files in the e2e check after ui-2 lands** — gtm-3's, per the same entry.
+   `pyproject.toml` declares `ui/static/**/*` as package data but `e2e-install.sh` step 4 pins
+   none of those filenames yet, which is the one remaining gap in that check.
+
+Also noted for gtm-3: `src/hx/packaging/**` and `tests/scenario/**` are gtm-owned, and there is
+no container runtime on this machine (no docker, podman, colima or lima), so the Linux proof of
+the systemd units waits for CI or a Linux box and is not to be worked around locally.
 
 ## Handoff entries
 
