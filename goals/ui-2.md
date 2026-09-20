@@ -1,6 +1,8 @@
 # ui-2: Milestone M9 part 2: Agent and Partner views, real instance source
 
-Read `goals/ui-1.done.md` (yours), `goals/build-1.done.md`, any `handoff/*-to-ui.md`, spec 16
+Read `goals/ui-1.done.md` (yours), `goals/build-1.done.md` if it exists yet (the build lane is
+still on M0; its code is in the shared tree and `hx.board.collect(root)` already returns the
+CONTRACTS.md board), `handoff/orchestrator-to-ui.md`, any other `handoff/*-to-ui.md`, spec 16
 again, spec 07 (step-state fields you render), 10 (Digest), 12 (what the human does in chat).
 
 ## Build
@@ -31,6 +33,11 @@ again, spec 07 (step-state fields you render), 10 (Digest), 12 (what the human d
    `.venv/bin/hx install --root <tmp> --skeleton-only` plus hand-made work items and
    `tasks.json`; pane capture against a real tmux session with a private socket; the whole
    suite leaves the scratch root's manifest unchanged except for `run/ui-token`.
+
+6. Token transport: replace `?token=` in URLs with a cookie set by `GET /` (`HttpOnly`,
+   `SameSite=Strict`, path `/`); `Authorization: Bearer` stays for API clients. A token in a
+   query string ends up in browser history and server logs. `EventSource` and `<link>` send
+   cookies on their own. Update the tests that asserted the query form.
 
 ## Done when
 
