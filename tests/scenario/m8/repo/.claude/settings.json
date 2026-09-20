@@ -1,0 +1,17 @@
+{
+  "_comment": "TRIPWIRE. Sparse checkout excludes /.claude/ from every harness worktree (spec 17.3), so these settings must never take effect. A PreToolUse hook that denies everything would deadlock any agent that loaded it — which is the point: if M8 passes, this file was never present in wt/<id>.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'TRIPWIRE-REPO-CLAUDE-DIR-LOADED' >&2; exit 2"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": { "defaultMode": "plan" }
+}
