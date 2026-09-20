@@ -331,3 +331,73 @@ Two ways to make it real, both the build lane's: have `adapters/claude/start.sh`
 declare that a dead pane simply has no history and drop the fallback from spec 16.4. The ui
 lane has no preference; it needs to know which, and if it is the first, whether that path is
 the right name for spec 03.
+
+## 2026-09-20 — gtm lane — spec 12 orders `hx bench` before the Partner's own `hx complete done`
+
+Found while building the M8 scenario pack (`tests/scenario/m8/`), which has to say what the
+Partner does in what order.
+
+Spec 12 step 5, for a worker that came back `done`:
+
+> `done` → dependents were already promoted by hx; `hx bench <id>` once the digest is consumed,
+> so the id is free for the next order.
+
+Spec 12 step 8:
+
+> **Goal met:** the Partner runs `hx complete done` on its own item. Its `### Checks`
+> (`hx board --require-done …`) prove the plan is done.
+
+Followed literally, the Partner benches eng-001 and eng-002 in step 5 and then completes itself
+in step 8. But `hx board --require-done` requires each listed id to be **`complete` with
+outcome `done`** (spec 08, and `hx.board.require_done` implements exactly that), and `hx bench`
+resets a completed item to `idle`. So the Partner's own checks fail on work that is genuinely
+finished, it gets `HX-CHECK-FAILED`, and there is nothing it can do about it — benching is not
+reversible.
+
+The pack completes first and benches second, and `orders/partner.md` states the reason inline.
+Three ways to settle it properly, in my order of preference:
+
+1. **Reword spec 12** so step 5's bench is explicitly deferred until after step 8 — the
+   Partner reads the digest and updates `PARTNER.md` when the item lands, and benches only once
+   its own item is complete. This is the smallest change and it keeps `require_done` reading
+   the work item, which is the thing `hx board` is about.
+2. **Have `require_done` read `tasks.json`** rather than the work item state. `hx bench` does
+   not touch `tasks.json`, so a benched item would still satisfy it. But then `--require-done`
+   stops being a statement about the board and starts being a statement about history, and an
+   id re-dispatched for something else would still read as satisfying an old plan until it
+   completes again.
+3. Leave it and rely on every Partner reading the ordering note in its order. Fragile: it is
+   exactly the kind of thing that works until the one time it does not.
+
+Not editing `spec/**` or `CONTRACTS.md`; flagged to the build lane in `handoff/gtm-to-build.md`
+so nobody implements around it in the meantime.
+
+## 2026-09-20 — gtm lane — two smaller things from the same pack
+
+**1. `hx goal` and the `goal` marker when delivery defers.** Spec 08 says `hx goal` writes
+`run/<id>/goal` with a timestamp, and separately that a mid-turn pane gets `run/<id>/goal-pending`
+instead. It does not say whether the `goal` marker is written in that second case. It must be:
+spec 06's invariant is that every `working` item has one, and M8 requires `hx board` to exit 0
+*throughout*, including the turn in which the Partner dispatches or resumes itself. The pack
+assumes it is written (assumption A1 in `tests/scenario/m8/README.md`); two expected board
+files change if that is wrong. Worth one clarifying sentence in spec 08.
+
+**2. A benched item keeps its outcome on the board.** `hx bench` does not touch `tasks.json`
+(spec 08), and the board's outcome column prefers the tasks entry, so after benching an id
+reads as `idle` with outcome `done` until its next dispatch. That is consistent and I have
+documented it as the pack's assumption A2, but it reads oddly enough that someone will
+eventually "fix" it. If it is intended, spec 08's `hx bench` row could say so.
+
+## 2026-09-20 — gtm lane — `goals/build-2.done.md` does not exist, but M1 has landed
+
+`goals/gtm-3.md` step 2 branches on whether `goals/build-2.done.md` exists. It does not, so by
+the letter I should reconcile against build-1's three commands only. But `hx dispatch`,
+`complete`, `resume`, `bench`, `read`, `show`, `launch`, `restart`, `wake`, `orders`, `archive`
+and `heartbeat` all have real argparse surfaces and real behaviour in the shared tree today.
+
+I reconciled against what is actually there rather than against the done-file marker, since the
+point of the step is that the skills match reality. What I could not do is run a full dispatch
+→ complete → resume cycle: `hx dispatch` requires a live tmux session per id, which requires
+`hx launch`, which runs `install.sh` and `start.sh` and needs the pinned `claude` binary and
+seeded credentials. That is M6+ territory and stays for gtm-4 or for M8 itself. Recorded in the
+done file as what remains.
