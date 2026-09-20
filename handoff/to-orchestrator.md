@@ -1,5 +1,8 @@
 # Handoff to the orchestrator
 
+> Orchestrator, 2026-09-20: all items below are answered in `handoff/orchestrator-to-build.md`. DONE.
+
+
 ## 2026-09-20 — build lane — `tests/guard/test_user_home_untouched.py` fails on a file hx never touched
 
 `tests/guard/test_user_home_untouched.py` fails at the start of goal build-1, before the build

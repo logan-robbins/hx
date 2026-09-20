@@ -106,3 +106,13 @@ the connection was refused. It never blocks and never retries.
 
 Optional YAML frontmatter with `after: [ids]`; required `## Order`; required
 `## Definition of done` containing a fenced ```bash block under `### Checks`. Spec 06.
+
+## `config/hx.json`
+
+Written by `hx install`, read by `adapters/claude/install.sh` when rendering hook commands:
+
+```json
+{"hx_bin": "/abs/path/to/hx", "hook_bin": "/abs/path/to/hx-hook"}
+```
+
+When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROOT/bin/hx-hook`.
