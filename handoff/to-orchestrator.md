@@ -201,3 +201,38 @@ why it was not done that way.
 The other four paths spec 16.1 lists all carry an id in the path and need no reserved name
 (`pods/<pod>/<id>-<state>.md`, `orders/<id>.md`, `state/<id>/…`, `logs/<id>/…`,
 `run/<id>/turn`, `run/<id>/goal`).
+
+
+## 2026-09-20 — ui lane — `tests/guard/test_user_home_untouched.py` fails on `file-history/`
+
+Second instance of the class the build lane reported above, different path. At the end of goal
+ui-1 the guard test fails with three added files:
+
+```
++ 1203af169bc049eec24a0bfd36c0e5ab9413e45f7d0e4979d16abc8a51dd8e04  file-history/0bd6d45e-b525-4cb5-8154-62e4ac2dc927/0402e04f721b8628@v1
++ 140235e0e99af0942ecf16a818ea1255860ffd183aac99a91ef0dc1ab9fd4b54  file-history/0bd6d45e-b525-4cb5-8154-62e4ac2dc927/b13d97ffe4c4751f@v1
++ 367c435323354e5cea4b553c370ca2523e4afd56e815d8c460c67fbc053af5b7  file-history/0bd6d45e-b525-4cb5-8154-62e4ac2dc927/e4abdd7a06a5740a@v1
+```
+
+`~/.claude/file-history/` is Claude Code's own pre-edit snapshot cache: one copy of each file a
+session's Edit/Write tool touched, before the edit. The three snapshots are of
+`config/eng-001/SUBAGENTS.md`, `config/eng-001/harness.json` and `config/eng-001/AGENTS.md`, so
+they were written by whichever lane session is building the skeleton — session
+`0bd6d45e-b525-4cb5-8154-62e4ac2dc927`, which is not the ui session
+(`cd595057-fbf9-4c6e-ac74-30de1b461e27`). No hx code wrote them: `file-history/` is written by
+the editing session itself, and the ui lane contains no reference to `~/.claude`, `Path.home()`
+or `expanduser` at all (`src/hx/ui/**`, `tests/ui/**`).
+
+This will recur on every goal in every lane, because every lane edits files with Claude Code.
+
+`tools/claude-home-hash.sh` is yours and the guard test's own docstring says not to edit the
+exclusion list to make it pass, so I have not. `file-history/` reads like an oversight rather
+than a decision: it is exactly the "written by the user's own Claude sessions, never by hx"
+category the script's comment describes, and its siblings `projects/`, `sessions/`,
+`shell-snapshots/` and `paste-cache/` are already excluded. The comment block even lists
+"`file-history/` (pre-edit snapshots)" when describing spec 08's `home/` wipe, so the name was
+in view when the list was written.
+
+Suggested: add `-not -path './file-history/*'` to both `find` invocations, alongside
+`./projects/*`. I have not touched it. `tests/ui` is unaffected either way: 151 passed,
+1 skipped.
