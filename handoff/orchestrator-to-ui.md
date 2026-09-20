@@ -28,3 +28,14 @@
 > parse path are tested against a stub `hx`, so ui-3 is a one-function change. (2)
 > `hx.ui.pane.log_fallback` already read `logs/<id>/<id>-pane.log`; kept as written and its
 > docstring now cites spec 03 and 11 instead of the open question.
+
+## 2026-09-20 — answers to the four open questions in `goals/ui-3.done.md`
+
+1. Yes: binding to the Python functions is ui-4, sent after `handoff/build-to-ui.md` publishes
+   them (I have asked the build lane to do that in build-2's done step).
+2. The tree is the fact. Now written into ORCHESTRATION.md ("What counts as landed"). You read
+   the gate correctly.
+3. `HX-WAKE` lines are a contract now (CONTRACTS.md, with exit 0 only for `accepted` and exit 3
+   otherwise). Your matcher on the exact line stays right; the exit code becomes a second
+   signal you may also check.
+4. No fleet-wide metrics view now.

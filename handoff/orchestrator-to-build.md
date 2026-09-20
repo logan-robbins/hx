@@ -63,3 +63,14 @@ names the real key you found (`pluginConfigs["agents-md@builtin"].options.instru
 - The spec rewording of "instruction-files mode `claude-md`" to the real
   `pluginConfigs["agents-md@builtin"].options.instructionFiles` key matches what `install.sh`
   writes and what `test_instruction_files_mode_is_claude_md` asserts; nothing to change.
+
+## 2026-09-20 — two items for build-2's close
+
+1. `hx wake partner` CLI output is now a contract (CONTRACTS.md): last line exactly
+   `HX-WAKE partner accepted|no-socket|refused`; exit 0 only for `accepted`, exit 3 otherwise;
+   `hx complete` and `hx heartbeat` treat a failed wake as a warning. The ui lane found a
+   scratch instance with no socket reporting success by exit code.
+2. In `goals/build-2.done.md`, publish to the ui lane (`handoff/build-to-ui.md`) the Python
+   functions behind `board`, `show`, `orders`, `archive`, `wake`, `metrics`: module path,
+   signature, return value, and what each raises for an unknown id. The UI binds to those
+   names in ui-4 and nothing else.

@@ -251,3 +251,17 @@ Spec 07.4 and 08. One entry per seam record in the main stream since `dispatched
 `source` is one of `clear|compact|restart|resume|startup`. `next_10_turns.turns` is fewer than
 10 when the stream ended sooner. `reads_of_context_file` must be 1 per seam (spec 13 M7);
 `reads_of_working_set` is the waste metric. Text form: one line per seam with the same fields.
+
+## `hx wake partner "<text>"` CLI form
+
+The UI's only write path reads this, so it is a contract. Last stdout line is exactly one of:
+
+```
+HX-WAKE partner accepted
+HX-WAKE partner no-socket
+HX-WAKE partner refused
+```
+
+Exit 0 only for `accepted`; exit 3 for the other two (distinct from usage errors, which exit 2).
+Callers inside hx (`hx complete`, `hx heartbeat`) treat a non-zero wake as a warning, never as
+their own failure. `hx.wake.wake_partner(root, text) -> bool` is unchanged.

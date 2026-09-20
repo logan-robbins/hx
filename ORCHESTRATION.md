@@ -68,6 +68,14 @@ handoff entry. Never create a remote or push.
    under your session's scratchpad (the path your system prompt names), never the repo and never
    the user's home.
 
+## What counts as landed
+
+The shared tree is the fact; `goals/*.done.md` is bookkeeping. A goal that says "if build-N has
+landed" means: the commands or files it names work in the tree. Use them. What you may not do is
+bind to another lane's Python symbols that have not been published to you in a
+`handoff/<lane>-to-<you>.md` entry (module path, signature, return, what it raises); until then
+call the CLI. Published names are stable; unpublished ones may be renamed without notice.
+
 ## Finishing a goal
 
 1. Read and apply any `handoff/*-to-<lane>.md` entries addressed to you.
