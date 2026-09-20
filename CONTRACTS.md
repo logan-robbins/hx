@@ -215,3 +215,39 @@ produced, plus the `after` graph:
 ## SSE `changed` scopes
 
 `/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except the reserved scope `tasks`, emitted when `tasks.json` changed. The browser treats `tasks` as "re-fetch the board and the orders view".
+
+## `hx metrics <id> [--json]`
+
+Spec 07.4 and 08. One entry per seam record in the main stream since `dispatched`; the
+`metrics` object of `hx show --json` is exactly this document.
+
+```json
+{
+  "id": "eng-001",
+  "stream": "eng-001-main",
+  "dispatched": "2026-09-20T12:00:00Z",
+  "seams": [
+    {
+      "seq": 812,
+      "ts": "2026-09-20T12:50:00Z",
+      "source": "clear",
+      "prompt_version": "base-3/engineer-2",
+      "context_tokens_before": 91044,
+      "context_file_bytes": 18422,
+      "working_set_size": 9,
+      "next_10_turns": {
+        "turns": 10,
+        "tool_calls": 14,
+        "reads_of_context_file": 1,
+        "reads_of_working_set": 2,
+        "other": 11
+      }
+    }
+  ],
+  "totals": {"seams": 1, "tool_calls": 14, "reads_of_context_file": 1, "reads_of_working_set": 2, "other": 11}
+}
+```
+
+`source` is one of `clear|compact|restart|resume|startup`. `next_10_turns.turns` is fewer than
+10 when the stream ended sooner. `reads_of_context_file` must be 1 per seam (spec 13 M7);
+`reads_of_working_set` is the waste metric. Text form: one line per seam with the same fields.
