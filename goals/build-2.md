@@ -1,6 +1,8 @@
 # build-2: Milestone M1 (spec 13): the control-plane commands, plus `hx show --json`
 
-Read `goals/build-1.done.md` (yours), any `handoff/*-to-build.md`, then spec 06 (transitions),
+Read `goals/build-1.done.md` (yours, including your own "Notes for whoever writes build-2"),
+`handoff/orchestrator-to-build.md` (answers to your five open questions), any other
+`handoff/*-to-build.md`, then spec 06 (transitions),
 08 (every command, `tasks.json`, dispatch pseudo-code, board invariants), 09 (`stop` hook's
 `goal-pending` consumption; implement only what `hx goal` needs now), 12 (how the Partner uses
 these), CONTRACTS.md (`hx show --json`).
@@ -55,7 +57,11 @@ these), CONTRACTS.md (`hx show --json`).
     (spec 03 and 11, added today; the UI's fallback for a dead session). The file is not a
     Companion stream: the stream regex in `hx.streams` must ignore it; `hx dispatch` archives it
     with the rest of `logs/<id>/`.
-13. Partner-only commands refuse when `HARNESS_ID` is set and is not `partner`.
+13. `hx install --skeleton-only` writes `config/hx.json` (`hx_bin`, `hook_bin`, `python_bin`, absolute;
+    CONTRACTS.md); `hx doctor` fails when any is missing or not executable; `start.sh` uses
+    `python_bin`. `hx launch` creates the `-idle` work item when missing and passes
+    `HX_SKILLS_DIR` to `install.sh`.
+14. Partner-only commands refuse when `HARNESS_ID` is set and is not `partner`.
 
 ## Done when
 

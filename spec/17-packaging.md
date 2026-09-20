@@ -27,7 +27,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | | The user's normal `claude` | A harness session (`start.sh`) |
 |---|---|---|
 | Config dir | `~/.claude` | `CLAUDE_CONFIG_DIR=$HARNESS_ROOT/run/<id>/home` |
-| Settings and hooks | The user's | `home/settings.json` written by `install.sh`: hx hooks, bypass acceptance, `claudeMdExcludes`, instruction-files mode `claude-md`, Partner `crossSessionInbound: accept` |
+| Settings and hooks | The user's | `home/settings.json` written by `install.sh`: hx hooks, bypass acceptance, `claudeMdExcludes`, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), Partner `crossSessionInbound: accept` |
 | Skills | The user's `~/.claude/skills` | `home/skills/hx-partner` or `home/skills/hx-worker` only |
 | CLAUDE.md | The user's and the repo's | `config/CLAUDE.md` only; the repo's is excluded |
 | Memory and transcripts | The user's, accumulating | Per home, wiped at every dispatch |

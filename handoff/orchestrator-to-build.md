@@ -29,3 +29,21 @@
    17.2 step 1 lands (it is not written in M0, which builds step 2 only).
 5. `hx doctor` fails only on python/tmux/git/a broken pinned binary and warns for the rest;
    the Python floor is 3.14 (`hx.doctor.PYTHON_FLOOR`), and `pyproject.toml` agrees.
+
+## 2026-09-20 — answers to the five open questions in `goals/build-1.done.md`
+
+1. Doctor tightening: tracked in each later goal; build-2 tightens `home` checks once
+   `hx launch` writes homes.
+2. Fresh-instance board: `hx launch partner` is part of "installed" (17.2 step 6). `hx launch`
+   creates the `-idle` work item when missing (spec 08 already says so). Nothing runs a bare
+   `hx board` between install and launch.
+3. `config/hx.json`: do not wait for build-11. In build-2, `hx install --skeleton-only` also
+   writes `config/hx.json` with the absolute paths of the running package's `hx` and `hx-hook`
+   entry points (resolve from the interpreter's `bin/` next to `sys.executable`, then
+   `shutil.which`), and `hx doctor` fails when either path is missing or not executable.
+4. `seams`: `null` for no stream, integer otherwise. Correct reading of the contract.
+5. `python3` in `start.sh`: acceptable. Prefer the interpreter recorded as `python_bin` in
+   `config/hx.json` (add that third key; CONTRACTS.md updated), falling back to `python3`.
+
+Also applied: the spec's "instruction-files mode `claude-md`" wording in 05, 11, 13, 17 now
+names the real key you found (`pluginConfigs["agents-md@builtin"].options.instructionFiles`).

@@ -109,10 +109,10 @@ Optional YAML frontmatter with `after: [ids]`; required `## Order`; required
 
 ## `config/hx.json`
 
-Written by `hx install`, read by `adapters/claude/install.sh` when rendering hook commands:
+Written by `hx install` (also with `--skeleton-only`), read by `adapters/claude/install.sh` when rendering hook commands and by `start.sh` for its JSON reads:
 
 ```json
-{"hx_bin": "/abs/path/to/hx", "hook_bin": "/abs/path/to/hx-hook"}
+{"hx_bin": "/abs/path/to/hx", "hook_bin": "/abs/path/to/hx-hook", "python_bin": "/abs/path/to/python3"}
 ```
 
 When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROOT/bin/hx-hook`.
