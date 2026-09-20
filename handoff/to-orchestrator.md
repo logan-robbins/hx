@@ -466,3 +466,29 @@ which needed no credentials and wrote nothing. It found a real bug; see
 the first tool call is one Read of it, and that the agent answers "who are you" from the
 persona with zero Reads — is **not done** and needs either a human `/login` into
 `seed/home`, or your decision on (1).
+
+
+## 2026-09-20 — build lane — the M2 "zero Reads" criterion is contradicted by the live run
+
+Spec 13 M2 asks for two things that pull against each other in the same turn:
+
+- "the agent's first tool call after a boundary is one Read of that path"
+- "asked who it is in its first turn, the agent answers from the persona with zero Reads"
+
+In the build-3 live run against 2.1.278 the Partner did the boundary read first and *then*
+answered, so the first criterion is what actually governs a first turn. It answered from the
+persona — the callsign was only ever in `config/partner/AGENTS.md` above the header, and the
+context file provably does not carry the persona — but not with zero Reads.
+
+What the "zero Reads" criterion is really testing, I think, is that the persona costs no tool
+call: it is in the system prompt via `--append-system-prompt-file`, so the agent does not have
+to go and find out who it is. That is true and is now demonstrated live. Suggest rewording M2
+to something like "the persona is answered from the system prompt, with no read of any
+identity file", which is testable and does not fight the boundary-read rule. Your call; I have
+recorded the live evidence in `goals/build-3.done.md` either way.
+
+Separately, the *form* of the boundary read is a real problem and I have raised it with the
+gtm lane (`handoff/build-to-gtm.md`): the agent used `Bash cat` and then `Read`, reading the
+file twice. M7's metric counts Reads, so it would under-count. The fix is wording in
+`config/CLAUDE.md`, which is gtm's; if you would rather spec 09.1's hook line name the tool
+instead, that line is yours to change and I will follow it.
