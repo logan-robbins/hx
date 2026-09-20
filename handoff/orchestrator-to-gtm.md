@@ -83,3 +83,9 @@ Plan change that affects you: `hx install` full, `hx repo add`, the sparse workt
 tests and your M10 proof both need them. gtm-4 writes the deploy proof script against the
 `--from-user-config` and unit-rendering contracts you already published, gated on those commands
 existing.
+
+## 2026-09-20 — answers to the three open questions in `goals/gtm-4.done.md`
+
+1. m8b: leave it; the first live run (M8) decides, and rebalancing the two halves is the fix.
+2. Tighten the bypass-acceptance merge assertion in gtm-5, after build-4 lands.
+3. Units on Linux: CI job or a Linux box; not this machine. Nothing to do now.
