@@ -116,3 +116,29 @@ Written by `hx install`, read by `adapters/claude/install.sh` when rendering hoo
 ```
 
 When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROOT/bin/hx-hook`.
+
+## `templates/work-item.md` placeholders
+
+The gtm lane writes the template; `hx dispatch` renders it (never reconstructs the body in
+Python). Exactly these tokens, no others:
+
+| Token | Renders as |
+|---|---|
+| `{{id}}` | the id |
+| `{{pod}}` | the pod |
+| `{{after}}` | the `after` ids comma-separated inside the `[...]` already in the template: `after: [eng-000, eng-002]`; `after: []` when empty |
+| `{{dispatched}}` | the dispatch timestamp |
+| `{{order}}` | the order file verbatim (`## Order`, then `## Definition of done` with its `### Checks` block), on its own line directly under the frontmatter |
+
+## Claude Code version strings
+
+`config/claude.json` is `{"bin": "<abs path>", "version": "2.1.278"}` and
+`packaging/tested-claude-versions.json` is `{"versions": ["2.1.278", …]}`. Both hold the bare
+version: the output of `claude --version` with the ` (Claude Code)` suffix stripped.
+
+## Fresh instance contents
+
+`hx install` creates exactly what spec 17.2 step 2 lists. No worker is installed. The example
+worker configuration ships as `templates/worker/{AGENTS.md,SUBAGENTS.md,harness.json}` for the
+Partner to copy into `config/<id>/` when it creates an agent; `hx doctor` and `hx board` must
+not expect any id but `partner` in a fresh root.

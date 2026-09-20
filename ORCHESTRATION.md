@@ -14,7 +14,7 @@ question to `handoff/to-orchestrator.md` and build the closest thing the spec al
 |---|---|---|
 | build | `build-0` | `src/hx/**` except `src/hx/ui/**`, `src/hx/skills/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`; `tests/**` except `tests/ui/**`, `tests/guard/**`, `tests/packaging/**`; `pyproject.toml`; `src/hx/skeleton/adapters/**`, `src/hx/skeleton/config/models.json` |
 | ui | `ui-1` | `src/hx/ui/**`, `tests/ui/**` |
-| gtm | `gtm-2` | `src/hx/skills/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`, `src/hx/skeleton/config/<example-id>/**`, `packaging/**`, `tests/packaging/**`, `docs/**`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` |
+| gtm | `gtm-2` | `src/hx/skills/**`, `src/hx/skeleton/templates/**`, `src/hx/skeleton/companion/**`, `src/hx/skeleton/PARTNER.md`, `src/hx/skeleton/config/CLAUDE.md`, `packaging/**`, `tests/packaging/**`, `docs/**`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` |
 | orchestrator | — | `ORCHESTRATION.md`, `CONTRACTS.md`, `goals/**`, `tools/**`, `tests/guard/**`, `.baseline/**`, `spec/**` |
 
 `src/hx/skeleton/` is what `hx install` copies into a fresh `$HARNESS_ROOT` (spec 03 layout,

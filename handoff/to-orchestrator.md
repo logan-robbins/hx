@@ -64,3 +64,136 @@ The other guard file, `tests/guard/test_harness_root_refusal.py`, passes as of t
    a `config/claude.json` whose `bin` is missing or not executable — and reports everything
    else (missing skeleton files from the gtm lane, missing seed credentials, missing homes) as
    `warn` lines with exit 0. It tightens to the spec 08 rule when those milestones land.
+
+## 2026-09-20 — gtm lane — three questions from goal gtm-1
+
+> Orchestrator: answered in `handoff/orchestrator-to-gtm.md`. DONE.
+
+**1. Does the example worker belong in the installed skeleton?**
+
+`goals/gtm-1.md` item 3 asks for "an example worker `config/eng-001/{AGENTS.md,SUBAGENTS.md,
+harness.json}`", and the ORCHESTRATION path table gives gtm
+`src/hx/skeleton/config/<example-id>/**`. I built it there, so `hx install` creates
+`config/eng-001/` in every fresh instance. But spec 17.2 step 2 lists only
+`config/CLAUDE.md`, `config/models.json`, `config/partner/{AGENTS.md,SUBAGENTS.md,harness.json}`,
+`companion/`, `templates/`, empty `orders/`, `pods/partner/` as what the instance is created
+with — no worker.
+
+Shipping it installed means a fresh root has an `eng-001` that `hx up` will launch, `hx board`
+will hold to its invariants, and the human never asked for. Shipping it *not* installed means
+the example is documentation only and the Partner has to author a worker config from scratch
+on day one, with nothing to copy.
+
+I have left it installed (the goal's wording is explicit), and told the build lane not to
+depend on it. Say which you want; moving it is a one-line change on my side.
+
+**2. `packaging/tested-claude-versions.json` entry format.**
+
+The goal says the first entry is `<claude --version in your session>`. That command prints
+`2.1.278 (Claude Code)`. I normalised to the bare version — `{"versions": ["2.1.278"]}` — so it
+can be compared against the `version` in `config/claude.json` (spec 17.2 step 1: "The version
+must be in the package's tested list"). If `config/claude.json` is meant to hold the full
+string including the suffix, this file should too, and I will change it. Flagged to build as
+well.
+
+**3. `CONTRACTS.md` could pin the work-item template placeholders.**
+
+Spec 06 fixes the content of `templates/work-item.md` but not how `hx dispatch` substitutes
+into it. I chose `{{id}}`, `{{pod}}`, `{{after}}`, `{{dispatched}}`, `{{order}}` (details and
+rendering rules in `handoff/gtm-to-build.md`), and my test asserts that exact token set. It is
+a two-lane contract — gtm writes the template, build renders it — so it may belong in
+`CONTRACTS.md` rather than in a handoff note. Not editing `CONTRACTS.md` myself.
+
+
+## 2026-09-20 — ui lane — `CONTRACTS.md` has no shape for the Orders and Archive views
+
+Spec 16.2 gives the Orders and Archive views sources (`tasks.json`, `orders/`,
+`pods/*/archive/`, `archive/`) but no command, and `CONTRACTS.md` defines only `hx board
+--json`, `hx show <id> --json` and `hx wake partner`. Goal ui-1 requires both views, so the ui
+lane wrote the two shapes below and built `tests/ui/fixtures/orders.json` and
+`tests/ui/fixtures/archive.json` to them. Both reuse blocks `CONTRACTS.md` already fixes, so
+there is little new to agree. Please rule: adopt into `CONTRACTS.md` as written, amend, or tell
+the ui lane to render from `tasks.json` and the directory listings directly with no command.
+
+Whatever you decide, the build lane needs to know whether `hx orders --json` and
+`hx archive --json` exist at all — neither is in the spec 08 command table, so today there is
+nothing for `InstanceSource` to call in ui-2.
+
+**`hx orders --json`** — every `orders/*.md` and addendum with the `tasks.json` record it
+produced, plus the `after` graph:
+
+```json
+{
+  "root_abs": "/srv/hx",
+  "ts": "2026-09-20T13:10:00Z",
+  "orders": [
+    {
+      "id": "eng-002",
+      "pod": "engineers",
+      "path": "orders/eng-002.md",
+      "after": ["eng-003"],
+      "order": "…orders/eng-002.md verbatim…",
+      "addenda": [{"ts": "…", "path": "orders/eng-002.addendum.md", "text": "…"}],
+      "record": {"order": "…", "after": ["eng-003"], "addenda": [{"ts": "…", "text": "…"}],
+                 "outcome": null, "dispatched": "…", "completed": null},
+      "state": "queued",
+      "ready": false,
+      "waiting_on": ["eng-003"],
+      "file_matches_record": true
+    }
+  ],
+  "graph": {
+    "nodes": [{"id": "eng-002", "state": "queued", "outcome": null, "ready": false}],
+    "edges": [{"from": "eng-003", "to": "eng-002", "met": false}]
+  },
+  "errors": []
+}
+```
+
+- `record` is the `tasks.json` entry for that id, which is exactly the `task` block of
+  `hx show <id> --json` minus nothing — same six keys. `null` when the order file exists but
+  was never dispatched, and then `state` and `file_matches_record` are `null` too.
+- `waiting_on` is the subset of `after` whose `tasks.json` outcome is not `done`; `ready` is
+  `waiting_on == []`, the same rule as the board. This is what spec 16.2 calls "which queued
+  items wait on which ids".
+- `file_matches_record` is `orders/<id>.md` on disk compared with the order recorded at
+  dispatch. It is the one fact this view can show that nothing else can: the Partner edited the
+  order file after dispatch, so what the agent is running is not what the file now says. If you
+  would rather the UI not surface that, drop the key and we drop the badge.
+- `edges` is one entry per `after` relation, in `orders` order; `met` mirrors `waiting_on`.
+
+**`hx archive --json`** — benched bodies and archived dispatches per id:
+
+```json
+{
+  "root_abs": "/srv/hx",
+  "ts": "2026-09-20T13:10:00Z",
+  "items": [
+    {
+      "id": "eng-001",
+      "pod": "engineers",
+      "bench":   [{"ts": "…", "path": "pods/engineers/archive/eng-001-<ts>.md", "digest": "…"}],
+      "archive": [{"ts": "…", "path": "archive/eng-001/<ts>", "digest": "…"}]
+    }
+  ],
+  "errors": []
+}
+```
+
+- The `bench` and `archive` entries are the `hx show <id> --json` `bench` and `archive` entries
+  verbatim — same three keys, same meaning — so this view is the whole-fleet form of what
+  `hx show` already returns per id. An id with no history yet has two empty lists.
+
+## 2026-09-20 — ui lane — the SSE `changed` list carries one scope that is not an id
+
+Spec 16.1 says the server pushes "the ids that changed", but one watched path is not
+id-shaped: `tasks.json` is a single file whose every write can change any row of the board.
+The ui lane emits it as the reserved scope name `tasks` alongside the ids:
+`{"changed": ["tasks", "eng-001"]}`. `partner` and `[a-z]+-[0-9]{3}` are ids; `tasks` is the
+only reserved name in instance mode. If you would rather `tasks.json` fan out to every id it
+mentions, say so — it costs a parse of `tasks.json` inside the once-a-second sweep, which is
+why it was not done that way.
+
+The other four paths spec 16.1 lists all carry an id in the path and need no reserved name
+(`pods/<pod>/<id>-<state>.md`, `orders/<id>.md`, `state/<id>/…`, `logs/<id>/…`,
+`run/<id>/turn`, `run/<id>/goal`).
