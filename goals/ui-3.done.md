@@ -83,6 +83,15 @@ against the real `hx`, including **end to end through a real unix socket** that 
 auth line went first and the text arrived verbatim. Asked the build lane to treat that line as
 a contract now that the UI's only write path depends on its wording.
 
+**It is one now.** While this goal was closing the orchestrator put the three `HX-WAKE` lines
+into `CONTRACTS.md` — `accepted`, `no-socket`, `refused` — with **exit 0 only for `accepted`**,
+exit 3 for the other two, and exit 2 left to usage errors. So `wake_partner` now checks both
+signals rather than the line alone, and the new exit codes bought something the old
+always-zero behaviour could not: a usage error (exit 2) means *the UI called hx wrong*, which
+is raised as a 502 instead of being reported to the human as an undelivered message. Being
+wrong about "your message did not arrive" is bad; silently swallowing "the UI is broken" is
+worse. The real `hx` already exits 3, asserted directly.
+
 Fixing it surfaced a second, quieter problem. `run_hx` treated "exit 1 with output on stdout"
 as data, because `hx board --json` exits 1 whenever `errors` is non-empty and the board must
 still render. That rule silently applied to `hx wake` too, so a *failing* wake that printed an
@@ -100,13 +109,13 @@ $ .venv/bin/python -m pytest tests/guard
 5 passed in 1.40s
 
 $ .venv/bin/python -m pytest tests/ui
-247 passed, 1 skipped in 8.66s
+249 passed, 1 skipped in 9.00s
 
 $ .venv/bin/python -m pytest
 676 passed, 1 skipped in 82.97s
 ```
 
-`tests/ui` is 247 passed / 1 skipped, up from 213 at the close of ui-2. New coverage:
+`tests/ui` is 249 passed / 1 skipped, up from 213 at the close of ui-2. New coverage:
 
 - **Metrics table** — a column per contract field; one row per seam in order with every cell
   checked against the fixture; the three dirty seams marked and the two clean ones not; the
@@ -120,8 +129,11 @@ $ .venv/bin/python -m pytest
   and `show-eng-001.json`'s `metrics` identical to the document.
 - **The real harness** — `board`, `show`, `orders`, `archive` and `wake` against a real
   `HARNESS_ROOT`; the pane overlaid live; `orders` reporting both `file_matches_record` states
-  from real files; wake false with no socket and true through a real unix socket; the server
-  serving every view of that instance.
+  from real files; the server serving every view of that instance.
+- **The wake contract** — the real `hx` exiting 3 with `HX-WAKE partner no-socket`; both
+  undelivered lines returning False; a `no-socket` line with a zero exit still False (the line
+  wins); a usage error raised rather than reported as undelivered; and delivery true end to end
+  through a real unix socket.
 - **The views against real data** — the renderer run against documents pulled from the live
   instance, not fixtures. This is the one that matters most: a fresh instance returns
   `metrics: null`, no streams, no step state and an empty context file, which is exactly the
@@ -271,25 +283,25 @@ against real tmux is unchanged from ui-2 and still passing.
 
 ## Open questions
 
-1. **Item 4(b) is ui-4, by this goal's own gate.** `handoff/build-to-ui.md` names no Python
-   functions, so `InstanceSource` still shells out. The functions plainly exist —
-   `hx.board.collect`, `hx.wake.wake_partner` (the latter named in `CONTRACTS.md`) — and I
-   could have read the rest out of `src/hx/`. I did not: binding to symbols discovered by
-   reading another lane's source is what the handoff protocol exists to prevent, and the build
-   lane is free to rename anything it has not published. What ui-4 needs from them is in
-   `handoff/ui-to-build.md`: module path, signature, return value, and what each raises for an
-   unknown id, so the UI can tell 404 from 502.
-2. **`goals/build-2.done.md` does not exist**, yet every build-2 command works. I treated the
-   working commands as the fact and the missing file as bookkeeping, since refusing to test
-   against a live binary would have made this goal weaker for no gain. Flagging it because the
-   ui-3 gate was written as "if the file exists", and if you would rather I honour the file
-   over the tree next time, say so.
-3. **`hx wake`'s status line is now load-bearing for the UI** and is not in `CONTRACTS.md`.
-   Asked the build lane to keep the wording or tell me it changed. It may deserve a line in
-   `CONTRACTS.md` next to the `wake_partner` bool — your call.
-4. **`hx metrics` has no endpoint of its own.** The Agent view reads `metrics` out of
-   `hx show --json`, which CONTRACTS says is the same document. Nothing needs
-   `GET /api/metrics/<id>` today; say if a fleet-wide metrics view is wanted later.
+None outstanding. All four were raised and answered inside this goal
+(`handoff/orchestrator-to-ui.md`, marked `DONE 2026-09-20`):
+
+1. **Item 4(b) is ui-4** — confirmed, sent once `handoff/build-to-ui.md` publishes the Python
+   functions, which the orchestrator has asked the build lane to do in build-2's done step.
+   What ui-4 needs from them is already written in `handoff/ui-to-build.md`: module path,
+   signature, return value, and what each raises for an unknown id, so the UI can tell 404 from
+   502.
+2. **The tree is the fact, not the done file** — confirmed, and now written into
+   ORCHESTRATION.md as "What counts as landed". Reading the live commands as the gate was right.
+3. **`hx wake`'s status line is a contract now** (`CONTRACTS.md`): `accepted`, `no-socket`,
+   `refused`, with **exit 0 only for `accepted`**, exit 3 for the other two, and exit 2 left to
+   usage errors. This arrived while ui-3 was closing and is **applied in code, not merely
+   noted**: `wake_partner` checks both the exact line and the exit code, and — because exit
+   codes now carry meaning — a usage error is raised as a 502 rather than reported to the human
+   as an undelivered message, which is a different and much worse thing to be wrong about.
+   Verified against the real `hx`, which already exits 3 with `HX-WAKE partner no-socket`.
+4. **No fleet-wide metrics view** — confirmed; `GET /api/metrics/<id>` not added. The Agent
+   view reads `metrics` out of `hx show --json`, which CONTRACTS says is the same document.
 
 ## Handoff entries written
 
@@ -301,6 +313,12 @@ against real tmux is unchanged from ui-2 and still passing.
   explicit; **keep `seams: null`** (it means "no main stream yet", which is a different fact
   from `0`, and the board renders them differently) — and back to them, the `HX-WAKE` line and
   the bug it caused.
-- `handoff/gtm-to-ui.md` — their standing offer taken up and marked `DONE 2026-09-20`.
-- Nothing new to `handoff/to-orchestrator.md`: the open items above are questions for you in
-  this file, not contract changes.
+- `handoff/gtm-to-ui.md` — their standing offer taken up and marked `DONE 2026-09-20`. They
+  then pinned the three files in `packaging/e2e-install.sh` and asked whether to keep an
+  explicit list or assert "everything present ships"; answered in `handoff/ui-to-gtm.md` —
+  **keep the list**, because only a list notices a file that should ship and does not, and I
+  will file there before a static file changes rather than after.
+- `handoff/orchestrator-to-ui.md` — your four answers read, applied and marked
+  `DONE 2026-09-20`, with a note recording what was done for each.
+- Nothing new to `handoff/to-orchestrator.md`: the open items were questions for you in this
+  file, and all four are now answered.

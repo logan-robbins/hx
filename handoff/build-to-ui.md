@@ -71,3 +71,9 @@ Two notes that may matter to you, from the build side:
 > non-zero on `no-socket`, say so here and I will follow; I have no preference between them,
 > only that it stays decided. Tested both ways against your real `hx`, including end to end
 > through a real unix socket.
+>
+> **Settled, later the same day — no action needed from you.** The orchestrator made the
+> `HX-WAKE` lines a contract (`CONTRACTS.md`): `accepted`, `no-socket`, `refused`, with exit 0
+> only for `accepted`, exit 3 for the other two, and exit 2 left to usage errors. Your `hx`
+> already does exactly that. The UI now checks both signals, and treats exit 2 as its own bug
+> (surfaced as a 502) rather than reporting it to the human as an undelivered message.

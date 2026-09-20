@@ -27,9 +27,12 @@ from typing import Any
 
 from hx.ui import pane
 
-#: `hx wake partner` always exits 0 and reports on stdout: `HX-WAKE partner
-#: accepted` when the socket took the message, `… no-socket` when there was none.
+#: `hx wake partner` reports on stdout and in its exit code (CONTRACTS.md):
+#: `HX-WAKE partner accepted` with exit 0, or `… no-socket` / `… refused` with
+#: exit 3. Exit 2 is a usage error — the UI calling hx wrong, which is a bug to
+#: surface rather than a message to report as undelivered.
 WAKE_ACCEPTED = "HX-WAKE partner accepted"
+WAKE_NOT_DELIVERED = 3
 
 # Scopes that are not an agent id. `TASKS` covers tasks.json, whose every write
 # can change any row of the board.
@@ -164,6 +167,10 @@ class FixtureSource(Source):
 class CommandError(SourceError):
     """`hx` ran and failed for a reason that is not "not implemented"."""
 
+    def __init__(self, message: str, returncode: int | None = None) -> None:
+        super().__init__(message)
+        self.returncode = returncode
+
 
 def _hx_binary() -> str:
     """The `hx` next to the running interpreter, else whatever is on PATH."""
@@ -203,7 +210,7 @@ def run_hx(
         raise SourceUnavailable(message)
     if document and result.returncode == 1 and result.stdout.strip():
         return result.stdout
-    raise CommandError(message)
+    raise CommandError(message, result.returncode)
 
 
 class InstanceSource(Source):
@@ -267,14 +274,18 @@ class InstanceSource(Source):
         fixed-form message, never an order: orders are files (spec 08). Replaced
         by `hx.wake.wake_partner(root, text)` directly in ui-4.
 
-        `hx wake` exits 0 whether or not the Partner was there and says which on
-        stdout, so the exit code cannot be the answer: reporting "delivered" for
-        a Partner that never heard it is the one lie this box must not tell.
+        Both signals are checked, because reporting "delivered" for a Partner
+        that never heard it is the one lie this box must not tell: the exact
+        `HX-WAKE partner accepted` line, and exit 3 for the two undelivered
+        cases. Any other failure is the UI calling hx wrong, and is raised so it
+        surfaces as a 502 instead of a quiet "not delivered".
         """
         try:
             out = run_hx(self.root, ["wake", "partner", text], binary=self.binary)
-        except CommandError:
-            return False  # CONTRACTS.md: False when no socket exists or it refused
+        except CommandError as exc:
+            if exc.returncode == WAKE_NOT_DELIVERED:
+                return False  # CONTRACTS.md: no socket file, or the connection was refused
+            raise
         return any(line.strip() == WAKE_ACCEPTED for line in out.splitlines())
 
     # -- the sweep -------------------------------------------------------

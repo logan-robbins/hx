@@ -109,8 +109,15 @@ def test_archive_is_live_against_a_real_instance(instance_root):
 
 
 def test_wake_is_false_when_the_partner_has_no_socket(instance_root):
-    """`hx wake` exits 0 either way and says which on stdout (CONTRACTS.md)."""
+    """Against the real `hx`: `HX-WAKE partner no-socket` and exit 3 (CONTRACTS.md)."""
     assert not (instance_root / "run" / "partner" / "socket.json").exists()
+    result = subprocess.run(
+        [str(Path(os.sys.executable).parent / "hx"), "wake", "partner", "anyone home"],
+        env=dict(os.environ, HARNESS_ROOT=str(instance_root)),
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 3, "exit 0 is reserved for accepted"
+    assert result.stdout.strip() == "HX-WAKE partner no-socket"
     assert InstanceSource(instance_root).wake_partner("anyone home") is False
 
 
@@ -221,9 +228,11 @@ elif args[0] == "archive":
 elif args[0] == "wake":
     with open(os.environ["HX_WAKE_LOG"], "a") as handle:
         handle.write(json.dumps(args) + chr(10))
-    # The real `hx wake` always exits 0 and reports on stdout.
-    sys.stdout.write("HX-WAKE partner " + os.environ.get("HX_WAKE_RESULT", "accepted") + chr(10))
-    sys.exit(int(os.environ.get("HX_WAKE_EXIT", "0")))
+    # CONTRACTS.md: exit 0 only for `accepted`, exit 3 for no-socket/refused.
+    result = os.environ.get("HX_WAKE_RESULT", "accepted")
+    sys.stdout.write("HX-WAKE partner " + result + chr(10))
+    default = "0" if result == "accepted" else "3"
+    sys.exit(int(os.environ.get("HX_WAKE_EXIT", default)))
 else:
     sys.stderr.write("hx: " + args[0] + ": not implemented (build-9)")
     sys.exit(2)
@@ -277,16 +286,25 @@ def test_wake_partner_passes_the_text_as_one_argv_element(stub_source, tmp_path)
     assert logged == [["wake", "partner", text]], "one argv element, verbatim"
 
 
-def test_wake_partner_is_false_when_the_socket_refuses(stub_source):
+@pytest.mark.parametrize("result", ["no-socket", "refused"])
+def test_wake_partner_is_false_for_both_undelivered_cases(stub_source, result):
     """CONTRACTS.md: False when no socket file exists or the connection was refused."""
-    os.environ["HX_WAKE_EXIT"] = "1"
+    os.environ["HX_WAKE_RESULT"] = result
     assert stub_source.wake_partner("anyone home") is False
 
 
-def test_wake_partner_is_false_when_hx_says_no_socket(stub_source):
-    """The exit code is 0 either way, so the status line is the only answer."""
+def test_wake_partner_trusts_the_line_over_a_zero_exit(stub_source):
+    """Belt and braces: an `accepted` exit code with a `no-socket` line is not delivered."""
     os.environ["HX_WAKE_RESULT"] = "no-socket"
+    os.environ["HX_WAKE_EXIT"] = "0"
     assert stub_source.wake_partner("anyone home") is False
+
+
+def test_a_usage_error_is_raised_not_reported_as_undelivered(stub_source):
+    """Exit 2 means the UI called hx wrong. That is a bug to surface, not a False."""
+    os.environ["HX_WAKE_EXIT"] = "2"
+    with pytest.raises(CommandError):
+        stub_source.wake_partner("anyone home")
 
 
 def test_a_command_printing_junk_is_reported(instance_root, tmp_path):

@@ -29,7 +29,7 @@
 > `hx.ui.pane.log_fallback` already read `logs/<id>/<id>-pane.log`; kept as written and its
 > docstring now cites spec 03 and 11 instead of the open question.
 
-## 2026-09-20 — answers to the four open questions in `goals/ui-3.done.md`
+## 2026-09-20 — answers to the four open questions in `goals/ui-3.done.md` — DONE 2026-09-20
 
 1. Yes: binding to the Python functions is ui-4, sent after `handoff/build-to-ui.md` publishes
    them (I have asked the build lane to do that in build-2's done step).
@@ -39,3 +39,12 @@
    otherwise). Your matcher on the exact line stays right; the exit code becomes a second
    signal you may also check.
 4. No fleet-wide metrics view now.
+
+> ui lane, DONE 2026-09-20: all four applied. (1) ui-4 it is; `handoff/ui-to-build.md` already
+> says what the build lane's published entry needs to name. (2) Noted — ORCHESTRATION.md's
+> "What counts as landed" is the rule I followed. (3) Applied in code, not just acknowledged:
+> `InstanceSource.wake_partner` now checks **both** signals — the exact `HX-WAKE partner
+> accepted` line and exit 3 for `no-socket`/`refused` — and, because exit codes are meaningful
+> now, a usage error (exit 2) is raised as a 502 instead of being reported to the human as
+> "not delivered". Verified against the real `hx`, which already exits 3. (4) No fleet-wide
+> metrics view; `GET /api/metrics/<id>` not added.
