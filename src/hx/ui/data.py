@@ -18,9 +18,14 @@ filesystem, and its readers are plugged into the build lane's `hx board --json`,
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
+
+from hx.ui import pane
 
 # Scopes that are not an agent id. `TASKS` covers tasks.json, whose every write
 # can change any row of the board.
@@ -152,12 +157,53 @@ class FixtureSource(Source):
         return stem if stem in VIEW_SCOPES else stem
 
 
-class InstanceSource(Source):
-    """A live `HARNESS_ROOT`.
+class CommandError(SourceError):
+    """`hx` ran and failed for a reason that is not "not implemented"."""
 
-    `scan()` is spec 16.1 in full. The readers land in ui-2, when the build lane's
-    `hx board --json`, `hx show --json` and `hx.wake.wake_partner` exist; until
-    then each one says so rather than guessing at a shape.
+
+def _hx_binary() -> str:
+    """The `hx` next to the running interpreter, else whatever is on PATH."""
+    candidate = Path(sys.executable).parent / "hx"
+    return str(candidate) if candidate.exists() else "hx"
+
+
+def run_hx(root: Path, args: list[str], *, binary: str | None = None) -> str:
+    """Run one read-only `hx` command against `root` and return its stdout.
+
+    This is the seam ui-2 is built on. When the build lane's
+    `handoff/build-to-ui.md` names the Python functions, `InstanceSource` calls
+    those instead and this goes away; nothing outside this module changes,
+    because every reader already goes through `Source`.
+    """
+    command = [binary or _hx_binary(), *args]
+    environment = dict(os.environ, HARNESS_ROOT=str(root))
+    environment.pop("HARNESS_ID", None)  # the UI is not an agent; spec 08
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False, env=environment)
+    except OSError as exc:
+        raise SourceUnavailable(f"cannot run {command[0]}: {exc}") from exc
+
+    if result.returncode == 0:
+        return result.stdout
+
+    message = (result.stderr or result.stdout).strip() or f"{' '.join(args)} exited {result.returncode}"
+    if "not implemented" in message:
+        # hx names the build-lane goal that delivers it; pass that through verbatim.
+        raise SourceUnavailable(message)
+    # `hx board` exits 1 with a valid document when the instance has invariant
+    # errors. That is data the board must render, not a failure.
+    if result.returncode == 1 and result.stdout.strip():
+        return result.stdout
+    raise CommandError(message)
+
+
+class InstanceSource(Source):
+    """A live `HARNESS_ROOT`, read through `hx` itself.
+
+    Spec 16: the UI shows what `hx board --json` and `hx show <id> --json` show,
+    "read through the same code", so this composes nothing of its own. The one
+    exception is the pane, which spec 16.2 refreshes on the SSE tick and which
+    `hx.ui.pane` captures directly.
     """
 
     #: Spec 16.1: the mtimes swept once a second. `recursive` walks the tree.
@@ -171,30 +217,54 @@ class InstanceSource(Source):
     #: run/<id>/turn and run/<id>/goal, one level under run/.
     RUN_MARKERS = ("turn", "goal")
 
-    def __init__(self, root: Path | str) -> None:
+    def __init__(self, root: Path | str, *, binary: str | None = None, tmux_socket: str | None = None) -> None:
         self.root = Path(root)
+        self.binary = binary
+        self.tmux_socket = tmux_socket
 
-    def _later(self) -> SourceUnavailable:
-        return SourceUnavailable(
-            "this instance reader lands in ui-2, with the build lane's hx board/show/wake; "
-            "run the UI with --fixtures until then"
-        )
+    # -- readers ---------------------------------------------------------
+    def _json(self, args: list[str]) -> dict[str, Any]:
+        raw = run_hx(self.root, args, binary=self.binary)
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise CommandError(f"hx {' '.join(args)} did not print JSON: {exc}") from exc
+        if not isinstance(value, dict):
+            raise CommandError(f"hx {' '.join(args)} did not print a JSON object")
+        return value
 
     def board(self) -> dict[str, Any]:
-        raise self._later()
+        return self._json(["board", "--json"])
 
     def show(self, agent_id: str) -> dict[str, Any]:
-        raise self._later()
+        if id_of(agent_id) != agent_id:
+            raise NotFound(f"not an agent id: {agent_id!r}")
+        document = self._json(["show", agent_id, "--json"])
+        # Spec 16.2: the pane is re-read on the SSE tick, so the UI captures it
+        # itself rather than showing whatever `hx show` happened to catch.
+        document["pane"] = pane.capture(self.root, agent_id, socket=self.tmux_socket)
+        return document
 
     def orders(self) -> dict[str, Any]:
-        raise self._later()
+        return self._json(["orders", "--json"])
 
     def archive(self) -> dict[str, Any]:
-        raise self._later()
+        return self._json(["archive", "--json"])
 
     def wake_partner(self, text: str) -> bool:
-        raise self._later()
+        """The UI's only write.
 
+        The text crosses a process boundary as one argv element. That is hx's own
+        fixed-form message, never an order: orders are files (spec 08). Replaced
+        by `hx.wake.wake_partner(root, text)` when build-2 lands.
+        """
+        try:
+            run_hx(self.root, ["wake", "partner", text], binary=self.binary)
+        except CommandError:
+            return False  # no socket file, or the connection was refused (CONTRACTS.md)
+        return True
+
+    # -- the sweep -------------------------------------------------------
     def scan(self) -> dict[str, float]:
         table: dict[str, float] = {}
         for name, recursive in self.WATCHED:

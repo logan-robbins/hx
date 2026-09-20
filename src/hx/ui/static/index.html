@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>hx</title>
-<link rel="stylesheet" href="/static/style.css?token=__TOKEN__">
-<script id="bootstrap" type="application/json">__BOOTSTRAP__</script>
+<!-- No token in any URL: GET / sets an HttpOnly cookie and the browser carries it
+     on every request below, including the stylesheet, the script and the event stream. -->
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="bar">
@@ -21,6 +22,6 @@
 </header>
 <p id="banner" class="banner" hidden></p>
 <main id="main" aria-live="polite"></main>
-<script src="/static/app.js?token=__TOKEN__"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

@@ -1,8 +1,7 @@
 """Instance-mode plumbing: the token file, the port, and the spec 16.1 sweep.
 
-The instance *readers* land in ui-2 with the build lane's `hx board --json`,
-`hx show --json` and `hx.wake.wake_partner`; until then they answer 503 rather
-than guess at a shape. `scan()` is pure filesystem, so it is complete here.
+Pure filesystem and pure argument handling, so none of it needs `hx`. The
+readers that do are in tests/ui/test_instance_source.py.
 """
 
 from __future__ import annotations
@@ -142,35 +141,9 @@ def test_scan_of_a_missing_root_is_empty(tmp_path):
 
 
 # -- the readers ---------------------------------------------------------
-
-def test_the_instance_readers_say_they_land_in_ui_2(tmp_path):
-    source = InstanceSource(build_root(tmp_path))
-    for call in (
-        source.board,
-        lambda: source.show("eng-001"),
-        source.orders,
-        source.archive,
-        lambda: source.wake_partner("hello"),
-    ):
-        with pytest.raises(SourceUnavailable) as raised:
-            call()
-        assert "ui-2" in str(raised.value)
-
-
-def test_an_unavailable_source_is_served_as_503(tmp_path):
-    from .conftest import _serve
-
-    server = _serve(InstanceSource(build_root(tmp_path)))
-    handle = next(server)
-    try:
-        for path in ("/api/board", "/api/orders", "/api/archive", "/api/show/eng-001"):
-            status, payload = handle.client.json(path)
-            assert status == 503, path
-            assert "ui-2" in payload["error"]
-        response = handle.client.post("/api/partner/wake", {"text": "hi"})
-        assert response.status == 503
-    finally:
-        server.close()
+# `InstanceSource.board/show/orders/archive/wake_partner` are exercised in
+# tests/ui/test_instance_source.py, against a real `HARNESS_ROOT` built with
+# `hx install --skeleton-only` and against a stub `hx`.
 
 
 # -- the entry point -----------------------------------------------------

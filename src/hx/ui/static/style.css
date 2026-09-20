@@ -211,9 +211,171 @@ pre.addendum { border-left: 3px solid var(--accent); }
 
 .empty { color: var(--dim); font-style: italic; }
 
-/* -- shell views (ui-2) ------------------------------------------------ */
-.soon { border-style: dashed; }
-.soon h2 { color: var(--accent); }
+/* -- agent view -------------------------------------------------------- */
+h3 {
+  color: var(--accent);
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.08em;
+  margin: 18px 0 8px;
+  text-transform: uppercase;
+}
+
+.notyet {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-style: italic;
+  margin: 4px 0;
+}
+
+table.kv { min-width: 0; }
+table.kv th { white-space: nowrap; width: 1%; vertical-align: top; }
+table.kv td { white-space: normal; font-family: var(--mono); font-size: 12px; }
+
+.linkish {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  text-align: left;
+}
+.linkish:hover { text-decoration: underline; }
+
+.picker { display: flex; flex-wrap: wrap; gap: 14px; }
+
+ul.steps { list-style: none; margin: 0; padding: 0; }
+
+ul.steps li {
+  border-left: 2px solid var(--line);
+  margin-bottom: 10px;
+  padding-left: 12px;
+}
+
+.stepid {
+  background: var(--panel-2);
+  border-radius: 4px;
+  color: var(--dim);
+  font: 600 11px/1 var(--mono);
+  padding: 3px 6px;
+}
+
+.next { margin-top: 4px; }
+.next .lbl { color: var(--queued); font-family: var(--mono); font-size: 12px; }
+
+code.commit {
+  background: rgba(126, 231, 135, 0.12);
+  border-radius: 4px;
+  color: var(--working);
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-left: 6px;
+  padding: 2px 6px;
+}
+
+.wset ul { margin: 2px 0 10px; padding-left: 20px; font-size: 13px; }
+.bad-list li { color: var(--bad); }
+
+/* -- streams ----------------------------------------------------------- */
+.tail { display: grid; gap: 8px; }
+
+.rec {
+  align-items: center;
+  background: var(--panel-2);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.rec.seam { border-left: 3px solid var(--queued); }
+.rec .seq { color: var(--dim); font: 600 11px/1 var(--mono); }
+.rec pre.excerpt { flex-basis: 100%; margin: 4px 0 0; max-height: 9em; overflow-y: auto; }
+.rec pre.excerpt.out { color: var(--dim); }
+
+pre.pane {
+  background: #0c0e13;
+  color: #cbd3e1;
+  max-height: 40em;
+  overflow-y: auto;
+  white-space: pre;
+}
+
+.pane-error { color: var(--queued); font-family: var(--mono); font-size: 12px; }
+
+/* -- markdown ---------------------------------------------------------- */
+h3.md, h4.md, h5.md, h6.md {
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+ul.md, ol.md { padding-left: 22px; }
+li.task { list-style: none; margin-left: -18px; }
+li.task.done { color: var(--dim); }
+li.task .box { color: var(--working); }
+li.task.open .box { color: var(--queued); }
+
+blockquote {
+  border-left: 3px solid var(--line);
+  color: var(--dim);
+  margin: 8px 0;
+  padding-left: 12px;
+}
+
+code {
+  background: var(--panel-2);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+}
+
+pre code { background: none; padding: 0; }
+pre.code { border-left: 3px solid var(--accent); }
+.addendum-block { border-left: 3px solid var(--accent); padding-left: 12px; margin: 8px 0; }
+
+/* -- partner chat ------------------------------------------------------ */
+.chat { display: grid; gap: 8px; }
+
+.chat textarea {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: 13px/1.5 var(--mono);
+  padding: 10px 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.chat textarea:focus { border-color: var(--accent); outline: none; }
+.chat-bar { align-items: center; display: flex; gap: 12px; flex-wrap: wrap; }
+
+button.send {
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #0c0e13;
+  cursor: pointer;
+  font: 600 13px/1 ui-sans-serif, system-ui, sans-serif;
+  padding: 9px 18px;
+}
+
+button.send:hover { filter: brightness(1.1); }
+button.send[disabled] { cursor: default; opacity: 0.5; }
+
+.tmux-note {
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 13px;
+  margin-top: 14px;
+  padding-top: 12px;
+}
 
 @media (max-width: 640px) {
   main { padding: 14px 16px; }

@@ -41,3 +41,55 @@ specified as a function in `CONTRACTS.md`.
 
 No action needed before your `show`/`wake` goals land — the ui lane is not blocked, it runs on
 fixtures.
+
+
+## 2026-09-20 — ui-2 — the `hx ui` subcommand: what to call, and one stale entry
+
+**The request (ui-2 item 4).** `hx ui` is yours (build-10 in `cli.py`). When you wire it, the
+whole subcommand is:
+
+```python
+from hx.ui.server import serve
+
+def main(argv, root, *, env=None):
+    args = parse(argv)              # optional: --port
+    serve(root, args.port)          # blocks until shutdown
+    return 0
+```
+
+- `serve(root: Path | str, port: int | None = None, *, host: str = "127.0.0.1") -> None`.
+  `port` is positional so an override passes straight through; omitted, `serve` reads
+  `config/ui.json` `{"port": …}` itself and falls back to 8765.
+- `serve` creates `run/ui-token` with mode 0600 if missing and writes nothing else under
+  `HARNESS_ROOT`. That is asserted in `tests/ui/test_instance_source.py`, which diffs a
+  manifest of a real instance across the whole UI test run and allows only `run/ui-token`.
+- `hx.ui` imports nothing from `hx.cli`, so this cannot cycle. It does import `hx.ui.data`,
+  which shells out to `hx` — see below.
+- It blocks. `hx ui` should not wrap it in a thread.
+
+**One stale entry, yours to fix.** `cli.py`'s `NOT_IMPLEMENTED` maps `"show": 10`, so today
+`hx show` prints `hx: show: not implemented (build-10)`. `goals/build-2.md` item 9 delivers
+`hx show --json` in build-2, and items 8 and 10 deliver `wake`, `orders` and `archive`. The
+numbers for `show`, `orders`, `archive` and `wake` want to be `2`. The UI surfaces that string
+verbatim in its 503 body, so a human reading the Agent view today is told to wait for build-10
+when the answer is build-2. Nothing breaks either way.
+
+**What `InstanceSource` runs today**, so you can see what it will stop running:
+
+```
+hx board --json          # live now
+hx show <id> --json      # build-2 item 9
+hx orders --json         # build-2 item 10
+hx archive --json        # build-2 item 10
+hx wake partner <text>   # build-2 item 8 — the text is one argv element
+```
+
+Each goes through one function, `hx.ui.data.run_hx(root, args)`, which sets `HARNESS_ROOT` and
+unsets `HARNESS_ID` (the UI is not an agent, and spec 08 has Partner commands refuse a foreign
+id). It treats exit 1 with a JSON document on stdout as data, not failure, because `hx board`
+exits 1 whenever `errors` is non-empty and the board must still render.
+
+When `handoff/build-to-ui.md` lands naming the Python functions, ui-3 replaces `run_hx` with
+direct calls. Please include, for each of board / show / orders / archive / wake: the module
+path, the exact signature, what it returns, and what it raises when the id is unknown. The UI
+needs to tell "no such id" (404) apart from "the instance is broken" (502).

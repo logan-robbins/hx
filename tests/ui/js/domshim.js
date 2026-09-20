@@ -14,6 +14,7 @@ class Node {
     this.listeners = {};
     this.own = "";
     this.hidden = false;
+    this.value = "";
   }
 
   set textContent(value) {
@@ -32,6 +33,11 @@ class Node {
 
   getAttribute(name) {
     return Object.hasOwn(this.attrs, name) ? this.attrs[name] : null;
+  }
+
+  removeAttribute(name) {
+    delete this.attrs[name];
+    if (name.startsWith("data-")) delete this.dataset[name.slice(5)];
   }
 
   append(...nodes) {
@@ -65,6 +71,9 @@ class Node {
     if (selector === "button[data-view]") {
       return this.tagName === "BUTTON" && this.dataset.view ? this : null;
     }
+    if (selector === "button[data-open]") {
+      return this.tagName === "BUTTON" && this.dataset.open ? this : null;
+    }
     throw new Error("domshim: unsupported closest selector " + selector);
   }
 
@@ -72,6 +81,9 @@ class Node {
     const out = [];
     for (const child of this.children) {
       if (typeof child === "string") continue;
+      if (!(child instanceof Node)) {
+        throw new TypeError("domshim: appended a " + Object.prototype.toString.call(child) + ", not a node");
+      }
       out.push(child, ...child.descendants());
     }
     return out;
@@ -87,10 +99,9 @@ class Node {
 
 const NAV = ["board", "orders", "archive", "agent", "partner"];
 
-function buildDocument(token) {
+function buildDocument() {
   const nodes = {};
-  for (const id of ["main", "banner", "live", "nav", "bootstrap"]) nodes[id] = new Node("div");
-  nodes.bootstrap.textContent = JSON.stringify({ token });
+  for (const id of ["main", "banner", "live", "nav"]) nodes[id] = new Node("div");
   nodes.nav.tagName = "NAV";
   for (const name of NAV) {
     const button = new Node("button");

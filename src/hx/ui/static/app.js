@@ -1,25 +1,25 @@
-/* hx UI (spec 16.2). Vanilla, no framework, no build step.
+/* hx UI (spec 16.2). Vanilla, no framework, no build step, no CDN.
  *
- * Every view is one GET; the only POST in the page is the Partner wake, which
- * ui-2 wires to the chat box. SSE pushes the scopes whose mtime moved and the
- * page re-fetches the views that show them. */
+ * The token is never in this file and never in a URL: GET / set an HttpOnly
+ * cookie, so the browser carries it on every fetch and on the event stream, and
+ * this script cannot read it. SSE pushes the scopes whose mtime moved and the
+ * page re-fetches what is open. The only write the page can make is the Partner
+ * wake; every other request is a GET. */
 
 "use strict";
 
-const BOOT = JSON.parse(document.getElementById("bootstrap").textContent);
 const main = document.getElementById("main");
 const banner = document.getElementById("banner");
 const live = document.getElementById("live");
 
 let view = "board";
-let recent = new Set(); // scopes changed by the last SSE frame, flashed once
+let agentId = null; // which id the Agent view is showing
+let recent = new Set(); // scopes from the last SSE frame, flashed once
 
 /* -- plumbing ---------------------------------------------------------- */
 
 async function api(path, options) {
-  const init = Object.assign({ headers: {} }, options);
-  init.headers = Object.assign({ Authorization: "Bearer " + BOOT.token }, init.headers);
-  const response = await fetch(path, init);
+  const response = await fetch(path, Object.assign({ credentials: "same-origin" }, options));
   const payload = await response.json().catch(() => ({ error: response.statusText }));
   if (!response.ok) throw new Error(payload.error || "HTTP " + response.status);
   return payload;
@@ -33,7 +33,9 @@ function el(tag, attrs, ...children) {
     else if (key === "text") node.textContent = value;
     else node.setAttribute(key, value);
   }
-  for (const child of children.flat()) {
+  // flat(Infinity): a view may nest arrays (a heading plus a mapped list), and a
+  // single-level flat would append the inner Array object itself.
+  for (const child of children.flat(Infinity)) {
     if (child === null || child === undefined || child === false) continue;
     node.append(child);
   }
@@ -45,6 +47,14 @@ function pill(value, extra) {
   return el("span", { class: "pill " + (extra || (value ? String(value) : "none")), text: label });
 }
 
+/** Spec: render an absent value as "not yet", never as an empty box. */
+function orNotYet(value, render) {
+  if (value === null || value === undefined || (Array.isArray(value) && !value.length)) {
+    return el("p", { class: "notyet", text: "not yet" });
+  }
+  return render(value);
+}
+
 function fail(message) {
   banner.textContent = message;
   banner.hidden = false;
@@ -54,7 +64,6 @@ function clearFail() {
   banner.hidden = true;
 }
 
-/** ts → the clock part, which is what the human scans for. */
 function clock(ts) {
   if (!ts) return "—";
   const match = /T(\d\d:\d\d:\d\d)/.exec(ts);
@@ -78,6 +87,120 @@ function head(payload) {
   });
 }
 
+function section(title, ...body) {
+  return el("section", {}, el("h2", { text: title }), body.flat());
+}
+
+/* -- markdown ----------------------------------------------------------
+ * A deliberately small subset: headings, fenced code, lists, blockquotes,
+ * paragraphs, and inline code/bold/italic. Everything becomes a DOM node built
+ * with textContent, so nothing a HarnessAgent writes into a work item can
+ * inject markup into this page. */
+
+function inline(text, into) {
+  const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) into.append(text.slice(last, match.index));
+    const token = match[0];
+    if (token.startsWith("`")) into.append(el("code", { text: token.slice(1, -1) }));
+    else if (token.startsWith("**")) into.append(el("strong", { text: token.slice(2, -2) }));
+    else into.append(el("em", { text: token.slice(1, -1) }));
+    last = match.index + token.length;
+  }
+  if (last < text.length) into.append(text.slice(last));
+  return into;
+}
+
+function markdown(text) {
+  const out = [];
+  const lines = String(text || "").split("\n");
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (line.startsWith("```")) {
+      const body = [];
+      const language = line.slice(3).trim();
+      index++;
+      while (index < lines.length && !lines[index].startsWith("```")) body.push(lines[index++]);
+      index++;
+      out.push(el("pre", { class: "code", "data-lang": language || null, text: body.join("\n") }));
+      continue;
+    }
+
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      out.push(inline(heading[2], el("h" + Math.min(heading[1].length + 2, 6), { class: "md" })));
+      index++;
+      continue;
+    }
+
+    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
+      const ordered = /^\s*\d+\.\s+/.test(line);
+      const items = [];
+      while (index < lines.length && (/^\s*[-*]\s+/.test(lines[index]) || /^\s*\d+\.\s+/.test(lines[index]))) {
+        const body = lines[index].replace(/^\s*(?:[-*]|\d+\.)\s+/, "");
+        const task = /^\[([ xX])\]\s*(.*)$/.exec(body);
+        if (task) {
+          const done = task[1].toLowerCase() === "x";
+          items.push(
+            inline(task[2], el("li", { class: "task " + (done ? "done" : "open") }, el("span", {
+              class: "box", text: done ? "☑" : "☐",
+            }), " "))
+          );
+        } else {
+          items.push(inline(body, el("li", {})));
+        }
+        index++;
+      }
+      out.push(el(ordered ? "ol" : "ul", { class: "md" }, items));
+      continue;
+    }
+
+    if (line.startsWith(">")) {
+      const body = [];
+      while (index < lines.length && lines[index].startsWith(">")) body.push(lines[index++].replace(/^>\s?/, ""));
+      out.push(inline(body.join(" "), el("blockquote", {})));
+      continue;
+    }
+
+    if (!line.trim()) {
+      index++;
+      continue;
+    }
+
+    const body = [];
+    while (index < lines.length && lines[index].trim() && !/^(#{1,6}\s|```|>|\s*[-*]\s|\s*\d+\.\s)/.test(lines[index])) {
+      body.push(lines[index++]);
+    }
+    out.push(inline(body.join(" "), el("p", {})));
+  }
+  return out;
+}
+
+/** Split a work-item body into its `## ` sections, in order. */
+function sections(body) {
+  const found = [];
+  let current = null;
+  for (const line of String(body || "").split("\n")) {
+    const heading = /^##\s+(.*)$/.exec(line);
+    if (heading) {
+      current = { title: heading[1].trim(), lines: [] };
+      found.push(current);
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  return found.map((s) => ({ title: s.title, text: s.lines.join("\n").trim() }));
+}
+
+function findSection(body, name) {
+  const match = sections(body).find((s) => s.title.toLowerCase() === name.toLowerCase());
+  return match ? match.text : null;
+}
+
 /* -- board ------------------------------------------------------------- */
 
 const COLUMNS = [
@@ -94,10 +217,11 @@ function afterCell(item) {
 }
 
 function boardRow(item) {
-  const row = el(
+  const open = el("button", { class: "linkish", "data-open": item.id, text: item.id });
+  return el(
     "tr",
     { class: [item.id === "partner" ? "partner" : "", recent.has(item.id) ? "flash" : ""].join(" ").trim() },
-    el("td", { class: "id" }, item.id, el("div", { class: "sub", text: item.file || "" })),
+    el("td", { class: "id" }, open, el("div", { class: "sub", text: item.file || "" })),
     el("td", {}, el("span", { class: "sub", text: (item.pod || "—") + " / " + (item.role || "—") })),
     el("td", {}, pill(item.state)),
     el("td", {}, pill(item.outcome)),
@@ -117,7 +241,20 @@ function boardRow(item) {
     el("td", { class: "num", text: item.seams === null ? "—" : String(item.seams) }),
     el("td", {}, el("span", { class: "sub", text: clock(item.turn_ts) }))
   );
-  return row;
+}
+
+function boardTable(payload) {
+  const items = payload.items || [];
+  return el(
+    "div",
+    { class: "scroll" },
+    el(
+      "table",
+      {},
+      el("thead", {}, el("tr", {}, COLUMNS.map((name) => el("th", { text: name })))),
+      el("tbody", {}, items.map(boardRow))
+    )
+  );
 }
 
 function renderBoard(payload) {
@@ -125,21 +262,7 @@ function renderBoard(payload) {
   return [
     head(payload),
     errors(payload.errors),
-    el(
-      "section",
-      {},
-      el("h2", { text: "board · " + items.length + " items" }),
-      el(
-        "div",
-        { class: "scroll" },
-        el(
-          "table",
-          {},
-          el("thead", {}, el("tr", {}, COLUMNS.map((name) => el("th", { text: name })))),
-          el("tbody", {}, items.map(boardRow))
-        )
-      )
-    ),
+    section("board · " + items.length + " items", boardTable(payload)),
   ];
 }
 
@@ -187,10 +310,8 @@ function renderOrders(payload) {
   return [
     head(payload),
     errors(payload.errors),
-    el(
-      "section",
-      {},
-      el("h2", { text: "after graph · " + edges.length + " edges" }),
+    section(
+      "after graph · " + edges.length + " edges",
       edges.length
         ? el(
             "div",
@@ -208,10 +329,8 @@ function renderOrders(payload) {
           )
         : el("p", { class: "empty", text: "no dependencies" })
     ),
-    el(
-      "section",
-      {},
-      el("h2", { text: "orders · " + orders.length }),
+    section(
+      "orders · " + orders.length,
       orders.length ? orders.map(orderCard) : el("p", { class: "empty", text: "no orders" })
     ),
   ];
@@ -242,10 +361,8 @@ function renderArchive(payload) {
   return [
     head(payload),
     errors(payload.errors),
-    el(
-      "section",
-      {},
-      el("h2", { text: "archive · " + items.length + " ids" }),
+    section(
+      "archive · " + items.length + " ids",
       items.length
         ? items.map((item) =>
             el(
@@ -266,29 +383,397 @@ function renderArchive(payload) {
   ];
 }
 
-/* -- agent / partner shells (ui-2) ------------------------------------- */
+/* -- agent ------------------------------------------------------------- */
 
-function renderSoon(name, what) {
+function frontmatterTable(frontmatter) {
+  return el(
+    "div",
+    { class: "scroll" },
+    el(
+      "table",
+      { class: "kv" },
+      el(
+        "tbody",
+        {},
+        Object.entries(frontmatter || {}).map(([key, value]) =>
+          el(
+            "tr",
+            {},
+            el("th", { text: key }),
+            el("td", { text: value === null || value === undefined ? "not yet" : String(value) })
+          )
+        )
+      )
+    )
+  );
+}
+
+function stepState(handle, state) {
+  const workingSet = state.working_set || {};
+  return el(
+    "article",
+    { class: "card" },
+    el(
+      "div",
+      { class: "order-head" },
+      el("span", { class: "name", text: handle }),
+      el("span", { class: "sub", text: "seq " + (state.seq === null || state.seq === undefined ? "—" : state.seq) }),
+      state.prompt_version
+        ? el("span", {
+            class: "sub",
+            text: "prompt " + (state.prompt_version.base || "?") + " / " + (state.prompt_version.role || "?"),
+          })
+        : null
+    ),
+    state.goal ? el("p", {}, el("strong", { text: "goal: " }), state.goal) : null,
+    (state.constraints || []).length
+      ? el("p", { class: "meta", text: "constraints: " + state.constraints.join("; ") })
+      : null,
+
+    el("h3", { text: "open steps" }),
+    orNotYet(state.open_steps, (steps) =>
+      el(
+        "ul",
+        { class: "steps" },
+        steps.map((step) =>
+          el(
+            "li",
+            {},
+            el("span", { class: "stepid", text: step.id }),
+            " ",
+            el("span", { text: step.intent || "" }),
+            el("div", { class: "next" }, el("span", { class: "lbl", text: "next: " }), step.next || "—"),
+            el("div", { class: "sub", text: "ev " + (step.ev || []).join(", ") })
+          )
+        )
+      )
+    ),
+
+    el("h3", { text: "closed steps" }),
+    orNotYet(state.closed_steps, (steps) =>
+      el(
+        "ul",
+        { class: "steps" },
+        steps.map((step) =>
+          el(
+            "li",
+            {},
+            el("span", { class: "stepid", text: step.id }),
+            " ",
+            el("span", { text: step.outcome || "" }),
+            " ",
+            pill(step.verified ? "verified" : "unverified", step.verified ? "done" : "queued"),
+            step.commit ? el("code", { class: "commit", text: step.commit }) : null,
+            el("div", { class: "sub", text: "ev " + (step.ev || []).join(", ") })
+          )
+        )
+      )
+    ),
+
+    el("h3", { text: "working set" }),
+    el(
+      "div",
+      { class: "wset" },
+      el("p", { class: "meta", text: "commits" }),
+      orNotYet(workingSet.commits, (commits) =>
+        el("ul", {}, commits.map((c) => el("li", {}, el("code", { class: "commit", text: c.sha || "" }), " " + (c.msg || ""))))
+      ),
+      el("p", { class: "meta", text: "dirty" }),
+      orNotYet(workingSet.dirty, (dirty) => el("ul", {}, dirty.map((path) => el("li", { text: path })))),
+      el("p", { class: "meta", text: "files read, not changed" }),
+      orNotYet(workingSet.files, (files) =>
+        el("ul", {}, files.map((f) => el("li", {}, el("code", { text: f.path || "" }), " — " + (f.note || ""))))
+      ),
+      workingSet.last_failure ? el("p", {}, el("strong", { text: "last failure: " }), workingSet.last_failure) : null,
+      workingSet.hypothesis ? el("p", {}, el("strong", { text: "hypothesis: " }), workingSet.hypothesis) : null
+    ),
+
+    el("h3", { text: "blockers" }),
+    orNotYet(state.blockers, (list) => el("ul", { class: "bad-list" }, list.map((b) => el("li", { text: b })))),
+
+    el("h3", { text: "dead ends" }),
+    orNotYet(state.dead_ends, (list) => el("ul", {}, list.map((d) => el("li", { text: d }))))
+  );
+}
+
+function streamCard(stream) {
+  return el(
+    "article",
+    { class: "card" },
+    el(
+      "div",
+      { class: "order-head" },
+      el("span", { class: "name", text: stream.handle }),
+      pill(stream.open ? "open" : "closed", stream.open ? "working" : "complete"),
+      el("span", { class: "sub", text: stream.records + " records  ·  " + stream.path })
+    ),
+    stream.digest ? el("p", {}, el("strong", { text: "digest: " }), stream.digest) : null,
+    el("h3", { text: "tail" }),
+    orNotYet(stream.tail, (tail) =>
+      el(
+        "div",
+        { class: "tail" },
+        tail.map((record) =>
+          el(
+            "div",
+            { class: "rec" + (record.event === "seam" ? " seam" : "") },
+            el("span", { class: "seq", text: "#" + record.seq }),
+            el("span", { class: "sub", text: clock(record.ts) }),
+            pill(record.event, record.event === "seam" ? "decision" : "none"),
+            record.tool ? el("code", { text: record.tool }) : null,
+            record.exit !== null && record.exit !== undefined
+              ? pill("exit " + record.exit, record.exit === 0 ? "done" : "bad")
+              : null,
+            record.event === "seam"
+              ? el("span", { class: "sub", text: "context file " + (record.context_file_bytes || 0) + " B" })
+              : null,
+            record.input ? el("pre", { class: "excerpt", text: String(record.input) }) : null,
+            record.output ? el("pre", { class: "excerpt out", text: String(record.output) }) : null,
+            el("div", {
+              class: "sub",
+              text: "context " + (record.context_tokens === null || record.context_tokens === undefined
+                ? "—" : record.context_tokens.toLocaleString()),
+            })
+          )
+        )
+      )
+    )
+  );
+}
+
+function renderAgent(payload) {
+  if (payload.__picker) {
+    return [
+      section(
+        "agent",
+        el("p", { class: "empty", text: "Pick an id on the Board, or here:" }),
+        el("div", { class: "picker" }, (payload.ids || []).map((id) =>
+          el("button", { class: "linkish", "data-open": id, text: id })
+        ))
+      ),
+    ];
+  }
+
+  const body = (payload.work_item || {}).body || "";
+  const pane = payload.pane || {};
+  const subagents = payload.subagents || {};
+  const digests = {};
+  for (const stream of payload.streams || []) if (stream.digest) digests[stream.handle] = stream.digest;
+
   return [
     el(
-      "section",
-      {},
+      "p",
+      { class: "meta" },
+      payload.file || "",
+      "  ·  ",
+      payload.pod || "",
+      " / ",
+      payload.role || "",
+      "  ·  persona ",
+      payload.persona_path || "—"
+    ),
+
+    section(
+      payload.id + " · work item",
       el(
         "article",
-        { class: "card soon" },
-        el("h2", { text: name }),
-        el("p", { text: what }),
+        { class: "card" },
+        el("h3", { text: "frontmatter" }),
+        frontmatterTable((payload.work_item || {}).frontmatter),
+
+        el("h3", { text: "order" }),
+        markdown((payload.task || {}).order || ""),
+
+        ((payload.task || {}).addenda || []).length
+          ? [
+              el("h3", { text: "addenda" }),
+              (payload.task.addenda || []).map((addendum) =>
+                el(
+                  "div",
+                  { class: "addendum-block" },
+                  el("p", { class: "meta", text: "addendum " + clock(addendum.ts) }),
+                  markdown(addendum.text || "")
+                )
+              ),
+            ]
+          : null,
+
+        el("h3", { text: "tasks" }),
+        orNotYet(findSection(body, "Tasks"), (text) => markdown(text)),
+
+        el("h3", { text: "deliverables" }),
+        orNotYet(findSection(body, "Deliverables"), (text) => markdown(text)),
+
+        el("h3", { text: "commands" }),
+        orNotYet(findSection(body, "Commands"), (text) => markdown(text)),
+
+        el("h3", { text: "open decision" }),
+        orNotYet(findSection(body, "Open decision"), (text) => markdown(text)),
+
+        el("h3", { text: "digest" }),
+        orNotYet(findSection(body, "Digest"), (text) => markdown(text))
+      )
+    ),
+
+    section(
+      "step state",
+      orNotYet(Object.keys(payload.step_state || {}), () =>
+        Object.entries(payload.step_state).map(([handle, state]) => stepState(handle, state))
+      )
+    ),
+
+    section(
+      "context file",
+      orNotYet(payload.context_file, (file) =>
+        el(
+          "article",
+          { class: "card" },
+          el("p", {
+            class: "meta",
+            text: file.path + "  ·  seam " + clock(file.seam_ts) + "  ·  " + (file.text || "").length + " chars",
+          }),
+          el("pre", { text: file.text || "" })
+        )
+      )
+    ),
+
+    section("streams", orNotYet(payload.streams, (streams) => streams.map(streamCard))),
+
+    section(
+      "subagents",
+      orNotYet(Object.keys(subagents), () =>
+        el(
+          "div",
+          { class: "scroll" },
+          el(
+            "table",
+            { class: "kv" },
+            el("thead", {}, el("tr", {}, [el("th", { text: "claude agent_id" }), el("th", { text: "handle" }), el("th", { text: "digest" })])),
+            el(
+              "tbody",
+              {},
+              Object.entries(subagents).map(([claudeId, handle]) =>
+                el(
+                  "tr",
+                  {},
+                  el("td", {}, el("code", { text: claudeId })),
+                  el("td", {}, el("code", { text: handle })),
+                  el("td", { text: digests[payload.id + "-" + handle] || "not yet" })
+                )
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    section(
+      "metrics",
+      orNotYet(payload.metrics, (metrics) => el("pre", { text: JSON.stringify(metrics, null, 2) }))
+    ),
+
+    section(
+      "pane · " + (pane.session || payload.id),
+      el(
+        "article",
+        { class: "card" },
+        el(
+          "p",
+          { class: "meta" },
+          el("span", { class: "dot" + (pane.alive ? "" : " off"), text: pane.alive ? "● live" : "● dead" }),
+          "  " + (pane.lines || []).length + " lines" + (pane.source ? "  ·  from the " + pane.source : "")
+        ),
+        pane.error ? el("p", { class: "pane-error", text: pane.error }) : null,
+        orNotYet(pane.lines, (lines) => el("pre", { class: "pane", text: lines.join("\n") }))
+      )
+    ),
+  ];
+}
+
+/* -- partner ----------------------------------------------------------- */
+
+function chatBox() {
+  const input = el("textarea", {
+    id: "wake-text",
+    rows: "3",
+    placeholder: "Message the Partner. This goes through `hx wake partner`.",
+  });
+  const status = el("span", { class: "sub", id: "wake-status" });
+  const send = el("button", { class: "send", id: "wake-send", text: "Send" });
+
+  async function submit() {
+    const text = input.value.trim();
+    if (!text) return;
+    send.setAttribute("disabled", "disabled");
+    status.textContent = "sending…";
+    try {
+      const result = await api("/api/partner/wake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      status.textContent = result.delivered
+        ? "delivered; the reply appears in the pane below"
+        : "not delivered: no Partner socket, or the connection was refused";
+      if (result.delivered) input.value = "";
+    } catch (error) {
+      status.textContent = "failed: " + error.message;
+    } finally {
+      send.removeAttribute("disabled");
+    }
+  }
+
+  send.addEventListener("click", submit);
+  return el("div", { class: "chat" }, input, el("div", { class: "chat-bar" }, send, status));
+}
+
+function renderPartner(payload) {
+  const pane = payload.pane || {};
+  return [
+    el("p", {
+      class: "meta",
+      text: (payload.file || "") + "  ·  state " + (payload.state || "—"),
+    }),
+
+    section(
+      "PARTNER.md",
+      el("article", { class: "card" }, orNotYet(payload.partner_md, (text) => markdown(text)))
+    ),
+
+    section("board", orNotYet(payload.__board, (board) => [errors(board.errors), boardTable(board)])),
+
+    section(
+      "chat",
+      el(
+        "article",
+        { class: "card" },
         el("p", {
           class: "meta",
-          text: "This view lands in ui-2. Its data is already served: " +
-            (name === "Agent" ? "GET /api/show/<id>" : "GET /api/show/partner and POST /api/partner/wake") + ".",
+          text: "A message here goes through `hx wake partner`. An idle Partner starts a turn; " +
+            "a busy one takes it as steering in the current turn.",
         }),
-        name === "Partner"
-          ? el("p", {
-              class: "meta",
-              text: "Full control — slash commands, interrupts — stays `tmux attach -t partner`.",
-            })
-          : null
+        chatBox(),
+        el("p", { class: "tmux-note" },
+          "Full control — slash commands, interrupts — stays ",
+          el("code", { text: "tmux attach -t partner" }),
+          ". This page observes and sends; it does not operate the fleet."
+        )
+      )
+    ),
+
+    section(
+      "pane · " + (pane.session || "partner") + " (the Partner's replies)",
+      el(
+        "article",
+        { class: "card" },
+        el(
+          "p",
+          { class: "meta" },
+          el("span", { class: "dot" + (pane.alive ? "" : " off"), text: pane.alive ? "● live" : "● dead" }),
+          "  " + (pane.lines || []).length + " lines" + (pane.source ? "  ·  from the " + pane.source : "")
+        ),
+        pane.error ? el("p", { class: "pane-error", text: pane.error }) : null,
+        orNotYet(pane.lines, (lines) => el("pre", { class: "pane", text: lines.join("\n") }))
       )
     ),
   ];
@@ -297,29 +782,35 @@ function renderSoon(name, what) {
 /* -- views ------------------------------------------------------------- */
 
 const VIEWS = {
-  board: { path: "/api/board", render: renderBoard },
-  orders: { path: "/api/orders", render: renderOrders },
-  archive: { path: "/api/archive", render: renderArchive },
+  board: { load: () => api("/api/board"), render: renderBoard },
+  orders: { load: () => api("/api/orders"), render: renderOrders },
+  archive: { load: () => api("/api/archive"), render: renderArchive },
   agent: {
-    render: () =>
-      renderSoon(
-        "Agent",
-        "The work item, step state, the last context file with its seam, stream tails, metrics and the pane capture for one id."
-      ),
+    load: async () => {
+      if (agentId) return api("/api/show/" + encodeURIComponent(agentId));
+      const board = await api("/api/board");
+      return { __picker: true, ids: (board.items || []).map((item) => item.id) };
+    },
+    render: renderAgent,
   },
   partner: {
-    render: () => renderSoon("Partner", "PARTNER.md, the board, and a chat box that sends through `hx wake partner`."),
+    load: async () => {
+      const [show, board] = await Promise.all([api("/api/show/partner"), api("/api/board")]);
+      return Object.assign({}, show, { __board: board });
+    },
+    render: renderPartner,
   },
 };
 
 async function draw() {
   const spec = VIEWS[view];
   try {
-    const payload = spec.path ? await api(spec.path) : {};
-    main.replaceChildren(...spec.render(payload).filter(Boolean));
+    const payload = await spec.load();
+    main.replaceChildren(...spec.render(payload).flat(Infinity).filter(Boolean));
     clearFail();
   } catch (error) {
-    fail(view + ": " + error.message);
+    main.replaceChildren();
+    fail(view + (view === "agent" && agentId ? " " + agentId : "") + ": " + error.message);
   }
 }
 
@@ -337,10 +828,17 @@ document.getElementById("nav").addEventListener("click", (event) => {
   if (button) select(button.dataset.view);
 });
 
+main.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-open]");
+  if (!button) return;
+  agentId = button.dataset.open;
+  select(agentId === "partner" ? "partner" : "agent");
+});
+
 /* -- live updates ------------------------------------------------------ */
 
 function listen() {
-  const events = new EventSource("/api/events?token=" + encodeURIComponent(BOOT.token));
+  const events = new EventSource("/api/events");
   events.onopen = () => {
     live.textContent = "live";
     live.className = "live on";

@@ -14,10 +14,17 @@
 > (`hx.ui.data.SCOPE_TASKS`, `InstanceSource.scan`, `tests/ui/test_instance.py`).
 > `InstanceSource` binds to `hx orders --json` / `hx archive --json` in ui-2 once build-2 lands.
 
-## 2026-09-20 — answers to your two ui-2 handoffs
+## 2026-09-20 — answers to your two ui-2 handoffs — DONE 2026-09-20
 
 1. **Sequencing.** Close ui-2 without `hx show`: record the 503 in the done file and paste the
    real `/api/board`. Switching `InstanceSource` to the real commands and then to the Python
    functions is goal ui-3, which I send after build-2 lands.
 2. **Pane log.** Yes: `start.sh` will run `tmux pipe-pane -o` into `logs/<id>/<id>-pane.log`.
    The path is now in spec 03 and 11 and is build-2 item 12. Keep `log_fallback` as written.
+
+> ui lane, DONE 2026-09-20: both applied. (1) ui-2 closes with `InstanceSource.show/orders/
+> archive/wake_partner` raising `SourceUnavailable`, served as 503; the done file records the
+> real 503 text and pastes `/api/board` from a scratch instance. The subprocess seam and its
+> parse path are tested against a stub `hx`, so ui-3 is a one-function change. (2)
+> `hx.ui.pane.log_fallback` already read `logs/<id>/<id>-pane.log`; kept as written and its
+> docstring now cites spec 03 and 11 instead of the open question.

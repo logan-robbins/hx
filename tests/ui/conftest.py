@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import subprocess
+import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,7 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 from hx.ui.data import FixtureSource
-from hx.ui.server import build_server
+from hx.ui.server import TOKEN_COOKIE, build_server
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TOKEN = "test-token-not-a-real-one"
@@ -66,12 +68,15 @@ class Client:
     def origin(self) -> str:
         return f"http://{self.host}:{self.port}"
 
-    def request(self, method, path, *, token=None, query_token=False, body=None, headers=None):
-        if query_token and token:
-            path += ("&" if "?" in path else "?") + f"token={token}"
+    def request(self, method, path, *, token=None, as_cookie=False, body=None, headers=None):
         sent = dict(headers or {})
-        if token and not query_token:
-            sent["Authorization"] = f"Bearer {token}"
+        if token:
+            # The browser carries the token in the HttpOnly cookie GET / sets;
+            # API clients use the header. Both are accepted, `?token=` is not.
+            if as_cookie:
+                sent["Cookie"] = f"{TOKEN_COOKIE}={token}"
+            else:
+                sent["Authorization"] = f"Bearer {token}"
         payload = None
         if body is not None:
             payload = body if isinstance(body, bytes) else json.dumps(body).encode()
@@ -100,12 +105,17 @@ class Client:
         response = self.get(path, **kwargs)
         return response.status, json.loads(response.body)
 
-    def stream(self, path, *, token=None, timeout=10):
-        """Open an SSE connection and hand back the raw file object."""
+    def stream(self, path, *, token=None, as_cookie=True, timeout=10):
+        """Open an SSE connection and hand back the response to read frames from.
+
+        `as_cookie` by default because that is what a browser's `EventSource`
+        does: it cannot set a header, and the token is no longer in the URL.
+        """
+        headers = {}
         if token:
-            path += ("&" if "?" in path else "?") + f"token={token}"
+            headers = {"Cookie": f"{TOKEN_COOKIE}={token}"} if as_cookie else {"Authorization": f"Bearer {token}"}
         connection = http.client.HTTPConnection(self.host, self.port, timeout=timeout)
-        connection.request("GET", path)
+        connection.request("GET", path, headers=headers)
         return connection, connection.getresponse()
 
 
@@ -151,3 +161,113 @@ def scratch_tree(tmp_path):
 def scratch_ui(scratch_tree):
     """A server over the writable copy."""
     yield from _serve(FixtureSource(scratch_tree))
+
+
+# -- a live instance -----------------------------------------------------
+
+HX = Path(sys.executable).parent / "hx"
+
+WORK_ITEM = """---
+id: {id}
+pod: {pod}
+after: {after}
+outcome:
+dispatched: 2026-09-20T12:00:00Z
+---
+## Order
+Stand in for a dispatched order while the ui lane runs against a real instance.
+
+## Definition of done
+- The board renders this item.
+
+### Checks
+```bash
+true
+```
+
+## Tasks
+- [x] Exist on the board.
+- [ ] Be opened in the Agent view.
+
+## Deliverables
+
+## Commands
+
+## Open decision
+
+## Digest
+"""
+
+
+def build_instance(root: Path) -> Path:
+    """A real HARNESS_ROOT: `hx install --skeleton-only`, then hand-made items.
+
+    The skeleton gives `config/partner/` and the directory layout; the work items
+    and `tasks.json` are written here because `hx dispatch` is build-2 and does
+    not exist yet.
+    """
+    subprocess.run(
+        [str(HX), "install", "--skeleton-only", "--root", str(root)],
+        capture_output=True, text=True, check=True,
+    )
+    worker_template = root / "templates" / "worker"
+    for agent_id, pod, after in (("partner", "partner", "[]"), ("eng-001", "engineers", "[]")):
+        config = root / "config" / agent_id
+        config.mkdir(parents=True, exist_ok=True)
+        for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
+            target = config / name
+            if not target.exists():
+                # The skeleton ships templates; `hx launch` renders them. It is
+                # build-2, so render the two placeholders here.
+                rendered = (
+                    (worker_template / name)
+                    .read_text(encoding="utf-8")
+                    .replace("{{id}}", agent_id)
+                    .replace("{{pod}}", pod)
+                )
+                target.write_text(rendered, encoding="utf-8")
+        pod_dir = root / "pods" / pod
+        pod_dir.mkdir(parents=True, exist_ok=True)
+        (pod_dir / f"{agent_id}-working.md").write_text(
+            WORK_ITEM.format(id=agent_id, pod=pod, after=after), encoding="utf-8"
+        )
+    (root / "tasks.json").write_text(
+        json.dumps(
+            {
+                agent_id: {
+                    "order": "## Order\nStand in.\n",
+                    "after": [],
+                    "addenda": [],
+                    "outcome": None,
+                    "dispatched": "2026-09-20T12:00:00Z",
+                    "completed": None,
+                }
+                for agent_id in ("partner", "eng-001")
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+@pytest.fixture(scope="session")
+def instance_root(tmp_path_factory):
+    """One real instance for the whole session.
+
+    Built once, and checked on teardown: the UI writes nothing under
+    `HARNESS_ROOT` but `run/ui-token` (spec 16.1), so every other file must be
+    byte-identical — contents, mode and mtime — after the last test that used it.
+    """
+    root = build_instance(tmp_path_factory.mktemp("hx-instance"))
+    before = manifest(root)
+    yield root
+    after = manifest(root)
+    allowed = {"run/ui-token"}
+    changed = sorted(
+        name
+        for name in set(before) | set(after)
+        if before.get(name) != after.get(name) and name not in allowed
+    )
+    assert not changed, f"the UI test run modified the instance: {changed}"

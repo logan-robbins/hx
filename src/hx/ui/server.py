@@ -1,9 +1,15 @@
 """The UI server (spec 16.1).
 
 Python stdlib `http.server` on `127.0.0.1`, no build step and no CDN. Every
-request but the static index carries the bearer token from `run/ui-token`:
-in the `Authorization` header, or as `?token=` for the two requests a browser
-cannot put a header on (`<link>`/`<script>` and `EventSource`).
+request but the static index carries the bearer token from `run/ui-token`,
+either as `Authorization: Bearer <token>` (API clients, `hx` itself, curl) or as
+the `hx_ui_token` cookie that `GET /` sets.
+
+The cookie is what the browser uses: `<link>`, `<script>` and `EventSource`
+cannot set a request header, and a token in a query string ends up in browser
+history, in referrers and in every access log that records the URL. The cookie is
+`HttpOnly`, so the page's own JavaScript cannot read the token either — nothing
+in `static/` ever sees it.
 
 The only write path in the whole server is `POST /api/partner/wake`, which calls
 `Source.wake_partner` and nothing else. Everything else reads.
@@ -19,16 +25,19 @@ import secrets
 import sys
 import threading
 from http import HTTPStatus
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import quote, urlparse
 
 from hx.ui.data import FixtureSource, InstanceSource, NotFound, Source, SourceError, SourceUnavailable
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 1_000_000
+#: Set by `GET /`; the browser's only way of carrying the token.
+TOKEN_COOKIE = "hx_ui_token"
 #: Spec 16.1: the mtime sweep runs once a second.
 SCAN_INTERVAL = 1.0
 #: Scans between SSE comment frames, so a proxy or a dead peer is noticed without
@@ -152,12 +161,16 @@ class UIHandler(BaseHTTPRequestHandler):
     watcher: Watcher
 
     # -- plumbing ----------------------------------------------------------
-    def _send(self, status: HTTPStatus, body: bytes, content_type: str) -> None:
+    def _send(
+        self, status: HTTPStatus, body: bytes, content_type: str, extra: list[tuple[str, str]] | None = None
+    ) -> None:
         try:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in extra or ():
+                self.send_header(name, value)
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
@@ -171,13 +184,24 @@ class UIHandler(BaseHTTPRequestHandler):
     def _error(self, status: HTTPStatus, message: str) -> None:
         self._json(status, {"error": message})
 
-    def _query_token(self) -> str | None:
-        values = parse_qs(urlparse(self.path).query).get("token")
-        return values[0] if values else None
+    def _cookie_token(self) -> str | None:
+        jar = SimpleCookie()
+        for header in self.headers.get_all("Cookie") or ():
+            try:
+                jar.load(header)
+            except CookieError:
+                continue
+        morsel = jar.get(TOKEN_COOKIE)
+        return morsel.value if morsel else None
+
+    def _offered_token(self) -> str | None:
+        header = self.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            return header[len("Bearer ") :]
+        return self._cookie_token()
 
     def _authorized(self) -> bool:
-        header = self.headers.get("Authorization", "")
-        offered = header[len("Bearer ") :] if header.startswith("Bearer ") else self._query_token()
+        offered = self._offered_token()
         if offered is not None and secrets.compare_digest(offered, self.token):
             return True
         self._error(HTTPStatus.UNAUTHORIZED, "invalid or missing hx ui token")
@@ -284,15 +308,22 @@ class UIHandler(BaseHTTPRequestHandler):
 
     # -- handlers ----------------------------------------------------------
     def _index(self) -> None:
-        """The one unauthenticated response; it carries the token to the page."""
+        """The one unauthenticated response. It sets the cookie every other request needs.
+
+        The token is never written into the page: the cookie is `HttpOnly`, so
+        `static/app.js` cannot read it and no view has to carry it in a URL.
+        """
         try:
             template = (STATIC / "index.html").read_text(encoding="utf-8")
         except OSError as exc:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"cannot read the index: {exc}")
             return
-        bootstrap = json.dumps({"token": self.token}).replace("<", "\\u003c")
-        page = template.replace("__TOKEN__", quote(self.token, safe="")).replace("__BOOTSTRAP__", bootstrap)
-        self._send(HTTPStatus.OK, page.encode(), "text/html; charset=utf-8")
+        cookie = (
+            f"{TOKEN_COOKIE}={quote(self.token, safe='')}; HttpOnly; SameSite=Strict; Path=/"
+        )  # no Secure: this server is http on 127.0.0.1 and a Secure cookie would never be sent
+        self._send(
+            HTTPStatus.OK, template.encode(), "text/html; charset=utf-8", [("Set-Cookie", cookie)]
+        )
 
     def _static(self, name: str) -> None:
         target = (STATIC / name).resolve()
@@ -365,8 +396,12 @@ def _run(server: UIServer, token: str, where: str) -> None:
         server.server_close()
 
 
-def serve(root: Path | str, *, port: int | None = None, host: str = LOOPBACK_HOST) -> None:
-    """Serve one instance. This is what the `hx ui` CLI entry calls."""
+def serve(root: Path | str, port: int | None = None, *, host: str = LOOPBACK_HOST) -> None:
+    """Serve one instance. This is what the `hx ui` CLI entry calls.
+
+    `port` is positional so `hx ui` can pass an override straight through;
+    omitted, it comes from `config/ui.json`, then the 8765 default.
+    """
     root = Path(root)
     token = instance_token(root)
     server = build_server(
