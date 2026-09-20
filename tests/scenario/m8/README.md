@@ -193,8 +193,69 @@ Two files in it must never reach a harness session, and both fail loudly rather 
 
 M8's assertion: the run completes, and neither tripwire string appears in any transcript or log.
 
-## Running it
+## Driving it
 
-M8 needs `hx dispatch`, `hx goal`, `hx complete`, `hx resume` and `hx bench` — build-2 and
-later. Until then `../test_m8_pack.py` checks everything that does not need them, including the
-eight board states, by building each instance directly and running the real `hx board`.
+Everything M8 needs exists as of build-5: the full `hx install`, the mirror and sparse
+worktrees, the seed token, `dispatch`, `goal`, `complete`, `resume`, `bench`, and the hooks
+that write the streams. This is the sequence to drive, with the line each command prints so a
+test can assert on it rather than on exit status alone.
+
+### Setup, once
+
+```bash
+export HARNESS_ROOT=<scratch>/hx
+export HX_TMUX="tmux -L hx-m8-$$"          # never the default server: a leaked agent holds a token
+export HX_CLAUDE_BIN=<real claude>         # M8 is a live run; the fake cannot take a /goal
+hx install --root "$HARNESS_ROOT" --repo <bare clone of ./repo>
+#   stops with exit 4 → write seed/token (mode 0600) → run it again
+cp -R config/eng-001 config/eng-002 "$HARNESS_ROOT/config/"   # the personas in this pack
+cp orders/*.md "$HARNESS_ROOT/orders/"
+```
+
+The two `config/<id>/` directories are the ones in this pack, not `templates/worker/`: their
+personas are part of the scenario. Each needs a `harness.json` and a `SUBAGENTS.md`; copy them
+from `templates/worker/` and substitute, or take the ones the Partner would have written.
+
+### The sequence
+
+| # | Run as | Command | Prints | Board |
+|---|---|---|---|---|
+| — | setup | `hx launch eng-001`, `hx launch eng-002` | `HX-LAUNCH eng-001 eng-001 goal=none` | — |
+| 1 | partner | `hx dispatch partner orders/partner.md` | `HX-DISPATCH partner working goal=pending` | `expected/01-partner-working.txt` |
+| 2 | partner | `hx dispatch eng-001 orders/eng-001.md eng-002 orders/eng-002.md` | `HX-DISPATCH eng-001 working goal=sent`, `HX-DISPATCH eng-002 queued goal=none` | `expected/02-plan-dispatched.txt` |
+| 3 | eng-001 | `hx complete done` | `HX-PROMOTED eng-002 working goal=sent`, then `HX-COMPLETE eng-001 done` | `expected/03-eng-001-done.txt` |
+| 4 | eng-002 | `hx complete decision` | `HX-COMPLETE eng-002 decision` | `expected/04-eng-002-decision.txt` |
+| 5 | partner | `hx resume eng-002 orders/eng-002.addendum.md` | `HX-RESUME eng-002 working goal=sent` | `expected/05-eng-002-resumed.txt` |
+| 6 | eng-002 | `hx complete done` | `HX-COMPLETE eng-002 done` | `expected/06-all-done.txt` |
+| 7 | partner | `hx complete done` | `HX-COMPLETE partner done` | `expected/07-partner-done.txt` |
+| 8 | partner | `hx bench eng-001`, `hx bench eng-002` | `HX-BENCH eng-001 idle archived=…` | `expected/08-benched.txt` |
+
+`HX-COMPLETE <id> <outcome>` is the **last** line of `hx complete`'s stdout, and it is what the
+goal evaluator reads out of the transcript. `HX-PROMOTED` appears inside step 3's output,
+before it, because the promotion happens within that command.
+
+Steps 3, 4, 6 and 7 are run by the agents themselves, from inside their own sessions, with
+`HARNESS_ID` set by `start.sh`. A test cannot run them on the agents' behalf and have M8 mean
+anything: the point is that the agent reached `hx complete` under its own `/goal`.
+
+### What to assert beyond the boards
+
+- **`hx board` exits 0 at every one of the eight points.** Not just the text matching — the
+  exit status is the invariant check, and M8's claim is that it never trips.
+- **The human ran no hx command.** Everything in the table above is run by the Partner or by a
+  worker. `chat.md` is the whole of the human's side.
+- **Neither tripwire string appears anywhere** in any transcript, log, or pane capture:
+  `TRIPWIRE-CLAUDE-MD-LOADED` and `TRIPWIRE-REPO-CLAUDE-DIR-LOADED`.
+- **`eng-002` reached `done` by way of `decision` and a resume**, not by a re-dispatch: its
+  `tasks.json` entry has an `addenda` array with one entry, and its `## Tasks` from before the
+  pause survived.
+- **At least one subagent stream** exists under `logs/eng-00{1,2}/` — spec 13 M8 says "with
+  subagents", and the streams are how you know one ran.
+- **Seams were taken**: `seam` records in the main streams, and `hx metrics <id>` reporting one
+  context-file Read per seam once `hx metrics` lands (build-8).
+
+### Until then
+
+`../test_m8_pack.py` checks everything that does not need a live agent: every order parses with
+the function `hx dispatch` validates with, the `after` graph, the personas, the fixture repo,
+and all eight board states — built directly and compared against the real `hx board`.

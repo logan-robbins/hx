@@ -292,13 +292,20 @@ def readme_steps() -> list[str]:
 
 
 def test_the_readme_sequence_and_expected_cover_exactly_the_same_steps():
+    """Every board file is named in the README and every name is a real file.
+
+    Not "named exactly once": the README has two tables that both walk the sequence — the
+    transitions each step causes, and the commands that drive it — so each file is named in
+    both. What must hold is that the *sets* agree, in both directions, and that this module's
+    STEPS has not drifted from either.
+    """
     named = readme_steps()
     shipped = sorted(p.stem for p in EXPECTED.glob("*.txt"))
     assert named, "the README names no expected/ file; the sequence table is the index"
-    assert named == sorted(set(named)), f"the README names a step twice: {named}"
-    assert sorted(named) == shipped, (
-        f"README names {sorted(named)};\nexpected/ holds {shipped}"
-    )
+    missing = sorted(set(shipped) - set(named))
+    assert not missing, f"the README never names {missing}"
+    unknown = sorted(set(named) - set(shipped))
+    assert not unknown, f"the README names {unknown}, which expected/ does not hold"
     assert [s for s, _ in STEPS] == shipped, (
         "this module's STEPS table has drifted from expected/"
     )
