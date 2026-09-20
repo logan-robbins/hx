@@ -8,10 +8,12 @@
 #   - claudeMdExcludes for the product repo's CLAUDE.md / AGENTS.md under wt/ and repos/
 #   - the bypass-permissions acceptance, so no launch is ever interactive
 #   - crossSessionInbound: accept, for the Partner only (spec 05, 11, 17.3)
-# and seeds the home's credentials from seed/home/, the one home a human logs into.
+# Agent homes hold no credentials at all. Auth is one long-lived OAuth token per instance,
+# at $HARNESS_ROOT/seed/token (spec 11 Auth, CONTRACTS.md): the human runs `claude setup-token`
+# once and pastes the result there, and start.sh exports it as CLAUDE_CODE_OAUTH_TOKEN. hx
+# never reads the user's ~/.claude, any .credentials.json, or the macOS Keychain.
 #
-# Refuses when seed/home/ has no credentials: a home without them would stop at a login
-# prompt at launch, which is exactly the gap the live experiments hit (spec 11 Auth).
+# Refuses when seed/token is missing or readable by anyone but its owner.
 set -euo pipefail
 
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
@@ -37,14 +39,20 @@ fi
 [ -n "$python" ] || python=python3
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
 
-seed_credentials=$root/seed/home/.credentials.json
-[ -f "$seed_credentials" ] || die \
-  "refuse: no $seed_credentials; run the seed login first (\`CLAUDE_CONFIG_DIR=$root/seed/home claude\`,
-  spec 17.2 step 3). Every agent home is seeded from seed/home, so without it a launch would
-  stop at a login prompt"
+token_file=$root/seed/token
+[ -f "$token_file" ] || die \
+  "refuse: no $token_file; the human runs \`claude setup-token\` once and pastes the token
+  there, mode 0600 (spec 11 Auth, 17.2 step 3). Without it a launch would stop at a login prompt"
+token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
+[ "$token_mode" = 0 ] || die \
+  "refuse: $token_file is readable by group or other; it holds a year-long credential and must
+  be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
 home=$root/run/$id/home
 mkdir -p "$home"
+
+# The directory this agent will run in, which start.sh also uses (spec 17.4).
+if [ "$id" = partner ]; then cwd=$root; else cwd=$root/wt/$id; fi
 
 # Hook and hx binary paths: config/hx.json when hx install recorded it, else bin/ (spec 17.1).
 hook_bin=$root/bin/hx-hook
@@ -57,6 +65,7 @@ if [ -f "$root/config/hx.json" ]; then
 fi
 
 HX_ID=$id HX_ROOT=$root HX_HOOK_BIN=$hook_bin HX_SETTINGS=$home/settings.json \
+HX_CONFIG_JSON=$home/.claude.json HX_CWD=$cwd \
 "$python" - <<'PYEOF'
 import json
 import os
@@ -115,14 +124,47 @@ if is_partner:
     # The human and hx wake the Partner through the messaging socket (spec 11, 12).
     settings["crossSessionInbound"] = "accept"
 
+settings["theme"] = "dark"
+
 with open(target, "w") as handle:
     json.dump(settings, handle, indent=2)
     handle.write("\n")
-PYEOF
 
-# Credentials: a copy per home, refreshed independently of the user's own (spec 17.3).
-cp "$seed_credentials" "$home/.credentials.json"
-chmod 600 "$home/.credentials.json"
+# A brand-new CLAUDE_CONFIG_DIR runs the first-run onboarding wizard (theme picker, tips),
+# which would stop a launch dead: "Nothing about launch is interactive" (spec 05, 11).
+# The flag lives in the config dir's own .claude.json, next to settings.json. Existing keys
+# are kept, so a home that has been running is not reset.
+config_json = os.environ["HX_CONFIG_JSON"]
+existing = {}
+if os.path.exists(config_json):
+    try:
+        with open(config_json) as handle:
+            loaded = json.load(handle)
+        existing = loaded if isinstance(loaded, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        existing = {}
+existing["hasCompletedOnboarding"] = True
+existing.setdefault("theme", "dark")
+
+# Claude Code also asks, once per working directory, whether the folder is trusted. An
+# agent has no one to ask, and the directory is one hx created, so the answer is recorded
+# here rather than waited for. Key names confirmed against a real, human-accepted
+# `.claude.json` (read-only) and by the build-3 live run: with these two set, the pinned
+# binary reaches its prompt with no dialog.
+projects = existing.get("projects")
+if not isinstance(projects, dict):
+    projects = {}
+workdir = os.environ["HX_CWD"]
+project = projects.get(workdir)
+if not isinstance(project, dict):
+    project = {}
+project["hasTrustDialogAccepted"] = True
+projects[workdir] = project
+existing["projects"] = projects
+with open(config_json, "w") as handle:
+    json.dump(existing, handle, indent=2)
+    handle.write("\n")
+PYEOF
 
 # The one CLAUDE.md that loads, installed as this home's user-level CLAUDE.md (spec 11).
 if [ -f "$root/config/CLAUDE.md" ]; then
@@ -141,4 +183,4 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
 fi
 
 printf 'install.sh: wrote %s\n' "$home/settings.json"
-printf 'install.sh: seeded %s from %s\n' "$home/.credentials.json" "$seed_credentials"
+printf 'install.sh: auth is %s, exported by start.sh as CLAUDE_CODE_OAUTH_TOKEN\n' "$token_file"

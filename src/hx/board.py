@@ -21,7 +21,8 @@ from .tasks import is_ready, load_tasks, outcome_of
 from .workitems import find_work_items, parse_work_item
 
 HOME_SETTINGS = "settings.json"
-HOME_CREDENTIALS = ".credentials.json"
+#: Auth is the instance token, not a per-home credentials file (spec 11 Auth, CONTRACTS.md).
+SEED_TOKEN = "seed/token"
 
 
 def _config_ids(root: Path) -> list[str]:
@@ -63,6 +64,16 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
     sessions = tmux.live_sessions(env)
     if sessions is None:
         errors.append("tmux: not found on PATH; hx cannot tell which sessions are live (spec 08 `hx doctor`)")
+
+    # One token for the whole instance, so this is a board-level error, not a per-id one.
+    token = root / SEED_TOKEN
+    if config_ids and not token.is_file():
+        errors.append(
+            f"{SEED_TOKEN}: missing; the human runs `claude setup-token` once and pastes the "
+            f"token there, mode 0600 (spec 11 Auth)"
+        )
+    elif token.is_file() and (token.stat().st_mode & 0o77):
+        errors.append(f"{SEED_TOKEN}: readable by group or other; it must be mode 0600 (CONTRACTS.md)")
 
     ids = sorted(set(by_id) | set(config_ids) | set(tasks), key=sort_key)
 
@@ -145,10 +156,8 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
             )
 
         home = root / "run" / item_id / "home"
-        if home.is_dir():
-            for required in (HOME_SETTINGS, HOME_CREDENTIALS):
-                if not (home / required).exists():
-                    errors.append(f"run/{item_id}/home/: no {required} (spec 08 board invariants)")
+        if home.is_dir() and not (home / HOME_SETTINGS).exists():
+            errors.append(f"run/{item_id}/home/: no {HOME_SETTINGS} (spec 08 board invariants)")
 
         items.append(
             {

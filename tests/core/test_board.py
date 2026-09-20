@@ -215,13 +215,27 @@ def test_a_complete_item_may_have_no_open_streams(instance, work_item):
     assert errors_matching(collect(instance), "complete with 1 open subagent stream")
 
 
-def test_a_home_needs_settings_and_credentials(instance, work_item):
+def test_a_home_needs_its_settings_file(instance, work_item):
     work_item("eng-001", "idle")
     home = instance / "run" / "eng-001" / "home"
     home.mkdir(parents=True)
     board = collect(instance)
     assert errors_matching(board, "run/eng-001/home/: no settings.json")
-    assert errors_matching(board, "run/eng-001/home/: no .credentials.json")
+
+
+def test_the_instance_needs_its_token(instance, work_item):
+    """One token for the whole instance, so this is a board-level error (spec 11 Auth)."""
+    work_item("eng-001", "idle")
+    work_item("partner", "idle")
+    (instance / "seed" / "token").unlink()
+    assert errors_matching(collect(instance), "seed/token: missing")
+
+
+def test_a_world_readable_token_is_an_error(instance, work_item):
+    work_item("eng-001", "idle")
+    work_item("partner", "idle")
+    (instance / "seed" / "token").chmod(0o644)
+    assert errors_matching(collect(instance), "seed/token: readable by group or other")
 
 
 def test_a_malformed_work_item_is_reported_not_raised(instance, work_item):

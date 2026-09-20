@@ -8,7 +8,12 @@
 #                          config/<id>/AGENTS.md above `## UPDATES BELOW ONLY`, then exec
 #
 # The argv is exactly spec 17.4: no prompt argument, no --resume, no compaction variables.
-# Refuses a home without settings and credentials (spec 11 Auth).
+#
+# Auth is the instance token at $HARNESS_ROOT/seed/token (spec 11 Auth, CONTRACTS.md), read
+# from the file by the launcher itself and exported as CLAUDE_CODE_OAUTH_TOKEN. It is never an
+# argument to anything — not to `env`, not to `tmux -e` — so it cannot appear in `ps` output,
+# and it is never written under run/. Refuses a home without settings, or an instance without
+# a 0600 token.
 set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
@@ -51,9 +56,15 @@ grep -qxF "$HEADER" "$agents" || die \
   own memory is the part below it (spec 03, 04). Without the header hx cannot tell them apart"
 [ -f "$home/settings.json" ] || die \
   "refuse: no $home/settings.json; run adapters/claude/install.sh $id first (spec 11)"
-[ -f "$home/.credentials.json" ] || die \
-  "refuse: no $home/.credentials.json; a home without credentials would stop at a login
-  prompt (spec 11 Auth). Run adapters/claude/install.sh $id after the seed login"
+
+token_file=$root/seed/token
+[ -f "$token_file" ] || die \
+  "refuse: no $token_file; the human runs \`claude setup-token\` once and pastes the token
+  there, mode 0600 (spec 11 Auth). Without it a launch would stop at a login prompt"
+token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
+[ "$token_mode" = 0 ] || die \
+  "refuse: $token_file is readable by group or other; it holds a year-long credential and must
+  be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
 if [ "$id" = partner ]; then
   cwd=$root
@@ -83,13 +94,17 @@ if [ "$mode" = exec ]; then
   awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
 
   cd "$cwd"
+  # The session env of spec 11 and 17.4. Exported rather than passed to `env`, so the token
+  # never becomes an argv element of anything.
+  export HARNESS_ID="$id"
+  export HARNESS_ROOT="$root"
+  export CLAUDE_CONFIG_DIR="$home"
+  export DISABLE_AUTOUPDATER=1
+  CLAUDE_CODE_OAUTH_TOKEN=$(cat "$token_file")
+  export CLAUDE_CODE_OAUTH_TOKEN
+
   # Spec 17.4, exactly. No prompt argument, ever.
-  exec env \
-    HARNESS_ID="$id" \
-    HARNESS_ROOT="$root" \
-    CLAUDE_CONFIG_DIR="$home" \
-    DISABLE_AUTOUPDATER=1 \
-    "$bin" \
+  exec "$bin" \
     --dangerously-skip-permissions \
     --effort "$effort" \
     --model "$model" \

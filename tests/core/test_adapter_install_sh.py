@@ -58,13 +58,22 @@ def installed(instance):
 # --- refusals ------------------------------------------------------------------------------
 
 
-def test_refuses_without_seed_credentials(instance):
-    (instance / "seed" / "home" / ".credentials.json").unlink()
+def test_refuses_without_the_instance_token(instance):
+    """spec 11 Auth: auth is one long-lived token per instance, at `seed/token`."""
+    (instance / "seed" / "token").unlink()
     result = run_install(instance, "eng-001")
     assert result.returncode != 0
     assert "refuse" in result.stderr
-    assert "seed" in result.stderr
+    assert "seed/token" in result.stderr and "setup-token" in result.stderr
     assert not (instance / "run" / "eng-001" / "home" / "settings.json").exists()
+
+
+def test_refuses_a_token_readable_by_anyone_else(instance):
+    """CONTRACTS.md `seed/token`: mode 0600, because it is a year-long credential."""
+    (instance / "seed" / "token").chmod(0o644)
+    result = run_install(instance, "eng-001")
+    assert result.returncode != 0
+    assert "refuse" in result.stderr and "0600" in result.stderr
 
 
 def test_refuses_a_non_id(instance):
@@ -182,10 +191,19 @@ def test_permissions_default_mode_is_not_used(installed):
 # --- credentials, CLAUDE.md, skills -------------------------------------------------------------
 
 
-def test_credentials_are_seeded_from_seed_home(installed):
+def test_no_credentials_file_is_written_into_the_home(installed):
+    """spec 11 Auth: agent homes hold no credentials; the token is the whole of auth."""
     home = installed / "run" / "eng-001" / "home"
-    assert json.loads((home / ".credentials.json").read_text()) == {"fake": "credentials"}
-    assert (home / ".credentials.json").stat().st_mode & 0o777 == 0o600
+    assert not (home / ".credentials.json").exists()
+    assert list(home.glob("*credential*")) == []
+
+
+def test_the_token_is_never_copied_into_the_instance(installed):
+    """It stays in `seed/token`; nothing under `run/` ever holds it (CONTRACTS.md)."""
+    secret = (installed / "seed" / "token").read_text().strip()
+    for path in (installed / "run").rglob("*"):
+        if path.is_file():
+            assert secret not in path.read_text(errors="replace"), f"the token leaked into {path}"
 
 
 def test_the_one_claude_md_is_installed_into_the_home(instance):
@@ -221,7 +239,7 @@ def test_rerunning_is_idempotent(instance):
 
 
 def test_the_board_accepts_a_home_install_sh_wrote(instance, work_item):
-    """The board invariant "every run/<id>/home/ has its settings file and credentials"."""
+    """The board invariant "every run/<id>/home/ has its settings file" (spec 08)."""
     from hx.board import collect
 
     work_item("eng-001", "idle")
@@ -247,3 +265,48 @@ def test_a_broken_python_bin_is_refused(instance):
     result = run_install(instance, "eng-001")
     assert result.returncode != 0
     assert "/nope/python not found" in result.stderr
+
+
+# --- nothing about launch is interactive (spec 05, 11) -------------------------------------
+#
+# Both of these were found by the build-3 live check: a brand-new CLAUDE_CONFIG_DIR stops at
+# the first-run theme picker, and then at the folder-trust dialog, and an agent has no one to
+# answer either.
+
+
+def config_json(instance, item_id):
+    return json.loads((instance / "run" / item_id / "home" / ".claude.json").read_text())
+
+
+def test_onboarding_is_pre_completed(installed):
+    assert config_json(installed, "eng-001")["hasCompletedOnboarding"] is True
+
+
+def test_the_folder_trust_dialog_is_pre_accepted_for_the_agents_own_cwd(installed):
+    """The cwd is `wt/<id>` for a worker (spec 17.4), and hx created it."""
+    projects = config_json(installed, "eng-001")["projects"]
+    workdir = str(installed / "wt" / "eng-001")
+    assert projects[workdir]["hasTrustDialogAccepted"] is True
+    # Only keys that exist in a real config are written; nothing invented.
+    assert set(projects[workdir]) == {"hasTrustDialogAccepted"}
+
+
+def test_the_partners_trusted_directory_is_the_root(instance):
+    assert run_install(instance, "partner").returncode == 0
+    projects = config_json(instance, "partner")["projects"]
+    assert projects[str(instance)]["hasTrustDialogAccepted"] is True
+
+
+def test_rerunning_keeps_what_claude_code_wrote_into_config_json(installed):
+    """A home that has been running is not reset by a re-install."""
+    path = installed / "run" / "eng-001" / "home" / ".claude.json"
+    body = json.loads(path.read_text())
+    body["numStartups"] = 7
+    body["projects"][str(installed / "wt" / "eng-001")]["history"] = ["something"]
+    path.write_text(json.dumps(body))
+
+    assert run_install(installed, "eng-001").returncode == 0
+    after = json.loads(path.read_text())
+    assert after["numStartups"] == 7
+    assert after["projects"][str(installed / "wt" / "eng-001")]["history"] == ["something"]
+    assert after["hasCompletedOnboarding"] is True

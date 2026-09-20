@@ -71,11 +71,18 @@ def test_refuses_a_home_without_settings(instance):
     assert "refuse" in result.stderr and "settings.json" in result.stderr
 
 
-def test_refuses_a_home_without_credentials(ready):
-    (ready / "run" / "eng-001" / "home" / ".credentials.json").unlink()
+def test_refuses_without_the_instance_token(ready):
+    (ready / "seed" / "token").unlink()
     result = start(ready, "eng-001")
     assert result.returncode != 0
-    assert "refuse" in result.stderr and "credentials" in result.stderr
+    assert "refuse" in result.stderr and "seed/token" in result.stderr
+
+
+def test_refuses_a_token_readable_by_anyone_else(ready):
+    (ready / "seed" / "token").chmod(0o604)
+    result = start(ready, "eng-001")
+    assert result.returncode != 0
+    assert "refuse" in result.stderr and "0600" in result.stderr
 
 
 def test_refuses_an_agents_md_without_the_mutable_header(ready):
@@ -140,6 +147,19 @@ def test_no_prompt_argument_ever(ready, tmux_server):
     ]
     assert positional == [], f"a prompt argument reached the binary: {positional}"
     assert not FORBIDDEN_FLAGS & set(record["argv"])
+
+
+def test_the_token_reaches_the_agent_and_never_its_argv(ready, tmux_server):
+    """spec 11 Auth, CONTRACTS.md: exported, never an argument to anything."""
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    secret = (ready / "seed" / "token").read_text().strip()
+    assert record["env"].get("CLAUDE_CODE_OAUTH_TOKEN") == secret
+    assert all(secret not in arg for arg in record["argv"]), "the token is in the argv"
+
+    shown = subprocess.run(
+        [*tmux_server, "show-environment", "-t", "=eng-001"], capture_output=True, text=True, check=True
+    ).stdout
+    assert secret not in shown, "the token is in the tmux session environment, where `ps` sees it"
 
 
 def test_the_session_env_is_spec_11(ready, tmux_server):

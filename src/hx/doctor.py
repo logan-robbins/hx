@@ -150,12 +150,19 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             (WARN, "hx.json", "config/hx.json absent; `hx install --skeleton-only` records it (CONTRACTS.md)")
         )
 
-    seed_credentials = root / "seed" / "home" / ".credentials.json"
-    checks.append(
-        (OK, "seed", "seed/home/.credentials.json present")
-        if seed_credentials.is_file()
-        else (WARN, "seed", "seed/home/.credentials.json absent; `hx install` runs the seed login (spec 17.2 step 3)")
-    )
+    token = root / "seed" / "token"
+    if not token.is_file():
+        checks.append((
+            WARN, "token",
+            "seed/token absent; the human runs `claude setup-token` once and pastes the token "
+            "there, mode 0600 (spec 11 Auth, 17.2 step 3)",
+        ))
+    elif token.stat().st_mode & 0o77:
+        checks.append((FAIL, "token", "seed/token is readable by group or other; it must be mode 0600"))
+    elif not token.read_text().strip():
+        checks.append((FAIL, "token", "seed/token is empty"))
+    else:
+        checks.append((OK, "token", "seed/token present, mode 0600"))
 
     config_dir = root / "config"
     ids = sorted(e.name for e in config_dir.iterdir() if e.is_dir() and ID_RE.match(e.name)) if config_dir.is_dir() else []
@@ -166,13 +173,13 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         if not home.is_dir():
             checks.append((WARN, f"home:{item_id}", "run/<id>/home absent; `hx launch` runs adapters/claude/install.sh"))
             continue
-        for required in ("settings.json", ".credentials.json"):
-            target = home / required
-            checks.append(
-                (OK, f"home:{item_id}", required)
-                if target.is_file()
-                else (WARN, f"home:{item_id}", f"{required} missing")
-            )
+        # Homes hold no credentials: auth is the instance token (spec 11 Auth).
+        target = home / "settings.json"
+        checks.append(
+            (OK, f"home:{item_id}", "settings.json")
+            if target.is_file()
+            else (WARN, f"home:{item_id}", "settings.json missing")
+        )
 
     repo_json = root / "config" / "repo.json"
     checks.append(

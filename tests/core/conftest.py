@@ -104,9 +104,11 @@ def instance(tmp_path):
         roles.mkdir(parents=True, exist_ok=True)
         (roles / f"{role}.md").write_text(f"# {role}\n")
 
-    seed_home = root / "seed" / "home"
-    seed_home.mkdir(parents=True, exist_ok=True)
-    (seed_home / ".credentials.json").write_text('{"fake": "credentials"}\n')
+    # Auth is one long-lived token per instance (spec 11 Auth, CONTRACTS.md `seed/token`).
+    token = root / "seed" / "token"
+    token.parent.mkdir(parents=True, exist_ok=True)
+    token.write_text("sk-ant-oat-fake-token\n")
+    token.chmod(0o600)
 
     (root / "config" / "claude.json").write_text(
         json.dumps({"bin": str(FAKE_CLAUDE), "version": "fake-0"}, indent=2) + "\n"

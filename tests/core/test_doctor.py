@@ -76,14 +76,30 @@ def test_a_broken_models_file_fails(instance):
     assert ("models", FAIL) in statuses(checks)
 
 
-def test_seed_and_home_gaps_are_warnings(instance):
-    (instance / "seed" / "home" / ".credentials.json").unlink()
+def test_a_missing_token_and_an_unwritten_home_are_warnings(instance):
+    (instance / "seed" / "token").unlink()
     home = instance / "run" / "eng-001" / "home"
     home.mkdir(parents=True)
     checks = run_checks(instance)
-    assert ("seed", WARN) in statuses(checks)
+    assert ("token", WARN) in statuses(checks)
     assert ("home:eng-001", WARN) in statuses(checks)
     assert not [c for c in checks if c[0] == FAIL]
+
+
+def test_a_token_readable_by_anyone_else_fails(instance):
+    """CONTRACTS.md `seed/token`: mode 0600."""
+    (instance / "seed" / "token").chmod(0o644)
+    checks = run_checks(instance)
+    assert ("token", FAIL) in statuses(checks)
+
+
+def test_an_empty_token_fails(instance):
+    (instance / "seed" / "token").write_text("\n")
+    assert ("token", FAIL) in statuses(run_checks(instance))
+
+
+def test_a_good_token_is_ok(instance):
+    assert ("token", OK) in statuses(run_checks(instance))
 
 
 def test_a_fresh_skeleton_root_exits_0(run_hx, tmp_path):
