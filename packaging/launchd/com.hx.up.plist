@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  hx up — launch every configured HarnessAgent at login (17-packaging.md 17.2 step 5).
+
+  Written by `hx install` into ~/Library/LaunchAgents/com.hx.up.plist with the placeholders
+  below substituted, then loaded with:
+
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hx.up.plist
+
+  Placeholders, substituted by `hx install` and re-rendered by `hx upgrade`:
+    @HX_BIN@        absolute path of the hx entry point (config/hx.json "hx_bin")
+    @HARNESS_ROOT@  absolute path of the instance
+
+  This is a user agent, never a system daemon: hx refuses to run as root, and each
+  HarnessAgent launches Claude Code with bypass permissions, which Claude Code
+  itself refuses under root or sudo.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.hx.up</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>@HX_BIN@</string>
+		<string>up</string>
+	</array>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HARNESS_ROOT</key>
+		<string>@HARNESS_ROOT@</string>
+	</dict>
+
+	<key>WorkingDirectory</key>
+	<string>@HARNESS_ROOT@</string>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<false/>
+
+	<key>ProcessType</key>
+	<string>Background</string>
+
+	<key>StandardOutPath</key>
+	<string>@HARNESS_ROOT@/run/hx-up.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>@HARNESS_ROOT@/run/hx-up.log</string>
+</dict>
+</plist>

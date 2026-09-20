@@ -1,0 +1,27 @@
+# hx heartbeat timer — every 900 s (17-packaging.md 17.2 step 5).
+#
+# Written by `hx install` into ~/.config/systemd/user/hx-heartbeat.timer with the placeholder
+# below substituted, then enabled with:
+#
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now hx-heartbeat.timer
+#
+# Placeholder, substituted by `hx install` and re-rendered by `hx upgrade`:
+#   @HARNESS_ROOT@  absolute path of the instance
+#
+# This clock lives outside Claude Code on purpose. A session cron, /loop, or Monitor inside the
+# Partner is cleared by /clear and therefore by every seam; this is not.
+
+[Unit]
+Description=hx: heartbeat over the board every 15 minutes
+Documentation=file://@HARNESS_ROOT@/docs/deploy.md
+
+[Timer]
+Unit=hx-heartbeat.service
+OnBootSec=900
+OnUnitActiveSec=900
+AccuracySec=30
+Persistent=false
+
+[Install]
+WantedBy=timers.target

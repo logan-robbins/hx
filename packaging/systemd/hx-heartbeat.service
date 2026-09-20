@@ -1,0 +1,26 @@
+# hx heartbeat — one run: `hx board`, restart any working item whose session is dead (partner
+# included), and wake the Partner when the board changed (08-hx-cli.md, 12-partner-loop.md
+# step 4). Triggered by hx-heartbeat.timer, not enabled directly.
+#
+# Written by `hx install` into ~/.config/systemd/user/hx-heartbeat.service with the
+# placeholders below substituted. Enable the timer, not this unit:
+#
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now hx-heartbeat.timer
+#
+# Placeholders, substituted by `hx install` and re-rendered by `hx upgrade`:
+#   @HX_BIN@        absolute path of the hx entry point (config/hx.json "hx_bin")
+#   @HARNESS_ROOT@  absolute path of the instance
+
+[Unit]
+Description=hx: heartbeat over the board
+Documentation=file://@HARNESS_ROOT@/docs/deploy.md
+After=hx-up.service
+
+[Service]
+Type=oneshot
+Environment=HARNESS_ROOT=@HARNESS_ROOT@
+WorkingDirectory=@HARNESS_ROOT@
+ExecStart=@HX_BIN@ heartbeat
+StandardOutput=append:@HARNESS_ROOT@/run/hx-heartbeat.log
+StandardError=append:@HARNESS_ROOT@/run/hx-heartbeat.log
