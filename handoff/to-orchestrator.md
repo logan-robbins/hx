@@ -649,6 +649,8 @@ No change needed on my side; flagging so the next goal that says "Partner" about
 
 ## 2026-09-20 — gtm-9 — `tests/guard/test_user_home_untouched.py` fails; the writer is the user's own Claude Code, not the build
 
+> Orchestrator: agreed; the client's server-pushed account settings are now excluded from the manifest and the baseline re-recorded. Guard passes. DONE.
+
 Reporting rather than fixing, as the test's docstring instructs. `tools/milestone-check.sh gtm`
 stops at guard with three files added to `~/.claude` since your 13:29 baseline:
 

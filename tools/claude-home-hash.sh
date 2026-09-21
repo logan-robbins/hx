@@ -7,7 +7,8 @@
 # Excluded (written by the user's own Claude sessions or by Claude's cloud sync, never by hx):
 #   projects/ sessions/ shell-snapshots/ telemetry/ cache/ paste-cache/ session-env/ backups/ file-history/
 #   plugins/cache/ plugins/marketplaces/ plugins/repos/ plugins/synced/ skills/synced/
-#   history.jsonl .last-* *.lock .DS_Store
+#   history.jsonl .last-* *.lock .DS_Store remote-settings.json policy-limits.json(.stamp.json)
+#   (the last three are Claude Code's server-pushed account settings, refreshed by the client)
 # plugins/known_marketplaces.json is hashed with its lastUpdated timestamps removed.
 # Everything else is included: settings*.json, CLAUDE.md, skills/ (user-authored and symlinked),
 # agents/, commands/, hooks/, plugins/*.json, keybindings.json, .credentials.json, statusline, etc.
@@ -23,6 +24,7 @@ find . \( "${prune[@]}" \) -prune -o -type l -print0 \
   | sort -z | while IFS= read -r -d '' l; do printf 'link:%s  %s\n' "$(readlink "$l")" "${l#./}"; done
 find . \( "${prune[@]}" \) -prune -o -type f \
   -not -name 'history.jsonl' -not -name '.last-*' -not -name '*.lock' -not -name '.DS_Store' \
+  -not -name 'remote-settings.json' -not -name 'policy-limits.json' -not -name 'policy-limits.json.stamp.json' \
   -not -path './plugins/known_marketplaces.json' -print0 \
   | sort -z | xargs -0 shasum -a 256 | sed 's#  \./#  #'
 if [ -f plugins/known_marketplaces.json ]; then
