@@ -14,16 +14,16 @@ in the in-app browser and keep it open while you work. Observed there, and the h
 | Demo screen | hx |
 |---|---|
 | Sidebar: workspace, "All Pillars", the pillars with a live dot, agents listed under each | Sidebar: instance name, "All Pods", the pods (`backend`, `frontend`, `release`, …) with a live dot, the HarnessAgents under each |
-| Overview: one card per pillar: description, counters, a current line, avatars | One card per pod: the pod's agents as avatars; the current line is each working agent's open step; **no "open tasks / in progress / blocked" counters**: show the agents' states (idle, working, complete with outcome) instead |
-| Pillar page → Agent graph: manager at the root, agents below with role, current line, and status; GM chat, Task board, Agent list, Contract tabs | Pod page → fleet graph: the Partner at the root, this pod's agents below with role, current line (open step's next action), and state; each agent's Companion drawn beside it; tabs: Partner chat, Task board, Agent list. No Contract tab |
+| Overview: one card per pillar | The fleet graph (below), whole instance, clustered by pod. No pod cards, no counters |
+| Pillar page → Agent graph, with GM chat / Task board / Agent list / Contract tabs | No pod pages. The sidebar's pod and agent entries zoom the home graph to that cluster or node and open the agent's drawer. Top-level tabs: Graph (home), Task board, Agents, Partner chat. No Contract |
 | Task board: columns Queued / Working / Validating / Blocked, cards with assignee avatar and age | Task board: columns are the work-item state and outcome (`idle`, `working`, `complete: done`, `complete: decision`, `complete: blocked`, `complete: exhausted`); one card per work item with its agent's avatar, the order's first line, and **that agent's own `## Tasks` checklist from its work item** rendered inside the card; age from `dispatched` |
 | Harness Agents table: agent, status, current work, counts | Agent table: agent, pod, role, state and outcome, current work (open step's next action), session alive, seams; drawer opens the full Agent page (work item, step state, streams, pane) |
 | GM chat | Partner chat: `POST /api/partner/wake`; replies from the Partner's pane capture; the note that full control is `tmux attach -t partner` |
 | Demo banner, speed controls | none |
 
-The graph page (`#pillar/frontend/graph` in the demo) is the primary view of a pod and the one the
-spec author cares about most: the Partner node at the root, this pod's HarnessAgents below it as
-cards (avatar, name, role, current line, state pill), each with its Companion drawn as a small
+**hx is the graph.** There are no per-pod pages. The home page (`#overview`) is the demo's graph
+page applied to the whole instance: the Partner node at the root, every HarnessAgent below it as
+cards clustered by pod (a labelled cluster per pod, the demo's card style inside) (avatar, name, role, current line, state pill), each with its Companion drawn as a small
 attached node, edges from the Partner to every agent it has dispatched (from `tasks.json`) and
 from each agent to its Companion; zoom and fit controls as in the demo; live state via SSE. Keep
 the demo's card style and spacing exactly.
@@ -63,16 +63,16 @@ in the in-app browser and keep it open while you work. Observed there, and the h
 | Demo screen | hx |
 |---|---|
 | Sidebar: workspace, "All Pillars", the pillars with a live dot, agents listed under each | Sidebar: instance name, "All Pods", the pods (`backend`, `frontend`, `release`, …) with a live dot, the HarnessAgents under each |
-| Overview: one card per pillar: description, counters, a current line, avatars | One card per pod: the pod's agents as avatars; the current line is each working agent's open step; **no "open tasks / in progress / blocked" counters**: show the agents' states (idle, working, complete with outcome) instead |
-| Pillar page → Agent graph: manager at the root, agents below with role, current line, and status; GM chat, Task board, Agent list, Contract tabs | Pod page → fleet graph: the Partner at the root, this pod's agents below with role, current line (open step's next action), and state; each agent's Companion drawn beside it; tabs: Partner chat, Task board, Agent list. No Contract tab |
+| Overview: one card per pillar | The fleet graph (below), whole instance, clustered by pod. No pod cards, no counters |
+| Pillar page → Agent graph, with GM chat / Task board / Agent list / Contract tabs | No pod pages. The sidebar's pod and agent entries zoom the home graph to that cluster or node and open the agent's drawer. Top-level tabs: Graph (home), Task board, Agents, Partner chat. No Contract |
 | Task board: columns Queued / Working / Validating / Blocked, cards with assignee avatar and age | Task board: columns are the work-item state and outcome (`idle`, `working`, `complete: done`, `complete: decision`, `complete: blocked`, `complete: exhausted`); one card per work item with its agent's avatar, the order's first line, and **that agent's own `## Tasks` checklist from its work item** rendered inside the card; age from `dispatched` |
 | Harness Agents table: agent, status, current work, counts | Agent table: agent, pod, role, state and outcome, current work (open step's next action), session alive, seams; drawer opens the full Agent page (work item, step state, streams, pane) |
 | GM chat | Partner chat: `POST /api/partner/wake`; replies from the Partner's pane capture; the note that full control is `tmux attach -t partner` |
 | Demo banner, speed controls | none |
 
-The graph page (`#pillar/frontend/graph` in the demo) is the primary view of a pod and the one the
-spec author cares about most: the Partner node at the root, this pod's HarnessAgents below it as
-cards (avatar, name, role, current line, state pill), each with its Companion drawn as a small
+**hx is the graph.** There are no per-pod pages. The home page (`#overview`) is the demo's graph
+page applied to the whole instance: the Partner node at the root, every HarnessAgent below it as
+cards clustered by pod (a labelled cluster per pod, the demo's card style inside) (avatar, name, role, current line, state pill), each with its Companion drawn as a small
 attached node, edges from the Partner to every agent it has dispatched (from `tasks.json`) and
 from each agent to its Companion; zoom and fit controls as in the demo; live state via SSE. Keep
 the demo's card style and spacing exactly.
