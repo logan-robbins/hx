@@ -847,6 +847,10 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
     assert any(label.startswith("Pane · eng-001") for label in labels)
     assert agent["metrics"] is None, "a fresh instance has no seams yet"
     assert agent["notYet"] > 0, "and the empty sections say so"
+    # build-8 put `turn` in `hx show --json`, so this is real data now rather
+    # than the contract shape: no session has run here, so it is null.
+    assert overrides["/api/show/eng-001"]["turn"] is None
+    assert "no turn yet" in agent["text"]
 
     partner = rendered["views"]["partner"]
     assert "PARTNER.md" in partner["headings"]
@@ -970,6 +974,16 @@ def test_the_subagents_table_shows_the_real_digest(rendered):
 
 
 # -- ui-7 item 3: turn.background_tasks -----------------------------------
+
+def test_the_turn_marker_comes_from_hx_show(instance_root):
+    """build-8 item 7: `turn` is in `hx show --json` now, exactly two keys."""
+    from .conftest import isolated_source
+
+    show = isolated_source(instance_root).show("eng-001")
+    assert "turn" in show, "the key is always present; null until a turn has ended"
+    if show["turn"] is not None:
+        assert set(show["turn"]) == {"ts", "background_tasks"}, "session_id is dropped"
+
 
 def test_background_tasks_say_the_agent_stopped_with_work_running(rendered):
     tasks = show_json()["turn"]["background_tasks"]

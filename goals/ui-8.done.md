@@ -3,12 +3,11 @@
 autodev's `index.html`, `app.js` and `style.css` are back in `src/hx/ui/static/`, pointed at hx.
 The stylesheet is autodev's file: **328 of its 353 selectors kept**, and the only 25 dropped are
 the demo banner and controls, the settings editor and the contract grid — the three things this
-goal named. The shell is unchanged (sidebar, topbar, breadcrumb, drawer, toasts, avatars and
-initials, badges, task cards, agent table, graph, chat, activity, typography and colours); the
-model underneath it changed. Pillars are pods, agents are HarnessAgents each with its Companion,
-ledger tasks are the work item's `## Tasks` and the step state's open and closed steps,
-`currentTask`/`currentText` is the open step's next action, `phase` is state and outcome,
-activity is the stream tails with their seam markers. **The home page is the whole instance as
+goal named. The shell is unchanged; the model underneath it changed. Pillars are pods, agents
+are HarnessAgents each with its Companion, ledger tasks are the work item's `## Tasks` and the
+step state's open and closed steps, `currentTask`/`currentText` is the open step's next action,
+`phase` is state and outcome, activity is the stream tails with their seam markers. **The home
+page is the whole instance as
 one graph**: the Partner at the root, every HarnessAgent below it as a demo-style card in a
 labelled pod cluster, its Companion beside it, a live edge to every id `tasks.json` records a
 dispatch for and a dashed one to every id it does not, zoom and fit, SSE for state. No pod pages
@@ -29,28 +28,27 @@ untouched but for one stale docstring (`Source.orders` still promised an `after`
 
 ## Tests
 
-`tools/milestone-check.sh ui --all` passes, and the advisory run over every other lane is green
-too — including `tests/packaging`, which asserts the packaged UI references no external URL.
+`tools/milestone-check.sh ui --all` passes; the advisory run over every other lane is green too,
+including `tests/packaging`'s assertion that the packaged UI references no external URL.
 
     == required: tests/guard
     .....                                                                    [100%]
     == required:  tests/ui
-    ........................                                                 [100%]
-    (384 counted from the run: 383 passed, 1 skipped — the deliberate SSE skip)
+    .........................                                                [100%]
+    (385 counted from the run: 384 passed, 1 skipped — the deliberate SSE skip)
     == advisory: the rest of the suite (other lanes; never fatal here)
     advisory: green
     MILESTONE-CHECK PASSED for ui
 
-384 tests, up from 364. The DOM harness was rebuilt, not replaced: `domshim.js` parses HTML now
-(the restored `app.js` builds the shell with `innerHTML`) and has a selector engine, so
-`render.js` drives the **real `static/index.html`** and walks every screen as a human does,
-setting the hash and clicking nodes. Every earlier assertion is re-pointed, none deleted: the
-board table's contract fields are the agent table's columns and the drawer's stats now, and
-`views.agents[<id>]` is still the agent, still carrying the work item, the step state, the
-evidence `seq`s, the budget bar, the digests, the metrics table with its dirty-seam marking and
-the pane. One behaviour changed on purpose: an unreadable agent no longer blanks the page or
-raises a global banner — it is reported in its own drawer, saying whether the board still lists
-the id. ui-7's recoverability finding, kept, in the place the failure belongs.
+385 tests, up from 364. The DOM harness was rebuilt, not replaced: `domshim.js` parses HTML now
+(the restored `app.js` builds the shell with `innerHTML`) and has a selector engine, so `render.js`
+drives the **real `static/index.html`** and walks every screen as a human does, by hash and
+click. Every earlier assertion is re-pointed, none deleted: the board table's contract fields
+are the agent table's columns and the drawer's stats now, and `views.agents[<id>]` is still the
+agent, still carrying the work item, step state, evidence `seq`s, budget bar, digests, the
+metrics table with its dirty-seam marking, and the pane. One behaviour changed on purpose: an
+unreadable agent no longer blanks the page or raises a global banner — it is reported in its own
+drawer, saying whether the board still lists the id.
 
 ## Verified
 
@@ -73,8 +71,9 @@ exercised on its fallback: the first unchecked `## Tasks` line.
 
 ## Open questions
 
-1. `turn` is still absent from `hx show --json` after build-7, so `turn.background_tasks` is
-   unreachable on a live instance; the page falls back to the board's `turn_ts`.
+1. ~~`turn` missing from `hx show --json`.~~ Closed: build-8 landed it while I was committing.
+   Applied in a follow-up commit — the page already preferred `show.turn`, so what changed is
+   the evidence: the marker is now asserted off a real instance, not off the contract shape.
 2. `state_budget_tokens` is still not in `hx show --json`, so the budget bar reads against the
    `templates/worker` default and is labelled as such. Open since ui-7; needs a CONTRACTS.md
    line, so it is your call as much as the build lane's.
@@ -90,5 +89,10 @@ exercised on its fallback: the first unchecked `## Tasks` line.
 - `handoff/build-to-ui.md` — build-7's v1 cut marked `DONE`, with the two things it asked for
   that landed here: an unknown `state` gets its own board column, and the after-graph docstring
   and `--queued` token are gone.
-- `handoff/ui-to-build.md` — two new: `turn` still missing from `hx show --json`; the cost of
-  one `hx show` per agent, with the `next`-on-the-board fix if it ever bites.
+- `handoff/ui-to-build.md` — two new: `turn` missing from `hx show --json` (closed by build-8
+  the same day); the cost of one `hx show` per agent, with the `next`-on-the-board fix.
+- `handoff/build-to-ui.md` — build-8 read and marked `DONE`: `turn` applied and asserted
+  against real output, and `hx ui` as a session hx starts noted (nothing in `server.py` moved).
+- `handoff/to-orchestrator.md` — one question: build-8's `hx.goal.input_box` would let the
+  Partner page tell "the Partner is typing" from "the Partner has said it". Not done; it
+  changes what that page means. A small ui-9 if you want it.

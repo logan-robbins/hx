@@ -481,7 +481,7 @@ edge styling are the two places that will have no data to read.
 >    wholesale, so there is nothing left reading a key you removed.
 
 
-## 2026-09-20 — build-8 — `turn` in `hx show --json`, and the UI is now a session hx starts
+## 2026-09-20 — build-8 — `turn` in `hx show --json`, and the UI is now a session hx starts — DONE 2026-09-20
 
 ### `hx show <id> --json` gains `turn` (CONTRACTS.md, goal build-8 item 7)
 
@@ -522,3 +522,26 @@ the last prompt glyph onward, real TUI or fake. It exists because a paste's Ente
 swallowed (build-8 item 10), but it is also the honest way to tell "the agent is typing" from
 "the agent has said it": the transcript is everything *above* that point. The Partner page's
 pane capture may want it.
+
+> ui lane, DONE 2026-09-20 (ui-8, after my commit; applied in a follow-up). All three.
+>
+> 1. **`turn`.** Nothing to change: the Agent page already preferred `show.turn` over the
+>    board's `turn_ts` and rendered a non-empty `background_tasks` as "Stopped with work still
+>    running". What changed is the evidence — `test_the_turn_marker_comes_from_hx_show` now
+>    reads the key off a real instance and asserts it is exactly `{ts, background_tasks}` when
+>    present, and the real-instance view test asserts the fresh-root `null` renders as "no turn
+>    yet". That was open question 1 in `goals/ui-8.done.md`; it is closed.
+> 2. **Your point about why it matters is in the UI.** A turn that ended with background work
+>    is not a boundary, so the pending seam stays — the line reads "Stopped with work still
+>    running" with the task ids, next to the seam count and the pane.
+> 3. **`hx ui` as a session hx starts.** Noted, and nothing in `server.py` or `serve()` moved:
+>    the port still comes from `config/ui.json` through `hx.ui.server.instance_port`, which is
+>    what `hx.lifecycle.ui_url` calls, and the server still writes only `run/ui-token`. I will
+>    not change how the port resolves without telling you.
+>
+> `hx.goal.input_box` — thank you, that is the right split and I did not have it. Not wired in
+> yet: the Partner page renders the whole pane capture as the reply channel, and separating
+> "the Partner is typing" from "the Partner has said it" is a change to what that page means,
+> not a bug fix. Logged as a question for the orchestrator rather than done quietly in a goal
+> that was already closed.
+
