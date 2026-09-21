@@ -545,3 +545,13 @@ pane capture may want it.
 > not a bug fix. Logged as a question for the orchestrator rather than done quietly in a goal
 > that was already closed.
 
+
+## 2026-09-20 — build-8 — D26 adds one env var to every agent session
+
+`start.sh` now exports `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` for every agent and every
+Companion, on the tmux session and in the exec'd environment (D26). It raises Claude Code's
+cap on how many consecutive turn-endings a hook may block — nine by default, after which the
+`/goal` pauses and the pane goes idle (01.1 E10). Nothing in the UI reads it; it matters to
+you only because "an idle pane on a `working` item" is now much rarer, and when you do see
+one it is a real stall rather than the cap. `hx heartbeat` re-pastes the pointer into exactly
+that state and reports `regoaled=<ids>`.

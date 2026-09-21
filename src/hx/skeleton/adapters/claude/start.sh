@@ -155,6 +155,12 @@ if [ "$mode" = exec ]; then
   # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of
   # 2026-09-20 21:20 the Partner had to dig the absolute path out of config/hx.json.
   export PATH="$root/bin:$PATH"
+  # D26. A `/goal` keeps a turn from ending, and Claude Code caps that at nine consecutive
+  # blocks by default: "A hook blocked the turn from ending 9 consecutive times — overriding
+  # and ending turn", after which the goal pauses and the pane sits idle (live 2026-09-20,
+  # 01.1 E10). Nine turns is nothing for a real task, so the cap is raised out of the way and
+  # `hx heartbeat`'s re-paste stays as the fallback (spec 11, 17.4).
+  export CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
   # Every agent runs sandboxed and with permissions bypassed, always (spec 11). The
   # `.claude.json` pre-seed stays too: both mechanisms, so no dialog can ever appear.
   export IS_SANDBOX=1
@@ -183,6 +189,7 @@ env_args=(
   -e DISABLE_AUTOUPDATER=1
   -e IS_SANDBOX=1
   -e PATH="$root/bin:$PATH"
+  -e CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
 )
 while IFS='=' read -r name value; do
   case "$name" in HX_*) env_args+=(-e "$name=$value") ;; esac

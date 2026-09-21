@@ -348,3 +348,33 @@ def test_the_companion_also_gets_bin_on_its_path(ready, tmux_server):
     wait_for(record_path.is_file, what="the Companion to record its env")
     path = json.loads(record_path.read_text())["env"].get("PATH", "")
     assert path.split(":")[0] == str(ready / "bin")
+
+
+# --- D26: the `/goal` stop-hook block cap ------------------------------------------------------
+
+
+def test_the_stop_hook_block_cap_is_raised_for_the_agent(ready, tmux_server):
+    """D26. Claude Code caps a blocked turn-ending at 9 by default, then pauses the goal
+    (live 2026-09-20, 01.1 E10). Nine turns is nothing for a real task."""
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    assert record["env"].get("CLAUDE_CODE_STOP_HOOK_BLOCK_CAP") == "100000"
+
+
+def test_the_companion_gets_the_block_cap_too(ready, tmux_server):
+    (ready / "run" / "eng-001").mkdir(parents=True, exist_ok=True)
+    (ready / "run" / "eng-001" / "companion-system.md").write_text("You are a Companion.\n")
+    assert start(ready, "eng-001", "--companion", tmux=tmux_server).returncode == 0
+    record_path = ready / "run" / "eng-001" / "fake-argv-companion.json"
+    wait_for(record_path.is_file, what="the Companion to record its env")
+    env = json.loads(record_path.read_text())["env"]
+    assert env.get("CLAUDE_CODE_STOP_HOOK_BLOCK_CAP") == "100000"
+
+
+def test_the_block_cap_is_on_the_tmux_session_too(ready, tmux_server):
+    """`start.sh` sets it both on the session and in the exec'd env, like IS_SANDBOX."""
+    launch_and_record(ready, "eng-001", tmux_server)
+    shown = subprocess.run(
+        [*tmux_server, "show-environment", "-t", "=eng-001", "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"],
+        capture_output=True, text=True, check=False,
+    )
+    assert shown.stdout.strip() == "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000", shown.stdout
