@@ -26,6 +26,7 @@ from .ids import OUTCOMES, PARTNER
 from .orders import parse_order_text
 from .workitems import (
     SECTION_DIGEST,
+    SECTION_TASKS,
     replace_section,
     parse_work_item,
     rename_state,
@@ -180,7 +181,26 @@ def final_digest(root: Path, item_id: str, outcome: str, *, env=None) -> str:
             if text and text != "_pending companion_":
                 lines += [f"**{stream}**", text, ""]
 
-    return "\n".join(lines).strip() or DIGEST_PLACEHOLDER
+    text = "\n".join(lines).strip()
+    if text:
+        return text
+    return agent_digest(root, item_id) or DIGEST_PLACEHOLDER
+
+
+def agent_digest(root: Path, item_id: str) -> str:
+    """What the agent itself left, when the Companion left no step state.
+
+    A digest that reads `pending companion` tells the Partner nothing and stays that way
+    forever (live rehearsal 2026-09-21: three orders, every digest empty, the Partner read
+    git instead). The work item's own `## Deliverables` (or `## Tasks`) is the agent's
+    Partner-facing summary and is what the Partner would read next anyway.
+    """
+    _, body = split_frontmatter_text(require_work_item(root, item_id).read_text())
+    for heading in ("## Deliverables", SECTION_TASKS):
+        text = (section_text(body, heading) or "").strip()
+        if text and text != "- [ ] …":
+            return f"_No Companion step state at completion; from the agent's `{heading[3:]}`:_\n\n{text}"
+    return ""
 
 
 def write_digest(path: Path, text: str) -> None:

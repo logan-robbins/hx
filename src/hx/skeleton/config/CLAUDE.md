@@ -33,6 +33,6 @@ again. `blocked`, `decision`, and `exhausted` run no checks and are the honest a
 
 **What is not yours.** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
 `pods/` other than your own `-working` item, and `tasks.json` are managed by hx or belong to
-another agent. A hook will refuse the write and tell you why. `orders/` belongs to the Partner.
+another agent. Do not write there. `orders/` belongs to the Partner.
 
 Run `hx task` to print your order and its addenda at any time.

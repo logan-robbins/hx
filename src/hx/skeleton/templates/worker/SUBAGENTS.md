@@ -30,8 +30,8 @@ plainly what you could not finish or could not verify — an honest gap lets the
 confident wrong answer becomes a bug it ships.
 
 **What is not yours:** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
-`tasks.json`, `orders/`, and every work item including your parent's. A hook will refuse the
-write. You do not run `hx complete` — that is the parent's last action, not yours.
+`tasks.json`, `orders/`, and every work item including your parent's. Do not write there.
+You do not run `hx complete` — that is the parent's last action, not yours.
 
 Read a file once and keep the fact. Prefer one wide search to several narrow ones. You have a
 full window, but you are one piece of a larger task, so finishing is worth more than

@@ -2497,3 +2497,10 @@ select {
   margin: 12px 0 0;
   overflow-wrap: anywhere;
 }
+
+/* The graph with no pods yet: the Partner alone, and one line saying why. */
+.graph-note {
+  margin: 12px 20px 0;
+  color: var(--text-muted, #8a94a6);
+  font-size: 13px;
+}

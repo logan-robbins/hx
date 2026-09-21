@@ -29,7 +29,8 @@ cp -R "$HARNESS_ROOT/templates/worker" "$HARNESS_ROOT/config/be-001"
 
 That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
 
-1. **Substitute `{{id}}` and `{{pod}}`** in all three files — `be-001` and `backend`.
+1. **Substitute `{{id}}` and `{{pod}}`** in all three files — `be-001` and `be`. The pod is
+   always the id's prefix, so `hx board` groups agents by it.
 2. **Set `role`** in `config/be-001/harness.json` to one of the three above. `hx launch`
    refuses a role with no `companion/roles/<role>.md`, so a typo fails at launch rather than
    at the first Companion pass.

@@ -179,7 +179,7 @@ hx complete exhausted   # the task was larger than one agent
 your `config/<id>/AGENTS.md`. That section is yours alone, it is not wiped by a dispatch, and
 it travels in every future context file. Write what you would otherwise rediscover: how this
 codebase is laid out, which commands actually work here, what surprised you. Nothing above
-that header is yours — a hook will refuse the edit.
+that header is yours; `start.sh` re-derives the persona from it at every launch.
 
 `hx complete <outcome>` is your **last action**. Nothing after it. It prints
 `HX-COMPLETE <id> <outcome>` as its last line, and that line, in your transcript, is what
@@ -202,7 +202,7 @@ Read the output, fix the actual problem, commit, and run `hx complete done` agai
 many times as it takes.
 
 Do not edit the `### Checks` block to make it pass — it is in `## Order`, it is the Partner's,
-and a hook will refuse you.
+and `hx complete` runs the copy in `tasks.json`, not the one in your file.
 
 ### 11. When `done` is not available
 

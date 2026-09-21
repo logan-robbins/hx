@@ -1175,9 +1175,14 @@ function companionNode(a) {
 }
 
 function graphPage(focus) {
-  if (!fleet || !fleet.pods.length) {
-    return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>hx is the graph</h1><p class="subtitle">The Partner at the root, every HarnessAgent below it, clustered by pod.</p></div></div>${tabs("overview")}${empty("No HarnessAgent yet", "hx board lists no items. The Partner creates agents on your instruction, in chat.", "graph")}`;
+  if (!fleet) {
+    return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>hx is the graph</h1><p class="subtitle">The Partner at the root, every HarnessAgent below it, clustered by pod.</p></div></div>${tabs("overview")}${empty("Reading the instance…", "hx board has not answered yet.", "graph")}`;
   }
+  // No pods yet: the Partner is still the instance, so it is drawn alone at the
+  // root rather than behind an empty state (live rehearsal 2026-09-21).
+  const onlyPartner = !fleet.pods.length
+    ? `<p class="graph-note">No HarnessAgent yet. The Partner creates agents on your instruction, in chat.</p>`
+    : "";
   const layout = graphLayout(fleet.pods);
   const dispatched = new Set(
     ((orders && orders.orders) || []).filter((o) => o.dispatched).map((o) => o.id),
@@ -1210,7 +1215,7 @@ function graphPage(focus) {
   graphNode.pos = layout.partner;
   const partner = `<button class="agent-node manager ${focus.agent === "partner" ? "focused" : ""}" style="left:${layout.partner.x}px;top:${layout.partner.y}px" data-agent="partner" aria-label="Open the Partner"><div class="node-top">${avatar(fleet.partner)}<strong>Partner</strong><span class="dot ${partnerAlive() ? "green" : "muted"}"></span></div><div class="node-task">Operates the fleet on your instruction, in chat</div><div class="node-bottom"><span>no work item</span><span class="stage">${esc(count(dispatched.size, "dispatch", "dispatches"))}</span></div></button>`;
 
-  return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>${esc(fleet.name)} <span class="count">${fleet.agents.length}</span></h1><p class="subtitle">The Partner at the root, every HarnessAgent below it as a card clustered by pod, each with its Companion.</p></div><span class="badge">${esc(count(fleet.pods.length, "pod"))} · ${fleet.agents.filter((a) => a.session_alive).length} / ${fleet.agents.length} sessions alive</span></div>${tabs("overview")}<section class="panel graph-panel"><div class="panel-head"><div><h2>Fleet graph</h2><p>${esc(count(fleet.agents.length, "HarnessAgent"))} · ${esc(count(dispatched.size, "dispatch", "dispatches"))} from the Partner</p></div><div class="graph-toolbar"><span id="zoom-value">${Math.round(zoom * 100)}%</span><button class="icon-button" data-zoom="out" aria-label="Zoom out">${icon("minus")}</button><button class="icon-button" data-zoom="in" aria-label="Zoom in">${icon("plus")}</button><button class="button" data-zoom="fit">Fit</button></div></div><div class="graph-viewport" id="graph-viewport"><div style="width:${layout.width * zoom}px;height:${layout.height * zoom}px"><div class="graph-canvas" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg class="graph-edges" viewBox="0 0 ${layout.width} ${layout.height}" aria-label="Dispatch and Companion connections"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#6cbaa2"/></marker></defs>${edges}</svg>${clusterBoxes}${partner}${nodes}</div></div></div><div class="graph-legend"><span><i class="legend-line handoff"></i>Dispatched by the Partner (tasks.json)</span><span><i class="legend-line"></i>No dispatch on record</span><span><span class="dot green"></span> Working</span><span><span class="dot amber"></span> Needs attention</span><span><span class="dot muted"></span> Idle or no session</span></div></section>`;
+  return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>${esc(fleet.name)} <span class="count">${fleet.agents.length}</span></h1><p class="subtitle">The Partner at the root, every HarnessAgent below it as a card clustered by pod, each with its Companion.</p></div><span class="badge">${esc(count(fleet.pods.length, "pod"))} · ${fleet.agents.filter((a) => a.session_alive).length} / ${fleet.agents.length} sessions alive</span></div>${tabs("overview")}<section class="panel graph-panel"><div class="panel-head"><div><h2>Fleet graph</h2><p>${esc(count(fleet.agents.length, "HarnessAgent"))} · ${esc(count(dispatched.size, "dispatch", "dispatches"))} from the Partner</p></div><div class="graph-toolbar"><span id="zoom-value">${Math.round(zoom * 100)}%</span><button class="icon-button" data-zoom="out" aria-label="Zoom out">${icon("minus")}</button><button class="icon-button" data-zoom="in" aria-label="Zoom in">${icon("plus")}</button><button class="button" data-zoom="fit">Fit</button></div></div><div class="graph-viewport" id="graph-viewport"><div style="width:${layout.width * zoom}px;height:${layout.height * zoom}px"><div class="graph-canvas" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg class="graph-edges" viewBox="0 0 ${layout.width} ${layout.height}" aria-label="Dispatch and Companion connections"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#6cbaa2"/></marker></defs>${edges}</svg>${clusterBoxes}${partner}${nodes}</div></div></div>${onlyPartner}<div class="graph-legend"><span><i class="legend-line handoff"></i>Dispatched by the Partner (tasks.json)</span><span><i class="legend-line"></i>No dispatch on record</span><span><span class="dot green"></span> Working</span><span><span class="dot amber"></span> Needs attention</span><span><span class="dot muted"></span> Idle or no session</span></div></section>`;
 }
 
 /* -- task board -------------------------------------------------------- *
@@ -1886,13 +1891,15 @@ function listen() {
       return;
     }
     if (!changed || !changed.length) return;
-    let wantsBoard = false;
+    // Every scope re-reads the board: an agent scope moves when its work item is
+    // created or renamed (`hx launch`, `hx complete`), and only the board carries
+    // that. Without this a fresh `hx launch` stayed invisible until a manual
+    // reload (live rehearsal 2026-09-21).
+    let wantsBoard = true;
     for (const scope of changed) {
-      if (scope === "tasks" || scope === "board" || scope === "orders") {
-        wantsBoard = true;
+      if (scope === "tasks" || scope === "board" || scope === "orders" || scope === "archive") {
         archiveStale = true;
-      } else if (scope === "archive") archiveStale = true;
-      else if (scope === "partner") refreshPartner().then(() => render());
+      } else if (scope === "partner") refreshPartner().then(() => render());
       else details.delete(scope);
     }
     if (wantsBoard) refresh();

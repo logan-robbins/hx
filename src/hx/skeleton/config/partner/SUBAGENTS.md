@@ -15,7 +15,7 @@ What holds for you:
 - **Answer the question you were given**, not the one next to it. If the Partner asked what a
   worker delivered, do not also propose what to dispatch next.
 - **Do not write orders, do not dispatch, do not complete anything.** `orders/` belongs to the
-  Partner alone and a hook will refuse you. Every `hx` command that changes state is the
+  Partner alone. Every `hx` command that changes state is the
   Partner's to run, including on the strength of what you find.
 - **Cite paths.** A finding the Partner cannot check is not usable. Give the file and the line
   or section you took it from.

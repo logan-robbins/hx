@@ -101,7 +101,12 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 
 # The directory this agent runs in: `workdir` from config/<id>/harness.json, whatever the
 # Partner chose for it (spec 17.2). hx creates no repository and no branch there.
-if [ "$id" = partner ]; then
+#
+# The Companion always runs in HARNESS_ROOT: it reads pass files under run/ and writes under
+# state/, never touches the workdir, and its home's `.claude.json` is pre-seeded for $root by
+# install.sh. Launching it in the workdir put it in front of the workspace-trust dialog for a
+# directory nobody had pre-seeded (live rehearsal 2026-09-21), where it sat forever.
+if [ "$id" = partner ] || [ "$role" = companion ]; then
   cwd=$root
 else
   cwd=$("$python" - "$harness" "$root" <<'CWDEOF'

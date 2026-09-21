@@ -274,8 +274,15 @@ def wake(root: Path, item_id: str, stream: str, *, retry_reason: str = "", env=N
     if not goal_mod.pane_is_idle(pane):
         return "pending"
 
-    goal_mod.paste(session, "/clear", env)
-    goal_mod.paste(session, POINTER.format(path=path), env)
+    try:
+        goal_mod.paste(session, "/clear", env)
+        goal_mod.paste(session, POINTER.format(path=path), env)
+    except subprocess.CalledProcessError as exc:
+        # The window went away between the pane check and the paste (live rehearsal
+        # 2026-09-21: a Companion exiting under the caller's feet took `hx complete` down with
+        # it). The pass file stays on disk for the next wake; the caller degrades like any
+        # other missing Companion.
+        raise NotFound(f"{item_id}: the Companion pane vanished mid-wake ({exc})") from exc
     return "pasted"
 
 
