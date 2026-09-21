@@ -30,10 +30,22 @@ SKILLS = REPO / "src" / "hx" / "skills"
 # embeds an order rather than being one, so it is checked separately below.
 ORDER_EXAMPLES = [SKELETON / "templates" / "order.md"]
 
+#: Every skill that ships, for the checks that apply to any skill.
 SKILL_FILES = [
+    SKILLS / "hx-companion" / "SKILL.md",
     SKILLS / "hx-partner" / "SKILL.md",
     SKILLS / "hx-worker" / "SKILL.md",
 ]
+
+#: The skills a *HarnessAgent* loads. The Companion is not one: it has no `/goal`, takes no
+#: seams, and never sees spec 09.1's context line — so the boundary-read checks below are
+#: about these two and would be meaningless against hx-companion.
+AGENT_SKILL_FILES = [
+    SKILLS / "hx-partner" / "SKILL.md",
+    SKILLS / "hx-worker" / "SKILL.md",
+]
+
+CONTRACTS = REPO / "CONTRACTS.md"
 
 SPEC_HOOKS = REPO / "spec" / "09-hooks.md"
 
@@ -317,11 +329,94 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
     )
 
 
-def test_the_two_skills_spec_17_5_names_are_the_ones_that_ship():
-    assert sorted(p.name for p in SKILLS.iterdir()) == ["hx-partner", "hx-worker"], (
-        "spec 17.5: hx ships exactly hx-partner and hx-worker; autodev's operator and GM "
-        "skills are dropped"
+def test_the_skills_that_ship_are_the_ones_spec_17_5_and_10_name():
+    assert sorted(p.name for p in SKILLS.iterdir()) == [
+        "hx-companion", "hx-partner", "hx-worker",
+    ], (
+        "spec 17.5 ships hx-partner and hx-worker into agent homes; spec 10 adds hx-companion "
+        "for the Companion's own home. autodev's operator and GM skills are dropped"
     )
+
+
+# --------------------------------------------------------------- the Companion skill
+
+
+def companion_skill() -> str:
+    return (SKILLS / "hx-companion" / "SKILL.md").read_text()
+
+
+def companion_pointer() -> str:
+    """The fixed line hx pastes, taken from CONTRACTS.md itself.
+
+    Read out of the contract rather than hard-coded, for the same reason the boundary line is
+    read out of spec 09.1: when it is reworded, this fails and the skill gets updated, instead
+    of the skill quoting a line the Companion will never see.
+    """
+    text = CONTRACTS.read_text()
+    match = re.search(r"`(Companion pass: read [^`]+)`", text)
+    assert match, "CONTRACTS.md no longer carries the Companion pass pointer"
+    return match.group(1)
+
+
+def test_contracts_still_defines_the_companion_pointer():
+    pointer = companion_pointer()
+    assert pointer.startswith("Companion pass: read "), pointer
+    assert "do what it says" in pointer, pointer
+
+
+def test_the_companion_skill_quotes_the_pointer_verbatim():
+    assert companion_pointer() in companion_skill(), (
+        "hx-companion does not quote CONTRACTS.md's pass pointer verbatim; the Companion "
+        "would be looking for a line it never receives"
+    )
+
+
+def test_the_companion_skill_names_read_and_write_as_its_only_tools():
+    text = companion_skill()
+    assert "Read and Write" in text, "the skill does not name its two tools together"
+    # The tools it must refuse are named, not left to inference.
+    for forbidden in ("run a command",):
+        assert forbidden in text, f"the skill does not say it cannot {forbidden}"
+    assert "Bash" not in text, (
+        "hx-companion must not mention Bash as something it might use; its home denies it"
+    )
+
+
+def test_the_companion_skill_covers_the_pass_file_fields():
+    text = companion_skill()
+    for field in ("stream:", "state:", "log:", "from_seq:", "write:", "retry_reason:",
+                  "context_tokens:", "last_seam_ts:", "open_subagents:"):
+        assert field in text, f"hx-companion does not mention the pass field {field!r}"
+
+
+def test_the_companion_skill_forbids_reading_the_agents_files():
+    text = companion_skill()
+    for path in ("pods/", "orders/", "tasks.json", "worktree"):
+        assert path in text, f"hx-companion does not say it must not read {path}"
+
+
+def test_the_companion_skill_explains_retry_reason():
+    text = companion_skill()
+    assert "retry_reason" in text
+    assert "one retry" in text.lower(), (
+        "the skill does not say the retry happens once; a Companion that expects a loop will "
+        "not treat the first failure as expensive"
+    )
+
+
+def test_base_md_sends_the_object_to_the_write_path_not_to_stdout():
+    """The Companion is a tmux session now: its answer is a file written with the Write tool,
+    not something printed. A BASE.md still describing stdout would be describing the old
+    headless design."""
+    text = (SKELETON / "companion" / "BASE.md").read_text()
+    assert "Write tool" in text, "companion/BASE.md does not say the object is written"
+    assert "`write:` path" in text, "companion/BASE.md does not name the pass's write path"
+    assert "stdin" not in text and "stdout" not in text, (
+        "companion/BASE.md still describes the headless call: the Companion reads a pass file "
+        "and writes a file (CONTRACTS.md 'The Companion is a tmux session')"
+    )
+    for field in ("context_tokens", "last_seam_ts", "open_subagents"):
+        assert field in text, f"BASE.md's seam policy does not read {field} from the pass"
 
 
 # ---------------------------------------------------------------------- companion
@@ -434,7 +529,7 @@ def test_spec_09_1_still_names_a_context_line():
     )
 
 
-@pytest.mark.parametrize("path", SKILL_FILES, ids=_ids(SKILL_FILES))
+@pytest.mark.parametrize("path", AGENT_SKILL_FILES, ids=_ids(AGENT_SKILL_FILES))
 def test_skill_quotes_the_hook_line_verbatim(path):
     """Both skills show the agent the line it will actually see. A paraphrase here is worse
     than nothing: the agent would be looking for text that never appears."""
@@ -443,7 +538,7 @@ def test_skill_quotes_the_hook_line_verbatim(path):
     )
 
 
-@pytest.mark.parametrize("path", SKILL_FILES, ids=_ids(SKILL_FILES))
+@pytest.mark.parametrize("path", AGENT_SKILL_FILES, ids=_ids(AGENT_SKILL_FILES))
 def test_skill_boundary_step_names_the_read_tool_and_forbids_cat(path):
     text = path.read_text()
     assert "Use the Read tool" in text, f"{path}: the boundary step does not name the Read tool"

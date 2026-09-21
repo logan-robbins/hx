@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -134,7 +135,39 @@ def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
         capture_output=True, text=True, env=env,
     )
     assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
+    wait_for_the_pane_to_exec(env)
     return env
+
+
+def wait_for_the_pane_to_exec(env: dict, seconds: float = 15.0) -> None:
+    """Wait until the Partner's pane is the agent rather than the launcher.
+
+    `hx install` step 6 returns as soon as tmux has the session, but `start.sh` then does its
+    refusals and derives the persona before it `exec`s the binary. For that moment the pane's
+    argv is the launcher's, so `hx doctor`'s live-agent check reads no
+    `--dangerously-skip-permissions` and reports a `fail` that resolves itself a moment later.
+    This test documents a settled instance, so it waits. (Reported to the build lane: a check
+    that fails on a race is worse than no check, because it teaches people to re-run.)
+    """
+    deadline = time.monotonic() + seconds
+    last = ""
+    while time.monotonic() < deadline:
+        panes = subprocess.run(
+            [*env["HX_TMUX"].split(), "list-panes", "-t", "=partner:main", "-F", "#{pane_pid}"],
+            capture_output=True, text=True, env=env,
+        )
+        pid = panes.stdout.strip().splitlines()[0] if panes.stdout.strip() else ""
+        if pid:
+            listing = subprocess.run(
+                ["ps", "-o", "command=", "-p", pid], capture_output=True, text=True
+            )
+            last = listing.stdout.strip()
+            if "--dangerously-skip-permissions" in last:
+                return
+        time.sleep(0.2)
+    raise AssertionError(
+        f"the Partner's pane never exec'd the binary within {seconds}s; last argv was: {last!r}"
+    )
 
 
 def test_the_documented_doctor_output_is_what_hx_doctor_prints(tmp_path):

@@ -280,10 +280,16 @@ ok    models        2 model(s): claude-opus-5, claude-sonnet-5
 ok    hx.json       hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
 ok    hx.json       hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook
 ok    hx.json       python_bin ~/.local/share/uv/tools/hx-harness/bin/python
-ok    token         seed/token present, mode 0600
-ok    home:partner  settings.json
-ok    repo          product at aa1be46651e5
+ok    token            seed/token present, mode 0600
+ok    home:partner     settings.json
+ok    sandbox:partner  IS_SANDBOX=1 on the tmux session
+ok    sandbox:partner  --dangerously-skip-permissions in the pane's argv
+ok    repo             product at aa1be46651e5 (main)
 ```
+
+The two `sandbox:` lines are per live agent, and they are the ones worth reading: they check
+the *running* session rather than the configuration that was meant to produce it. If an agent
+was launched some other way, or a relaunch lost a flag, that is where it shows.
 
 Before you have pasted the token, the `token` line is a `warn` naming
 `claude setup-token`, and `hx install` itself stops with exit 4 rather than leaving you to
