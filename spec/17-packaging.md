@@ -35,7 +35,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Permissions | Whatever the user chose | Bypass, always |
 | Working dir | The user's checkout | `wt/<id>`, a sparse worktree from the mirror, without the repo's `.claude/` |
 | System prompt | Default | Default + `run/<id>/persona.md` |
-| Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1` in the session env; changed only by `hx upgrade` |
+| Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` in the session env; changed only by `hx upgrade` |
 | Goal | None | The `/goal` pointer |
 | Visibility | Their terminal | Only through `tmux attach` or `hx ui` |
 
@@ -46,7 +46,7 @@ The repo's own `.claude/` (project settings, hooks, commands) is kept out of har
 `start.sh <id>` is the entire launch; nothing else ever starts a Claude Code process:
 
 ```
-env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 \
+env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 \
   <config/claude.json bin> --dangerously-skip-permissions --effort <level> --model <full id> \
   --append-system-prompt-file <root>/run/<id>/persona.md
 ```

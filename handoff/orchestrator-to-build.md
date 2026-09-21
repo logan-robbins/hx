@@ -251,3 +251,16 @@ reaches a user's remote, so one name only.
    failure appended to the prompt; on a second failure keep the prior state and log it.
 2. `validate_harness`: `companion.provider` is a closed set `{claude-cli, anthropic}`; anything
    else is a validation error naming the field.
+
+## 2026-09-20 — directive from the spec author: IS_SANDBOX=1 everywhere, no dialog ever
+
+Every HarnessAgent, subagent, the Partner, and every Companion `claude -p` call runs with
+`--dangerously-skip-permissions` **and** `IS_SANDBOX=1` in its environment. Not negotiable.
+Do now, in the goal you are in: `start.sh` exports `IS_SANDBOX=1` next to `DISABLE_AUTOUPDATER=1`
+(session env and the exec env); the Companion runner exports it for `claude -p`; `hx doctor`
+fails when a live agent's `/proc`-equivalent env (`tmux show-environment -t <id>` plus the
+launcher's own check) lacks it or its argv lacks `--dangerously-skip-permissions`; the fake
+records it and a test asserts both. Keep the `.claude.json` pre-seed as well: verify live
+whether `IS_SANDBOX=1` alone removes the workspace-trust and bypass-acceptance dialogs, record
+the answer in 01.1 terms, and keep both mechanisms regardless. Spec 11, 17.4, CONTRACTS.md
+updated.
