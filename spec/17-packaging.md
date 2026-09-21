@@ -14,7 +14,7 @@ Two things exist and are never mixed.
 1. Refuse root. Check `tmux`, `git`, Python ≥ 3.14, and the `claude` binary; record `{bin, version}` in `config/claude.json` and the hx entry-point path in `config/hx.json`. The bare version string must be in the package's tested list (the list the M6 live suite last passed on); otherwise install stops and says which version to install.
 2. Create `HARNESS_ROOT` from the skeleton: `config/CLAUDE.md`, `config/models.json`, `config/partner/{AGENTS.md,SUBAGENTS.md,harness.json}`, `companion/`, `templates/`, empty `pods/`.
 3. **Seed token.** Print the two steps the human performs: run `claude setup-token` (their own Claude, interactive) and paste the token into `$HARNESS_ROOT/seed/token`; `hx install` then sets mode 0600. Until that file exists, install stops with exit 4. There is no `--from-user-config`: hx reads nothing from `~/.claude`, on any platform.
-4. `hx launch partner`; print `tmux attach -t partner`.
+4. `hx launch partner`; print `tmux attach -t partner`. Then start the UI: `hx ui` in tmux session `ui`, and print `http://127.0.0.1:<port>/`. The human runs nothing after this.
 
 That is the whole of deployment. hx ships no launchd plist and no systemd unit: `hx up` (launch everything) and `hx heartbeat` (restart dead sessions, wake the Partner when the board moved) are ordinary commands, and a human who wants them at boot or on a timer puts them in their own cron. After install the human types nothing but chat.
 
