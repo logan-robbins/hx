@@ -11,8 +11,7 @@ Sent after build-7 (the v1 cut) lands; M6 is build-8. Read `goals/build-6.done.m
    install-with-token proof), and their tests; the skills and docs stop mentioning `after`,
    queued items, Partner orders or self-dispatch, guard rules, `hx push`, `hx upgrade`, units,
    mirrors, worktrees, `--require-done`; the Partner gets its goal from the human in chat; work
-   items are `pods/<pod>/<id>.md` with a `state:` field; `templates/work-item.md` drops
-   `{{after}}` and gains `{{state}}`; `templates/order.md` has no frontmatter. The M8 and m8b
+   items stay `pods/<pod>/<id>-<state>.md`; `templates/work-item.md` drops `{{after}}`; `templates/order.md` has no frontmatter. The M8 and m8b
    packs: no `after`, no `orders/partner.md`, expected boards regenerated from the cut `hx board`
    (Partner not a row), README sequence per the rewritten spec 12 and 13 M8.
 

@@ -8,8 +8,7 @@ step-state schema the Companion output is validated against), CONTRACTS.md (`tur
 
 0. **The v1 cut first** (ORCHESTRATION.md constraints; CONTRACTS.md rewritten): the Board has no
    `after`/`ready`/`goal_pending` columns and no invariant-errors box; `partner` is not a board
-   row (the Partner view stays); work-item files are `pods/<pod>/<id>.md` with `state:` in
-   frontmatter; the Orders view lists `tasks.json` orders and addenda per id with no graph and no
+   row (the Partner view stays); work-item files stay `pods/<pod>/<id>-<state>.md`; the Orders view lists `tasks.json` orders and addenda per id with no graph and no
    file-match badge; `hx show partner` has the reduced shape. Regenerate fixtures from the
    build lane's cut commands; delete the tests of removed things.
 

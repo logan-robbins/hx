@@ -19,7 +19,7 @@ One entry per worker id, by id.
       "pod": "engineers",
       "role": "engineer",
       "state": "working",
-      "file": "pods/engineers/eng-001.md",
+      "file": "pods/engineers/eng-001-working.md",
       "outcome": null,
       "dispatched": "2026-09-20T12:00:00Z",
       "completed": null,
@@ -35,7 +35,9 @@ One entry per worker id, by id.
 ```
 
 Exit 0 always (v1 cut: no invariants, no `errors`). `partner` is not an item; the Partner has no
-work item. `state` is one of `idle|working|complete`, read from the work item's frontmatter.
+work item. `state` is one of `idle|working|complete`, read from the work item's filename suffix
+(`pods/<pod>/<id>-<state>.md`; renamed by `hx dispatch`, `hx complete`, `hx resume`, `hx bench`, or
+by the agent itself; nothing validates or polices it).
 `outcome` is one of `done|blocked|decision|exhausted` or `null`. `seams` counts seam records in `logs/<id>/<id>-main.jsonl` since
 `dispatched`. `context_tokens` is from the last main-stream record, `null` if none.
 
@@ -47,9 +49,9 @@ work item. `state` is one of `idle|working|complete`, read from the work item's 
   "pod": "engineers",
   "role": "engineer",
   "state": "working",
-  "file": "pods/engineers/eng-001.md",
+  "file": "pods/engineers/eng-001-working.md",
   "work_item": {
-    "frontmatter": {"id": "eng-001", "pod": "engineers", "state": "working", "outcome": null, "dispatched": "…"},
+    "frontmatter": {"id": "eng-001", "pod": "engineers", "outcome": null, "dispatched": "…"},
     "body": "…the markdown body after the frontmatter, verbatim…"
   },
   "task": {
@@ -117,14 +119,13 @@ When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROO
 ## `templates/work-item.md` placeholders
 
 The gtm lane writes the template; `hx dispatch` renders it (never reconstructs the body in
-Python). Exactly these tokens, no others (`{{state}}` renders the frontmatter `state:` field):
+Python). Exactly these tokens, no others:
 
 | Token | Renders as |
 |---|---|
 | `{{id}}` | the id |
 | `{{pod}}` | the pod |
 | `{{dispatched}}` | the dispatch timestamp |
-| `{{state}}` | `working` at dispatch |
 | `{{order}}` | the order file verbatim (`## Order`, then `## Definition of done` with its `### Checks` block), on its own line directly under the frontmatter |
 
 ## Claude Code version strings

@@ -16,9 +16,9 @@ is a list of what was deleted and the line count before and after.
    goal from the human in chat. `hx wake partner` stays.
 3. The `guard` hook: `hx-hook guard`, its rules, its tests, its entry in `install.sh`'s hooks.
 4. Locks and atomic writes on `tasks.json`: plain `json.dump` to the file.
-5. State in filenames: work items are `pods/<pod>/<id>.md` with `state:` in frontmatter, set by
-   dispatch/complete/resume/bench. Delete the filename regex, the transition machinery, all
-   `hx board` invariants and `errors`, and the doctor checks of items. `hx board` is the plain
+5. State stays in the filename (`pods/<pod>/<id>-<state>.md`, renamed by dispatch, complete,
+   resume, bench, or the agent itself). Delete the regex as a gate, the transition-table
+   enforcement, all `hx board` invariants and `errors`, and the doctor checks of items. `hx board` is the plain
    listing in CONTRACTS.md; `hx doctor` checks only what spec 08 now lists.
 6. Deployment beyond install: `hx repo add`, mirror, sparse worktrees, `hx push`, `hx upgrade`,
    unit rendering and `src/hx/packaging/` use in install (the gtm lane deletes the templates),

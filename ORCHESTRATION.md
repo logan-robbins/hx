@@ -57,9 +57,9 @@ handoff entry. Never create a remote or push.
 - The human never runs hx after setup and only talks to the Partner, and gives the Partner its
   goal in chat every time. The Partner has no work item and never dispatches itself.
 - v1 cut (spec 14 D25, 2026-09-20): no dependency chains (`after`, `queued`, promotion); no
-  guard hook; no locks or atomic-write ceremony on `tasks.json`; no state in filenames, no
-  transition tables, no board invariants, no doctor policing of items (state is a frontmatter
-  field hx sets); no mirror, sparse worktrees, `hx push`, `hx upgrade`, or unit files
+  guard hook; no locks or atomic-write ceremony on `tasks.json`; state stays in the filename
+  (`pods/<pod>/<id>-<state>.md`, renamed by the hx command or the agent) but with no regex gate,
+  transition table, board invariants, or doctor policing; no mirror, sparse worktrees, `hx push`, `hx upgrade`, or unit files
   (`hx install` only); task text in exactly two places (`tasks.json`, the work item; order and
   addendum files are consumed inputs); bench archives the body only.
 
