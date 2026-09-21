@@ -34,10 +34,15 @@ from .ids import PARTNER
 from .stepstate import InvalidState, empty, estimate_tokens, evict, load as load_state, validate
 from .subagents import load as load_subagents
 
-#: What the Companion is asked for, in one line. The payload goes on stdin; this never grows.
+#: What the Companion is asked for. The payload goes on stdin; this never grows with the task.
+#: The "no fences" sentence is not decoration: a live run showed the model fencing its JSON on
+#: the first call every time, which made every pass pay for a retry. hx does not strip fences —
+#: that would teach the model they are acceptable — so the prompt has to ask plainly.
 PROMPT = (
     "Return the new step state for this stream as one JSON object, per your instructions. "
-    "The current state and the new records follow on stdin."
+    "The current state and the new records follow on stdin. "
+    "Output the raw JSON object only: no markdown code fences, no ```json, no prose before or "
+    "after it. Your first character must be { and your last must be }."
 )
 
 #: Constrains the model's output to the shape `hx.stepstate` validates (docs/en/headless).
@@ -57,6 +62,24 @@ OUTPUT_SCHEMA = {
     },
     "required": ["seq"],
 }
+
+#: Every built-in tool, from code.claude.com/docs/en/tools-reference (2026-09-20), denied by
+#: name. `--disallowedTools "*"` would be the obvious way to say this, and it is wrong here:
+#: `--json-schema` is implemented as a `StructuredOutput` **tool**, so `*` denies it too and
+#: the model falls back to fenced prose in `result`. A live probe confirmed all three:
+#: `*` → structured_output null; `*` plus `--allowedTools StructuredOutput` → still null
+#: (deny wins); this list → `{"seq": 42}`. The list is over-inclusive on purpose — denying a
+#: tool that does not exist costs nothing, and missing one would let the Companion act.
+DENIED_TOOLS = (
+    "Agent", "Artifact", "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList",
+    "Edit", "EndConversation", "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree",
+    "Glob", "Grep", "ListAgents", "ListMcpResourcesTool", "LSP", "Monitor", "MultiEdit",
+    "NotebookEdit", "PowerShell", "PushNotification", "Read", "ReadMcpResourceTool",
+    "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "SendFeedback", "SendMessage",
+    "SendUserFile", "ShareOnboardingGuide", "Skill", "SubagentHandback", "Task", "TaskCreate",
+    "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate", "TodoWrite", "ToolSearch",
+    "WaitForMcpServers", "WebFetch", "WebSearch", "Workflow", "Write",
+)
 
 DIGEST_PROMPT = (
     "Write the closed-stream digest for this subagent: a few lines of what it did, what it "
@@ -204,8 +227,9 @@ def call_model(
         "--model", model,
         "--append-system-prompt-file", str(system_prompt_path(root, config.id)),
         "--output-format", "json",
-        # The Companion interprets; it never acts. `*` removes every tool (docs/en/cli-reference).
-        "--disallowedTools", "*",
+        # The Companion interprets; it never acts. Every acting tool is denied by name; see
+        # DENIED_TOOLS for why this cannot be `*`.
+        "--disallowedTools", ",".join(DENIED_TOOLS),
         # Nothing to resume: every call is stateless (spec 10).
         "--no-session-persistence",
     ]
@@ -318,8 +342,13 @@ def process_stream(root: Path, config: HarnessConfig, stream: str, *, env=None) 
         if call.error or call.state is None:
             failure = call.error or "no state returned"
             continue
+
         try:
             candidate = validate(call.state, previous_seq=previous_seq)
+            if attempt == 2:
+                # Worth seeing: a retry on every call is a silent doubling of cost and
+                # latency, and it usually means the prompt or the schema needs a word.
+                log_problem(root, item_id, f"{stream}: recovered on retry after: {failure}")
             break
         except InvalidState as exc:
             failure = str(exc)

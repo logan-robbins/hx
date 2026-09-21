@@ -18,6 +18,7 @@ from . import archive as archive_cmd
 from . import bench as bench_cmd
 from . import board as board_cmd
 from . import complete as complete_cmd
+from . import companion as companion_cmd
 from . import compose as compose_cmd
 from . import dispatch as dispatch_cmd
 from . import doctor as doctor_cmd
@@ -42,7 +43,6 @@ from .errors import HxError
 #: The build-lane goal that delivers each remaining command
 #: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
 NOT_IMPLEMENTED = {
-    "companion": 6,
     "seam": 7,
     "metrics": 8,
 }
@@ -51,6 +51,7 @@ IMPLEMENTED = {
     "archive": archive_cmd.main,
     "bench": bench_cmd.main,
     "board": board_cmd.main,
+    "companion": companion_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
     # what they do arrives at M2 and M5 (spec 13).
@@ -92,6 +93,8 @@ the control plane:
   resume ID ADDENDUM           continue a blocked or decision item
   bench ID                     archive the body and free the id
   read ID [--full]             the Digest and the open decision
+  companion ID [--once]        the Companion loop, one per agent
+  flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the 15-minute cron
   wake partner TEXT            the one way anything reaches the Partner
 

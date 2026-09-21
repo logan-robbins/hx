@@ -108,8 +108,13 @@ def _run_adapter(root: Path, name: str, item_id: str, env=None) -> subprocess.Co
     )
 
 
-def launch(root: Path, item_id: str, *, env=None) -> dict:
-    """Idempotent: a live session is left alone, but a `working` item still gets its goal."""
+def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dict:
+    """Idempotent: a live session is left alone, but a `working` item still gets its goal.
+
+    `companion=False` launches the agent without its Companion window, for a caller that
+    starts `hx companion <id>` itself — which is what the suites do, so a test that is not
+    about the Companion does not run one.
+    """
     require_partner_caller("launch", env)
     path = ensure_work_item(root, item_id)
     ensure_workdir(root, item_id)
@@ -124,7 +129,7 @@ def launch(root: Path, item_id: str, *, env=None) -> dict:
         if started.returncode != 0:
             raise HxError(f"launch {item_id}: start.sh failed:\n{started.stdout}{started.stderr}")
 
-    if not already:
+    if not already and companion:
         start_companion(root, item_id, env=env)
 
     if path.name.endswith("-working.md"):
@@ -221,9 +226,11 @@ def _diff(previous: str | None, current: str) -> str:
 def main_launch(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx launch", add_help=True)
     parser.add_argument("id")
+    parser.add_argument("--no-companion", action="store_true",
+                        help="launch the agent without its Companion window")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    result = launch(root, args.id, env=env)
+    result = launch(root, args.id, companion=not args.no_companion, env=env)
     print(f"HX-LAUNCH {result['id']} {result['session']} goal={result['goal'] or 'none'}")
     return 0
 

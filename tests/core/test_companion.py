@@ -92,9 +92,16 @@ def test_the_argv_denies_every_tool_and_persists_nothing(agent_working, fake_com
     fake_companion.responses({"state": {"seq": 1}})
     run_pass(agent_working, fake_companion)
 
+    from hx.companion import DENIED_TOOLS
+
     argv = fake_companion.calls()[0]["argv"]
     assert "-p" in argv
-    assert argv[argv.index("--disallowedTools") + 1] == "*", "the Companion cannot call tools"
+    denied = set(argv[argv.index("--disallowedTools") + 1].split(","))
+    assert {"Bash", "Edit", "Write", "Read", "Agent", "WebFetch"} <= denied, "it cannot act"
+    assert denied == set(DENIED_TOOLS)
+    # Not `*`: --json-schema is a StructuredOutput *tool*, and `*` denies that too.
+    assert "*" not in denied
+    assert "StructuredOutput" not in denied, "the one tool the Companion needs"
     assert "--no-session-persistence" in argv, "every call is stateless (spec 10)"
     assert argv[argv.index("--output-format") + 1] == "json"
     assert "--json-schema" in argv
@@ -507,3 +514,27 @@ def test_cache_reads_are_recorded_for_hx_metrics(agent_working, fake_companion):
     assert len(recorded) == 2
     assert recorded[0]["usage"]["cache_read_input_tokens"] == 0
     assert recorded[1]["usage"]["cache_read_input_tokens"] > 0, "the identical prefix is cached"
+
+
+# --- the Companion window ------------------------------------------------------------------------
+
+
+def test_launch_starts_the_companion_window(instance, hx, tmux_server):
+    """spec 08: `hx launch` runs `start.sh` in window `main` and `hx companion` in `companion`."""
+    result = hx("launch", "eng-001")
+    assert result.returncode == 0, result.stdout + result.stderr
+    windows = subprocess.run(
+        [*tmux_server, "list-windows", "-t", "=eng-001", "-F", "#{window_name}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert "main" in windows and "companion" in windows
+
+
+def test_no_companion_leaves_the_window_out(instance, hx, tmux_server):
+    result = hx("launch", "--no-companion", "eng-001")
+    assert result.returncode == 0, result.stdout + result.stderr
+    windows = subprocess.run(
+        [*tmux_server, "list-windows", "-t", "=eng-001", "-F", "#{window_name}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert windows == ["main"]

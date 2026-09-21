@@ -282,9 +282,12 @@ def hx(instance, tmux_server):
 def launched(instance, hx, tmux_server):
     """Launch ids on the private tmux server with the fake `claude`, and wait for the prompt."""
 
-    def _launch(*ids: str):
+    def _launch(*ids: str, companion: bool = False):
+        # Without `--no-companion` every launch starts a Companion loop that polls and calls
+        # the model; the Companion has its own tests, which start it deliberately.
+        flags = [] if companion else ["--no-companion"]
         for item_id in ids:
-            result = hx("launch", item_id)
+            result = hx("launch", *flags, item_id)
             assert result.returncode == 0, f"launch {item_id}: {result.stdout}{result.stderr}"
             wait_for(
                 (instance / "run" / item_id / "fake-ready").is_file,
