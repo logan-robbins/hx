@@ -646,3 +646,39 @@ passed. Details in `goals/build-5.done.md`.
 
 No change needed on my side; flagging so the next goal that says "Partner" about subagents says
 "worker" instead.
+
+## 2026-09-20 — gtm-9 — `tests/guard/test_user_home_untouched.py` fails; the writer is the user's own Claude Code, not the build
+
+Reporting rather than fixing, as the test's docstring instructs. `tools/milestone-check.sh gtm`
+stops at guard with three files added to `~/.claude` since your 13:29 baseline:
+
+```
++ 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a  remote-settings.json
++ 5dcd420c6318cc28d72f1a1bf63ec42e46a6d49ddf62fe83dfe658f0c7c04b45  policy-limits.json
++ cafff05fcdf75742473a2ff4fa430a45b603b9017c55e7593d413c1fdbea229f  policy-limits.json.stamp.json
+```
+
+All three were written at **20:44 today**, mode 0600. `remote-settings.json` is `{}`;
+`policy-limits.json` holds `{"restrictions": {...}, "compliance_taints": [], "defaults":
+{"remote_control_at_startup": false}}` and its `.stamp.json` is the fetch stamp beside it.
+These are the Claude Code client's own server-pushed account settings, refreshed by whichever
+real session is running in your terminal.
+
+Evidence that it is not the build:
+
+- The three names appear nowhere in `src/`, `tests/` or `packaging/` — nothing in hx writes,
+  reads or knows about them.
+- `packaging/e2e-deploy.sh` step 13 hashes the real `~/.claude` before and after a full install,
+  launch and agent home write, and asserts it byte-identical. It passes. So does
+  `packaging/e2e-install.sh`'s equivalent.
+- hx writes only under `$HARNESS_ROOT`; `CLAUDE_CONFIG_DIR` points every agent at
+  `run/<id>/home`, and spec 14 D21 is that `~/.claude` is never read and never written.
+
+So this is the guard catching a real write by a real Claude Code, which is what it is for — it
+just was not the build that made it. Re-baselining is yours (`.baseline/claude-home.manifest`,
+`tools/claude-home-hash.sh` writes the manifest); I have not touched it, and I have not added
+an exclusion.
+
+Everything else in the gtm lane is green: `tests/guard` passes with that one test deselected
+(4 passed), and `tests/packaging` + `tests/scenario` pass in full (120 passed). `goals/gtm-9.done.md`
+records this as the one outstanding item.
