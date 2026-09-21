@@ -278,6 +278,41 @@ code.commit {
 .wset ul { margin: 2px 0 10px; padding-left: 20px; font-size: 13px; }
 .bad-list li { color: var(--bad); }
 
+/* -- the step-state budget bar ----------------------------------------- */
+.budget { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
+
+.budget .bar {
+  background: var(--panel-2);
+  border-radius: 999px;
+  flex: 0 0 200px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.budget .fill { background: var(--working); display: block; height: 100%; }
+.budget .bar.near .fill { background: var(--queued); }
+.budget .bar.over .fill { background: var(--bad); }
+.budget .sub.dim { opacity: 0.65; }
+
+ul.constraints { color: var(--dim); font-size: 13px; margin: 4px 0 0; padding-left: 20px; }
+.why { margin-top: 2px; }
+.why .lbl { color: var(--dim); font-family: var(--mono); font-size: 12px; }
+.sub.ev { display: block; margin-top: 3px; opacity: 0.7; }
+.extra { margin-top: 4px; }
+.kv-extra { margin-right: 10px; }
+
+.bg-tasks {
+  background: rgba(227, 179, 65, 0.1);
+  border-left: 3px solid var(--queued);
+  border-radius: 4px;
+  font-size: 13px;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+}
+
+.bg-tasks strong { color: var(--queued); }
+.order-body { margin-top: 6px; }
+
 /* -- streams ----------------------------------------------------------- */
 .tail { display: grid; gap: 8px; }
 

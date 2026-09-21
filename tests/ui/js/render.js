@@ -45,6 +45,11 @@ global.fetch = async (url, init) => {
   }
   asked.push({ url, credentials: options.credentials, headers: options.headers || {} });
   if (Object.hasOwn(OVERRIDES, url)) {
+    // A null override is "this endpoint fails", so a test can exercise the
+    // error path of a view without taking the whole fixture away.
+    if (OVERRIDES[url] === null) {
+      return { ok: false, status: 404, json: async () => ({ error: "no such id: " + url }) };
+    }
     return { ok: true, status: 200, json: async () => OVERRIDES[url] };
   }
   const route = ROUTES[url];
@@ -72,16 +77,27 @@ async function show(view) {
   await quiet();
 }
 
-/** Click an id button inside the rendered view, the way a human opens an agent. */
+/** Click an id button, the way a human opens an agent.
+ *
+ * The board is the usual way in; the Orders view is the other one, and it is
+ * how you reach an id the board no longer lists. */
 async function open(id) {
-  const button = main.descendants().find((n) => n.dataset.open === id);
-  if (!button) throw new Error("render.js: no [data-open=" + id + "] button in the current view");
+  let button = main.descendants().find((n) => n.dataset.open === id);
+  if (!button) {
+    await show("orders");
+    button = main.descendants().find((n) => n.dataset.open === id);
+  }
+  if (!button) throw new Error("render.js: no [data-open=" + id + "] button in the board or orders");
   main.listeners.click({ target: button });
   await quiet();
 }
 
 function snapshot() {
+  const banner = document.getElementById("banner");
   return {
+    // Per view: the shared banner is cleared by the next view that draws, so a
+    // single reading at the end says nothing about the view that failed.
+    banner: banner.hidden ? null : banner.textContent,
     headings: collect(main, "h2").map((n) => n.textContent),
     subheadings: collect(main, "h3").map((n) => n.textContent),
     rows: collect(main, "tr")

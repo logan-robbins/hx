@@ -70,16 +70,6 @@ function clock(ts) {
   return match ? match[1] + "Z" : ts;
 }
 
-function errors(list) {
-  if (!list || !list.length) return null;
-  return el(
-    "section",
-    { class: "errors" },
-    el("h2", { text: "invariant errors (" + list.length + ")" }),
-    el("ul", {}, list.map((text) => el("li", { text })))
-  );
-}
-
 function head(payload) {
   return el("p", {
     class: "meta",
@@ -266,36 +256,24 @@ function findSection(body, name) {
 
 /* -- board ------------------------------------------------------------- */
 
+/* v1 cut (CONTRACTS.md): no `after`, no `ready`, no `goal_pending`, and the
+ * Partner is not a board row — it has no work item, and its own view stays. */
 const COLUMNS = [
-  "id", "pod / role", "state", "outcome", "after", "subagents",
+  "id", "pod / role", "state", "outcome", "subagents",
   "goal", "session", "context", "seams", "turn",
 ];
-
-function afterCell(item) {
-  if (!item.after || !item.after.length) return el("span", { class: "met", text: "—" });
-  const text = item.after.join(", ");
-  return item.ready
-    ? el("span", { class: "met", text: text + " ✓" })
-    : el("span", { class: "wait", text: "waits on " + text });
-}
 
 function boardRow(item) {
   const open = el("button", { class: "linkish", "data-open": item.id, text: item.id });
   return el(
     "tr",
-    { class: [item.id === "partner" ? "partner" : "", recent.has(item.id) ? "flash" : ""].join(" ").trim() },
+    { class: recent.has(item.id) ? "flash" : "" },
     el("td", { class: "id" }, open, el("div", { class: "sub", text: item.file || "" })),
     el("td", {}, el("span", { class: "sub", text: (item.pod || "—") + " / " + (item.role || "—") })),
     el("td", {}, pill(item.state)),
     el("td", {}, pill(item.outcome)),
-    el("td", {}, afterCell(item)),
     el("td", { class: "num", text: item.open_subagents === null ? "—" : String(item.open_subagents) }),
-    el(
-      "td",
-      {},
-      el("span", { class: "sub", text: clock(item.goal_ts) }),
-      item.goal_pending ? el("div", {}, pill("goal pending", "queued")) : null
-    ),
+    el("td", {}, el("span", { class: "sub", text: clock(item.goal_ts) })),
     el("td", {}, el("span", {
       class: "dot" + (item.session_alive ? "" : " off"),
       text: item.session_alive ? "● live" : "● dead",
@@ -324,57 +302,42 @@ function renderBoard(payload) {
   const items = payload.items || [];
   return [
     head(payload),
-    errors(payload.errors),
     section("board · " + count(items.length, "item"), boardTable(payload)),
   ];
 }
 
 /* -- orders ------------------------------------------------------------ */
 
-/* Three states, not two. `hx orders` reports `file_matches_record: false` both
- * when the file differs from what was dispatched and when there is no file at
- * all — but `order` is null only in the second case, and "edited" would be a
- * lie about a file that does not exist. */
-function orderFileBadge(order) {
-  if (!order.record) return null; // never dispatched: nothing to compare against
-  if (order.order === null || order.order === undefined) {
-    return el("span", { class: "pill bad", text: "order file missing" });
-  }
-  if (order.file_matches_record === false) {
-    return el("span", { class: "pill bad", text: "file edited since dispatch" });
-  }
-  return null;
-}
+/* -- orders ------------------------------------------------------------
+ * v1 cut (CONTRACTS.md): one entry per id in `tasks.json`, with its addenda.
+ * No `after` graph, and no comparison against an order file — `hx dispatch`
+ * deletes the file it read, so the text lives only in `tasks.json` and the work
+ * item, and there is nothing left on disk to have drifted from. */
 
 function orderCard(order) {
-  const record = order.record;
   const children = [
     el(
       "div",
       { class: "order-head" },
-      el("span", { class: "name", text: order.id }),
-      pill(order.state === null ? "not dispatched" : order.state, order.state || "none"),
-      record ? pill(record.outcome) : null,
-      order.waiting_on && order.waiting_on.length
-        ? el("span", { class: "wait", text: "waits on " + order.waiting_on.join(", ") })
-        : null,
-      orderFileBadge(order)
+      el("button", { class: "name linkish", "data-open": order.id, text: order.id }),
+      pill(order.state),
+      pill(order.outcome),
+      el("span", { class: "sub", text: order.pod || "" })
     ),
     el("p", {
       class: "meta",
       text: [
-        order.path,
-        "after: " + (order.after && order.after.length ? order.after.join(", ") : "—"),
-        record ? "dispatched " + clock(record.dispatched) : "never dispatched",
-        record && record.completed ? "completed " + clock(record.completed) : null,
+        order.dispatched ? "dispatched " + clock(order.dispatched) : "not dispatched",
+        order.completed ? "completed " + clock(order.completed) : null,
+        (order.addenda || []).length ? count(order.addenda.length, "addendum", "addenda") : null,
       ].filter(Boolean).join("  ·  "),
     }),
-    el("pre", { text: order.order || "" }),
+    el("div", { class: "order-body" }, markdown(order.order || "")),
   ];
   for (const addendum of order.addenda || []) {
     children.push(
-      el("p", { class: "meta", text: "addendum " + clock(addendum.ts) + (addendum.path ? "  ·  " + addendum.path : "") }),
-      el("pre", { class: "addendum", text: addendum.text || "" })
+      el("p", { class: "meta", text: "addendum " + clock(addendum.ts) }),
+      el("div", { class: "addendum-block" }, markdown(addendum.text || ""))
     );
   }
   return el("article", { class: "card" + (recent.has(order.id) ? " flash" : "") }, children);
@@ -382,32 +345,13 @@ function orderCard(order) {
 
 function renderOrders(payload) {
   const orders = payload.orders || [];
-  const edges = (payload.graph && payload.graph.edges) || [];
   return [
     head(payload),
-    errors(payload.errors),
-    section(
-      "after graph · " + count(edges.length, "edge"),
-      edges.length
-        ? el(
-            "div",
-            { class: "graph" },
-            edges.map((edge) =>
-              el(
-                "div",
-                { class: "edge" + (edge.met ? "" : " unmet") },
-                el("span", { text: edge.to }),
-                el("span", { class: "arrow", text: edge.met ? "── after ──▶" : "── waits on ──▶" }),
-                el("span", { text: edge.from }),
-                pill(edge.met ? "met" : "unmet", edge.met ? "done" : "queued")
-              )
-            )
-          )
-        : el("p", { class: "empty", text: "no dependencies" })
-    ),
     section(
       "orders · " + orders.length,
-      orders.length ? orders.map(orderCard) : el("p", { class: "empty", text: "no orders" })
+      orders.length
+        ? orders.map(orderCard)
+        : el("p", { class: "empty", text: "nothing dispatched yet" })
     ),
   ];
 }
@@ -436,7 +380,6 @@ function renderArchive(payload) {
   const items = payload.items || [];
   return [
     head(payload),
-    errors(payload.errors),
     section(
       "archive · " + count(items.length, "id"),
       items.length
@@ -484,6 +427,54 @@ function frontmatterTable(frontmatter) {
   );
 }
 
+/* Spec 10: the budget is in tokens, estimated at four characters per token —
+ * the same estimate `hx.stepstate` evicts on, so the bar shows what hx sees.
+ * The budget itself is `companion.state_budget_tokens` from the agent's
+ * `harness.json`, which `hx show --json` does not carry; until it does, this is
+ * the template default and is labelled as such (handoff/ui-to-build.md). */
+const CHARS_PER_TOKEN = 4;
+const DEFAULT_STATE_BUDGET = 10000;
+
+function estimateTokens(state) {
+  return Math.ceil(JSON.stringify(state).length / CHARS_PER_TOKEN);
+}
+
+function budgetBar(state) {
+  const used = estimateTokens(state);
+  const budget = DEFAULT_STATE_BUDGET;
+  const share = Math.min(used / budget, 1);
+  const over = used > budget;
+  return el(
+    "div",
+    { class: "budget" },
+    el(
+      "div",
+      { class: "bar" + (over ? " over" : share > 0.8 ? " near" : "") },
+      el("span", { class: "fill", style: "width: " + (share * 100).toFixed(1) + "%" })
+    ),
+    el("span", {
+      class: "sub",
+      text: used.toLocaleString() + " of " + budget.toLocaleString() +
+        " tokens (est.)" + (over ? " — over budget; hx evicts closed detail first" : ""),
+    }),
+    el("span", { class: "sub dim", text: "budget: the templates/worker default" })
+  );
+}
+
+function evidence(ev) {
+  if (!ev || !ev.length) return null;
+  return el("span", { class: "sub ev", text: "ev " + ev.join(", ") });
+}
+
+/** Keys a Companion added that spec 07.2 does not name (build-6: entry keys are open). */
+function extraKeys(entry, known) {
+  const extra = Object.keys(entry).filter((key) => !known.includes(key));
+  if (!extra.length) return null;
+  return el("div", { class: "sub extra" }, extra.map((key) =>
+    el("span", { class: "kv-extra" }, el("code", { text: key }), " " + JSON.stringify(entry[key]))
+  ));
+}
+
 function stepState(handle, state) {
   const workingSet = state.working_set || {};
   return el(
@@ -493,57 +484,70 @@ function stepState(handle, state) {
       "div",
       { class: "order-head" },
       el("span", { class: "name", text: handle }),
-      el("span", { class: "sub", text: "seq " + (state.seq === null || state.seq === undefined ? "—" : state.seq) }),
+      // build-6: hx owns the cursor, `seq = max(model, log head)`, so this is
+      // safely read as "the Companion has seen the stream through record N".
+      el("span", { class: "sub", text: "caught up through record " + (state.seq ?? "—") }),
       state.prompt_version
         ? el("span", {
             class: "sub",
             text: "prompt " + (state.prompt_version.base || "?") + " / " + (state.prompt_version.role || "?"),
           })
-        : null
+        : null,
+      state.ts ? el("span", { class: "sub", text: "written " + clock(state.ts) }) : null
     ),
+    budgetBar(state),
+
     state.goal ? el("p", {}, el("strong", { text: "goal: " }), state.goal) : null,
     (state.constraints || []).length
-      ? el("p", { class: "meta", text: "constraints: " + state.constraints.join("; ") })
+      ? el("ul", { class: "constraints" }, state.constraints.map((c) => el("li", { text: c })))
       : null,
+
+    el("h3", { text: "decisions" }),
+    orNotYet(state.decisions, (list) =>
+      el("ul", { class: "steps" }, list.map((decision) =>
+        el(
+          "li",
+          {},
+          el("span", { text: decision.d || "" }),
+          decision.why ? el("div", { class: "why" }, el("span", { class: "lbl", text: "why: " }), decision.why) : null,
+          evidence(decision.ev),
+          extraKeys(decision, ["d", "why", "ev"])
+        )
+      ))
+    ),
 
     el("h3", { text: "open steps" }),
     orNotYet(state.open_steps, (steps) =>
-      el(
-        "ul",
-        { class: "steps" },
-        steps.map((step) =>
-          el(
-            "li",
-            {},
-            el("span", { class: "stepid", text: step.id }),
-            " ",
-            el("span", { text: step.intent || "" }),
-            el("div", { class: "next" }, el("span", { class: "lbl", text: "next: " }), step.next || "—"),
-            el("div", { class: "sub", text: "ev " + (step.ev || []).join(", ") })
-          )
+      el("ul", { class: "steps" }, steps.map((step) =>
+        el(
+          "li",
+          {},
+          el("span", { class: "stepid", text: step.id }),
+          " ",
+          el("span", { text: step.intent || "" }),
+          el("div", { class: "next" }, el("span", { class: "lbl", text: "next: " }), step.next || "—"),
+          evidence(step.ev),
+          extraKeys(step, ["id", "intent", "next", "ev"])
         )
-      )
+      ))
     ),
 
     el("h3", { text: "closed steps" }),
     orNotYet(state.closed_steps, (steps) =>
-      el(
-        "ul",
-        { class: "steps" },
-        steps.map((step) =>
-          el(
-            "li",
-            {},
-            el("span", { class: "stepid", text: step.id }),
-            " ",
-            el("span", { text: step.outcome || "" }),
-            " ",
-            pill(step.verified ? "verified" : "unverified", step.verified ? "done" : "queued"),
-            step.commit ? el("code", { class: "commit", text: step.commit }) : null,
-            el("div", { class: "sub", text: "ev " + (step.ev || []).join(", ") })
-          )
+      el("ul", { class: "steps" }, steps.map((step) =>
+        el(
+          "li",
+          {},
+          el("span", { class: "stepid", text: step.id }),
+          " ",
+          el("span", { text: step.outcome || "" }),
+          " ",
+          pill(step.verified ? "verified" : "unverified", step.verified ? "done" : "queued"),
+          step.commit ? el("code", { class: "commit", text: step.commit }) : null,
+          evidence(step.ev),
+          extraKeys(step, ["id", "outcome", "verified", "commit", "ev"])
         )
-      )
+      ))
     ),
 
     el("h3", { text: "working set" }),
@@ -552,13 +556,19 @@ function stepState(handle, state) {
       { class: "wset" },
       el("p", { class: "meta", text: "commits" }),
       orNotYet(workingSet.commits, (commits) =>
-        el("ul", {}, commits.map((c) => el("li", {}, el("code", { class: "commit", text: c.sha || "" }), " " + (c.msg || ""))))
+        el("ul", {}, commits.map((c) =>
+          typeof c === "string"
+            ? el("li", {}, el("code", { class: "commit", text: c.split(" ")[0] }), " " + c.split(" ").slice(1).join(" "))
+            : el("li", {}, el("code", { class: "commit", text: c.sha || "" }), " " + (c.msg || ""))
+        ))
       ),
       el("p", { class: "meta", text: "dirty" }),
-      orNotYet(workingSet.dirty, (dirty) => el("ul", {}, dirty.map((path) => el("li", { text: path })))),
+      orNotYet(workingSet.dirty, (dirty) => el("ul", {}, dirty.map((path) => el("li", {}, el("code", { text: path }))))),
       el("p", { class: "meta", text: "files read, not changed" }),
       orNotYet(workingSet.files, (files) =>
-        el("ul", {}, files.map((f) => el("li", {}, el("code", { text: f.path || "" }), " — " + (f.note || ""))))
+        el("ul", {}, files.map((f) =>
+          el("li", {}, el("code", { text: f.path || "" }), " — " + (f.note || ""))
+        ))
       ),
       workingSet.last_failure ? el("p", {}, el("strong", { text: "last failure: " }), workingSet.last_failure) : null,
       workingSet.hypothesis ? el("p", {}, el("strong", { text: "hypothesis: " }), workingSet.hypothesis) : null
@@ -568,7 +578,11 @@ function stepState(handle, state) {
     orNotYet(state.blockers, (list) => el("ul", { class: "bad-list" }, list.map((b) => el("li", { text: b })))),
 
     el("h3", { text: "dead ends" }),
-    orNotYet(state.dead_ends, (list) => el("ul", {}, list.map((d) => el("li", { text: d }))))
+    orNotYet(state.dead_ends, (list) => el("ul", {}, list.map((d) => el("li", { text: d })))),
+
+    (state.subagents_open || []).length
+      ? el("p", { class: "meta", text: "open subagent streams: " + state.subagents_open.join(", ") })
+      : null
   );
 }
 
@@ -871,6 +885,26 @@ function idSwitcher(ids, current) {
   );
 }
 
+function turnNote(turn, row) {
+  const ts = (turn && turn.ts) || (row && row.turn_ts);
+  return ts ? "  ·  last turn " + clock(ts) : "  ·  no turn yet";
+}
+
+/* The stop hook records what Claude Code was still running when the turn ended.
+ * A human needs to see that before reading the pane as finished: the agent has
+ * stopped, but its work has not. */
+function backgroundTasks(turn) {
+  const tasks = (turn && turn.background_tasks) || [];
+  if (!tasks.length) return null;
+  return el(
+    "p",
+    { class: "bg-tasks" },
+    el("strong", { text: "stopped with work still running" }),
+    " — " + count(tasks.length, "background task") + ": ",
+    tasks.map((id, n) => [n ? ", " : "", el("code", { text: String(id) })])
+  );
+}
+
 function renderAgent(payload) {
   if (payload.__picker) {
     return [
@@ -903,12 +937,13 @@ function renderAgent(payload) {
       payload.role || "",
       "  ·  persona ",
       payload.persona_path || "—",
-      // `run/<id>/turn` is the stop hook's marker (build-5). `hx show` does not
-      // carry it, but the board does as `turn_ts`, and the Agent view already
-      // has the board for its switcher — so no instance file is read here.
-      row ? "  ·  last turn " + clock(row.turn_ts) : "",
+      // `turn` is the stop hook's marker (CONTRACTS.md), `null` until a turn
+      // has ended. The board's `turn_ts` is the same instant; prefer the marker
+      // when `hx show` carries it, since only it has the background tasks.
+      turnNote(payload.turn, row),
       row && row.session_alive === false ? "  ·  session dead" : ""
     ),
+    backgroundTasks(payload.turn),
 
     section(
       payload.id + " · work item",
@@ -1108,19 +1143,20 @@ function chatBox() {
 }
 
 function renderPartner(payload) {
+  // v1 cut (CONTRACTS.md): `hx show partner --json` returns only `id`,
+  // `partner_md`, `pane` and `streams`. The Partner has no work item, no task
+  // and no step state, so there is nothing else to show — and it is not a board
+  // row either, which is why the board comes from `/api/board` beside it.
   const pane = payload.pane || {};
   return [
-    el("p", {
-      class: "meta",
-      text: (payload.file || "") + "  ·  state " + (payload.state || "—"),
-    }),
+    el("p", { class: "meta", text: "partner  ·  the fleet's own agent; it has no work item" }),
 
     section(
       "PARTNER.md",
       el("article", { class: "card" }, orNotYet(payload.partner_md, (text) => markdown(text)))
     ),
 
-    section("board", orNotYet(payload.__board, (board) => [errors(board.errors), boardTable(board)])),
+    section("board", orNotYet(payload.__board, (board) => boardTable(board))),
 
     section(
       "chat",
@@ -1139,6 +1175,11 @@ function renderPartner(payload) {
           ". This page observes and sends; it does not operate the fleet."
         )
       )
+    ),
+
+    section(
+      "streams",
+      orNotYet(payload.streams, (streams) => streams.map((stream) => streamCard(stream, null)))
     ),
 
     section(
@@ -1186,6 +1227,33 @@ const VIEWS = {
   },
 };
 
+/** What the Agent view shows when its `show` failed: the way out, and why. */
+async function agentFallback(error) {
+  if (view !== "agent" || !agentId) return [];
+  let ids = [];
+  try {
+    const board = await api("/api/board");
+    ids = (board.items || []).map((item) => item.id);
+  } catch (ignored) {
+    return [];
+  }
+  return [
+    idSwitcher(ids.concat(ids.includes(agentId) ? [] : [agentId]), agentId),
+    el(
+      "article",
+      { class: "card soon" },
+      el("h3", { text: agentId + " could not be read" }),
+      el("p", { text: error.message }),
+      el("p", {
+        class: "meta",
+        text: ids.includes(agentId)
+          ? "The board still lists this id, so this is a read failure rather than a missing agent."
+          : "The board does not list this id. Pick another above.",
+      })
+    ),
+  ];
+}
+
 async function draw() {
   const spec = VIEWS[view];
   try {
@@ -1193,7 +1261,10 @@ async function draw() {
     main.replaceChildren(...spec.render(payload).flat(Infinity).filter(Boolean));
     clearFail();
   } catch (error) {
-    main.replaceChildren();
+    // The Agent view must stay recoverable: an unknown id, or a read that
+    // failed, used to leave an empty page whose only way out was the Board.
+    // The switcher is drawn from the board, so it survives a failed `show`.
+    main.replaceChildren(...(await agentFallback(error)).filter(Boolean));
     fail(view + (view === "agent" && agentId ? " " + agentId : "") + ": " + error.message);
   }
 }

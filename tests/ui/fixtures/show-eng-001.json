@@ -8,19 +8,13 @@
     "frontmatter": {
       "id": "eng-001",
       "pod": "engineers",
-      "after": [
-        "eng-000"
-      ],
       "outcome": null,
       "dispatched": "2026-09-20T12:00:00Z"
     },
     "body": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n\n## Standing instructions\n- Keep `## Tasks` current: mark a task done the moment it is done, add tasks the moment you discover them.\n- Commit each finished sub-task immediately with a descriptive message.\n- Your last action is `hx complete <outcome>`. Nothing after it.\n\n## Tasks\n- [x] Read spec 08 `hx board`; the exit rule is \"exit 0 iff every listed item is complete with outcome done\".\n- [x] Add `--require-done` to the argument parser in `src/hx/board.py`.\n- [ ] Refuse an id that has no `config/<id>/` rather than treating it as not-done.\n- [ ] Tests for the three exit paths in `tests/test_board.py`.\n\n## Deliverables\n- `src/hx/board.py`, `tests/test_board.py`\n\n## Commands\n- `python -m pytest tests/test_board.py -q`\n\n## Open decision\n\n## Digest\n"
   },
   "task": {
-    "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n",
-    "after": [
-      "eng-000"
-    ],
+    "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
     "addenda": [
       {
         "ts": "2026-09-20T12:30:00Z",
@@ -34,32 +28,43 @@
   "persona_path": "run/eng-001/persona.md",
   "step_state": {
     "eng-001-main": {
-      "seq": 412,
-      "prompt_version": {
-        "base": "9c1f2ab",
-        "role": "4d80e17"
-      },
-      "goal": "hx board --require-done, with the spec 08 exit rule",
+      "goal": "add `--require-done` to hx board, with the spec 08 exit rule",
       "constraints": [
         "stdlib only",
-        "no timeouts"
+        "no timeouts anywhere"
       ],
       "decisions": [
         {
-          "d": "--require-done takes ids, not a file",
-          "why": "spec 08 shows it inline in the Partner's own ### Checks block",
+          "d": "`--require-done` takes ids, not a file",
+          "why": "spec 08 shows it inline in the Partner's own `### Checks` block",
           "ev": [
             401
+          ]
+        },
+        {
+          "d": "read tasks.json under the flock",
+          "why": "two dispatches raced the read and one saw a half-written file",
+          "ev": [
+            372,
+            380
           ]
         }
       ],
       "open_steps": [
         {
           "id": "st7",
-          "intent": "refuse an id with no config/<id>/",
-          "next": "raise in _require_done before the outcome lookup",
+          "intent": "refuse an id that has no `config/<id>/`",
+          "next": "raise in `_require_done` before the outcome lookup",
           "ev": [
             398,
+            410
+          ]
+        },
+        {
+          "id": "st8",
+          "intent": "cover the three exit paths in tests/test_board.py",
+          "next": "write the unknown-id case first; the other two already pass",
+          "ev": [
             410
           ]
         }
@@ -67,47 +72,59 @@
       "closed_steps": [
         {
           "id": "st6",
-          "outcome": "--require-done parsed and threaded to the board reader",
+          "outcome": "`--require-done` parsed and threaded to the board reader",
           "verified": true,
           "commit": "1b90c3d",
           "ev": [
             390
           ]
+        },
+        {
+          "id": "st5",
+          "outcome": "read spec 08 end to end; the exit rule is in the `hx board` row",
+          "verified": false,
+          "commit": "",
+          "ev": [
+            340
+          ]
         }
       ],
       "dead_ends": [
-        "reading tasks.json without the flock; two dispatches raced the read"
+        "parsed the flag with a manual argv scan before finding argparse already had the group"
+      ],
+      "blockers": [],
+      "subagents_open": [
+        "eng-001-s001"
       ],
       "working_set": {
         "commits": [
-          {
-            "sha": "1b90c3d",
-            "msg": "board: parse --require-done"
-          }
+          "1b90c3d board: parse --require-done"
         ],
         "dirty": [
-          "src/hx/board.py"
+          "src/hx/board.py",
+          "tests/test_board.py"
         ],
         "files": [
           {
             "path": "spec/08-hx-cli.md",
             "note": "exit 0 iff every listed id is complete/done"
+          },
+          {
+            "path": "CONTRACTS.md",
+            "note": "board items are keyed by id, partner is not one"
           }
         ],
-        "last_failure": "",
-        "hypothesis": ""
+        "last_failure": "test_unknown_id_exits_1: expected 1, got 0",
+        "hypothesis": "the lookup treats a missing id as not-done rather than refusing"
       },
-      "blockers": [],
-      "subagents_open": [
-        "eng-001-s001"
-      ]
-    },
-    "eng-001-s001": {
-      "seq": 40,
+      "seq": 412,
       "prompt_version": {
         "base": "9c1f2ab",
         "role": "4d80e17"
       },
+      "ts": "2026-09-20T13:09:41Z"
+    },
+    "eng-001-s001": {
       "goal": "survey every exit-code assertion already in tests/",
       "constraints": [],
       "decisions": [],
@@ -115,14 +132,18 @@
         {
           "id": "st1",
           "intent": "grep the suite",
-          "next": "report the list",
+          "next": "report the list to the parent",
           "ev": [
-            12
+            2
           ]
         }
       ],
       "closed_steps": [],
       "dead_ends": [],
+      "blockers": [
+        "cannot run the suite: no worktree on this stream"
+      ],
+      "subagents_open": [],
       "working_set": {
         "commits": [],
         "dirty": [],
@@ -130,8 +151,12 @@
         "last_failure": "",
         "hypothesis": ""
       },
-      "blockers": [],
-      "subagents_open": []
+      "seq": 40,
+      "prompt_version": {
+        "base": "9c1f2ab",
+        "role": "4d80e17"
+      },
+      "ts": "2026-09-20T13:09:41Z"
     }
   },
   "context_file": {
@@ -352,7 +377,7 @@
           }
         }
       ],
-      "digest": "_pending companion_\n"
+      "digest": "Surveyed the exit-code assertions in `tests/`.\n\n- `tests/test_board.py:41` and `tests/test_complete.py:88` are the only two.\n- Both assert on `returncode` directly, so a new exit path needs its own case.\n- Left open: nothing.\n"
     },
     {
       "handle": "eng-001-s003",
@@ -399,7 +424,7 @@
           }
         }
       ],
-      "digest": "_pending companion_\n"
+      "digest": "Read `spec/08-hx-cli.md` and `spec/06-work-items.md` end to end.\n\n- The `--require-done` exit rule is in the `hx board` row of 08's table.\n- Nothing in 06 constrains it.\n- Committed nothing; this was a read-only pass.\n"
     }
   ],
   "subagents": {
@@ -508,6 +533,13 @@
       "> python -m pytest tests/test_board.py -q",
       "1 failed, 3 passed in 0.42s",
       "I need to refuse an unknown id before the outcome lookup."
+    ]
+  },
+  "turn": {
+    "ts": "2026-09-20T13:09:40Z",
+    "background_tasks": [
+      "bash_12",
+      "bash_19"
     ]
   },
   "archive": [

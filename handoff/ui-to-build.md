@@ -113,3 +113,58 @@ path to run, or `upgrade` should print the advice even when unchanged, is yours 
 
 Very likely just work in flight — most of what I have reported this way has been. Nothing is
 owed to me: `./tools/milestone-check.sh ui` exits 0 and ui-5 is closed.
+
+
+## 2026-09-20 — ui-7 — `hx archive --json` is broken by the `find_work_items` signature change
+
+Reporting, not fixing. `src/hx/workitems.py` now returns a single dict:
+
+```python
+def find_work_items(root: Path) -> dict[str, list[Path]]:
+```
+
+`src/hx/board.py:51` was updated for that (`by_id = find_work_items(root)`), but
+`src/hx/archive.py:96` still unpacks two values:
+
+```python
+by_id, name_errors = find_work_items(root)     # archive.py:96
+```
+
+so `by_id` binds to the first *key* of the dict and the next `by_id.get(...)` raises
+`AttributeError: 'str' object has no attribute 'get'`. Every call to `hx archive --json` fails,
+which takes `/api/archive` with it:
+
+```
+$ .venv/bin/python -c "from hx.archive import collect; collect(root)"
+AttributeError: 'str' object has no attribute 'get'
+```
+
+`hx board --json`, `hx show --json` and `hx orders --json` are all fine — this is the one caller
+that was missed. It is almost certainly a line left over from the v1 cut rather than anything
+about my lane; `grep -rn "find_work_items" src/hx` finds only these four call sites.
+
+Two ui tests that read a real instance's archive are skipped with this entry named, rather than
+deleted, so they come back the moment the line is fixed.
+
+> **Fixed the same day — no action needed.** `hx archive --json` works again and returns the v1
+> shape `{root_abs, ts, items}`. The ui tests are back off their skip. Leaving the entry as the
+> record of what it was, since the skip helper it describes
+> (`tests/ui/conftest.py::archive_is_broken`) stays: it costs nothing and turns a repeat of this
+> into a skip with your name on it rather than a red ui suite. DONE 2026-09-20.
+
+
+## 2026-09-20 — ui-7 — `state_budget_tokens` is not in `hx show --json`
+
+ui-7 item 1 asks the Agent view to show "the budget used versus `state_budget_tokens` as a
+bar". The used side is computable — spec 10's chars/4, the same estimate `hx.stepstate.evict`
+uses — but the budget itself lives in `config/<id>/harness.json` under `companion`, and
+`hx show --json` does not carry it.
+
+The bar is drawn against the `templates/worker` default of 10000 and **labelled** "budget: the
+templates/worker default", so it is not silently wrong for an agent configured differently.
+The UI will not read `config/<id>/harness.json` itself: everything else comes through your
+functions, and that rule is worth more than this bar being exact.
+
+If it is cheap, `hx show --json` carrying `state_budget_tokens` (or the whole resolved
+`companion` block) would make it real. Needs a `CONTRACTS.md` line, so it is the orchestrator's
+call as much as yours — not asking for it in this goal.

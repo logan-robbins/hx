@@ -1,90 +1,14 @@
 {
   "id": "partner",
-  "pod": "partner",
-  "role": "partner",
-  "state": "working",
-  "file": "pods/partner/partner-working.md",
-  "work_item": {
-    "frontmatter": {
-      "id": "partner",
-      "pod": "partner",
-      "after": [],
-      "outcome": null,
-      "dispatched": "2026-09-20T09:15:00Z"
-    },
-    "body": "## Order\nKeep the fleet moving. Dispatch `eng-002` once `eng-003` is resolved, and answer the human in\nchat. `eng-003` finished with outcome `decision`; read its digest and bring the human the\nchoice, not the transcript.\n\n## Definition of done\n- Every engineer id is `complete` with outcome `done`, or has an open decision recorded here.\n\n### Checks\n```bash\nhx board --require-done eng-000 eng-001\n```\n\n## Tasks\n- [x] Dispatch eng-000, eng-001.\n- [x] Queue eng-002 behind eng-003.\n- [ ] Put the eng-003 decision to the human.\n\n## Deliverables\n\n## Commands\n\n## Open decision\neng-003 asks whether the seam threshold belongs in `config/models.json` per model or in `config/<id>/harness.json` per agent.\n\n## Digest\n"
-  },
-  "task": {
-    "order": "## Order\nKeep the fleet moving. Dispatch `eng-002` once `eng-003` is resolved, and answer the human in\nchat. `eng-003` finished with outcome `decision`; read its digest and bring the human the\nchoice, not the transcript.\n\n## Definition of done\n- Every engineer id is `complete` with outcome `done`, or has an open decision recorded here.\n\n### Checks\n```bash\nhx board --require-done eng-000 eng-001\n```\n",
-    "after": [],
-    "addenda": [],
-    "outcome": null,
-    "dispatched": "2026-09-20T09:15:00Z",
-    "completed": null
-  },
-  "persona_path": "run/partner/persona.md",
-  "step_state": {
-    "partner-main": {
-      "seq": 1290,
-      "prompt_version": {
-        "base": "9c1f2ab",
-        "role": "7ae0c92"
-      },
-      "goal": "keep the fleet moving; surface the eng-003 decision",
-      "constraints": [
-        "never write another agent's work item"
-      ],
-      "decisions": [
-        {
-          "d": "queue eng-002 behind eng-003",
-          "why": "it edits the same seam path",
-          "ev": [
-            1180
-          ]
-        }
-      ],
-      "open_steps": [
-        {
-          "id": "st12",
-          "intent": "put the eng-003 decision to the human",
-          "next": "summarise both options in one message",
-          "ev": [
-            1288
-          ]
-        }
-      ],
-      "closed_steps": [
-        {
-          "id": "st11",
-          "outcome": "eng-001 dispatched",
-          "verified": true,
-          "commit": "",
-          "ev": [
-            1100
-          ]
-        }
-      ],
-      "dead_ends": [],
-      "working_set": {
-        "commits": [],
-        "dirty": [],
-        "files": [
-          {
-            "path": "PARTNER.md",
-            "note": "the standing fleet state doc"
-          }
-        ],
-        "last_failure": "",
-        "hypothesis": ""
-      },
-      "blockers": [],
-      "subagents_open": []
-    }
-  },
-  "context_file": {
-    "path": "run/partner/partner-main.context.md",
-    "text": "# Memory\nThe human wants the choice, never the transcript.\n\n# Task\n## Order\nKeep the fleet moving. Dispatch `eng-002` once `eng-003` is resolved, and answer the human in\nchat. `eng-003` finished with outcome `decision`; read its digest and bring the human the\nchoice, not the transcript.\n\n## Definition of done\n- Every engineer id is `complete` with outcome `done`, or has an open decision recorded here.\n\n### Checks\n```bash\nhx board --require-done eng-000 eng-001\n```\n\n# Tasks\n- [ ] Put the eng-003 decision to the human.\n\n# Step state\nopen: st12\n",
-    "seam_ts": "2026-09-20T12:20:00Z"
+  "partner_md": "# Partner\n\n## Fleet\n- eng-000 done; eng-001 working; eng-002 queued behind eng-003; eng-003 decision.\n- res-001 has no live session; `hx heartbeat` should restart it.\n\n## Standing decisions\n- One order per dispatch, sized to one context window.\n",
+  "pane": {
+    "session": "partner",
+    "alive": true,
+    "lines": [
+      "> hx read eng-003",
+      "eng-003 completed with outcome decision.",
+      "Digest: the seam threshold has two plausible homes; I need a ruling before eng-002 runs."
+    ]
   },
   "streams": [
     {
@@ -111,48 +35,5 @@
         }
       ]
     }
-  ],
-  "subagents": {},
-  "metrics": {
-    "id": "partner",
-    "stream": "partner-main",
-    "dispatched": "2026-09-20T09:15:00Z",
-    "seams": [
-      {
-        "seq": 1104,
-        "ts": "2026-09-20T12:20:00Z",
-        "source": "clear",
-        "prompt_version": "base-3/partner-1",
-        "context_tokens_before": 158220,
-        "context_file_bytes": 3310,
-        "working_set_size": 2,
-        "next_10_turns": {
-          "turns": 10,
-          "tool_calls": 10,
-          "reads_of_context_file": 1,
-          "reads_of_working_set": 1,
-          "other": 8
-        }
-      }
-    ],
-    "totals": {
-      "seams": 1,
-      "tool_calls": 10,
-      "reads_of_context_file": 1,
-      "reads_of_working_set": 1,
-      "other": 8
-    }
-  },
-  "pane": {
-    "session": "partner",
-    "alive": true,
-    "lines": [
-      "> hx read eng-003",
-      "eng-003 completed with outcome decision.",
-      "Digest: the seam threshold has two plausible homes; I need a ruling before eng-002 runs."
-    ]
-  },
-  "archive": [],
-  "bench": [],
-  "partner_md": "# Partner\n\n## Fleet\n- eng-000 done; eng-001 working; eng-002 queued behind eng-003; eng-003 decision.\n- res-001 has no live session; `hx heartbeat` should restart it.\n\n## Standing decisions\n- One order per dispatch, sized to one context window.\n"
+  ]
 }

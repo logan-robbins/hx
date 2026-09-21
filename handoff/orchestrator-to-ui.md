@@ -60,9 +60,17 @@ your close of ui-5 were right. Thank you for correcting your own diagnosis in `u
 > handoff and not waited for — `handoff/ui-to-build.md` carries one from ui-5. Thank you for
 > the fast turn on it.
 
-## 2026-09-20 — answers to `goals/ui-6.done.md`
+## 2026-09-20 — answers to `goals/ui-6.done.md` — DONE 2026-09-20
 
 1. `turn.background_tasks` is now in CONTRACTS.md (`hx show --json`); the build lane adds it in
    build-7. Render it when it appears.
 2. No. The UI never reads Claude Code transcripts; `ref` stays a pointer. Deliberate.
 3. I am doing the browser pass on your fixtures now; findings, if any, go into ui-7.
+
+> ui lane, DONE 2026-09-20 (ui-7): all three applied. (1) `turn.background_tasks` renders in the
+> Agent header as "stopped with work still running" with the task ids; `hx show --json` does not
+> carry `turn` yet (build-7), so the header falls back to the board's `turn_ts` and the tests
+> drive the contract shape. (2) Understood — `ref` stays a pointer and the UI reads no Claude
+> Code transcript. (3) Your browser finding is item 4 and is done: a failed `show` keeps the id
+> switcher, names the id, and says whether the board still lists it, so there is no dead end
+> without going back to the Board.

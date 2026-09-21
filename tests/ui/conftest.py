@@ -183,7 +183,6 @@ true
 WORK_ITEM = """---
 id: {id}
 pod: {pod}
-after: {after}
 outcome:
 dispatched: 2026-09-20T12:00:00Z
 ---
@@ -224,7 +223,7 @@ def build_instance(root: Path) -> Path:
         capture_output=True, text=True, check=True,
     )
     worker_template = root / "templates" / "worker"
-    for agent_id, pod, after in (("partner", "partner", "[]"), ("eng-001", "engineers", "[]")):
+    for agent_id, pod in (("partner", "partner"), ("eng-001", "engineers")):
         config = root / "config" / agent_id
         config.mkdir(parents=True, exist_ok=True)
         for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
@@ -242,7 +241,7 @@ def build_instance(root: Path) -> Path:
         pod_dir = root / "pods" / pod
         pod_dir.mkdir(parents=True, exist_ok=True)
         (pod_dir / f"{agent_id}-working.md").write_text(
-            WORK_ITEM.format(id=agent_id, pod=pod, after=after), encoding="utf-8"
+            WORK_ITEM.format(id=agent_id, pod=pod), encoding="utf-8"
         )
     # Orders, and the tasks.json records they produced. `partner`'s file still
     # matches what was dispatched; `eng-001`'s was edited afterwards, so the
@@ -257,9 +256,10 @@ def build_instance(root: Path) -> Path:
     (root / "tasks.json").write_text(
         json.dumps(
             {
+                # v1 cut (CONTRACTS.md): `tasks.json` allows only these five
+                # keys — hx rejects an `after`, which no longer exists.
                 agent_id: {
                     "order": ORDER,
-                    "after": [],
                     "addenda": [],
                     "outcome": None,
                     "dispatched": "2026-09-20T12:00:00Z",
@@ -281,6 +281,39 @@ def build_instance(root: Path) -> Path:
 #: the build lane runs a real one called `partner` on this machine.
 DEAD_TMUX = f"hx-ui-none-{uuid.uuid4().hex[:8]}"
 ISOLATED_ENV = {"HX_TMUX": f"tmux -L {DEAD_TMUX}"}
+
+
+def pack_instance_is_stale(root) -> str | None:
+    """`tests/scenario/packlib` still writes the pre-cut `tasks.json` (ui-7).
+
+    The v1 cut removed `after`, and hx now rejects a `tasks.json` that carries
+    it — so an instance the gtm lane's pack builds cannot be read by `hx orders`
+    or `hx show`. Reported in `handoff/ui-to-gtm.md`, not fixed: the pack is
+    theirs. Returns the message to skip with, or None when it reads.
+    """
+    from hx.ui.data import SourceError
+
+    try:
+        isolated_source(root).orders()
+    except (SourceError, AttributeError, TypeError, ValueError) as exc:
+        return f"the scenario pack builds a pre-cut instance: {exc}"
+    return None
+
+
+def archive_is_broken(root) -> str | None:
+    """`hx archive --json` raises on the v1 tree (handoff/ui-to-build.md, ui-7).
+
+    `src/hx/archive.py:96` still unpacks two values from `find_work_items`,
+    which now returns one dict. Reported, not fixed — it is the build lane's
+    file. Returns the message to skip with, or None when it works.
+    """
+    from hx.ui.data import SourceError
+
+    try:
+        isolated_source(root).archive()
+    except (SourceError, AttributeError, TypeError, ValueError) as exc:
+        return f"hx archive --json is broken in the build lane: {exc}"
+    return None
 
 
 def isolated_source(root):

@@ -176,3 +176,39 @@ suspect first — that a live tmux session named `partner` changes the board tex
 **disproved it**: on a private tmux server, `hx board` prints the same text for these states
 whether or not sessions with those ids exist. So the earlier note in this file about liveness
 stands as a caution for positive assertions only; it is not what bit you here.
+
+
+
+## 2026-09-20 — ui-7 — your packs went through the v1 cut while I was reading them; all green now
+
+No action needed. Recording it because the ui suite watched it happen and the skips it grew are
+worth knowing about.
+
+During ui-7 the scenario packs were mid-cut for a while, in three different ways, each of which
+made every pack-driven ui test fail rather than skip:
+
+1. `tests/scenario/m8/orders/eng-002.md` still had `after:` frontmatter, which `hx.orders.parse_order`
+   now refuses outright.
+2. `packlib.build_instance` wrote `after` into `tasks.json`, which hx now rejects as an unknown field.
+3. `packlib.State` narrowed from `(state, outcome, after, has_goal)` to `(state, outcome, has_goal)`
+   while both packs' `STEPS` still held the four-wide form.
+
+All three are fixed on your side now and the ui tests that use the packs are green — the m8 and
+m8b parametrisation runs over all eleven observation points again.
+
+What I changed on my side, in case it matters to you:
+
+- `tests/ui/test_m8_instance.py` no longer rewrites `tasks.json` after `packlib.build_instance`.
+  It used to substitute the pack's real order text; `packlib` writes the v1 shape itself now and
+  the placeholder is fine for structural assertions, so that whole step is gone. One less thing
+  to drift.
+- The expected-board parser follows `hx.board.render_text`'s v1 columns
+  (`id pod state outcome <dispatched> alive|dead subagents= context= seams=`).
+- The pack-driven tests skip rather than fail when the pack is mid-cut, naming the reason. If
+  you ever see `the scenario pack is still pre-cut: …` in a ui run, that is this, and it is a
+  report rather than a complaint.
+
+One thing I got wrong and corrected: I first asserted that the Orders view's ids equal the
+board's ids with a non-null `dispatched`. They are not the same set — `hx orders` reads
+`tasks.json`, while the board's `dispatched` comes from the work item's frontmatter, and
+`packlib` stamps that on idle items too. The test now compares against `tasks.json` directly.

@@ -5,189 +5,37 @@
     {
       "id": "eng-000",
       "pod": "engineers",
-      "path": "orders/eng-000.md",
-      "after": [],
-      "order": "## Order\nShip `hx board --json` with the shape in CONTRACTS.md: one entry per id, `partner` first,\nthen by id, and `errors` holding the invariant violations of spec 08.\n\n## Definition of done\n- `hx board --json` validates against CONTRACTS.md for a fleet of three ids.\n- Exit 0 when `errors` is empty, 1 otherwise.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
-      "addenda": [],
-      "record": {
-        "order": "## Order\nShip `hx board --json` with the shape in CONTRACTS.md: one entry per id, `partner` first,\nthen by id, and `errors` holding the invariant violations of spec 08.\n\n## Definition of done\n- `hx board --json` validates against CONTRACTS.md for a fleet of three ids.\n- Exit 0 when `errors` is empty, 1 otherwise.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
-        "after": [],
-        "addenda": [],
-        "outcome": "done",
-        "dispatched": "2026-09-20T10:00:00Z",
-        "completed": "2026-09-20T11:58:12Z"
-      },
       "state": "complete",
-      "ready": true,
-      "waiting_on": [],
-      "file_matches_record": true
+      "outcome": "done",
+      "order": "## Order\nShip `hx board --json`.\n\n## Definition of done\n- It validates.\n\n### Checks\n```bash\ntrue\n```\n",
+      "addenda": [],
+      "dispatched": "2026-09-20T10:00:00Z",
+      "completed": "2026-09-20T11:58:12Z"
     },
     {
       "id": "eng-001",
       "pod": "engineers",
-      "path": "orders/eng-001.md",
-      "after": [
-        "eng-000"
-      ],
-      "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n",
+      "state": "working",
+      "outcome": null,
+      "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
       "addenda": [
         {
           "ts": "2026-09-20T12:30:00Z",
-          "path": "orders/eng-001.addendum.md",
           "text": "Also refuse an id with no `config/<id>/` directory; exit 1 and name it."
         }
       ],
-      "record": {
-        "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n",
-        "after": [
-          "eng-000"
-        ],
-        "addenda": [
-          {
-            "ts": "2026-09-20T12:30:00Z",
-            "text": "Also refuse an id with no `config/<id>/` directory; exit 1 and name it."
-          }
-        ],
-        "outcome": null,
-        "dispatched": "2026-09-20T12:00:00Z",
-        "completed": null
-      },
-      "state": "working",
-      "ready": true,
-      "waiting_on": [],
-      "file_matches_record": true
-    },
-    {
-      "id": "eng-002",
-      "pod": "engineers",
-      "path": "orders/eng-002.md",
-      "after": [
-        "eng-003"
-      ],
-      "order": "---\nafter: [eng-003]\n---\n## Order\nApply the seam-threshold ruling from `eng-003` across `config/models.json` and the `log` hook,\nthen delete the duplicate threshold read in `src/hx/hooks.py`.\n\n## Definition of done\n- One reader for the threshold; `hx doctor` names the file it came from.\n\n### Checks\n```bash\npython -m pytest tests/test_hooks.py -q\n```\n",
-      "addenda": [],
-      "record": {
-        "order": "---\nafter: [eng-003]\n---\n## Order\nApply the seam-threshold ruling from `eng-003` across `config/models.json` and the `log` hook,\nthen delete the duplicate threshold read in `src/hx/hooks.py`.\n\n## Definition of done\n- One reader for the threshold; `hx doctor` names the file it came from.\n\n### Checks\n```bash\npython -m pytest tests/test_hooks.py -q\n```\n",
-        "after": [
-          "eng-003"
-        ],
-        "addenda": [],
-        "outcome": null,
-        "dispatched": "2026-09-20T12:05:00Z",
-        "completed": null
-      },
-      "state": "queued",
-      "ready": false,
-      "waiting_on": [
-        "eng-003"
-      ],
-      "file_matches_record": true
+      "dispatched": "2026-09-20T12:00:00Z",
+      "completed": null
     },
     {
       "id": "eng-003",
       "pod": "engineers",
-      "path": "orders/eng-003.md",
-      "after": [],
-      "order": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken, in the work item's `## Open decision`.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
-      "addenda": [],
-      "record": {
-        "order": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken, in the work item's `## Open decision`.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
-        "after": [],
-        "addenda": [],
-        "outcome": "decision",
-        "dispatched": "2026-09-20T10:30:00Z",
-        "completed": "2026-09-20T12:47:31Z"
-      },
       "state": "complete",
-      "ready": true,
-      "waiting_on": [],
-      "file_matches_record": true
-    },
-    {
-      "id": "res-001",
-      "pod": "research",
-      "path": "orders/res-001.md",
-      "after": [],
-      "order": "## Order\nSurvey what `code.claude.com/docs` says about queueing a slash command from a hook, and record\nexactly what you verified against the pinned binary.\n\n## Definition of done\n- A note naming the documented behaviour and the version it was checked against.\n\n### Checks\n```bash\ntest -s notes/slash-from-hook.md\n```\n",
+      "outcome": "decision",
+      "order": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
       "addenda": [],
-      "record": {
-        "order": "## Order\nSurvey what `code.claude.com/docs` says about queueing a slash command from a hook, and record\nexactly what you verified against the pinned binary.\n\n## Definition of done\n- A note naming the documented behaviour and the version it was checked against.\n\n### Checks\n```bash\ntest -s notes/slash-from-hook.md\n```\n",
-        "after": [],
-        "addenda": [],
-        "outcome": null,
-        "dispatched": "2026-09-20T08:40:00Z",
-        "completed": null
-      },
-      "state": "working",
-      "ready": true,
-      "waiting_on": [],
-      "file_matches_record": false
-    },
-    {
-      "id": "eng-004",
-      "pod": "engineers",
-      "path": "orders/eng-004.md",
-      "after": [],
-      "order": "## Order\nWrite `hx metrics <id>` per spec 07.4: per seam, the tool calls in the next ten turns split\ninto Reads of `working_set` files and everything else.\n\n## Definition of done\n- `hx metrics eng-001` prints one block per seam record.\n\n### Checks\n```bash\npython -m pytest tests/test_metrics.py -q\n```\n",
-      "addenda": [],
-      "record": null,
-      "state": null,
-      "ready": true,
-      "waiting_on": [],
-      "file_matches_record": null
+      "dispatched": "2026-09-20T10:30:00Z",
+      "completed": "2026-09-20T12:47:31Z"
     }
-  ],
-  "graph": {
-    "nodes": [
-      {
-        "id": "eng-000",
-        "state": "complete",
-        "outcome": "done",
-        "ready": true
-      },
-      {
-        "id": "eng-001",
-        "state": "working",
-        "outcome": null,
-        "ready": true
-      },
-      {
-        "id": "eng-002",
-        "state": "queued",
-        "outcome": null,
-        "ready": false
-      },
-      {
-        "id": "eng-003",
-        "state": "complete",
-        "outcome": "decision",
-        "ready": true
-      },
-      {
-        "id": "res-001",
-        "state": "working",
-        "outcome": null,
-        "ready": true
-      },
-      {
-        "id": "eng-004",
-        "state": null,
-        "outcome": null,
-        "ready": true
-      }
-    ],
-    "edges": [
-      {
-        "from": "eng-000",
-        "to": "eng-001",
-        "met": true
-      },
-      {
-        "from": "eng-003",
-        "to": "eng-002",
-        "met": false
-      }
-    ]
-  },
-  "errors": []
+  ]
 }

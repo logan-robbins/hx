@@ -18,6 +18,7 @@ import pytest
 from .conftest import FIXTURES
 
 REPO = Path(__file__).resolve().parents[2]
+SKELETON_PARTNER = REPO / "src" / "hx" / "skeleton" / "PARTNER.md"
 RENDER = Path(__file__).parent / "js" / "render.js"
 STATIC = REPO / "src" / "hx" / "ui" / "static"
 
@@ -98,12 +99,12 @@ def test_every_fetch_sends_the_cookie(rendered):
         assert post["credentials"] == "same-origin"
 
 
-def test_the_board_renders_one_row_per_id_with_partner_first(rendered):
-    board = rendered["views"]["board"]
-    rows = board["rows"]
+def test_the_board_renders_one_row_per_id(rendered):
+    """v1 cut: the Partner is not a board row — it has no work item."""
+    rows = rendered["views"]["board"]["rows"]
     board_json = json.loads((FIXTURES / "board.json").read_text())
     assert len(rows) == len(board_json["items"])
-    assert rows[0]["class"] == "partner", "partner first, and marked"
+    assert not any(row["cells"][0].startswith("partner") for row in rows)
     for row, item in zip(rows, board_json["items"]):
         assert row["cells"][0].startswith(item["id"])
         assert item["file"] in row["cells"][0]
@@ -111,57 +112,56 @@ def test_the_board_renders_one_row_per_id_with_partner_first(rendered):
 
 def test_the_board_renders_exactly_the_contract_fields(rendered):
     assert rendered["views"]["board"]["headers"] == [
-        "id", "pod / role", "state", "outcome", "after", "subagents",
+        "id", "pod / role", "state", "outcome", "subagents",
         "goal", "session", "context", "seams", "turn",
     ]
 
 
-def test_an_unmet_after_says_what_it_waits_on(rendered):
-    cells = [row["cells"] for row in rendered["views"]["board"]["rows"]]
-    queued = next(row for row in cells if row[0].startswith("eng-002"))
-    assert queued[4] == "waits on eng-003"
-    met = next(row for row in cells if row[0].startswith("eng-001"))
-    assert met[4] == "eng-000 ✓"
+def test_the_board_has_no_invariant_errors_box(rendered):
+    """v1 cut: `hx board` exits 0 always and reports no `errors`."""
+    assert rendered["views"]["board"]["errorBlocks"] == []
 
 
 def test_a_dead_session_is_visible_on_the_board(rendered):
+    """With no invariants in v1 this column is the only sign."""
     cells = [row["cells"] for row in rendered["views"]["board"]["rows"]]
-    assert next(row for row in cells if row[0].startswith("res-001"))[7] == "● dead"
-    assert next(row for row in cells if row[0].startswith("eng-001"))[7] == "● live"
+    assert next(row for row in cells if row[0].startswith("res-001"))[6] == "● dead"
+    assert next(row for row in cells if row[0].startswith("eng-001"))[6] == "● live"
 
 
-def test_invariant_errors_are_shown_prominently(rendered):
-    board = rendered["views"]["board"]
-    assert board["errorBlocks"], "the errors block is rendered"
-    block = board["errorBlocks"][0]
-    assert block["heading"] == "invariant errors (1)"
-    assert block["items"] == json.loads((FIXTURES / "board.json").read_text())["errors"]
-    assert board["headings"][0] == block["heading"], "above the table, not below it"
+def test_an_id_with_no_stream_reads_dash_not_zero(rendered):
+    cells = [row["cells"] for row in rendered["views"]["board"]["rows"]]
+    idle = next(row for row in cells if row[0].startswith("eng-002"))
+    assert idle[7] == "—", "context tokens"
+    assert idle[8] == "—", "seams"
 
 
-def test_the_orders_view_draws_the_after_graph(rendered):
-    edges = rendered["views"]["orders"]["edges"]
-    assert len(edges) == 2
-    unmet = [edge for edge in edges if "unmet" in edge["class"]]
-    assert len(unmet) == 1
-    assert "eng-002" in unmet[0]["text"] and "eng-003" in unmet[0]["text"]
-    assert "waits on" in unmet[0]["text"]
-
-
-def test_the_orders_view_shows_every_order_verbatim(rendered):
+def test_the_orders_view_shows_every_order_and_addendum(rendered):
+    """v1 cut: one card per dispatched id, rendered as markdown."""
     orders = json.loads((FIXTURES / "orders.json").read_text())["orders"]
-    blocks = [block["text"] for block in rendered["views"]["orders"]["pre"]]
+    view = rendered["views"]["orders"]
+    assert view["headings"] == ["orders · " + str(len(orders))]
+    text = view["text"].replace("`", "")
     for order in orders:
-        assert order["order"] in blocks, order["id"]
-    for order in orders:
+        assert order["id"] in text
+        first = order["order"].splitlines()[1]
+        assert first.replace("`", "") in text, order["id"]
         for addendum in order["addenda"]:
-            assert addendum["text"] in blocks
+            assert addendum["text"].replace("`", "") in text
 
 
-def test_the_orders_view_flags_a_file_edited_since_dispatch(rendered):
-    labels = [pill["text"] for pill in rendered["views"]["orders"]["pills"]]
-    assert "file edited since dispatch" in labels
-    assert "not dispatched" in labels
+def test_the_orders_view_has_no_graph_and_no_file_badge(rendered):
+    view = rendered["views"]["orders"]
+    assert view["edges"] == [], "no `after` graph in v1"
+    labels = [pill["text"] for pill in view["pills"]]
+    assert "file edited since dispatch" not in labels
+    assert "order file missing" not in labels
+
+
+def test_an_order_opens_its_agent(rendered):
+    """The order card's id is the way into the Agent view."""
+    orders = json.loads((FIXTURES / "orders.json").read_text())["orders"]
+    assert rendered["views"]["orders"]["openable"] == [o["id"] for o in orders]
 
 
 def test_the_archive_view_shows_benched_bodies_and_dispatches(rendered):
@@ -229,19 +229,64 @@ def test_the_agent_view_renders_the_work_item_sections(rendered):
 
 
 def test_the_agent_view_renders_step_state(rendered):
+    """Every field of the build-6 schema the human needs (ui-7 item 1)."""
     agent = rendered["views"]["agent"]
-    text = agent["text"]
+    text = agent["text"].replace("`", "")
     show = json.loads((FIXTURES / "show-eng-001.json").read_text())
     main = show["step_state"]["eng-001-main"]
 
-    assert main["open_steps"][0]["intent"] in text
-    assert main["open_steps"][0]["next"] in text, "an open step shows its next action"
-    assert main["closed_steps"][0]["outcome"] in text
+    assert main["goal"].replace("`", "") in text
+    for constraint in main["constraints"]:
+        assert constraint in text
+    for decision in main["decisions"]:
+        assert decision["d"].replace("`", "") in text
+        assert decision["why"].replace("`", "") in text, "a decision shows its reason"
+    for step in main["open_steps"]:
+        assert step["intent"].replace("`", "") in text
+        assert step["next"].replace("`", "") in text, "an open step shows its next action"
     commits = [c["text"] for c in agent["code"] if c["class"] == "commit"]
-    assert main["closed_steps"][0]["commit"] in commits, "a closed step shows its commit"
-    assert main["working_set"]["commits"][0]["msg"] in text
-    assert main["working_set"]["files"][0]["note"] in text
+    for step in main["closed_steps"]:
+        assert step["outcome"].replace("`", "") in text
+        if step["commit"]:
+            assert step["commit"] in commits, "a closed step shows its commit"
+    for note in main["working_set"]["files"]:
+        assert note["note"].replace("`", "") in text, "a working-set file shows why it was read"
+    assert main["working_set"]["last_failure"] in text
+    assert main["working_set"]["hypothesis"] in text
     assert main["dead_ends"][0] in text
+    assert "caught up through record " + str(main["seq"]) in text
+
+
+def test_evidence_seqs_are_shown(rendered):
+    """`ev` is the Companion's pointer back into the raw stream (spec 07.2)."""
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    main = show["step_state"]["eng-001-main"]
+    text = rendered["views"]["agent"]["text"]
+    for step in main["open_steps"] + main["closed_steps"] + main["decisions"]:
+        if step.get("ev"):
+            assert "ev " + ", ".join(str(n) for n in step["ev"]) in text
+
+
+def test_blockers_render_on_the_stream_that_has_them(rendered):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    blockers = show["step_state"]["eng-001-s001"]["blockers"]
+    assert blockers, "the subagent stream has a blocker"
+    for blocker in blockers:
+        assert blocker in rendered["views"]["agent"]["text"]
+
+
+def test_the_budget_bar_reads_against_the_default(rendered):
+    """Spec 10: chars/4, the same estimate hx evicts on."""
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    # JSON.stringify is compact; Python's default puts a space after each
+    # separator, which would make the estimate differ by a few hundred tokens.
+    compact = json.dumps(show["step_state"]["eng-001-main"], separators=(",", ":"))
+    used = -(-len(compact) // 4)
+    text = rendered["views"]["agent"]["text"]
+    assert f"{used:,} of 10,000 tokens (est.)" in text
+    assert "budget: the templates/worker default" in text, (
+        "hx show does not carry state_budget_tokens, so say where the number came from"
+    )
 
 
 def test_the_agent_view_renders_the_context_file_with_its_seam(rendered):
@@ -278,8 +323,9 @@ def test_the_agent_view_renders_every_stream_tail(rendered):
         assert stream["handle"] in text
         assert stream["path"] in text
         if stream.get("digest"):
-            # `_pending companion_` renders as emphasis, so compare unmarked.
-            assert stream["digest"].strip().strip("_") in text
+            # Rendered as markdown since ui-5, so match a distinctive line.
+            first = stream["digest"].strip().splitlines()[0].replace("`", "")
+            assert first in text.replace("`", ""), stream["handle"]
 
 
 def test_a_seam_shows_its_context_file_size(tmp_path):
@@ -561,7 +607,13 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
     """
     from hx.ui.data import InstanceSource
 
-    source = InstanceSource(instance_root)
+    from .conftest import archive_is_broken, isolated_source
+
+    broken = archive_is_broken(instance_root)
+    if broken:
+        pytest.skip(broken)
+
+    source = isolated_source(instance_root)
     overrides = {
         "/api/board": source.board(),
         "/api/orders": source.orders(),
@@ -586,32 +638,16 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
     assert "PARTNER.md" in partner["headings"]
     assert "chat" in partner["headings"]
     assert "tmux attach -t partner" in partner["text"]
-    # PARTNER.md renders its own markdown tables now, so count board rows only:
-    # the board has one cell per COLUMNS entry.
-    board_rows = [row for row in partner["rows"] if len(row["cells"]) == 11]
+    # The board has one cell per COLUMNS entry; PARTNER.md's own tables do not.
+    board_rows = [row for row in partner["rows"] if len(row["cells"]) == 10]
     assert len(board_rows) == len(overrides["/api/board"]["items"])
 
     board = rendered["views"]["board"]
-    assert [row["cells"][0].split("pods/")[0] for row in board["rows"]] == ["partner", "eng-001"]
-    assert board["errorBlocks"], "a scratch instance has invariant errors and the board shows them"
+    assert [row["cells"][0].split("pods/")[0] for row in board["rows"]] == ["eng-001"], (
+        "v1 cut: the Partner is not a board row"
+    )
+    assert board["errorBlocks"] == [], "v1 cut: no invariant errors"
 
-
-def test_the_orders_view_shows_a_real_file_edited_since_dispatch(instance_root, tmp_path):
-    """The badge, against a real `orders/<id>.md` that no longer matches tasks.json."""
-    from hx.ui.data import InstanceSource
-
-    source = InstanceSource(instance_root)
-    orders = source.orders()
-    by_id = {order["id"]: order for order in orders["orders"]}
-    assert by_id["partner"]["file_matches_record"] is True
-    assert by_id["eng-001"]["file_matches_record"] is False
-
-    rendered = render({"/api/board": source.board(), "/api/orders": orders}, tmp_path)
-    labels = [pill["text"] for pill in rendered["views"]["orders"]["pills"]]
-    assert labels.count("file edited since dispatch") == 1, "exactly the one that drifted"
-
-
-# -- ui-5: the orchestrator's browser pass -------------------------------
 
 def order_with(record, order_text):
     return {
@@ -637,47 +673,6 @@ RECORD = {
 
 def badges(rendered):
     return [pill["text"] for pill in rendered["views"]["orders"]["pills"]]
-
-
-def test_an_order_file_that_matches_gets_no_badge(tmp_path):
-    entry = order_with(RECORD, RECORD["order"])
-    assert entry["file_matches_record"] is True
-    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
-    assert "file edited since dispatch" not in badges(rendered)
-    assert "order file missing" not in badges(rendered)
-
-
-def test_an_edited_order_file_says_edited(tmp_path):
-    entry = order_with(RECORD, RECORD["order"] + "\nAnd one more thing.\n")
-    assert entry["file_matches_record"] is False
-    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
-    assert "file edited since dispatch" in badges(rendered)
-    assert "order file missing" not in badges(rendered)
-
-
-def test_a_missing_order_file_says_missing_not_edited(tmp_path):
-    """`hx orders` reports `file_matches_record: false` for both; only one is an edit."""
-    entry = order_with(RECORD, None)
-    entry["path"] = None
-    assert entry["file_matches_record"] is False
-    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
-    assert "order file missing" in badges(rendered)
-    assert "file edited since dispatch" not in badges(rendered), (
-        "a file that does not exist was not edited"
-    )
-
-
-def test_an_undispatched_order_gets_neither_badge(tmp_path):
-    entry = order_with(None, "## Order\nNot dispatched yet.\n")
-    rendered = render({"/api/orders": orders_payload(entry)}, tmp_path)
-    assert "order file missing" not in badges(rendered)
-    assert "file edited since dispatch" not in badges(rendered)
-    assert "not dispatched" in badges(rendered)
-
-
-# -- markdown tables -----------------------------------------------------
-
-SKELETON_PARTNER = REPO / "src" / "hx" / "skeleton" / "PARTNER.md"
 
 
 def test_the_skeleton_partner_md_tables_render_as_tables(tmp_path):
@@ -840,3 +835,95 @@ def test_the_context_file_renders_as_markdown(tmp_path):
     assert not any(
         block["text"].startswith("# Context for") for block in agent["pre"]
     ), "no longer dumped into a <pre>"
+
+
+# -- ui-7 item 2: real digests replace the placeholder --------------------
+
+def test_a_closed_stream_shows_the_companions_digest(rendered):
+    """build-6 overwrites `_pending companion_` with a real digest."""
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    closed = [s for s in show["streams"] if not s["open"] and not s["handle"].endswith("-main")]
+    assert len(closed) == 2, "the fixture has two closed subagent streams"
+    text = rendered["views"]["agent"]["text"].replace("`", "")
+    for stream in closed:
+        assert stream["digest"].strip() != "_pending companion_", (
+            "the Companion has written a real digest since build-6"
+        )
+        for line in stream["digest"].strip().splitlines():
+            body = line.lstrip("- ").strip().replace("`", "")
+            if body:
+                assert body in text, f"{stream['handle']}: {body}"
+
+
+def test_the_subagents_table_shows_the_real_digest(rendered):
+    rows = [row for row in rendered["views"]["agent"]["rows"] if len(row["cells"]) == 4]
+    assert rows, "the subagents table"
+    digests = [row["cells"][3] for row in rows]
+    assert not any("pending companion" in d for d in digests)
+    assert any("Surveyed the exit-code assertions" in d for d in digests)
+
+
+# -- ui-7 item 3: turn.background_tasks -----------------------------------
+
+def test_background_tasks_say_the_agent_stopped_with_work_running(rendered):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    tasks = show["turn"]["background_tasks"]
+    assert tasks, "the fixture has background work"
+    text = rendered["views"]["agent"]["text"]
+    assert "stopped with work still running" in text
+    for task_id in tasks:
+        assert task_id in [code["text"] for code in rendered["views"]["agent"]["code"]]
+
+
+def test_an_empty_background_tasks_says_nothing(tmp_path):
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["turn"] = {"ts": "2026-09-20T13:09:40Z", "background_tasks": []}
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    assert "stopped with work still running" not in agent["text"]
+    assert "last turn 13:09:40Z" in agent["text"]
+
+
+def test_no_turn_yet_says_so(tmp_path):
+    """`turn` is null until a turn has ended (CONTRACTS.md)."""
+    show = json.loads((FIXTURES / "show-eng-001.json").read_text())
+    show["turn"] = None
+    board = json.loads((FIXTURES / "board.json").read_text())
+    for item in board["items"]:
+        item["turn_ts"] = None
+    agent = render({"/api/show/eng-001": show, "/api/board": board}, tmp_path)["views"]["agent"]
+    assert "no turn yet" in agent["text"]
+    assert "stopped with work still running" not in agent["text"]
+
+
+# -- ui-7 item 4: the Agent view stays recoverable ------------------------
+
+def test_an_unreadable_agent_keeps_the_id_switcher(tmp_path):
+    """The orchestrator's browser finding: no dead end without the Board."""
+    board = json.loads((FIXTURES / "board.json").read_text())
+    # A null override makes that one endpoint fail, as an unknown id would.
+    rendered = render(
+        {"/api/board": board, "/api/show/eng-001": None}, tmp_path, open_ids=["eng-001"]
+    )
+    agent = rendered["views"]["agents"]["eng-001"]
+
+    assert agent["openable"], "every other id is still one click away"
+    assert set(agent["openable"]) == {item["id"] for item in board["items"]} - {"eng-001"}
+    assert "eng-001 could not be read" in agent["text"]
+    assert "read failure rather than a missing agent" in agent["text"], (
+        "the board still lists it, so say which kind of failure this is"
+    )
+    assert agent["banner"], "and the banner still names it"
+    assert "eng-001" in agent["banner"]
+
+
+def test_an_id_the_board_does_not_list_says_so(tmp_path):
+    board = json.loads((FIXTURES / "board.json").read_text())
+    board["items"] = [item for item in board["items"] if item["id"] != "eng-001"]
+    # Reached from the Orders view: the order is still recorded in tasks.json
+    # while the work item behind it has gone.
+    rendered = render(
+        {"/api/board": board, "/api/show/eng-001": None}, tmp_path, open_ids=["eng-001"]
+    )
+    agent = rendered["views"]["agents"]["eng-001"]
+    assert "The board does not list this id" in agent["text"]
+    assert agent["openable"], "the ids that do exist are still offered"

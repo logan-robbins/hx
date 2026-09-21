@@ -21,13 +21,13 @@ from .conftest import FIXTURES
 # Spec 06: `^(partner|[a-z]+-[0-9]{3})-(idle|queued|working|complete)\.md$`.
 WORK_ITEM_RE = re.compile(r"^pods/[a-z]+/(partner|[a-z]+-[0-9]{3})-(idle|queued|working|complete)\.md$")
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-STATES = {"idle", "queued", "working", "complete"}
+STATES = {"idle", "working", "complete"}
 OUTCOMES = {None, "done", "blocked", "decision", "exhausted"}
 
+#: v1 cut (CONTRACTS.md): no `after`, no `ready`, no `goal_pending`.
 BOARD_KEYS = {
-    "id", "pod", "role", "state", "file", "after", "ready", "outcome", "dispatched",
-    "completed", "open_subagents", "goal_ts", "goal_pending", "session_alive",
-    "context_tokens", "seams", "turn_ts",
+    "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
+    "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
 }
 
 
@@ -70,9 +70,20 @@ def test_every_timestamp_is_iso_8601_utc_with_a_z(name):
 
 
 def test_the_board_top_level_matches_the_contract(board):
-    assert set(board) == {"root_abs", "ts", "items", "errors"}
+    """v1 cut: no `errors` — `hx board` exits 0 always and polices nothing."""
+    assert set(board) == {"root_abs", "ts", "items"}
     assert board["root_abs"].startswith("/")
-    assert all(isinstance(error, str) for error in board["errors"])
+
+
+def test_the_partner_is_not_a_board_item(board):
+    """v1 cut: the Partner has no work item, so it is not on the board."""
+    assert "partner" not in {item["id"] for item in board["items"]}
+
+
+def test_board_items_are_in_id_order(board):
+    ids = [item["id"] for item in board["items"]]
+    assert ids == sorted(ids)
+    assert len(set(ids)) == len(ids), "one entry per id"
 
 
 def test_every_board_item_has_every_key_with_null_never_omitted(board):
@@ -84,33 +95,14 @@ def test_every_board_item_has_every_key_with_null_never_omitted(board):
         assert WORK_ITEM_RE.match(item["file"]), item["file"]
         assert item["file"].split("/")[1] == item["pod"]
         assert item["file"].endswith(f"-{item['state']}.md")
-        assert isinstance(item["after"], list)
-        assert isinstance(item["ready"], bool)
-        assert isinstance(item["goal_pending"], bool)
         assert isinstance(item["session_alive"], bool)
         assert item["context_tokens"] is None or isinstance(item["context_tokens"], int)
 
 
-def test_partner_is_first_then_ids_in_order(board):
-    ids = [item["id"] for item in board["items"]]
-    assert ids[0] == "partner"
-    assert ids[1:] == sorted(ids[1:])
-    assert len(set(ids)) == len(ids), "one entry per id"
-
-
-def test_ready_is_true_exactly_when_every_after_entry_is_done(board):
-    outcomes = {item["id"]: item["outcome"] for item in board["items"]}
+def test_the_board_states_agree_with_their_other_columns(board):
     for item in board["items"]:
-        expected = all(outcomes.get(dep) == "done" for dep in item["after"])
-        assert item["ready"] is expected, item["id"]
-
-
-def test_the_board_states_obey_the_spec_06_invariants(board):
-    for item in board["items"]:
-        if item["state"] == "queued":
-            assert item["after"], "a queued item has a non-empty after"
-            assert not item["ready"], "with at least one entry not done"
-            assert item["goal_ts"] is None, "and no goal marker"
+        if item["state"] == "idle":
+            assert item["outcome"] is None and item["goal_ts"] is None
         if item["state"] == "complete":
             assert item["outcome"] in OUTCOMES - {None}
             assert item["completed"] is not None
@@ -119,23 +111,17 @@ def test_the_board_states_obey_the_spec_06_invariants(board):
             assert item["goal_ts"] is not None
 
 
-def test_the_board_carries_one_invariant_error_naming_a_real_item(board):
-    assert len(board["errors"]) == 1
-    error = board["errors"][0]
-    files = {item["file"] for item in board["items"]}
-    assert any(error.startswith(name + ":") for name in files), error
-    # The violation spec 06 names: a `working` item with no live session.
-    offender = next(item for item in board["items"] if error.startswith(item["file"] + ":"))
-    assert offender["state"] == "working" and offender["session_alive"] is False
+def test_the_partner_show_is_the_reduced_shape():
+    """v1 cut: `hx show partner --json` is only these four keys."""
+    assert set(load("show-partner.json")) == {"id", "partner_md", "pane", "streams"}
 
 
-@pytest.mark.parametrize("name", ["show-partner.json", "show-eng-001.json"])
+@pytest.mark.parametrize("name", ["show-eng-001.json"])
 def test_each_show_fixture_agrees_with_its_board_row(board, name):
     show = load(name)
     row = next(item for item in board["items"] if item["id"] == show["id"])
     for key in ("pod", "role", "state", "file"):
         assert show[key] == row[key], key
-    assert show["task"]["after"] == row["after"]
     assert show["task"]["outcome"] == row["outcome"]
     assert show["task"]["dispatched"] == row["dispatched"]
     assert show["task"]["completed"] == row["completed"]
@@ -146,12 +132,12 @@ def test_each_show_fixture_agrees_with_its_board_row(board, name):
     assert open_subagents == row["open_subagents"]
 
 
-@pytest.mark.parametrize("name", ["show-partner.json", "show-eng-001.json"])
+@pytest.mark.parametrize("name", ["show-eng-001.json"])
 def test_each_show_fixture_has_the_contract_shape(name):
     show = load(name)
     assert set(show["work_item"]) == {"frontmatter", "body"}
     assert show["work_item"]["frontmatter"]["id"] == show["id"]
-    assert set(show["task"]) == {"order", "after", "addenda", "outcome", "dispatched", "completed"}
+    assert set(show["task"]) == {"order", "addenda", "outcome", "dispatched", "completed"}
     assert "## Order" in show["task"]["order"]
     assert "## Definition of done" in show["task"]["order"]
     assert "### Checks" in show["task"]["order"]
@@ -282,19 +268,6 @@ def test_a_closed_stream_carries_a_digest_and_an_open_one_does_not():
             assert stream["digest"], "a closed stream has a digest file"
 
 
-def test_the_digest_is_still_the_companions_placeholder():
-    """build-5: the file exists and says `_pending companion_` until build-6.
-
-    This is deliberately strict. When the Companion lands and starts writing a
-    real digest, this fails and the fixture gets regenerated — which is what
-    should happen, rather than the view quietly rendering a stale placeholder.
-    """
-    closed = [s for s in streams() if not s["open"] and not s["handle"].endswith("-main")]
-    assert closed
-    for stream in closed:
-        assert stream["digest"].strip() == "_pending companion_"
-
-
 def test_a_subagent_tool_call_names_the_agent_it_came_from():
     """The deliberate fallback: the call lands on a stream with `agent_id` set."""
     for stream in streams():
@@ -315,48 +288,45 @@ def test_no_seam_record_yet_because_hx_seam_is_build_7():
     assert not [r for r in main_tail() if r["event"] == "seam"]
 
 
-def test_the_orders_fixture_agrees_with_the_board(board):
+def test_the_orders_fixture_matches_the_v1_contract(board):
+    """v1 cut: one entry per id in `tasks.json`, no graph, no file comparison.
+
+    `hx dispatch` deletes the order file it read, so the text lives only in
+    `tasks.json` and the work item — there is nothing left on disk to compare
+    against, which is why `path` and `file_matches_record` are gone.
+    """
     orders = load("orders.json")
+    assert set(orders) == {"root_abs", "ts", "orders"}
     rows = {item["id"]: item for item in board["items"]}
-    for order in orders["orders"]:
-        assert set(order) == {
-            "id", "pod", "path", "after", "order", "addenda", "record",
-            "state", "ready", "waiting_on", "file_matches_record",
+    for entry in orders["orders"]:
+        assert set(entry) == {
+            "id", "pod", "state", "outcome", "order", "addenda", "dispatched", "completed",
         }
-        assert order["path"] == f"orders/{order['id']}.md"
-        assert "## Order" in order["order"] and "### Checks" in order["order"]
-        if order["record"] is None:
-            assert order["state"] is None, "no tasks.json record, so no state"
-            continue
-        # The record reuses the CONTRACTS.md `hx show` task block verbatim.
-        assert set(order["record"]) == {"order", "after", "addenda", "outcome", "dispatched", "completed"}
-        assert order["record"]["after"] == order["after"]
-        if order["id"] in rows:
-            assert order["state"] == rows[order["id"]]["state"]
-            assert order["record"]["outcome"] == rows[order["id"]]["outcome"]
-            assert order["ready"] == rows[order["id"]]["ready"]
+        assert ID_RE.match(entry["id"])
+        assert entry["state"] in STATES
+        assert entry["outcome"] in OUTCOMES
+        assert "## Order" in entry["order"]
+        assert "### Checks" in entry["order"]
+        for addendum in entry["addenda"]:
+            assert set(addendum) == {"ts", "text"}
+            assert TS_RE.match(addendum["ts"])
+        if entry["id"] in rows:
+            assert entry["state"] == rows[entry["id"]]["state"]
+            assert entry["outcome"] == rows[entry["id"]]["outcome"]
+            assert entry["dispatched"] == rows[entry["id"]]["dispatched"]
 
 
-def test_the_orders_graph_says_which_queued_item_waits_on_which_id():
-    orders = load("orders.json")
-    by_id = {order["id"]: order for order in orders["orders"]}
-    outcomes = {i: (o["record"] or {}).get("outcome") for i, o in by_id.items()}
-    for order in orders["orders"]:
-        assert order["waiting_on"] == [dep for dep in order["after"] if outcomes.get(dep) != "done"]
-        assert order["ready"] is (not order["waiting_on"])
-    assert {node["id"] for node in orders["graph"]["nodes"]} == set(by_id)
-    edges = [(edge["from"], edge["to"], edge["met"]) for edge in orders["graph"]["edges"]]
-    assert edges == [
-        (dep, order["id"], dep not in order["waiting_on"])
-        for order in orders["orders"]
-        for dep in order["after"]
-    ]
-    assert any(not met for _, _, met in edges), "a queued item with an unmet after"
+def test_an_idle_never_dispatched_id_is_not_an_order(board):
+    """`hx orders` reads `tasks.json`, which only has dispatched ids."""
+    dispatched = {entry["id"] for entry in load("orders.json")["orders"]}
+    for item in board["items"]:
+        if item["dispatched"] is None:
+            assert item["id"] not in dispatched
 
 
 def test_the_archive_fixture_reuses_the_contract_entry_shape():
     archive = load("archive.json")
-    assert set(archive) == {"root_abs", "ts", "items", "errors"}
+    assert set(archive) == {"root_abs", "ts", "items"}
     for item in archive["items"]:
         assert set(item) == {"id", "pod", "bench", "archive"}
         assert ID_RE.match(item["id"])
@@ -438,16 +408,6 @@ def test_the_fixture_covers_every_case_the_table_marks(metrics):
 def test_show_carries_exactly_the_metrics_document(metrics):
     """CONTRACTS.md: "the `metrics` object of `hx show --json` is exactly this document"."""
     assert load("show-eng-001.json")["metrics"] == metrics
-
-
-def test_the_partner_show_metrics_are_a_valid_document():
-    partner = load("show-partner.json")["metrics"]
-    assert set(partner) == {"id", "stream", "dispatched", "seams", "totals"}
-    assert partner["id"] == "partner"
-    assert partner["stream"] == "partner-main"
-    for seam in partner["seams"]:
-        assert set(seam) == SEAM_KEYS
-        assert seam["source"] in SOURCES
 
 
 def test_the_metrics_document_is_keyed_on_a_seam_seq(metrics):

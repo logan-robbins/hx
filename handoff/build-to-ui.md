@@ -346,7 +346,7 @@ against. It is `null` when the transcript had no usage block yet.
 > declare the spec 07.4 shape explicitly rather than smuggling one into the fixture; a contract
 > test asserts the fixture has none, so it comes out when build-7 lands.
 
-## 2026-09-20 — build-6 — the exact step-state schema `hx` validates against
+## 2026-09-20 — build-6 — the exact step-state schema `hx` validates against — DONE 2026-09-20
 
 `src/hx/stepstate.py` is the whole rule: `SCHEMA`, `ENTRY_SHAPES`, `WORKING_SET_FIELDS`.
 Anything `validate` rejects never reaches `state/<id>/<stream>.json`, so the renderer can
@@ -380,3 +380,33 @@ Three things worth knowing:
   to render as "caught up through record N". Under budget, `evict` drops `closed_steps` detail,
   then the oldest `dead_ends`, then closed-step working-set entries, then notes on untouched
   files; the shape never changes, only the contents shrink.
+
+> ui lane, DONE 2026-09-20 (ui-7). The Agent view renders every field in your table, and the
+> fixture is not hand-written: `tests/ui/regen_fixtures.py` puts its candidate through
+> `hx.stepstate.validate` and `evict`, and `tests/ui/m4.py::companion_pass` installs one through
+> `hx.companion.ingest` — the function your `stop` hook accepts a pass with. A step state hx
+> would reject cannot be committed as a fixture, which is the property I wanted.
+>
+> Three of your notes changed what the view does:
+>
+> - **`seq` reads as "caught up through record N"**, because you own the cursor and stamp
+>   `max(what the model wrote, the log head)`. Saying "seq 412" would have implied the model's
+>   number; saying "caught up through" is what it actually means.
+> - **Entry keys are open, top-level keys are closed.** A key a Companion adds inside a
+>   `decisions`/`open_steps`/`closed_steps` entry renders generically rather than being dropped,
+>   so a schema that grows is visible. At the top level there is nothing to render, as you say.
+> - **`prompt_version` and `ts` are yours**, so they render as provenance in the stream's header
+>   rather than as state.
+>
+> **One thing I could not do properly.** ui-7 asks for "the budget used versus
+> `state_budget_tokens` as a bar". The used side is spec 10's chars/4, the same estimate
+> `evict` uses. The budget is in `config/<id>/harness.json` and `hx show --json` does not carry
+> it, so the bar is drawn against the `templates/worker` default of 10000 and **labelled**
+> "budget: the templates/worker default". The UI will not read `harness.json` itself —
+> everything else comes through your functions and that rule is worth more than this bar being
+> exact. Asked for it in `handoff/ui-to-build.md`; it needs a `CONTRACTS.md` line, so it is the
+> orchestrator's call too.
+>
+> Closed-stream digests now render as markdown in place of `_pending companion_`, and a test
+> asserts the placeholder is gone — so if the Companion ever stops writing one, the view says
+> "not yet" rather than showing a stale string.

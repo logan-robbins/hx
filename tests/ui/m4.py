@@ -172,3 +172,47 @@ def drive(root: Path, item_id: str, *, subagents: int = 2, leave_open: int = 0) 
         drive_subagent(root, item_id, f"claude-agent-{item_id}-{n:02d}", close=n >= leave_open)
     finish_turn(root, item_id)
     return root
+
+
+# -- the Companion (build-6) ---------------------------------------------
+
+def companion_pass(root: Path, item_id: str, stream: str, state: dict) -> dict:
+    """Install a step state the way the Companion's own `stop` hook does.
+
+    `hx.companion.ingest` is the real acceptance path: it validates against the
+    07.2 schema, evicts under `state_budget_tokens`, stamps `seq`,
+    `prompt_version` and `ts`, and writes `state/<id>/<stream>.json`. So the
+    resulting file is one hx accepted, not one this module composed — the only
+    simulated part is the Companion's prose, which needs a live model.
+    """
+    from hx import companion
+
+    # `seq` is required on the wire — a Companion that forgot it would make hx
+    # re-feed the same records forever — but hx then stamps
+    # `max(what was sent, the log head)`, so the value here does not matter.
+    payload = {"seq": 0, **state}
+
+    out = companion.out_path(root, item_id, stream)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload), encoding="utf-8")
+
+    written = companion.ingest(root, item_id, stream)
+    assert written is not None, (
+        f"hx rejected the step state for {stream}; "
+        f"see {root / 'run' / item_id / 'companion'} for the retry reason"
+    )
+    return written
+
+
+def write_digest(root: Path, item_id: str, stream: str, text: str) -> Path:
+    """A closed-stream digest, replacing the `_pending companion_` placeholder.
+
+    `hook_subagent` leaves the placeholder at SubagentStop; the Companion's pass
+    over the closed stream overwrites this file (spec 10).
+    """
+    from hx import companion
+
+    path = companion.digest_path(root, item_id, stream)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
