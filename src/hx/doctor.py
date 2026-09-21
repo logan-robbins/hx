@@ -18,6 +18,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from . import tmux
@@ -230,6 +231,74 @@ def _pi_instance(root: Path) -> list[tuple[str, str, str]]:
     return found
 
 
+def _grok_home(root: Path, home: Path, item_id: str) -> list[tuple[str, str, str]]:
+    """A Grok home is config.toml: minimal screen, always-approve, goal mode, hx hooks."""
+    label = f"home:{item_id}"
+    found: list[tuple[str, str, str]] = []
+    config_path = home / "config.toml"
+    try:
+        config = tomllib.loads(config_path.read_text())
+    except (OSError, ValueError):
+        config = None
+    if not isinstance(config, dict):
+        found.append((FAIL, label, "config.toml is missing or not valid TOML"))
+        return found
+    ui = config.get("ui") if isinstance(config.get("ui"), dict) else {}
+    if ui.get("screen_mode") == "minimal":
+        found.append((OK, label, "screen_mode minimal"))
+    else:
+        found.append((FAIL, label, "config.toml `[ui] screen_mode` is not `minimal`"))
+    if ui.get("permission_mode") == "always-approve":
+        found.append((OK, label, "permission_mode always-approve"))
+    else:
+        found.append((FAIL, label, "config.toml `[ui] permission_mode` is not `always-approve`"))
+    goal = config.get("goal") if isinstance(config.get("goal"), dict) else {}
+    if goal.get("enabled") is True:
+        found.append((OK, label, "goal mode enabled"))
+    else:
+        found.append((FAIL, label, "config.toml `[goal] enabled` is not true"))
+    hooks = config.get("hooks") if isinstance(config.get("hooks"), dict) else {}
+    if hooks and all(
+        isinstance(hooks.get(event), list) and hooks[event] for event in ("SessionStart", "PostToolUse", "Stop")
+    ):
+        found.append((OK, label, "hx hooks wired"))
+    else:
+        found.append((FAIL, label, "config.toml hooks are missing SessionStart/PostToolUse/Stop"))
+    return found
+
+
+def _grok_instance(root: Path) -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    token = root / "seed" / "grok-token"
+    if not token.is_file():
+        found.append((
+            FAIL, "grok-token",
+            "seed/grok-token absent; a Grok worker authenticates from that file, mode 0600",
+        ))
+    elif token.stat().st_mode & 0o77:
+        found.append((FAIL, "grok-token", "seed/grok-token is readable by group or other; it must be mode 0600"))
+    elif not token.read_text().strip():
+        found.append((FAIL, "grok-token", "seed/grok-token is empty"))
+    else:
+        found.append((OK, "grok-token", "seed/grok-token present, mode 0600"))
+
+    recorded = root / "config" / "grok.json"
+    if not recorded.is_file():
+        found.append((WARN, "grok", "config/grok.json absent; record {bin, version} of the grok binary"))
+    else:
+        try:
+            body = json.loads(recorded.read_text())
+        except json.JSONDecodeError as exc:
+            found.append((FAIL, "grok", f"config/grok.json is not valid JSON: {exc}"))
+        else:
+            binary = body.get("bin") if isinstance(body, dict) else None
+            if binary and os.access(binary, os.X_OK):
+                found.append((OK, "grok", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+            else:
+                found.append((FAIL, "grok", f"config/grok.json bin {binary!r} is missing or not executable"))
+    return found
+
+
 def live_pi_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]]:
     """A live Pi session uses its own config dir and ignores the workdir's `.pi/`."""
     found: list[tuple[str, str]] = []
@@ -252,6 +321,33 @@ def live_pi_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]]:
         found.append((WARN, f"{item_id} is still launching (start.sh has not exec'd yet)"))
     else:
         found.append((FAIL, f"{item_id} is running without --no-approve; the workdir's .pi/ must not load"))
+    return found
+
+
+def live_grok_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]]:
+    """A live Grok session uses its own GROK_HOME and runs minimal and unattended."""
+    found: list[tuple[str, str]] = []
+    environment = session_environment(item_id, env)
+    expected = str(root / "run" / item_id / "home")
+    actual = environment.get("GROK_HOME")
+    if actual == expected:
+        found.append((OK, f"GROK_HOME {expected}"))
+    else:
+        found.append((
+            FAIL,
+            f"GROK_HOME is {actual!r} on session {item_id}, not {expected!r}",
+        ))
+    command = pane_command(item_id, env)
+    if not command:
+        found.append((WARN, f"could not read the pane's command line for {item_id}"))
+    elif "--minimal" in command and "bypassPermissions" in command:
+        found.append((OK, "--minimal with bypassPermissions in the pane's argv"))
+    elif "--fullscreen" in command:
+        found.append((FAIL, f"{item_id} is running the fullscreen TUI; the default is --minimal"))
+    elif "start.sh" in command:
+        found.append((WARN, f"{item_id} is still launching (start.sh has not exec'd yet)"))
+    else:
+        found.append((FAIL, f"{item_id} is running without --minimal bypassPermissions"))
     return found
 
 
@@ -411,7 +507,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     for item_id in ids:
         home = root / "run" / item_id / "home"
         flavor = flavor_of(root, item_id)
-        if flavor == "pi" and item_id == "partner":
+        if flavor in ("pi", "grok") and item_id == "partner":
             checks.append((
                 FAIL, f"flavor:{item_id}",
                 "the Partner stays on claude; hx wake uses its messaging socket",
@@ -423,14 +519,17 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             ))
             continue
         # Homes hold no credentials: auth is the instance token (spec 11 Auth).
-        target = home / "settings.json"
+        # A grok home carries config.toml instead of settings.json.
+        target = home / ("config.toml" if flavor == "grok" else "settings.json")
         checks.append(
-            (OK, f"home:{item_id}", "settings.json")
+            (OK, f"home:{item_id}", target.name)
             if target.is_file()
-            else (FAIL, f"home:{item_id}", "settings.json missing; `hx launch` writes it")
+            else (FAIL, f"home:{item_id}", f"{target.name} missing; `hx launch` writes it")
         )
         if flavor == "pi":
             checks.extend(_pi_home(root, home, item_id))
+        elif flavor == "grok":
+            checks.extend(_grok_home(root, home, item_id))
         else:
             # The pre-seeded first-launch state (spec 08): without it the pane stops at the
             # onboarding wizard or the workspace-trust dialog and nothing about launch is
@@ -440,6 +539,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     pi_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "pi"]
     if pi_ids:
         checks.extend(_pi_instance(root))
+    grok_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "grok"]
+    if grok_ids:
+        checks.extend(_grok_instance(root))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the
@@ -451,6 +553,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         if flavor_of(root, item_id) == "pi":
             for status, detail in live_pi_checks(root, item_id, env):
                 checks.append((status, f"pi:{item_id}", detail))
+        elif flavor_of(root, item_id) == "grok":
+            for status, detail in live_grok_checks(root, item_id, env):
+                checks.append((status, f"grok:{item_id}", detail))
         else:
             for status, detail in live_agent_checks(item_id, env):
                 checks.append((status, f"sandbox:{item_id}", detail))

@@ -52,7 +52,7 @@ def malformed():
         "`branch` is not a field": {**WORKER, "branch": "agent/eng-001"},
         "unknown field": {**WORKER, "provider": "anthropic"},
         "harness args not strings": {**WORKER, "harness": {"args": [1]}},
-        "unknown flavor": {**WORKER, "flavor": "grok"},
+        "unknown flavor": {**WORKER, "flavor": "fleet"},
         "companion budget not an integer": {**WORKER, "companion": {"state_budget_tokens": "big"}},
         "companion negative interval": {**WORKER, "companion": {"seam_min_interval_s": -1}},
         "companion unknown provider": {**WORKER, "companion": {"provider": "openai"}},
@@ -74,6 +74,17 @@ def test_flavor_pi_is_accepted():
 def test_the_partner_cannot_be_pi():
     with pytest.raises(ValidationError) as exc:
         validate_harness({**PARTNER, "flavor": "pi"}, "config/partner/harness.json", dir_name="partner")
+    assert "messaging socket" in str(exc.value)
+
+
+def test_flavor_grok_is_accepted():
+    config = validate_harness({**WORKER, "flavor": "grok"}, "config/eng-001/harness.json", dir_name="eng-001")
+    assert config.flavor == "grok"
+
+
+def test_the_partner_cannot_be_grok():
+    with pytest.raises(ValidationError) as exc:
+        validate_harness({**PARTNER, "flavor": "grok"}, "config/partner/harness.json", dir_name="partner")
     assert "messaging socket" in str(exc.value)
 
 

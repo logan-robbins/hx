@@ -102,7 +102,7 @@ def run_adapter(
             recorded = None
         if recorded:
             child.setdefault("HX_PYTHON", recorded)
-    # The Companion session is Claude even when the worker is Pi.
+    # The Companion session is Claude even when the worker is Pi or Grok.
     flavor = "claude" if extra and "--companion" in extra else None
     return subprocess.run(
         ["bash", str(adapter(root, name, item_id, flavor=flavor)), *(extra or []), item_id],

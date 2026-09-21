@@ -123,6 +123,10 @@ hx/skeleton/adapters/pi/install.sh
 hx/skeleton/adapters/pi/start.sh
 hx/skeleton/adapters/pi/seam-command
 hx/skeleton/adapters/pi/extension/index.ts
+hx/skeleton/adapters/grok/install.sh
+hx/skeleton/adapters/grok/start.sh
+hx/skeleton/adapters/grok/seam-command
+hx/skeleton/adapters/grok/hook.py
 hx/skeleton/config/partner/AGENTS.md
 hx/skeleton/config/partner/SUBAGENTS.md
 hx/skeleton/config/partner/harness.json

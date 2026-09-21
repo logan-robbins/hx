@@ -49,8 +49,6 @@ AGENT_SKILL_FILES = [
 
 CONTRACTS = REPO / "CONTRACTS.md"
 
-SPEC_HOOKS = REPO / "spec" / "09-hooks.md"
-
 MUTABLE_HEADER = "## UPDATES BELOW ONLY"
 
 
@@ -592,26 +590,22 @@ def test_partner_md_ships_as_the_partners_initial_state_doc():
 # ----------------------------------------------------------- the boundary hook line
 
 
-def spec_09_1_context_line() -> str:
-    """The stdout line the `context` hook prints, taken from spec 09.1 itself.
+def code_context_line() -> str:
+    """The stdout line the `context` hook prints, taken from the code rather than retyped.
 
-    Reading it out of the spec rather than hard-coding it is the point: when the orchestrator
+    Reading it out of the hook rather than hard-coding it is the point: when the hook
     rewords that line, these tests fail and the skills get updated, instead of quietly
     quoting something the hook no longer prints.
     """
-    row = next(
-        line for line in SPEC_HOOKS.read_text().splitlines()
-        if line.startswith("| `context` |")
-    )
-    match = re.search(r"print one line to stdout: `([^`]+)`", row)
-    assert match, f"spec 09.1's `context` row no longer names the stdout line:\n{row}"
-    return match.group(1)
+    from hx.hook_context import CONTEXT_LINE
+
+    return CONTEXT_LINE.format(path="<path>")
 
 
-def test_spec_09_1_still_names_a_context_line():
-    line = spec_09_1_context_line()
+def test_the_hook_still_names_a_context_line():
+    line = code_context_line()
     assert "Read tool" in line, (
-        f"spec 09.1's hook line no longer names the Read tool: {line!r}. If that is "
+        f"the hook line no longer names the Read tool: {line!r}. If that is "
         "deliberate, the skills and config/CLAUDE.md need the same change."
     )
 
@@ -620,8 +614,8 @@ def test_spec_09_1_still_names_a_context_line():
 def test_skill_quotes_the_hook_line_verbatim(path):
     """Both skills show the agent the line it will actually see. A paraphrase here is worse
     than nothing: the agent would be looking for text that never appears."""
-    assert spec_09_1_context_line() in path.read_text(), (
-        f"{path} does not quote spec 09.1's context line verbatim"
+    assert code_context_line() in path.read_text(), (
+        f"{path} does not quote the context line verbatim"
     )
 
 

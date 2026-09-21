@@ -39,6 +39,8 @@ from .workitems import (
 HOME_WIPE = ("projects", "file-history", "history.jsonl")
 #: Pi keeps the conversation in `home/sessions`. A new goal is a new session.
 PI_HOME_WIPE = ("sessions",)
+#: Grok keeps the conversation in `home/sessions/`. A new goal is a new session.
+GROK_HOME_WIPE = ("sessions",)
 #: Kept in `run/<id>/` across a dispatch; everything else there is cleared (spec 08).
 #: The Companion's home and system prompt are kept for the same reason the agent's home is:
 #: its session is continuous and serves the same agent across dispatches, and deleting its
@@ -141,7 +143,9 @@ def _reset_run_dir(root: Path, item_id: str) -> None:
     if home.is_dir():
         # Exactly these three: transcripts and per-project auto memory, pre-edit snapshots,
         # and typed prompts. settings.json, .credentials.json, skills/ and agents/ survive.
-        wipe = HOME_WIPE + (PI_HOME_WIPE if flavor_of(root, item_id) == "pi" else ())
+        flavor = flavor_of(root, item_id)
+        wipe = HOME_WIPE + (PI_HOME_WIPE if flavor == "pi" else ())
+        wipe = wipe + (GROK_HOME_WIPE if flavor == "grok" else ())
         for name in wipe:
             target = home / name
             if target.is_dir() and not target.is_symlink():

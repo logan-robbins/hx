@@ -229,6 +229,10 @@ ok    skeleton         adapters/pi/install.sh
 ok    skeleton         adapters/pi/start.sh
 ok    skeleton         adapters/pi/seam-command
 ok    skeleton         adapters/pi/extension/index.ts
+ok    skeleton         adapters/grok/install.sh
+ok    skeleton         adapters/grok/start.sh
+ok    skeleton         adapters/grok/seam-command
+ok    skeleton         adapters/grok/hook.py
 ok    skeleton         companion/BASE.md
 ok    skeleton         companion/roles/partner.md
 ok    skeleton         config/CLAUDE.md
