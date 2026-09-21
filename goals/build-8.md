@@ -44,6 +44,15 @@ are the evidence; do not narrate.
    (spec 08); `hx doctor` checks each home's pre-seeded `.claude.json` as well as its
    `settings.json`.
 
+10. **First, before anything else in this goal**: the paste transport bug from build-7's handoff.
+    The first paste into a brand-new Claude Code pane loses its Enter (the TUI is still
+    ingesting the paste when the Enter arrives). Every paste in hx goes through one function:
+    after `paste-buffer`, poll `capture-pane` until the pasted text is visible in the input box,
+    then send Enter, then poll until the input box is empty (submitted); if still unsubmitted
+    after the second poll, send Enter once more. No fixed sleeps, no timeouts. Prove it live on
+    a fresh pane (first paste) and a warm one. The orchestrator hit the same bug in the live
+    rehearsal on 2026-09-20 21:17.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`

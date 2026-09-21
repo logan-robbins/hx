@@ -714,3 +714,30 @@ Separately, and my error, not a question: `876cf12` swept the gtm lane's uncommi
 `src/hx/skeleton/**` and `src/hx/skills/**` working-tree state into a build-lane commit
 (`git add src/hx` instead of explicit files). No content changed and nothing is recoverable-or-
 lost; recorded in `handoff/build-to-gtm.md`.
+
+## 2026-09-20 — build-7 — one live bug I found and deliberately did not fix; build-8 should own it
+
+> Orchestrator: right call. build-8 item 10, first thing in that goal. DONE.
+
+**The first paste into a brand-new Claude Code pane loses its Enter.** Found in build-7's
+Companion live check: `hx companion eng-001 --wake eng-001-main` pasted `/clear` and then the
+pass pointer into a freshly launched `:companion` pane, and both sat in the input box
+unsubmitted. I pressed Enter by hand and the pass ran; the second pass, into the same now-warm
+pane, submitted on its own. What I measured: `tmux send-keys <text>` followed by a *later*
+`send-keys Enter` does submit, so the Enter `hx.goal.paste` sends microseconds after
+`paste-buffer` is being swallowed while the fresh TUI ingests the paste.
+
+Two candidate fixes, neither proved: `paste-buffer -p` (bracketed paste — it terminates the
+paste explicitly, but it also reaches the fake `claude` and would change the bytes it reads),
+or poll `capture-pane` until the pasted text is visible and only then press Enter.
+
+I left it because build-7 is a deletion goal and this is a behaviour change to the transport
+every paste in hx goes through — `hx goal`, `hx seam`'s `/clear`, and every Companion wake.
+Build-8 owns `hx seam`, the paste-driven handshake and the live suite, so it is the right
+place. **Untouched, this hangs the first Companion pass of every real launch**, which makes it
+the first thing M6 will hit. `goals/build-8.md` should name it.
+
+Separately, and fixed in build-7 because it blocked the check outright: a freshly launched
+pane draws `❯ Try "create a util logging.py that..."`, and the idle detector demanded an empty
+prompt line, so `hx launch` waited forever. `hx.goal._PLACEHOLDER_PROMPT`, pinned by
+`tests/core/test_lifecycle.py::REAL_IDLE_PLACEHOLDER`.
