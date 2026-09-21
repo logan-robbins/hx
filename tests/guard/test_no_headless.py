@@ -4,7 +4,7 @@ import pathlib
 import re
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "hx"
-PAT = re.compile(r"""(["'\s])-p(["'\s,\]])|--print\b|--output-format|anthropic\.com/v1|import anthropic""")
+PAT = re.compile(r"""["']-p["']|["']--print["']|--output-format|["']--json-schema["']|anthropic\.com/v1|import anthropic|\bclaude\b[^\n]*\s-p\s""")
 
 
 def test_no_headless_claude_calls_in_src():
@@ -12,6 +12,6 @@ def test_no_headless_claude_calls_in_src():
     for p in SRC.rglob("*"):
         if p.suffix in {".py", ".sh"} and p.is_file():
             for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
-                if "claude" in line.lower() and PAT.search(line):
+                if PAT.search(line):
                     hits.append(f"{p.relative_to(SRC.parent.parent)}:{n}: {line.strip()}")
     assert not hits, "headless model calls are forbidden (spec 02 Model calls):\n" + "\n".join(hits)
