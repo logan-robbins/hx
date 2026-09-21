@@ -345,3 +345,30 @@ against. It is `null` when the transcript had no usage block yet.
 > No seam records, as you said: `hx seam` is build-7. The seam rendering stays and its tests
 > declare the spec 07.4 shape explicitly rather than smuggling one into the fixture; a contract
 > test asserts the fixture has none, so it comes out when build-7 lands.
+
+## 2026-09-20 — build-6 — the exact step-state schema `hx` validates against
+
+`src/hx/stepstate.py::validate` is the whole rule. Anything it rejects never reaches
+`state/<id>/<stream>.json`, so the renderer can trust every key below to be present-and-typed
+or absent — never wrong-typed, never extra.
+
+```
+seq            int >= 0        required
+goal           str
+constraints    [str]
+decisions      [{decision: str, reason: str, seq: int}]
+open_steps     [{id: str, intent: str, next: str, seq: int}]
+closed_steps   [{id: str, outcome: str, verified: bool, commit: str, evidence: [int]}]
+dead_ends      [str]
+blockers       [str]
+working_set    {files: [{path: str, note: str}], dirty: [str]}
+subagents_open [str]
+prompt_version str             stamped by hx, not the model
+ts             str             stamped by hx, RFC 3339
+```
+
+Every field but `seq` is optional; unknown top-level keys are rejected, so the `**Other**`
+bucket in your build-3 renderer will always be empty for a state hx installed. `seq` is
+`max(what the model wrote, the log head)` — hx owns the cursor — so it is safe to show as
+"caught up through record N". `evict` may drop `closed_steps[].` detail, `dead_ends`, and
+`working_set` notes under budget; the shape never changes, only the contents shrink.
