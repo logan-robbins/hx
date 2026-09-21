@@ -25,9 +25,12 @@ FAKE_CLAUDE = REPO / "tests" / "fakeclaude" / "claude"
 SKELETON = SRC / "hx" / "skeleton"
 ADAPTERS = SKELETON / "adapters" / "claude"
 
+#: The shipped `config/models.json`: a 1M window, native autocompaction pulled down to 250k by
+#: `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, and hx's own seam threshold below that so the seam always
+#: lands first (`config_models.py`).
 MODELS = {
-    "claude-opus-5": {"window": 1000000, "threshold": 500000},
-    "claude-sonnet-5": {"window": 1000000, "threshold": 500000},
+    "claude-opus-5": {"window": 1000000, "autocompact_window": 250000, "threshold": 200000},
+    "claude-sonnet-5": {"window": 1000000, "autocompact_window": 250000, "threshold": 200000},
 }
 
 PERSONA = "You are eng-001, an engineer.\nYou commit as you go.\n"

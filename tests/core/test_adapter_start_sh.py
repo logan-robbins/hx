@@ -180,8 +180,7 @@ def test_the_session_env_is_spec_11(ready, tmux_server):
     assert env["HARNESS_ROOT"] == str(ready)
     assert env["CLAUDE_CONFIG_DIR"] == str(ready / "run" / "eng-001" / "home")
     assert env["DISABLE_AUTOUPDATER"] == "1"
-    for forbidden in ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
-                      "CLAUDE_CODE_DISABLE_1M_CONTEXT"):
+    for forbidden in ("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CODE_DISABLE_1M_CONTEXT"):
         assert forbidden not in env, f"{forbidden} must stay unset (spec 11 Compaction)"
 
 
@@ -368,6 +367,50 @@ def test_the_companion_gets_the_block_cap_too(ready, tmux_server):
     wait_for(record_path.is_file, what="the Companion to record its env")
     env = json.loads(record_path.read_text())["env"]
     assert env.get("CLAUDE_CODE_STOP_HOOK_BLOCK_CAP") == "100000"
+
+
+# --- the operator's autocompact window ---------------------------------------------------------
+
+
+def test_the_autocompact_window_reaches_the_agents_process(ready, tmux_server):
+    """`config/models.json` carries `autocompact_window` for this model, so the session runs
+    with native compaction pulled down to it. hx's own seam threshold is below it (validated
+    in config_models.py), so the seam still happens first and this number is never reached."""
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    assert record["env"].get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == "250000"
+
+
+def test_the_autocompact_window_is_on_the_tmux_session_too(ready, tmux_server):
+    launch_and_record(ready, "eng-001", tmux_server)
+    shown = subprocess.run(
+        [*tmux_server, "show-environment", "-t", "=eng-001", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
+        capture_output=True, text=True, check=False,
+    )
+    assert shown.stdout.strip() == "CLAUDE_CODE_AUTO_COMPACT_WINDOW=250000", shown.stdout
+
+
+def test_a_model_row_without_an_autocompact_window_exports_nothing(ready, tmux_server):
+    """Optional: without the field the session keeps Claude Code's native window, which is
+    what spec 11 Compaction describes."""
+    models = ready / "config" / "models.json"
+    rows = json.loads(models.read_text())
+    for row in rows.values():
+        row.pop("autocompact_window", None)
+        row["threshold"] = 500000
+    models.write_text(json.dumps(rows))
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    assert "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in record["env"]
+
+
+def test_an_unlisted_model_does_not_stop_the_launch(ready, tmux_server):
+    """The Companion's model need not be in models.json, and a missing row is not an error."""
+    path = ready / "config" / "eng-001" / "harness.json"
+    body = json.loads(path.read_text())
+    body["model"] = "claude-haiku-5"
+    path.write_text(json.dumps(body))
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    assert "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in record["env"]
+    assert "claude-haiku-5" in record["argv"]
 
 
 def test_the_block_cap_is_on_the_tmux_session_too(ready, tmux_server):

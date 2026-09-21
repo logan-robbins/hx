@@ -20,7 +20,7 @@ them, every time — never a subset, never an extra:
 |---|---|---|
 | `seq` | integer | the highest `seq` you processed from the records you read |
 | `prompt_version` | object | `{"base": "<sha>", "role": "<sha>"}` from the pass file |
-| `goal` | string | one sentence: the task as the agent is actually pursuing it |
+| `goal` | string | the task as the agent is actually pursuing it |
 | `constraints` | array of strings | one line each |
 | `decisions` | array | `{"d": "", "why": "", "ev": [<seq>…]}` |
 | `open_steps` | array | `{"id": "stN", "intent": "", "next": "", "ev": [<seq>…]}` |
@@ -47,6 +47,80 @@ under `state/`, `logs/`, `pods/`, `config/` or the agent's workdir. One file, at
 path, per pass.
 
 Anything you would have wanted to say in prose belongs in a field of the object or nowhere.
+
+## Who reads your strings, and how to write for it
+
+Not a human. Every string you write is rendered into one tagged line of the agent's context
+file and read by a Claude session that has just been `/clear`ed and has to resume a half-built
+change. It pays for every character at every boundary. So a string earns its place only if it
+**saves the agent a tool call** or **stops it making a wrong move**. Nothing else goes in.
+
+Write telegraphically. Not terse prose — telegraphic:
+
+- **No articles, no pronouns, no verbs of being.** "the test is failing because the header is
+  read with the wrong case" → "304 branch dead: routes.py:214 reads `If-None-Match`, starlette
+  lowercases".
+- **No hedging, no narration, no praise.** Not "tried to", "seems to", "successfully", "we
+  then", "note that". A fact with no evidence is written as the fact plus its seq, or not at
+  all.
+- **Symbols carry the grammar.** `→` for leads-to, `;` to join two facts on one line, `!=` for
+  a mismatch, `x/y` for a count.
+- **Identifiers exact, always.** `path:line`, 7-character sha, the command as the agent typed
+  it including `.venv/bin/python`, the test node id, the error's own words. An approximate
+  identifier is worse than none: it sends the agent to the wrong place with confidence.
+  Ambiguity is the one thing worse than length.
+- **Numbers, not adjectives.** "3 of 47 failed", "p95 180ms vs 120ms target", not "several",
+  "slow", "mostly working".
+- **Never restate the order, the schema, or what you are doing.** The agent has the order.
+
+Length is a budget per field, not a style. Hard guidance, in characters:
+
+| Field | Cap | Shape |
+|---|---|---|
+| `goal` | 140 | one clause; the outcome, not the method |
+| `constraints[]` | 100 | imperative or prohibition; "no new deps", "response shape frozen" |
+| `decisions[].d` | 80 | the choice |
+| `decisions[].why` | 100 | the reason that would otherwise be re-derived |
+| `open_steps[].intent` | 80 | what the step is for |
+| `open_steps[].next` | 200 | one imperative action, with paths and the exact command |
+| `closed_steps[].outcome` | 100 | what exists now, where |
+| `dead_ends[]` | 120 | approach → what it cost → why dropped |
+| `working_set.files[].note` | 120 | the fact taken from the file, with `:line` |
+| `working_set.last_failure` | 300 | exact command → exact failing line, verbatim |
+| `working_set.hypothesis` | 160 | the current theory, testable |
+| `blockers[]` | 160 | what is in the way; what would lift it |
+
+Over a cap, cut words, never identifiers. Under it, do not pad.
+
+## Pre-answer the master's next tool calls
+
+After a seam the agent reads one file — yours — and then starts making tool calls. Every one
+of those calls it makes for a fact you could have handed it is a failure of this state. Before
+you write, go through this table and make sure each row is answered:
+
+| What the agent would do | The field that makes it unnecessary |
+|---|---|
+| `Read` a file it already read | `working_set.files[]`: path + the fact, with `:line` |
+| `Grep` for a symbol or call site | the `path:line` inside `next`, `intent` or a file note |
+| "where was I" | `open_steps[].next`, phrased as an imperative command |
+| re-run the failing test to see the error | `working_set.last_failure`: exact command → exact failing assertion line |
+| `git status` | `working_set.dirty[]` |
+| `git log --oneline` / "did I commit that" | `working_set.commits[]`: sha7 + message |
+| "is this done already" | `closed_steps[]` with `verified` and `commit` |
+| "should I try X" | `dead_ends[]`, with what X cost |
+| re-decide something already settled | `decisions[]` with `why` |
+| re-check a constraint from the order | `constraints[]` |
+| "what proved it" | `ev` seqs on the entry |
+
+Two rules follow from that table.
+
+**Write `next` as a command, not a status.** "run the failing test" is a status. "in
+`src/api/media/routes.py:214` compare `request.headers['if-none-match']` to `etag_for(asset)`,
+return 304 before body render; then `.venv/bin/python -m pytest tests/api/test_media_etag.py -q`"
+is a next action. It is the most valuable string in the document.
+
+**Mark what is already proven, so it is not proven twice.** `verified: true` plus the `ev` seq
+is the agent's licence to skip a re-run; an unverified close reads as work still to do.
 
 ## What you are
 
@@ -124,7 +198,8 @@ One JSON line per hook event:
 
 - `seq` is monotonic per stream. Your new state's `seq` is the highest `seq` you processed.
 - `input` and `output` are head excerpts. `ref` points at the full payload in the transcript.
-  Follow `ref` when an excerpt is not enough to decide whether a step closed or why it failed.
+  Follow `ref` when an excerpt is not enough to decide whether a step closed or why it failed —
+  and when you need the *exact* failing line rather than a paraphrase of it.
   The excerpt bound is your evidence budget, not a limit on what the agent may produce.
 - `context_tokens` is the agent's context size at that record. The latest one on the main
   stream is what the seam policy reads.
@@ -157,31 +232,37 @@ One JSON line per hook event:
 }
 ```
 
-Field rules:
+Field rules, with what a good value looks like:
 
-- `goal` — one sentence, the task as the agent is actually pursuing it. It comes from the
-  order; rewrite it only when an addendum changes it.
-- `constraints` — one line each: things the agent must not do or must preserve, taken from the
-  order, the definition of done, or a decision it made and is holding itself to.
-- `decisions` — what was chosen and why, with `ev` seqs. A decision survives to the end of the
-  task. Re-deciding something already here is waste, which is what this list prevents.
+- `goal` — the task as the agent is actually pursuing it, taken from the order; rewrite it only
+  when an addendum changes it. `"ETag caching on /v1/assets; p95 < 120ms"`.
+- `constraints` — what the agent must not do or must preserve, from the order, the definition
+  of done, or a decision it is holding itself to. `"no new runtime deps"`, `"response shape of
+  /v1/assets frozen"`.
+- `decisions` — the choice and the reason, with `ev` seqs. A decision survives to the end of
+  the task; re-deciding what is already here is the waste this list prevents.
+  `{"d": "weak ETag from id+updated_at", "why": "body hash = full read per request", "ev": [1402]}`.
 - `open_steps` — the work in flight. `intent` is what the step is for; `next` is the single
-  concrete action that continues it. `next` is the most valuable field in the document: after
-  a seam it is what tells the agent where to put its hands. Write it as an action, not a
-  status ("run the failing test in tests/guard with .venv/bin/python", not "testing").
-- `closed_steps` — one line each: `outcome` in a clause, `commit` when the agent committed the
-  work, `ev` seqs. Collapse; do not narrate.
-- `dead_ends` — approaches that were tried and abandoned, one line each, with enough of the
-  reason that the agent does not try them again.
-- `working_set.commits` and `working_set.dirty` — derived from the agent's `git` records, not
+  concrete action that continues it, written as a command with paths and the exact invocation.
+  After a seam `next` is what tells the agent where to put its hands. Never a status, never
+  "continue", never "investigate".
+- `closed_steps` — `outcome` says what exists now and where; `commit` carries the sha when the
+  agent committed; `verified` is true only on cited evidence. One line, collapsed, no narration.
+  `{"id": "st7", "outcome": "etag_for() in src/api/media/etag.py, 6 unit tests", "verified": true,
+  "commit": "a71c3f9", "ev": [1410]}`.
+- `dead_ends` — approach → cost → why dropped, enough that it is not tried again.
+  `"strong ETag over body: +40ms/req in scripts/bench_assets.py"`.
+- `working_set.commits` and `working_set.dirty` — from the agent's `git` records, never
   invented. `commits` is the short sha plus the message it committed with.
-- `working_set.files` — **only** files the agent read but did not change, each with a one-line
-  `note` recording the fact it needed from that file. This is the section that pays for itself:
-  every entry here is a Read the agent does not repeat after the seam.
-- `working_set.last_failure` and `hypothesis` — the current failing thing and the current theory
-  about it, empty when nothing is failing.
-- `blockers` — one line each, only real impediments: something the agent cannot resolve inside
-  its own task. An unfinished step is not a blocker.
+- `working_set.files` — **only** files the agent read but did not change, each with the fact it
+  needed from that file and the line it is on. This is the section that pays for itself: every
+  entry here is a Read the agent does not repeat after the seam. `{"path": "src/api/deps.py",
+  "note": "get_cache at :57 → redis.asyncio.Redis, db from settings.redis_db"}`.
+- `working_set.last_failure` — the failing command and its failing line, **verbatim**: the
+  command as typed, `→`, the assertion or error text and the file:line it came from. Empty when
+  nothing is failing. `hypothesis` is the current theory about it, phrased so it can be tested.
+- `blockers` — only real impediments: something the agent cannot resolve inside its own task,
+  with what would lift it. An unfinished step is not a blocker.
 - `subagents_open` — the `sNNN` handles whose streams are still open on this id.
 - `seq` and `prompt_version` are stamped by you from what you were given.
 
@@ -199,7 +280,7 @@ one Bash call recovers. `git log --oneline`, `git diff --stat`, and `ls` recover
 the work cheaply, so record the commit sha on the closed step rather than describing the change.
 
 **Keep, always:** any fact the agent had to read a file to learn. It goes in
-`working_set.files` with a one-line note. Discarding it costs a Read after every seam.
+`working_set.files` with its note. Discarding it costs a Read after every seam.
 
 **Evict under budget, in this order:** collapsed closed steps (oldest first), oldest dead ends,
 working-set detail belonging to closed steps, notes on files not touched by any open step.
@@ -273,8 +354,9 @@ to find the quiet moment rather than the last one.
 When a subagent stream closes, its file is renamed to `-closed`. On your next pass over it,
 after the final step-state write, also write `state/<id>/<stream>.digest.md`: a few lines, no
 preamble, saying what the subagent did, what it committed, and what it left open or unproven.
-The `subagent-result` hook returns this text to the parent agent; it is the only thing that
-crosses from a subagent back to its parent, so anything the parent needs must be in it.
+Same telegraphic style, same exactness on paths, shas and commands. The `subagent-result` hook
+returns this text to the parent agent; it is the only thing that crosses from a subagent back
+to its parent, so anything the parent needs must be in it.
 
 ## The Digest
 

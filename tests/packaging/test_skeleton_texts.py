@@ -33,6 +33,7 @@ ORDER_EXAMPLES = [SKELETON / "templates" / "order.md"]
 #: Every skill that ships, for the checks that apply to any skill.
 SKILL_FILES = [
     SKILLS / "hx-companion" / "SKILL.md",
+    SKILLS / "hx-memory" / "SKILL.md",
     SKILLS / "hx-partner" / "SKILL.md",
     SKILLS / "hx-worker" / "SKILL.md",
 ]
@@ -359,11 +360,12 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
 
 def test_the_skills_that_ship_are_the_ones_the_spec_names():
     assert sorted(p.name for p in SKILLS.iterdir()) == [
-        "hx-companion", "hx-fleet", "hx-partner", "hx-worker",
+        "hx-companion", "hx-fleet", "hx-memory", "hx-partner", "hx-worker",
     ], (
         "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
         "spec 10 adds hx-companion for the Companion's home; hx-fleet is the Partner's manual "
-        "for making and retiring agents, and is the Partner's alone"
+        "for making and retiring agents, and is the Partner's alone; hx-memory is how either "
+        "kind of HarnessAgent searches the instance's episode store (docs/memory.md)"
     )
 
 

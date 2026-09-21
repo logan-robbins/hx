@@ -42,6 +42,27 @@ boundary, and the rest is work.
 
 Your persona is not in it, because it is in your system prompt already.
 
+**Reading section 4.** The step state is rendered dense: one tagged line per fact, no prose,
+because you pay for it at every boundary. The tags:
+
+```
+goal:    what you are actually doing        commit <sha>: message
+con:     a constraint that still holds      dirty:  uncommitted path
+dec:     decision <- why [ev seqs]          file <path>: the fact from it — do not read it again
+open <id>: an open step [ev seqs]           fail:   the last failure, verbatim
+next <id>: the one action to take now       hypo:   the current theory about it
+done <id> verified|UNVERIFIED <sha>: what   block:  something outside your task
+dead:    tried, abandoned — do not retry    seq:    the stream cursor
+```
+
+`next` is the line to act on. `UNVERIFIED` means nothing proved it, so treat it as work, not
+as done. `[1402,1409]` are evidence seqs in your raw stream; you never need them, but they are
+what your Companion cited.
+
+There may also be a **Memory episodes** section after it: what other agents in this instance
+did on similar work. Read it before you go looking for anything — and see the `hx-memory`
+skill for how to search further.
+
 ### 2. The goal
 
 `hx goal` pastes a fixed pointer into your pane:
@@ -95,6 +116,18 @@ If you are opening a file a second time, the note you should have written the fi
 missing. Write it now, in `## Tasks` next to the task that needed it. Your Companion keeps
 files-read-but-not-changed in its working set with a one-line note each, and after a seam those
 notes come back to you — that only works if the fact was worth recording when you had it.
+
+Before you explore a part of the repository you do not know, spend one call on memory:
+
+```bash
+hx memory search "how the media routes build responses"
+```
+
+It searches every step state every agent in this instance has written, filtered to your own
+role and weighted toward the recent. Another agent may already have learned what you are about
+to spend ten Reads learning, or found out why the obvious approach does not work here. The
+`hx-memory` skill has the flags, `--all-roles` among them; load it when you need more than the
+one-line form above.
 
 ### 6. Subagents
 

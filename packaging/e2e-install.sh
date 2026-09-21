@@ -122,6 +122,7 @@ hx/skeleton/config/partner/harness.json
 hx/skills/hx-partner/SKILL.md
 hx/skills/hx-fleet/SKILL.md
 hx/skills/hx-worker/SKILL.md
+hx/skills/hx-memory/SKILL.md
 hx/skills/hx-companion/SKILL.md
 hx/packaging/tested-claude-versions.json
 hx/ui/static/index.html

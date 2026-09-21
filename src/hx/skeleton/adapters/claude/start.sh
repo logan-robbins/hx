@@ -138,6 +138,24 @@ fi
 [ -n "$model" ] || die "refuse: $harness has no \`model\` (spec 05)"
 [ -n "$effort" ] || die "refuse: $harness has no \`effort\` (spec 05)"
 
+# `autocompact_window` from this model's row in config/models.json, exported below as
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW. Optional: a row without it leaves the variable unset and
+# the session keeps Claude Code's native autocompact window (spec 11 Compaction). With it,
+# native compaction is moved down to a number the operator picks, and `config_models.py` has
+# already refused any row where hx's seam threshold is not below it. Empty on anything
+# unexpected — a missing file, an unlisted model (the Companion's own model need not be
+# listed), a malformed row: a launch never fails over this.
+autocompact=$("$python" - "$root/config/models.json" "$model" <<'ACEOF'
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1]))
+    value = (rows.get(sys.argv[2]) or {}).get("autocompact_window")
+except Exception:
+    value = None
+print(value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else "")
+ACEOF
+)
+
 if [ "$mode" = exec ]; then
   # Regenerated immediately before exec, so a persona edit takes effect at the next launch
   # and never leaks the agent's own memory below the header into the system prompt.
@@ -166,6 +184,12 @@ if [ "$mode" = exec ]; then
   # 01.1 E10). Nine turns is nothing for a real task, so the cap is raised out of the way and
   # `hx heartbeat`'s re-paste stays as the fallback (spec 11, 17.4).
   export CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
+  # The operator's autocompact window, when `config/models.json` names one for this model.
+  # hx's own seam threshold is below it by validation, so the seam still lands first and
+  # native compaction stays the thing that never runs.
+  if [ -n "$autocompact" ]; then
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW="$autocompact"
+  fi
   # Every agent runs sandboxed and with permissions bypassed, always (spec 11). The
   # `.claude.json` pre-seed stays too: both mechanisms, so no dialog can ever appear.
   export IS_SANDBOX=1
@@ -196,6 +220,9 @@ env_args=(
   -e PATH="$root/bin:$PATH"
   -e CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
 )
+if [ -n "$autocompact" ]; then
+  env_args+=(-e CLAUDE_CODE_AUTO_COMPACT_WINDOW="$autocompact")
+fi
 while IFS='=' read -r name value; do
   case "$name" in HX_*) env_args+=(-e "$name=$value") ;; esac
 done < <(env)

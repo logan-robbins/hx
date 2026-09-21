@@ -269,6 +269,22 @@ def test_a_worker_home_gets_hx_worker_only(instance):
     assert not (skills / "hx-partner").exists() and not (skills / "hx-fleet").exists()
 
 
+def test_both_kinds_of_harness_agent_get_hx_memory(instance):
+    """The episode store is one store for the whole instance (docs/memory.md): the Partner
+    searches it before writing an order, a worker before exploring a part of the tree."""
+    for item_id in ("eng-001", "partner"):
+        assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+        home_skills = instance / "run" / item_id / "home" / "skills"
+        assert (home_skills / "hx-memory" / "SKILL.md").is_file(), item_id
+
+
+def test_the_companion_home_does_not_get_hx_memory(instance):
+    """It writes episodes by writing step state and reads only the files its pass names."""
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    companion = instance / "run" / "eng-001" / "companion-home" / "skills"
+    assert not (companion / "hx-memory").exists()
+
+
 def test_python_bin_from_config_hx_json_is_preferred(instance):
     """CONTRACTS.md `config/hx.json` third key; the adapters read JSON with hx's own Python."""
     import sys

@@ -187,7 +187,10 @@ fi
 
 # Skills from the package, loaded on demand; nothing is symlinked (spec 17.5). The Partner
 # gets hx-partner and hx-fleet, a worker gets hx-worker, a Companion gets hx-companion
-# (handoff/orchestrator-to-build.md, 2026-09-20).
+# (handoff/orchestrator-to-build.md, 2026-09-20). Both kinds of HarnessAgent also get
+# hx-memory: the episode store is one store for the whole instance, and the Partner searches
+# it for the same reasons a worker does. The Companion does not — it writes episodes by
+# writing step state and reads nothing but the files its pass names.
 skills_src=${HX_SKILLS_DIR:-}
 copy_skills() {
   local target=$1; shift
@@ -202,9 +205,9 @@ copy_skills() {
 }
 
 if [ "$id" = partner ]; then
-  copy_skills "$home/skills" hx-partner hx-fleet
+  copy_skills "$home/skills" hx-partner hx-fleet hx-memory
 else
-  copy_skills "$home/skills" hx-worker
+  copy_skills "$home/skills" hx-worker hx-memory
 fi
 
 # The Companion's own config dir (spec 10). It gets one hook, the `hx-companion` skill, and no

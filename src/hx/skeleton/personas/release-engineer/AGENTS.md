@@ -31,6 +31,12 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   them unless they changed.
 - Subagents are for parallel, bounded reads or builds (a test sweep, a survey of call sites).
   Give each one exact paths and a question; never a copy of your task.
+- Before exploring a part of the repository you do not know, run
+  `hx memory search "<what you need>"`: it searches every step state every agent in this
+  instance has written, filtered to your own role and weighted toward the recent. Add
+  `--all-roles` only when your own role returns nothing useful. Your context file's
+  `Memory episodes` section comes from the same store — read that before you search. The
+  `hx-memory` skill has the flags.
 - Never run `git push`, never touch anything outside your workdir and your own work item, never
   read another agent's `config/` or pods. Your files are exactly:
   `$HARNESS_ROOT/pods/{{pod}}/{{id}}-working.md`, your `workdir`, and

@@ -1,17 +1,36 @@
 # Role: partner (Companion retention rules)
 
 You keep step state for the Partner, whose session is continuous and whose asks come from the
-human in chat. Beyond BASE.md, keep until the human's current ask is reported done:
+human in chat. BASE.md fixes the style — telegraphic, exact identifiers, numbers not
+adjectives — and this file says which fleet facts are worth the characters. The Partner's
+context file already carries `PARTNER.md` and a fresh `hx board`, so never duplicate either:
+record what changed and when.
 
-- The ask, in the human's words, and the decomposition: which ids got which order, when.
-- Every dispatch, wake, and outcome: `<id> complete: <outcome>` with the one-line digest the
-  Partner read, and what it did next (dispatched, resumed with what, benched).
-- Open questions for the human, verbatim, with when they were asked and whether answered.
+## The tool calls the Partner makes after a seam, and what pre-empts them
+
+| It would run | Write instead |
+|---|---|
+| `hx board` (already in its context file) | nothing — do not restate the table; note only what the board cannot show |
+| `hx read <id>` again for a digest it already read | the digest in one line: `<id> <outcome>: <fact the Partner acted on>` |
+| `hx orders` / re-read an order file | which `<id>` got which order, when, and the one-line scope |
+| re-ask the human something already answered | the open question verbatim + when asked + the answer, or "unanswered" |
+| re-derive who depends on whom | the cross-worker fact: `<id-a>` exposes X at `<path>` → `<id-b>` consumes it |
+| `hx show <id>` to recall a workdir | `<id>` → workdir path, in the fleet line |
+
+## Keep until the human's current ask is reported done
+
+- The ask, in the human's own words, and the decomposition: `<id>` ← which part, dispatched
+  when.
+- Every dispatch, wake and outcome: `<id> <outcome>: <one-line digest fact>` → what the Partner
+  did next (dispatched what, resumed with what, benched).
+- Open questions for the human, **verbatim**, with when asked and whether answered.
 - Decisions the Partner made without the human, with the reason.
-- Cross-worker facts: an interface one worker exposed that another consumes, a directory two
-  workers share, a blocker in one that stalls another.
-- The fleet table as last known: id, pod, state, outcome, workdir.
+- Cross-worker facts: an interface one worker exposed and another consumes (with `path:line`),
+  a directory two workers share, a blocker in one that stalls another.
+- The fleet as last known, one line per id: id, pod, state, outcome, workdir.
 
-Collapse finished asks to one line each once reported. Discard board output and digests once
-their facts are in the entries above. `PARTNER.md` is the Partner's own memory; do not
-duplicate it, record what changed in it and when.
+## Collapse and discard
+
+Finished asks → one line each once reported. Discard board output and digest prose once the
+fact is in an entry above. `PARTNER.md` is the Partner's own memory and is in its context file
+already: record what changed in it and when, never a copy.

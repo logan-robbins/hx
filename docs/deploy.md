@@ -232,12 +232,15 @@ ok    skeleton         config/partner/SUBAGENTS.md
 ok    skeleton         config/partner/harness.json
 ok    skeleton         personas/partner/AGENTS.md
 ok    skeleton         templates/work-item.md
-ok    models           2 model(s): claude-opus-5, claude-sonnet-5
+ok    models           2 model(s): claude-opus-5 window=1000000 seam=200000 autocompact=250000, claude-sonnet-5 window=1000000 seam=200000 autocompact=250000
 ok    hx.json          hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
 ok    hx.json          hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook
 ok    hx.json          python_bin ~/.local/share/uv/tools/hx-harness/bin/python
+ok    bin              bin/hx -> ~/.local/share/uv/tools/hx-harness/bin/hx
+ok    bin              bin/hx-hook -> ~/.local/share/uv/tools/hx-harness/bin/hx-hook
 ok    token            seed/token present, mode 0600
 ok    home:partner     settings.json
+ok    home:partner     .claude.json (onboarding done, 1 trusted cwd)
 ok    sandbox:partner  IS_SANDBOX=1 on the tmux session
 ok    sandbox:partner  --dangerously-skip-permissions in the pane's argv
 ```

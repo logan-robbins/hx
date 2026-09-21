@@ -140,73 +140,103 @@ def tasks_section(root: Path, item_id: str) -> tuple[str | None, str]:
     return _relative(root, work_item), section_text(body, SECTION_TASKS) or ""
 
 
-def render_step_state(state: dict) -> str:
-    """Section 4, rendered rather than dumped: the Companion's state as readable markdown.
+#: The tag vocabulary of the rendered step state. The reader of this section is an LLM
+#: resuming a task after `/clear`, and it pays for every character of it at every boundary, so
+#: the rendering is telegraphic: one line per entry, a leading tag instead of a heading, no
+#: bold, no blank lines, no prose. The tags are the whole grammar and are fixed here,
+#: `companion/BASE.md` (which tells the Companion what each field must contain) and the
+#: hx-worker skill (which tells the agent how to read them).
+STEP_STATE_TAGS = {
+    "goal": "the task as actually pursued",
+    "con": "a constraint that still holds",
+    "dec": "decision <- why [evidence seqs]; do not re-decide",
+    "open": "<id> an open step [evidence seqs]",
+    "next": "<id> the one action that continues that step",
+    "done": "<id> verified|UNVERIFIED <sha> outcome [evidence seqs]",
+    "dead": "tried and abandoned; do not retry",
+    "commit": "<sha> message",
+    "dirty": "uncommitted path",
+    "file": "<path> the fact taken from it; do not read it again",
+    "fail": "the last failure, verbatim",
+    "hypo": "the current theory about it",
+    "block": "an impediment outside the task",
+    "seq": "the stream cursor this state was written at",
+}
 
-    The schema is spec 07.2. Unknown keys are rendered too, so a Companion that grows a field
-    is not silently dropped from the file the agent actually reads.
+
+def _line(value: object) -> str:
+    """One line for a value that should have been a string; never a multi-line blob."""
+    text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+    return " ".join(text.split())
+
+
+def _ev(entry: dict) -> str:
+    """`[398,410]` — evidence seqs, compact: the agent follows them into the raw stream."""
+    refs = entry.get("ev") or []
+    return f" [{','.join(str(ref) for ref in refs)}]" if refs else ""
+
+
+def render_step_state(state: dict) -> str:
+    """Section 4, rendered dense rather than dumped: one tagged line per fact (spec 07.2).
+
+    Unknown keys are rendered too, so a Companion that grows a field is not silently dropped
+    from the file the agent actually reads.
     """
     lines: list[str] = []
 
-    def bullet(text: str, indent: int = 0) -> None:
-        lines.append(f"{'  ' * indent}- {text}")
-
-    def evidence(entry: dict) -> str:
-        refs = entry.get("ev") or []
-        return f" _(ev {', '.join(str(r) for r in refs)})_" if refs else ""
-
     if state.get("goal"):
-        lines += [f"**Goal:** {state['goal']}", ""]
-    if state.get("constraints"):
-        lines.append("**Constraints**")
-        for item in state["constraints"]:
-            bullet(item if isinstance(item, str) else json.dumps(item))
-        lines.append("")
-    if state.get("decisions"):
-        lines.append("**Decisions**")
-        for item in state["decisions"]:
-            bullet(f"{item.get('d', '')} — {item.get('why', '')}{evidence(item)}")
-        lines.append("")
-    if state.get("open_steps"):
-        lines.append("**Open steps**")
-        for item in state["open_steps"]:
-            bullet(f"`{item.get('id', '?')}` {item.get('intent', '')}{evidence(item)}")
-            if item.get("next"):
-                bullet(f"next: {item['next']}", indent=1)
-        lines.append("")
-    if state.get("closed_steps"):
-        lines.append("**Closed steps**")
-        for item in state["closed_steps"]:
-            verified = "verified" if item.get("verified") else "unverified"
-            commit = f" `{item['commit']}`" if item.get("commit") else ""
-            bullet(f"`{item.get('id', '?')}` {item.get('outcome', '')} ({verified}){commit}{evidence(item)}")
-        lines.append("")
-    if state.get("dead_ends"):
-        lines.append("**Dead ends** — do not try these again")
-        for item in state["dead_ends"]:
-            bullet(item if isinstance(item, str) else json.dumps(item))
-        lines.append("")
+        lines.append(f"goal: {_line(state['goal'])}")
+    for item in state.get("constraints") or []:
+        lines.append(f"con: {_line(item)}")
+    for item in state.get("decisions") or []:
+        if not isinstance(item, dict):
+            lines.append(f"dec: {_line(item)}")
+            continue
+        why = f" <- {_line(item.get('why'))}" if item.get("why") else ""
+        lines.append(f"dec: {_line(item.get('d') or '')}{why}{_ev(item)}")
+    for item in state.get("open_steps") or []:
+        if not isinstance(item, dict):
+            lines.append(f"open: {_line(item)}")
+            continue
+        step = _line(item.get("id") or "?")
+        lines.append(f"open {step}: {_line(item.get('intent') or '')}{_ev(item)}")
+        # Kept on its own line and next to its step: after a seam this is the first thing the
+        # agent acts on, and it is the one line that must never be scrolled past.
+        if item.get("next"):
+            lines.append(f"next {step}: {_line(item['next'])}")
+    for item in state.get("closed_steps") or []:
+        if not isinstance(item, dict):
+            lines.append(f"done: {_line(item)}")
+            continue
+        # `verified` means a record proved it. The unverified case is shouted, because
+        # trusting one is how the same work gets done twice or shipped broken.
+        mark = "verified" if item.get("verified") else "UNVERIFIED"
+        commit = f" {_line(item['commit'])}" if item.get("commit") else ""
+        step = _line(item.get("id") or "?")
+        lines.append(f"done {step} {mark}{commit}: {_line(item.get('outcome') or '')}{_ev(item)}")
+    for item in state.get("dead_ends") or []:
+        lines.append(f"dead: {_line(item)}")
 
     working_set = state.get("working_set") or {}
-    if any(working_set.get(key) for key in ("commits", "dirty", "files", "last_failure", "hypothesis")):
-        lines.append("**Working set**")
-        for commit in working_set.get("commits") or []:
-            bullet(f"commit `{commit.get('sha', '')}` {commit.get('msg', '')}")
-        for path in working_set.get("dirty") or []:
-            bullet(f"dirty: `{path}`")
-        for entry in working_set.get("files") or []:
-            # These are files already read; the note is why, so they are not read again.
-            bullet(f"`{entry.get('path', '')}` — {entry.get('note', '')}")
-        if working_set.get("last_failure"):
-            bullet(f"last failure: {working_set['last_failure']}")
-        if working_set.get("hypothesis"):
-            bullet(f"hypothesis: {working_set['hypothesis']}")
-        lines.append("")
-    if state.get("blockers"):
-        lines.append("**Blockers**")
-        for item in state["blockers"]:
-            bullet(item if isinstance(item, str) else json.dumps(item))
-        lines.append("")
+    for commit in working_set.get("commits") or []:
+        if isinstance(commit, dict):
+            lines.append(f"commit {_line(commit.get('sha') or '')}: {_line(commit.get('msg') or '')}")
+        else:
+            lines.append(f"commit: {_line(commit)}")
+    for path in working_set.get("dirty") or []:
+        lines.append(f"dirty: {_line(path)}")
+    for entry in working_set.get("files") or []:
+        # Files already read; the note is the fact, so the file is not read again.
+        if isinstance(entry, dict):
+            lines.append(f"file {_line(entry.get('path') or '')}: {_line(entry.get('note') or '')}")
+        else:
+            lines.append(f"file: {_line(entry)}")
+    if working_set.get("last_failure"):
+        lines.append(f"fail: {_line(working_set['last_failure'])}")
+    if working_set.get("hypothesis"):
+        lines.append(f"hypo: {_line(working_set['hypothesis'])}")
+    for item in state.get("blockers") or []:
+        lines.append(f"block: {_line(item)}")
 
     known = {
         "seq", "prompt_version", "goal", "constraints", "decisions", "open_steps",
@@ -214,15 +244,10 @@ def render_step_state(state: dict) -> str:
     }
     extra = {key: value for key, value in state.items() if key not in known and value}
     if extra:
-        lines.append("**Other**")
-        lines.append("")
-        lines.append("```json")
-        lines.append(json.dumps(extra, indent=2))
-        lines.append("```")
-        lines.append("")
+        lines.append(f"other: {json.dumps(extra, separators=(',', ':'))}")
 
     if state.get("seq") is not None:
-        lines.append(f"_step state at seq {state['seq']}_")
+        lines.append(f"seq {state['seq']}")
     return "\n".join(lines).strip("\n")
 
 

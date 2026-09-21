@@ -33,6 +33,11 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    in hx sequences work for you; you do.
 5. **Wait.** `hx complete` wakes you with `<id> complete: <outcome>; hx read <id>`. Between
    wakes you have nothing to do; do not poll panes.
+   Before writing an order, check what the fleet already knows:
+   `hx memory search "<the area>" --all-roles` searches every step state every agent here has
+   written, weighted toward the recent. Half-finished work, a blocker someone already hit, or a
+   fact worth putting into the order rather than making the next worker rediscover it. The
+   `hx-memory` skill has the flags.
 6. **On each wake**: `hx read <id>`, update `PARTNER.md`, then by outcome:
    `done` → dispatch what it unblocks; `hx bench <id>` when you need the id again.
    `decision` → ask the human in chat; when they answer, write the answer to an addendum file

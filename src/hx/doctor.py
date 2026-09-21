@@ -234,7 +234,21 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         except ValidationError as exc:
             checks.append((FAIL, "models", str(exc)))
         else:
-            checks.append((OK, "models", f"{len(models)} model(s): {', '.join(sorted(models))}"))
+            # One line, whatever the row count: docs/deploy.md's `hx doctor` block is compared
+            # line for line against this output. The numbers are on it because
+            # `autocompact_window` is exported into the agent's session as
+            # `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, and "which window is this fleet actually
+            # running at" is otherwise three files away.
+            described = ", ".join(
+                f"{model.id} window={model.window} seam={model.threshold}"
+                + (
+                    f" autocompact={model.autocompact_window}"
+                    if model.autocompact_window
+                    else " autocompact=native"
+                )
+                for model in sorted(models.values(), key=lambda m: m.id)
+            )
+            checks.append((OK, "models", f"{len(models)} model(s): {described}"))
 
     hx_json = root / "config" / "hx.json"
     if hx_json.is_file():

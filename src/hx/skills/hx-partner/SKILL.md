@@ -140,6 +140,22 @@ hx doctor             # what is here, what is missing, what is broken
 `hx board` is a listing, not a verdict: there are no invariants and no error lines. If
 something looks wrong, `hx show <id>` is where the answer is.
 
+### Looking further back
+
+```bash
+hx memory search "who last touched the assets migration"
+```
+
+The episode store holds every step state every agent in this instance has written, indexed and
+weighted toward the recent. It answers what the board cannot: what an agent tried three
+dispatches ago, which blocker someone already hit, what an earlier release actually shipped
+(`--kind complete` gets the Digests). It defaults to your own role, so as the Partner you will
+usually want `--all-roles`. The `hx-memory` skill has the rest of the flags.
+
+Two things it is good for before you write an order: checking whether the work has been half
+done already, and lifting the facts a previous agent learned the hard way into the order so the
+next one does not rediscover them.
+
 ## On a completion
 
 `hx read <id>`, then update `PARTNER.md`, then act on the outcome:

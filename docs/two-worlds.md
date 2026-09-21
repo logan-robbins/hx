@@ -43,9 +43,9 @@ at every `hx launch`, so nothing accumulates in it either.
 
 ## Skills
 
-Yours live in `~/.claude/skills` and are untouched. A harness home gets exactly one skill
-installed from the package: `hx-partner` for the Partner, `hx-worker` for everyone else. It is
-copied, not symlinked — `install.sh` removes any previous copy and copies the directory in —
+Yours live in `~/.claude/skills` and are untouched. A harness home gets only the skills the
+package installs: `hx-partner` and `hx-fleet` for the Partner, `hx-worker` for everyone else,
+and `hx-memory` for both. They are copied, not symlinked — `install.sh` removes any previous copy and copies the directory in —
 so nothing in a harness home points back at the package or at you, and no skill of yours is
 visible to an agent.
 
@@ -210,7 +210,7 @@ the only reader of the streams, and the agent never reads them at all.
 |---|---|---|
 | Config dir | `~/.claude` | `$HARNESS_ROOT/run/<id>/home` |
 | Settings and hooks | Yours | Written by hx per agent |
-| Skills | Your `~/.claude/skills` | `hx-partner` or `hx-worker` only |
+| Skills | Your `~/.claude/skills` | `hx-partner`/`hx-fleet` or `hx-worker`, plus `hx-memory` |
 | CLAUDE.md | Yours and the repo's | `config/CLAUDE.md` only; the repo's excluded |
 | Memory and transcripts | Yours, accumulating | Per home, wiped at each dispatch |
 | Credentials | Yours (Keychain or `~/.claude/.credentials.json`) | One token in `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`; yours never read |

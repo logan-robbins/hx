@@ -125,7 +125,9 @@ def test_the_seam_marker_is_written_at_the_threshold(working, tmp_path):
     from hx.hook_log import seam_marker, threshold_for
 
     threshold = threshold_for(working, "eng-001")
-    assert threshold == 500_000, "claude-opus-5 is capped at 500000 (spec 05)"
+    # The shipped row: 200000, below the 250000 autocompact window the session runs at, and
+    # inside spec 05's 500000 cap for a 1M model.
+    assert threshold == 200_000, "the seam threshold comes from config/models.json"
 
     run_hook(working, "eng-001", "log",
              post_tool(transcript=transcript_with(tmp_path, input_tokens=threshold - 1)))
