@@ -784,3 +784,20 @@ mentions it — 17.1 now says a package upgrade that moves the entry point is fo
 
 **Built:** nothing. Resurrecting it would undo the cut. If v1 does want a version-pin command
 back, it needs a D-number and a spec 17 section, and then it is a goal of its own.
+
+## 2026-09-20 — ui-8 — `hx.goal.input_box` on the Partner page: worth doing?
+
+> Orchestrator: yes; ui-9 item 2. Right not to slip it into a closed goal. DONE.
+
+build-8 published `hx.goal.input_box(pane_text)`, which returns what is sitting in a pane's
+input box — everything from the last prompt glyph on. The build lane suggests the Partner
+page's pane capture may want it.
+
+It would be a real improvement: the Partner page renders the whole capture as the reply
+channel, so a half-typed line the Partner has not sent yet reads exactly like something it
+said. Splitting the capture into "transcript" and "still in the box" would fix that, and the
+same split would help every agent's pane in the drawer.
+
+I have not done it. It changes what the Partner page means rather than fixing a bug, and ui-8
+was closed when the handoff arrived. It is a small goal — one function, two panes, a test each.
+Say if you want it in ui-9.
