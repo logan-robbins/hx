@@ -6,8 +6,8 @@ The Companion is a Claude Code session in `<id>:companion`, not a headless call.
 ## What works
 
 - `hx companion <id>` composes `companion-system.md` (BASE + role + harness facts) and
-  launches `start.sh <id> --companion` into its own home: guard hook, `companion-stop`
-  hook, no product skills, `IS_SANDBOX=1`, bypass, `--model companion.model`. Idempotent.
+  launches `start.sh <id> --companion` into its own home (guard hook, `companion-stop`
+  hook, no product skills, `IS_SANDBOX=1`, bypass, `--model`). Idempotent.
 - `hx wake companion <id> <stream>` writes `run/<id>/companion/<stream>.pass.md`, pastes
   `/clear`, then the fixed pointer. The Companion Reads the pass, state and log and Writes
   `out.json`.
@@ -29,10 +29,10 @@ state. No queue, no second path.
 
 ## Tests
 
-`tools/milestone-check.sh build`: 5 guard, 474 core/fakeclaude. The fake `claude` plays
-the Companion — reads the pass it is pointed at, writes a scripted `out.json`, fires the
-stop hook. Covers the loop, the validator, the budget, FIFO, flush, the seam's four
-conditions, a 500-record replay, a replayed `hx resume`, and both digests.
+`tools/milestone-check.sh build`: 5 guard, 474 core/fakeclaude. The fake `claude` plays the
+Companion — reads the pass it is pointed at, writes a scripted `out.json`, fires the stop
+hook. Covers the loop, validator, budget, FIFO, flush, the seam's four conditions, a
+500-record replay, a replayed `hx resume`, and both digests.
 
 ## Open
 
