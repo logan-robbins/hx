@@ -289,3 +289,11 @@ workers', `hx-companion` into Companion homes. `hx install` copies `src/hx/skele
 into the instance (`EXPECTED_SKELETON_FILES`). `hx launch <id>` refuses when
 `companion/roles/<role>.md` is missing (already) and when `config/<id>/AGENTS.md` lacks the
 header (already in start.sh; fine).
+
+## 2026-09-20 — two live findings from the orchestrator's Partner rehearsal, both in build-8
+
+1. First paste into a fresh pane loses its Enter (your build-7 handoff): reproduced on the
+   Partner's own pane at 21:17. build-8 item 10, first.
+2. `hx` is not on the agents' `PATH`; the Partner found it via `config/hx.json` and used the
+   absolute path. build-8 item 11: `$HARNESS_ROOT/bin/{hx,hx-hook}` symlinks written by install,
+   `PATH` prepended by `start.sh`, doctor check.

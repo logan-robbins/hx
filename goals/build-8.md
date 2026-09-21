@@ -53,6 +53,13 @@ are the evidence; do not narrate.
     a fresh pane (first paste) and a warm one. The orchestrator hit the same bug in the live
     rehearsal on 2026-09-20 21:17.
 
+11. **Also first**: `hx` is not on the agents' `PATH`. In the live rehearsal (2026-09-20 21:20)
+    the Partner had to discover the binary through `config/hx.json`. `hx install` writes
+    `$HARNESS_ROOT/bin/hx` and `bin/hx-hook` as symlinks to the recorded entry points (spec 03),
+    and `start.sh` prepends `$HARNESS_ROOT/bin` to `PATH` in the agent's and the Companion's
+    environment. `hx doctor` fails when `bin/hx` is missing or does not resolve. Test with the
+    fake and prove live.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`
