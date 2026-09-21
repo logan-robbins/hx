@@ -17,14 +17,11 @@ from . import timestamps
 POLL_SECONDS = 0.1
 
 
-def signal(root: Path, item_id: str) -> Path:
-    """Touch the marker the Companion loop watches (spec 10 step 1)."""
-    from .companion import flush_marker
+def signal(root: Path, item_id: str, *, env=None) -> list[str]:
+    """Wake the Companion for every stream that still has new records (spec 10)."""
+    from . import companion as companion_mod
 
-    marker = flush_marker(root, item_id)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(timestamps.now() + "\n")
-    return marker
+    return companion_mod.wake_due(root, item_id, force=True, env=env)
 
 
 def flush(root: Path, item_id: str, *, env=None, wait: bool = True) -> bool:
@@ -36,7 +33,7 @@ def flush(root: Path, item_id: str, *, env=None, wait: bool = True) -> bool:
     """
     from .companion import is_caught_up
 
-    signal(root, item_id)
+    signal(root, item_id, env=env)
     if not wait or is_caught_up(root, item_id):
         return True
     if not _companion_running(root, item_id, env):
@@ -44,20 +41,17 @@ def flush(root: Path, item_id: str, *, env=None, wait: bool = True) -> bool:
         return False
     while not is_caught_up(root, item_id):
         time.sleep(POLL_SECONDS)
+        # Re-signal each poll. A wake whose pane was mid-turn leaves the pass file on disk;
+        # this is the next wake that delivers it. Same mechanism, no queue.
+        signal(root, item_id, env=env)
     return True
 
 
 def _companion_running(root: Path, item_id: str, env=None) -> bool:
-    """Is there a `<id>:companion` window to wake? `hx launch` starts one (spec 08)."""
-    import subprocess
+    """Is there a `<id>:companion` window to wake? `hx launch` starts one (spec 08, 10)."""
+    from .companion import is_running
 
-    from . import tmux
-
-    result = subprocess.run(
-        [*tmux.tmux_command(env), "list-windows", "-t", f"={item_id}", "-F", "#{window_name}"],
-        capture_output=True, text=True, check=False,
-    )
-    return result.returncode == 0 and "companion" in result.stdout.split()
+    return is_running(item_id, env)
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:

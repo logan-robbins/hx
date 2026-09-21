@@ -20,8 +20,17 @@ die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
 HEADER='## UPDATES BELOW ONLY'
 
+# `--companion` launches the Companion's own Claude Code session in window `companion`
+# (spec 10). There is no headless path: every model call in hx is a tmux session.
 mode=session
-if [ "${1:-}" = "--exec" ]; then mode=exec; shift; fi
+role=agent
+while :; do
+  case "${1:-}" in
+    --exec) mode=exec; shift ;;
+    --companion) role=companion; shift ;;
+    *) break ;;
+  esac
+done
 [ $# -eq 1 ] || die "usage: start.sh [--exec] <id>"
 id=$1
 case "$id" in
@@ -43,15 +52,27 @@ fi
 [ -n "$python" ] || python=python3
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
 
-home=$root/run/$id/home
+if [ "$role" = companion ]; then
+  home=$root/run/$id/companion-home
+  window=companion
+else
+  home=$root/run/$id/home
+  window=main
+fi
 agents=$root/config/$id/AGENTS.md
 harness=$root/config/$id/harness.json
 persona=$root/run/$id/persona.md
+companion_system=$root/run/$id/companion-system.md
 
 # --- refusals, checked in both modes so a bad instance fails before tmux is touched -------
 [ -f "$harness" ] || die "refuse: no $harness (spec 05)"
-[ -f "$agents" ]  || die "refuse: no $agents; the persona is derived from it at every launch (spec 11)"
-grep -qxF "$HEADER" "$agents" || die \
+if [ "$role" = companion ]; then
+  [ -f "$companion_system" ] || die \
+    "refuse: no $companion_system; \`hx companion $id\` composes it from companion/BASE.md and
+    the role file before launching (spec 10)"
+fi
+[ "$role" = companion ] || [ -f "$agents" ] || die "refuse: no $agents; the persona is derived from it at every launch (spec 11)"
+[ "$role" = companion ] || grep -qxF "$HEADER" "$agents" || die \
   "refuse: $agents has no \`$HEADER\` line; the persona is the part above it and the agent's
   own memory is the part below it (spec 03, 04). Without the header hx cannot tell them apart"
 [ -f "$home/settings.json" ] || die \
@@ -82,8 +103,13 @@ fi
 [ -n "$bin" ] || die "refuse: no claude binary; \`hx install\` records {bin, version} in config/claude.json (spec 17.1)"
 [ -x "$bin" ] || die "refuse: pinned claude binary $bin is not executable (spec 17.1)"
 
-model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
-effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
+if [ "$role" = companion ]; then
+  model=$("$python" -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("companion") or {}).get("model") or d["model"])' "$harness")
+  effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("effort","low"))' "$harness")
+else
+  model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
+  effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
+fi
 [ -n "$model" ] || die "refuse: $harness has no \`model\` (spec 05)"
 [ -n "$effort" ] || die "refuse: $harness has no \`effort\` (spec 05)"
 
@@ -91,15 +117,24 @@ if [ "$mode" = exec ]; then
   # Regenerated immediately before exec, so a persona edit takes effect at the next launch
   # and never leaks the agent's own memory below the header into the system prompt.
   mkdir -p "$root/run/$id"
-  awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
+  if [ "$role" = companion ]; then
+    system_prompt=$companion_system
+  else
+    awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
+    system_prompt=$persona
+  fi
 
   cd "$cwd"
   # The session env of spec 11 and 17.4. Exported rather than passed to `env`, so the token
   # never becomes an argv element of anything.
   export HARNESS_ID="$id"
+  export HX_ROLE="$role"
   export HARNESS_ROOT="$root"
   export CLAUDE_CONFIG_DIR="$home"
   export DISABLE_AUTOUPDATER=1
+  # Every agent runs sandboxed and with permissions bypassed, always (spec 11). The
+  # `.claude.json` pre-seed stays too: both mechanisms, so no dialog can ever appear.
+  export IS_SANDBOX=1
   CLAUDE_CODE_OAUTH_TOKEN=$(cat "$token_file")
   export CLAUDE_CODE_OAUTH_TOKEN
 
@@ -108,7 +143,7 @@ if [ "$mode" = exec ]; then
     --dangerously-skip-permissions \
     --effort "$effort" \
     --model "$model" \
-    --append-system-prompt-file "$persona"
+    --append-system-prompt-file "$system_prompt"
 fi
 
 # --- session mode: put the launcher in window `main` of tmux session <id> ------------------
@@ -122,17 +157,22 @@ env_args=(
   -e HARNESS_ROOT="$root"
   -e CLAUDE_CONFIG_DIR="$home"
   -e DISABLE_AUTOUPDATER=1
+  -e IS_SANDBOX=1
 )
 while IFS='=' read -r name value; do
   case "$name" in HX_*) env_args+=(-e "$name=$value") ;; esac
 done < <(env)
 
-launcher=("$here/start.sh" --exec "$id")
+if [ "$role" = companion ]; then
+  launcher=("$here/start.sh" --exec --companion "$id")
+else
+  launcher=("$here/start.sh" --exec "$id")
+fi
 pane_log=$root/logs/$id/$id-pane.log
 mkdir -p "$root/logs/$id"
 
 if ! "${TMUX_CMD[@]}" has-session -t "=$id" 2>/dev/null; then
-  "${TMUX_CMD[@]}" new-session -d -s "$id" -n main -c "$cwd" "${env_args[@]}" "${launcher[@]}"
+  "${TMUX_CMD[@]}" new-session -d -s "$id" -n "$window" -c "$cwd" "${env_args[@]}" "${launcher[@]}"
 else
   for arg in "${env_args[@]}"; do
     case "$arg" in
@@ -140,17 +180,19 @@ else
       *) "${TMUX_CMD[@]}" set-environment -t "=$id" "${arg%%=*}" "${arg#*=}" ;;
     esac
   done
-  if "${TMUX_CMD[@]}" list-windows -t "=$id" -F '#{window_name}' | grep -qx main; then
-    "${TMUX_CMD[@]}" respawn-window -k -t "=$id:main" -c "$cwd" "${launcher[@]}"
+  if "${TMUX_CMD[@]}" list-windows -t "=$id" -F '#{window_name}' | grep -qx "$window"; then
+    "${TMUX_CMD[@]}" respawn-window -k -t "=$id:$window" -c "$cwd" "${launcher[@]}"
   else
-    "${TMUX_CMD[@]}" new-window -d -t "=$id:" -n main -c "$cwd" "${launcher[@]}"
+    "${TMUX_CMD[@]}" new-window -d -t "=$id:" -n "$window" -c "$cwd" "${launcher[@]}"
   fi
 fi
 
 # The pane capture, the UI's fallback for a dead session (spec 03, 11). Not a Companion
 # stream: `hx.streams` ignores it and `hx dispatch` archives it with the rest of logs/<id>/.
-"${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
-"${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"
+if [ "$role" != companion ]; then
+  "${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
+  "${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"
+fi
 
-printf 'start.sh: %s running in tmux session %s window main (cwd %s)\n' "$bin" "$id" "$cwd"
-printf 'start.sh: pane log %s\n' "$pane_log"
+printf 'start.sh: %s running in tmux session %s window %s (cwd %s)\n' "$bin" "$id" "$window" "$cwd"
+[ "$role" = companion ] || printf 'start.sh: pane log %s\n' "$pane_log"

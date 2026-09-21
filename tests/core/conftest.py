@@ -262,7 +262,15 @@ def hx(instance, tmux_server):
     """Run `hx <args>` against the scratch instance, on the private tmux server."""
 
     def _run(*args: str, harness_id: str | None = "partner", cwd: Path | None = None, **env_extra):
-        env = clean_env(HARNESS_ROOT=str(instance), HX_TMUX=" ".join(tmux_server), **env_extra)
+        # `start.sh` forwards every HX_* variable onto the tmux session, so the fake claude
+        # in the pane can find the hook binary and its Companion script.
+        env = clean_env(
+            HARNESS_ROOT=str(instance),
+            HX_TMUX=" ".join(tmux_server),
+            HX_HOOK_BIN=f"{sys.executable} -m hx.hooks",
+            HX_FAKE_COMPANION_SCRIPT=str(instance / "companion-script.json"),
+            **env_extra,
+        )
         if harness_id is not None:
             env["HARNESS_ID"] = harness_id
         env["HOME"] = str(instance.parent / "fake-home")
@@ -379,60 +387,29 @@ def fake_claude_on_path(tmp_path):
     return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}", "HX_FAKE_CLAUDE_VERSION": tested}
 
 
-#: A stand-in for `claude -p` in Companion tests: it reads the payload on stdin and prints the
-#: `--output-format json` envelope, with a scripted step state in `structured_output`. The
-#: script is a JSON list of responses, consumed one per call.
-FAKE_COMPANION = '''#!/usr/bin/env python3
-import json, os, pathlib, sys
-
-script_path = pathlib.Path(os.environ["HX_FAKE_COMPANION_SCRIPT"])
-calls_path = script_path.with_suffix(".calls.jsonl")
-payload = sys.stdin.read()
-
-with calls_path.open("a") as handle:
-    handle.write(json.dumps({"argv": sys.argv[1:], "payload": payload}) + "\\n")
-
-responses = json.loads(script_path.read_text())
-index = sum(1 for _ in calls_path.read_text().splitlines()) - 1
-response = responses[min(index, len(responses) - 1)]
-
-envelope = {
-    "type": "result",
-    "session_id": "fake",
-    "usage": response.get("usage", {"input_tokens": 100, "cache_read_input_tokens": 0 if index == 0 else 4096}),
-    "total_cost_usd": 0.0,
-}
-if "raw_result" in response:
-    envelope["result"] = response["raw_result"]
-elif "state" in response:
-    envelope["structured_output"] = response["state"]
-else:
-    envelope["result"] = response.get("text", "")
-print(json.dumps(envelope))
-'''
-
-
 @pytest.fixture
-def fake_companion(tmp_path):
-    """Script the Companion's model. Returns (set_responses, calls) helpers."""
-    binary = tmp_path / "fake-companion"
-    script = tmp_path / "companion-script.json"
-    binary.write_text(FAKE_COMPANION)
-    binary.chmod(0o755)
-    script.write_text("[]")
+def companion_script(instance):
+    """Script the Companion's answers. It runs as a real tmux session playing the fake.
 
-    class Fake:
-        env = {"HX_COMPANION_BIN": str(binary), "HX_FAKE_COMPANION_SCRIPT": str(script)}
+    One entry is consumed per pass: `{"state": {...}}` writes that step state,
+    `{"text": "..."}` writes it verbatim, which is how the invalid-output path is driven.
+    """
+    path = instance / "companion-script.json"
+    path.write_text("[]")
 
-        def responses(self, *items):
-            script.write_text(json.dumps(list(items)))
-            calls = script.with_suffix(".calls.jsonl")
-            calls.unlink(missing_ok=True)
+    class Script:
+        env = {"HX_FAKE_COMPANION_SCRIPT": str(path)}
 
-        def calls(self):
-            path = script.with_suffix(".calls.jsonl")
-            if not path.is_file():
+        def responses(self, *items, item_id="eng-001"):
+            # The fake indexes responses by how many passes it has seen, so a new script
+            # starts a new count.
+            (instance / "run" / item_id / "fake-passes.log").unlink(missing_ok=True)
+            path.write_text(json.dumps(list(items)))
+
+        def passes(self, item_id="eng-001"):
+            log = instance / "run" / item_id / "fake-passes.log"
+            if not log.is_file():
                 return []
-            return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+            return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
 
-    return Fake()
+    return Script()

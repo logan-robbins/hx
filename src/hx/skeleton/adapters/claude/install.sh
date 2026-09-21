@@ -191,13 +191,36 @@ fi
 # trust are pre-seeded here too, for the same reason as the agent's home.
 companion_home=$root/run/$id/companion-home
 mkdir -p "$companion_home"
-HX_COMPANION_HOME=$companion_home HX_CWD=$root "$python" - <<'COMPANIONEOF'
+HX_COMPANION_HOME=$companion_home HX_CWD=$root HX_HOOK_BIN=$hook_bin HX_ID=$id \
+"$python" - <<'COMPANIONEOF'
 import json
 import os
+import shlex
 
 home = os.environ["HX_COMPANION_HOME"]
+hook = os.environ["HX_HOOK_BIN"]
+item_id = os.environ["HX_ID"]
+
+
+def companion_hook(event):
+    return {"type": "command",
+            "command": f"{shlex.quote(hook)} --id {shlex.quote(item_id)} {event}"}
+
+
+# The Companion gets two hooks and no others: the same guard (it must not reach into the
+# instance either) and its own `stop`, which validates what it wrote and installs it. No
+# product skills, no CLAUDE.md: it reads the files each pass names and nothing else (spec 10).
+settings = {
+    "hooks": {
+        "PreToolUse": [{"matcher": "*", "hooks": [companion_hook("guard")]}],
+        "Stop": [{"hooks": [companion_hook("companion-stop")]}],
+    },
+    "pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}},
+    "skipDangerousModePermissionPrompt": True,
+    "theme": "dark",
+}
 with open(os.path.join(home, "settings.json"), "w") as handle:
-    json.dump({"skipDangerousModePermissionPrompt": True, "theme": "dark"}, handle, indent=2)
+    json.dump(settings, handle, indent=2)
     handle.write("\n")
 
 config_json = os.path.join(home, ".claude.json")

@@ -38,3 +38,8 @@ def parse(value: str) -> _dt.datetime | None:
 
 def looks_like(value: str) -> bool:
     return parse(value) is not None
+
+
+def from_unix(when: float) -> str:
+    """A unix time as the one format hx writes."""
+    return _dt.datetime.fromtimestamp(when, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

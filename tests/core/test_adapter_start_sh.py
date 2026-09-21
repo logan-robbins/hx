@@ -255,3 +255,27 @@ def test_the_board_sees_the_launched_session(ready, tmux_server, work_item):
     item = {i["id"]: i for i in board["items"]}["eng-001"]
     assert item["session_alive"] is True
     assert [e for e in board["errors"] if "eng-001" in e] == []
+
+
+def test_the_agent_is_sandboxed_and_bypasses_permissions(ready, tmux_server):
+    """spec 11, not negotiable: `--dangerously-skip-permissions` and `IS_SANDBOX=1`, always."""
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    assert "--dangerously-skip-permissions" in record["argv"]
+    assert record["env"].get("IS_SANDBOX") == "1", "in the process the agent runs as"
+
+    shown = subprocess.run(
+        [*tmux_server, "show-environment", "-t", "=eng-001"], capture_output=True, text=True, check=True
+    ).stdout
+    assert "IS_SANDBOX=1" in shown, "and on the tmux session, which hx doctor reads"
+
+
+def test_doctor_fails_a_live_agent_without_the_sandbox(ready, tmux_server):
+    from hx.doctor import FAIL, live_agent_checks
+
+    launch_and_record(ready, "eng-001", tmux_server)
+    env = {"HX_TMUX": " ".join(tmux_server)}
+    assert not [c for c in live_agent_checks("eng-001", env) if c[0] == FAIL]
+
+    subprocess.run([*tmux_server, "set-environment", "-t", "=eng-001", "IS_SANDBOX", "0"], check=True)
+    failures = live_agent_checks("eng-001", env)
+    assert any(status == FAIL and "IS_SANDBOX" in detail for status, detail in failures), failures

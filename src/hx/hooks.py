@@ -38,10 +38,13 @@ EVENTS = {
     "postcompact": 5,
     # The turn marker and the `goal-pending` consumption ship with the M4 batch (spec 13).
     "stop": 5,
+    # The Companion's own `Stop`, in its own home: it installs what the pass produced.
+    "companion-stop": 6,
 }
 
 IMPLEMENTED = (
     "context", "guard", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
+    "companion-stop",
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
@@ -54,6 +57,7 @@ _HANDLERS = {
     "subagent-stop": hook_subagent.stop,
     "subagent-result": hook_subagent.result,
     "stop": hook_stop.handle,
+    "companion-stop": hook_stop.companion_handle,
 }
 
 #: `guard` denies on error; every other event allows, because a broken hook must never be the

@@ -45,10 +45,10 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         "session_id": payload.get("session_id"),
     })
 
-    # Waking the Companion is a no-op until it exists (M5); the call site is here.
-    from . import flush as flush_mod
+    # Spec 10 wake trigger: `run/<id>/turn` touched.
+    from . import companion as companion_mod
 
-    flush_mod.flush(root, item_id, env=env)
+    companion_mod.wake_due(root, item_id, force=True, env=env)
 
     pending = goal_mod.pending_marker(root, item_id)
     if pending.exists():
@@ -69,4 +69,26 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
             root, item_id, "stop",
             "seam marker present but `hx seam` is not implemented (build-7); marker left in place",
         )
+    return 0, ""
+
+
+def companion_handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
+    """The Companion's own `Stop`: install what its pass produced (spec 10, CONTRACTS.md).
+
+    It runs in the Companion's home, not the agent's, so it never sees the agent's turn. Its
+    job is the other half of the pass protocol: take `out.json`, validate it, stamp it, move
+    it into `state/`, and — if the pass was for a stream that still has new records, or a
+    retry is owed — wake the Companion again.
+    """
+    from . import companion as companion_mod
+
+    installed = []
+    for stream in companion_mod.open_streams(root, item_id):
+        if companion_mod.out_path(root, item_id, stream).is_file():
+            if companion_mod.ingest(root, item_id, stream, env=env) is not None:
+                installed.append(stream)
+
+    # Whatever is owed — a retry the ingest above rewrote, or a stream with new records —
+    # goes out on this wake.
+    companion_mod.wake_due(root, item_id, force=True, env=env)
     return 0, ""

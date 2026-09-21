@@ -71,6 +71,11 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
 
     streams.append_record(root, item_id, stream, record)
 
+    # Spec 10 wake trigger: `batch_records` new records in any stream.
+    from . import companion as companion_mod
+
+    companion_mod.wake_due(root, item_id, env=env)
+
     # The hard trigger: it does not wait for a step to close (spec 05, 02 Seams).
     if is_main and tokens is not None:
         threshold = threshold_for(root, item_id)

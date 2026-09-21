@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import compose as compose_mod, streams, subagents
+from . import compose as compose_mod, store, streams, subagents
 from .hook_context import CONTEXT_LINE
 
 #: Until the Companion writes real digests (M5), a closed stream still gets a file, so the
@@ -24,6 +24,36 @@ DIGEST_PLACEHOLDER = "_pending companion_\n"
 
 def digest_path(root: Path, item_id: str, stream: str) -> Path:
     return root / "state" / item_id / f"{stream}.digest.md"
+
+
+def prompts_path(root: Path, item_id: str) -> Path:
+    return root / "run" / item_id / "subagent-prompts.json"
+
+
+def record_prompt(root: Path, item_id: str, agent_id: str, prompt: str) -> None:
+    """Keep the spawn prompt by `agentId`, so a recompose can use it (build-6 live finding)."""
+    path = prompts_path(root, item_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text())
+            existing = loaded if isinstance(loaded, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            existing = {}
+    existing[agent_id] = prompt
+    store.atomic_write_json(path, existing)
+
+
+def known_prompt(root: Path, item_id: str, agent_id: str) -> str:
+    path = prompts_path(root, item_id)
+    if not path.is_file():
+        return ""
+    try:
+        loaded = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return ""
+    return str(loaded.get(agent_id, "")) if isinstance(loaded, dict) else ""
 
 
 def _spawn_prompt(payload: dict) -> str:
@@ -59,7 +89,7 @@ def start(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, st
     open_path.parent.mkdir(parents=True, exist_ok=True)
     open_path.touch()
 
-    prompt = _spawn_prompt(payload)
+    prompt = _spawn_prompt(payload) or known_prompt(root, item_id, agent_id)
     streams.append_record(root, item_id, stream, {
         "event": "open",
         "agent_id": agent_id,
@@ -123,17 +153,45 @@ def stop(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str
         "agent_id": agent_id,
         "digest": str(digest),
     })
+
+    # Spec 10 wake trigger: a subagent stopped, so its stream is ready for a final pass.
+    from . import companion as companion_mod
+
+    companion_mod.wake_due(root, item_id, force=True, env=env)
     return 0, ""
 
 
 def result(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """`PostToolUse(Agent)`: the only path that reaches the parent (spec 09.1)."""
+    """`PostToolUse(Agent)` (spec 09.1).
+
+    Two live findings shape this (build-6). The Agent tool is **asynchronous**: this hook
+    fires when the subagent is *launched*, with `tool_response.status == "async_launched"`,
+    not when it finishes — so there is no digest to hand back yet, and spec 09.1's
+    "the only path that reaches the parent" does not hold as written.
+
+    What the payload does carry is the spawn prompt, keyed by the same `agentId` that
+    `SubagentStart` reports. That is the pairing build-5 could not find, so hx records it
+    here and the subagent's context file uses it.
+    """
     response = payload.get("tool_response")
     response = response if isinstance(response, dict) else {}
-    if response.get("status") not in (None, "completed"):
+    status = response.get("status")
+    agent_id = str(response.get("agentId") or payload.get("agent_id") or "")
+
+    prompt = response.get("prompt")
+    if agent_id and isinstance(prompt, str) and prompt.strip():
+        record_prompt(root, item_id, agent_id, prompt)
+        # The context file was composed at SubagentStart, before the prompt was knowable.
+        handle = subagents.load(root, item_id).get(agent_id)
+        if handle:
+            compose_mod.compose(
+                root, item_id, subagents.stream_for(item_id, handle),
+                subagent_prompt=prompt, env=env,
+            )
+
+    if status not in (None, "completed"):
         return 0, ""
 
-    agent_id = str(response.get("agentId") or payload.get("agent_id") or "")
     handle = subagents.load(root, item_id).get(agent_id)
     if not handle:
         return 0, ""

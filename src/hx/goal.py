@@ -100,10 +100,15 @@ def pane_is_idle(pane_text: str) -> bool:
     return False
 
 
-def capture_pane(item_id: str, env=None, *, lines: int = 40) -> str | None:
-    """The tail of `<id>:main`, or None when there is no such pane."""
+def target_of(name: str) -> str:
+    """`eng-001` means `eng-001:main`; `eng-001:companion` is taken as written."""
+    return f"={name}" if ":" in name else f"={name}:main"
+
+
+def capture_pane(name: str, env=None, *, lines: int = 40) -> str | None:
+    """The tail of a pane, or None when there is no such pane."""
     result = subprocess.run(
-        [*tmux.tmux_command(env), "capture-pane", "-p", "-t", f"={item_id}:main", "-S", f"-{lines}"],
+        [*tmux.tmux_command(env), "capture-pane", "-p", "-t", target_of(name), "-S", f"-{lines}"],
         capture_output=True,
         text=True,
         check=False,
@@ -111,21 +116,21 @@ def capture_pane(item_id: str, env=None, *, lines: int = 40) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def paste(item_id: str, text: str, env=None) -> None:
+def paste(name: str, text: str, env=None) -> None:
     """Paste through a tmux buffer loaded from a file, then Enter (goal build-2 item 3).
 
-    `load-buffer` from a file rather than `set-buffer` with an argument, so the pointer never
-    passes through a command line and no shell can touch it.
+    `load-buffer` from a file rather than `set-buffer` with an argument, so what is pasted
+    never passes through a command line and no shell can touch it.
     """
     command = tmux.tmux_command(env)
-    buffer_name = f"hx-goal-{item_id}"
+    buffer_name = f"hx-goal-{name.replace(':', '-')}"
     with tempfile.NamedTemporaryFile("w", prefix="hx-goal-", suffix=".txt", delete=False) as handle:
         handle.write(text)
         source = handle.name
     try:
         subprocess.run([*command, "load-buffer", "-b", buffer_name, source], check=True)
-        subprocess.run([*command, "paste-buffer", "-b", buffer_name, "-t", f"={item_id}:main"], check=True)
-        subprocess.run([*command, "send-keys", "-t", f"={item_id}:main", "Enter"], check=True)
+        subprocess.run([*command, "paste-buffer", "-b", buffer_name, "-t", target_of(name)], check=True)
+        subprocess.run([*command, "send-keys", "-t", target_of(name), "Enter"], check=True)
     finally:
         subprocess.run([*command, "delete-buffer", "-b", buffer_name], capture_output=True, check=False)
         Path(source).unlink(missing_ok=True)

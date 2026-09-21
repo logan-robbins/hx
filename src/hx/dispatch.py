@@ -37,7 +37,10 @@ from .workitems import (
 #: Cleared from `run/<id>/home/` at every dispatch, and nothing else (spec 08).
 HOME_WIPE = ("projects", "file-history", "history.jsonl")
 #: Kept in `run/<id>/` across a dispatch; everything else there is cleared (spec 08).
-RUN_KEEP = ("home", "persona.md")
+#: The Companion's home and system prompt are kept for the same reason the agent's home is:
+#: its session is continuous and serves the same agent across dispatches, and deleting its
+#: `CLAUDE_CONFIG_DIR` out from under a running process breaks it quietly (spec 10).
+RUN_KEEP = ("home", "persona.md", "companion-home", "companion-system.md")
 
 
 @dataclass

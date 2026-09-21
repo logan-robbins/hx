@@ -48,6 +48,86 @@ def _binary_version(binary: str, *args: str) -> str | None:
     return (result.stdout or result.stderr).strip().splitlines()[0] if (result.stdout or result.stderr) else path
 
 
+#: Spec 11: not negotiable, and checked on every live agent.
+REQUIRED_ENV = ("IS_SANDBOX=1",)
+REQUIRED_FLAG = "--dangerously-skip-permissions"
+
+
+def session_environment(item_id: str, env=None) -> dict[str, str]:
+    """What `tmux show-environment -t <id>` reports for the agent's session."""
+    result = subprocess.run(
+        [*tmux.tmux_command(env), "show-environment", "-t", f"={item_id}"],
+        capture_output=True, text=True, check=False,
+    )
+    found: dict[str, str] = {}
+    if result.returncode != 0:
+        return found
+    for line in result.stdout.splitlines():
+        if "=" in line and not line.startswith("-"):
+            key, _, value = line.partition("=")
+            found[key] = value
+    return found
+
+
+def pane_command(item_id: str, env=None) -> str:
+    """The full command line of the process in `<id>:main`."""
+    result = subprocess.run(
+        [*tmux.tmux_command(env), "list-panes", "-t", f"={item_id}:main", "-F", "#{pane_pid}"],
+        capture_output=True, text=True, check=False,
+    )
+    pid = result.stdout.strip().splitlines()[0] if result.returncode == 0 and result.stdout.strip() else ""
+    if not pid:
+        return ""
+    listing = subprocess.run(
+        ["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, check=False
+    )
+    if listing.returncode == 0 and listing.stdout.strip():
+        return listing.stdout.strip()
+    # The pane's own process is a shell or the launcher; look at its children too.
+    children = subprocess.run(
+        ["ps", "-o", "command=", "-ax"], capture_output=True, text=True, check=False
+    )
+    return children.stdout if children.returncode == 0 else ""
+
+
+def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
+    """(status, detail) for one live agent's sandbox and permission flags."""
+    found: list[tuple[str, str]] = []
+    environment = session_environment(item_id, env)
+    for pair in REQUIRED_ENV:
+        key, _, value = pair.partition("=")
+        if environment.get(key) == value:
+            found.append((OK, f"{pair} on the tmux session"))
+        else:
+            found.append((
+                FAIL,
+                f"{key} is {environment.get(key, 'unset')!r} on session {item_id}, not {value!r}; "
+                f"every agent runs sandboxed (spec 11). Relaunch it: `hx restart {item_id}`",
+            ))
+
+    command = pane_command(item_id, env)
+    if not command:
+        found.append((WARN, f"could not read the pane's command line for {item_id}"))
+    elif REQUIRED_FLAG in command:
+        found.append((OK, f"{REQUIRED_FLAG} in the pane's argv"))
+    elif "start.sh" in command:
+        # The launcher has not exec'd the binary yet: it is still running its refusals and
+        # deriving persona.md. Reading its argv here says nothing about the agent, and a
+        # failure would be simply untrue (handoff/gtm-to-build.md gtm-8).
+        found.append((
+            WARN,
+            f"{item_id} is still launching (start.sh has not exec'd yet); "
+            f"the flag cannot be read until it has",
+        ))
+    else:
+        found.append((
+            FAIL,
+            f"{item_id} is running without {REQUIRED_FLAG}; every agent bypasses permissions "
+            f"(spec 11). Relaunch it: `hx restart {item_id}`",
+        ))
+    return found
+
+
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
 
@@ -180,6 +260,15 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             if target.is_file()
             else (FAIL, f"home:{item_id}", "settings.json missing; `hx launch` writes it")
         )
+
+    # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
+    # 2026-09-20 directive). Checked from the session environment tmux reports and from the
+    # argv of the process in the pane, because either one alone can be stale.
+    for item_id in ids:
+        if not tmux.has_session(item_id, env):
+            continue
+        for status, detail in live_agent_checks(item_id, env):
+            checks.append((status, f"sandbox:{item_id}", detail))
 
     repo_json = root / "config" / "repo.json"
     if not repo_json.is_file():

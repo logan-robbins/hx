@@ -63,4 +63,7 @@ def test_hook_entrypoint_knows_the_spec_09_events():
     assert set(EVENTS) == {
         "context", "guard", "log", "subagent-start", "subagent-stop",
         "subagent-result", "stop", "precompact", "postcompact",
+        # The Companion's own `stop`, in its own home — the other half of the pass protocol
+        # (spec 10), not one of the agent's nine.
+        "companion-stop",
     }

@@ -85,7 +85,9 @@ def ensure_workdir(root: Path, item_id: str) -> Path | None:
     return workdir
 
 
-def _run_adapter(root: Path, name: str, item_id: str, env=None) -> subprocess.CompletedProcess:
+def run_adapter(
+    root: Path, name: str, item_id: str, env=None, *, extra: list[str] | None = None
+) -> subprocess.CompletedProcess:
     import os
 
     child = dict(os.environ if env is None else env)
@@ -100,12 +102,16 @@ def _run_adapter(root: Path, name: str, item_id: str, env=None) -> subprocess.Co
         if recorded:
             child.setdefault("HX_PYTHON", recorded)
     return subprocess.run(
-        ["bash", str(adapter(root, name)), item_id],
+        ["bash", str(adapter(root, name)), *(extra or []), item_id],
         env=child,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+#: Kept for callers written before the runner took extra arguments.
+_run_adapter = run_adapter
 
 
 def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dict:
@@ -138,29 +144,24 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
 
 
 def start_companion(root: Path, item_id: str, *, env=None) -> bool:
-    """`hx companion <id>` in window `companion` — the other half of launch (spec 08)."""
-    import shlex
+    """The Companion's own Claude Code session in window `companion` (spec 10).
 
-    hx_bin = None
-    hx_json = root / "config" / "hx.json"
-    if hx_json.is_file():
-        try:
-            hx_bin = json.loads(hx_json.read_text()).get("hx_bin")
-        except json.JSONDecodeError:
-            hx_bin = None
-    if not hx_bin:
-        hx_bin = shutil.which("hx")
-    if not hx_bin:
-        # Without a recorded entry point there is nothing to run; the agent still launches.
+    `start.sh <id> --companion` launches it, exactly as it launches the agent: there is no
+    headless path (spec 02 "Model calls").
+    """
+    from . import companion as companion_mod
+
+    try:
+        return companion_mod.launch(root, item_id, env=env)
+    except (HxError, NotFound) as exc:
+        # The agent still launches — an instance whose companion prompts are missing is
+        # usable — but a Companion that silently fails to start is exactly the kind of thing
+        # that should be visible, so it is logged and printed.
+        from .hooks import log_error
+
+        log_error(root, item_id, "companion", f"could not start the Companion: {exc}")
+        print(f"hx: launch {item_id}: the Companion did not start: {exc}", file=sys.stderr)
         return False
-
-    command = f"{shlex.quote(hx_bin)} companion {shlex.quote(item_id)}"
-    result = subprocess.run(
-        [*tmux.tmux_command(env), "new-window", "-d", "-t", f"={item_id}:", "-n", "companion",
-         "-c", str(root), command],
-        capture_output=True, text=True, check=False,
-    )
-    return result.returncode == 0
 
 
 def restart(root: Path, item_id: str, *, env=None) -> dict:

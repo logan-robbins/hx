@@ -86,8 +86,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     result = bench(root, args.id, env=env)
-    print(
-        f"HX-BENCH {result['id']} idle archived={result['archived']}"
-        + (f" patch={result['patch']}" if result["patch"] else "")
-    )
+    print(f"HX-BENCH {result['id']} idle archived={result['archived']}")
+    if result["patch"]:
+        print(f"  patch={result['patch']} (content, not staging: `git apply` it to restore)")
     return 0
