@@ -7,8 +7,7 @@ against them. Timestamps are ISO 8601 UTC with a `Z` suffix. Paths are relative 
 
 ## `hx board --json`
 
-Exit 0 when `errors` is empty, else 1 (same rule as the text form). One entry per id, `partner`
-first, then by id.
+One entry per worker id, by id.
 
 ```json
 {
@@ -20,28 +19,24 @@ first, then by id.
       "pod": "engineers",
       "role": "engineer",
       "state": "working",
-      "file": "pods/engineers/eng-001-working.md",
-      "after": ["eng-000"],
-      "ready": true,
+      "file": "pods/engineers/eng-001.md",
       "outcome": null,
       "dispatched": "2026-09-20T12:00:00Z",
       "completed": null,
       "open_subagents": 1,
       "goal_ts": "2026-09-20T12:00:03Z",
-      "goal_pending": false,
       "session_alive": true,
       "context_tokens": 48211,
       "seams": 2,
       "turn_ts": "2026-09-20T13:09:40Z"
     }
-  ],
-  "errors": ["pods/engineers/eng-002-working.md: no live tmux session eng-002"]
+  ]
 }
 ```
 
-`state` is one of `idle|queued|working|complete`. `outcome` is one of
-`done|blocked|decision|exhausted` or `null`. `ready` is true when every `after` id has outcome
-`done` in `tasks.json`. `seams` counts seam records in `logs/<id>/<id>-main.jsonl` since
+Exit 0 always (v1 cut: no invariants, no `errors`). `partner` is not an item; the Partner has no
+work item. `state` is one of `idle|working|complete`, read from the work item's frontmatter.
+`outcome` is one of `done|blocked|decision|exhausted` or `null`. `seams` counts seam records in `logs/<id>/<id>-main.jsonl` since
 `dispatched`. `context_tokens` is from the last main-stream record, `null` if none.
 
 ## `hx show <id> --json`
@@ -52,14 +47,13 @@ first, then by id.
   "pod": "engineers",
   "role": "engineer",
   "state": "working",
-  "file": "pods/engineers/eng-001-working.md",
+  "file": "pods/engineers/eng-001.md",
   "work_item": {
-    "frontmatter": {"id": "eng-001", "pod": "engineers", "after": [], "outcome": null, "dispatched": "…"},
+    "frontmatter": {"id": "eng-001", "pod": "engineers", "state": "working", "outcome": null, "dispatched": "…"},
     "body": "…the markdown body after the frontmatter, verbatim…"
   },
   "task": {
     "order": "…## Order text as dispatched…",
-    "after": [],
     "addenda": [{"ts": "2026-09-20T12:30:00Z", "text": "…"}],
     "outcome": null,
     "dispatched": "…",
@@ -93,8 +87,9 @@ first, then by id.
 }
 ```
 
-`tail` holds the last 50 records of the stream as parsed JSON objects. For `partner`, the
-object additionally carries `"partner_md": "…PARTNER.md text…"`.
+`tail` holds the last 50 records of the stream as parsed JSON objects. `hx show partner --json`
+returns only `{"id": "partner", "partner_md": "…", "pane": {…}, "streams": […]}`: the Partner has
+no work item, task, or step-state contract beyond its Companion's main stream.
 
 ## `hx wake partner "<text>"`
 
@@ -102,10 +97,12 @@ The UI calls the same function the CLI uses (`hx.wake.wake_partner(root, text)`)
 returns `True` when the socket accepted the message and `False` when no socket file exists or
 the connection was refused. It never blocks and never retries.
 
-## Orders (`orders/<id>.md`)
+## Orders (input files)
 
-Optional YAML frontmatter with `after: [ids]`; required `## Order`; required
-`## Definition of done` containing a fenced ```bash block under `### Checks`. Spec 06.
+`hx dispatch <id> <order-file>` reads an order file from any path and deletes it after a
+successful dispatch; the text then lives in exactly two places, `tasks.json` and the work item.
+Required `## Order`; required `## Definition of done` containing a fenced ```bash block under
+`### Checks`. No frontmatter. Spec 06.
 
 ## `config/hx.json`
 
@@ -120,14 +117,14 @@ When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROO
 ## `templates/work-item.md` placeholders
 
 The gtm lane writes the template; `hx dispatch` renders it (never reconstructs the body in
-Python). Exactly these tokens, no others:
+Python). Exactly these tokens, no others (`{{state}}` renders the frontmatter `state:` field):
 
 | Token | Renders as |
 |---|---|
 | `{{id}}` | the id |
 | `{{pod}}` | the pod |
-| `{{after}}` | the `after` ids comma-separated inside the `[...]` already in the template: `after: [eng-000, eng-002]`; `after: []` when empty |
 | `{{dispatched}}` | the dispatch timestamp |
+| `{{state}}` | `working` at dispatch |
 | `{{order}}` | the order file verbatim (`## Order`, then `## Definition of done` with its `### Checks` block), on its own line directly under the frontmatter |
 
 ## Claude Code version strings
@@ -138,79 +135,22 @@ version: the output of `claude --version` with the ` (Claude Code)` suffix strip
 
 ## Fresh instance contents
 
-`hx install` creates exactly what spec 17.2 step 2 lists. No worker is installed. The example
+`hx install` creates exactly what spec 17.2 lists (no mirror, no worktrees, no unit files in v1). No worker is installed. The example
 worker configuration ships as `templates/worker/{AGENTS.md,SUBAGENTS.md,harness.json}` for the
-Partner to copy into `config/<id>/` when it creates an agent; `hx doctor` and `hx board` must
-not expect any id but `partner` in a fresh root.
+Partner to copy into `config/<id>/` when it creates an agent; `hx board` lists no items in a fresh root (the Partner is not an item).
 
 ## `hx orders --json` and `hx archive --json`
 
-Read-only views for the Orders and Archive pages (spec 16.2); Partner and UI callers; exit 0 unless `errors` is non-empty. Adopted as the ui lane proposed:
-
-**`hx orders --json`** — every `orders/*.md` and addendum with the `tasks.json` record it
-produced, plus the `after` graph:
+`hx orders --json` (v1 cut): one entry per id in `tasks.json`, no graph, no file comparison:
 
 ```json
-{
-  "root_abs": "/srv/hx",
-  "ts": "2026-09-20T13:10:00Z",
-  "orders": [
-    {
-      "id": "eng-002",
-      "pod": "engineers",
-      "path": "orders/eng-002.md",
-      "after": ["eng-003"],
-      "order": "…orders/eng-002.md verbatim…",
-      "addenda": [{"ts": "…", "path": "orders/eng-002.addendum.md", "text": "…"}],
-      "record": {"order": "…", "after": ["eng-003"], "addenda": [{"ts": "…", "text": "…"}],
-                 "outcome": null, "dispatched": "…", "completed": null},
-      "state": "queued",
-      "ready": false,
-      "waiting_on": ["eng-003"],
-      "file_matches_record": true
-    }
-  ],
-  "graph": {
-    "nodes": [{"id": "eng-002", "state": "queued", "outcome": null, "ready": false}],
-    "edges": [{"from": "eng-003", "to": "eng-002", "met": false}]
-  },
-  "errors": []
-}
+{"root_abs": "/srv/hx", "ts": "…", "orders": [
+  {"id": "eng-002", "pod": "engineers", "state": "complete", "outcome": "decision",
+   "order": "…", "addenda": [{"ts": "…", "text": "…"}], "dispatched": "…", "completed": null}
+]}
 ```
 
-- `record` is the `tasks.json` entry for that id, which is exactly the `task` block of
-  `hx show <id> --json` minus nothing — same six keys. `null` when the order file exists but
-  was never dispatched, and then `state` and `file_matches_record` are `null` too.
-- `waiting_on` is the subset of `after` whose `tasks.json` outcome is not `done`; `ready` is
-  `waiting_on == []`, the same rule as the board. This is what spec 16.2 calls "which queued
-  items wait on which ids".
-- `file_matches_record` is `orders/<id>.md` on disk compared with the order recorded at
-  dispatch. It is the one fact this view can show that nothing else can: the Partner edited the
-  order file after dispatch, so what the agent is running is not what the file now says. If you
-  would rather the UI not surface that, drop the key and we drop the badge.
-- `edges` is one entry per `after` relation, in `orders` order; `met` mirrors `waiting_on`.
-
-**`hx archive --json`** — benched bodies and archived dispatches per id:
-
-```json
-{
-  "root_abs": "/srv/hx",
-  "ts": "2026-09-20T13:10:00Z",
-  "items": [
-    {
-      "id": "eng-001",
-      "pod": "engineers",
-      "bench":   [{"ts": "…", "path": "pods/engineers/archive/eng-001-<ts>.md", "digest": "…"}],
-      "archive": [{"ts": "…", "path": "archive/eng-001/<ts>", "digest": "…"}]
-    }
-  ],
-  "errors": []
-}
-```
-
-- The `bench` and `archive` entries are the `hx show <id> --json` `bench` and `archive` entries
-  verbatim — same three keys, same meaning — so this view is the whole-fleet form of what
-  `hx show` already returns per id. An id with no history yet has two empty lists.
+`hx archive --json`: unchanged shape, `{"root_abs", "ts", "items": [{"id", "pod", "bench": [...], "archive": [...]}]}`.
 
 ## SSE `changed` scopes
 

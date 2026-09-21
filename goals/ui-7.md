@@ -1,10 +1,17 @@
 # ui-7: step state from the real Companion, `turn.background_tasks`, and one error-state fix
 
-Sent after build-6 (M5) lands. Read `goals/build-6.done.md`, `handoff/build-to-ui.md` (the
+Sent after build-7 (the v1 cut) lands. Read `goals/build-6.done.md`, `handoff/build-to-ui.md` (the
 step-state schema the Companion output is validated against), CONTRACTS.md (`turn`), spec 07.2,
 16.2.
 
 ## Build
+
+0. **The v1 cut first** (ORCHESTRATION.md constraints; CONTRACTS.md rewritten): the Board has no
+   `after`/`ready`/`goal_pending` columns and no invariant-errors box; `partner` is not a board
+   row (the Partner view stays); work-item files are `pods/<pod>/<id>.md` with `state:` in
+   frontmatter; the Orders view lists `tasks.json` orders and addenda per id with no graph and no
+   file-match badge; `hx show partner` has the reduced shape. Regenerate fixtures from the
+   build lane's cut commands; delete the tests of removed things.
 
 1. Step state rendered from the real schema: open steps with intent and next action, closed
    steps with outcome, commit, evidence seqs, `verified`; working set with per-file notes;

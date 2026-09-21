@@ -1,44 +1,48 @@
-# build-7: Milestone M6 (spec 13): seams for real, `hx seam`, the live suite, `hx upgrade` complete
+# build-7: the v1 cut (spec 14 D25). Delete, do not deprecate.
 
-Read `goals/build-6.done.md` (yours), `handoff/orchestrator-to-build.md`, any other
-`handoff/*-to-build.md`, spec 02 (Seams, Compaction), 06 (pointer), 07.4, 09.2–9.3 (the
-handshake), 10 (seam policy), 11 (Compaction rows), 13 M6, 17.6.
+Read `spec/14-open-items.md` D25, `ORCHESTRATION.md` (constraints, the v1 cut bullet), then the
+rewritten spec 03, 04, 06, 08, 09, 12, 13, 16, 17, and CONTRACTS.md. Nothing here adds
+behaviour; everything removes it. Tests for removed behaviour are deleted with it. The done file
+is a list of what was deleted and the line count before and after.
 
-## Build
+## Delete
 
-1. `hx seam <id>`: refuse while `run/<id>/turn` shows non-empty `background_tasks` (leave the
-   marker; the next `stop` retries); otherwise `hx flush`, remove `run/<id>/seam`, and paste
-   `/clear` into the pane. The `context` hook on `source=clear` composes and, for a `working`
-   item, sends the goal with `--now` (exists since build-3). Order in the transcript must be
-   `Stop` → `SessionStart(clear)` → `/goal` → one Read of the context file.
-2. Seam triggers: the Companion marker (spec 10 policy: step closed on main, above
-   `seam_min_context_tokens`, after `seam_min_interval_s`, no open subagents) and the `log`
-   hook's threshold marker (build-5) both land in `run/<id>/seam`; `stop` consumes it via `hx
-   seam`. Never for subagent streams. Write a `seam` record (07.4) with `prompt_version`,
-   `context_tokens` before, and the context file size.
-3. Compaction is disabled by construction: `PreCompact` hook blocks auto-compaction on the main
-   thread when a seam is pending (spec 02 Compaction, 01.1 E4) and logs otherwise; verify that
-   no `compact_boundary` appears in the main transcript across a 10-seam live run.
-4. `hx restart <id>` and `hx launch <id>` of a `working` item deliver the goal after the idle
-   prompt appears (readiness detector from build-3); a `goal-pending` left by a mid-turn
-   `hx dispatch partner` is pasted by `stop` and runs as the next input (live, on the Partner).
-5. **The live suite** (`tests/live/`, marked and skipped unless `HX_LIVE=1` and `seed/token`
-   exist): the M6 criteria above against the real pinned binary, reaping everything it launches.
-   `hx upgrade` completes spec 17.6: re-render every home's settings and skills from the package,
-   run the live suite against the candidate binary, and pin only on green; record the result in
-   `config/claude.json` (`tested_at`, `suite_sha`).
-6. Tests offline for the policy and the handshake with the fake; live for the transcript order,
-   the 10-seam run, restart and launch delivery, and `goal-pending` on the Partner. Paste the
-   transcript excerpts. Kill everything you launched.
+1. Dependency chains: `after` everywhere (order parsing, work-item frontmatter, `tasks.json`,
+   board), the `queued` state, promotion in `hx complete`, `hx board --require-done`.
+2. The Partner as a work item: `pods/partner`, `orders/partner.md`, `hx dispatch partner`,
+   `hx resume partner`, `hx complete` for partner, `run/<id>/goal-pending` and its delivery in
+   the `stop` hook, `hx goal --now` paths that existed only for it (keep `--now` for the
+   context-on-clear hook). The Partner is launched by `hx up`/`hx launch partner` and gets its
+   goal from the human in chat. `hx wake partner` stays.
+3. The `guard` hook: `hx-hook guard`, its rules, its tests, its entry in `install.sh`'s hooks.
+4. Locks and atomic writes on `tasks.json`: plain `json.dump` to the file.
+5. State in filenames: work items are `pods/<pod>/<id>.md` with `state:` in frontmatter, set by
+   dispatch/complete/resume/bench. Delete the filename regex, the transition machinery, all
+   `hx board` invariants and `errors`, and the doctor checks of items. `hx board` is the plain
+   listing in CONTRACTS.md; `hx doctor` checks only what spec 08 now lists.
+6. Deployment beyond install: `hx repo add`, mirror, sparse worktrees, `hx push`, `hx upgrade`,
+   unit rendering and `src/hx/packaging/` use in install (the gtm lane deletes the templates),
+   `config/repo.json`, `repos/`, `wt/` management, the `branch` field, dispatch's git reset and
+   dirty-worktree refusal, bench's patch. `harness.json.workdir` is any absolute directory;
+   `hx complete done` still requires a clean `git status` there when it is a git repo.
+7. Task text in two places: `hx dispatch` and `hx resume` delete their input file after
+   success; `orders/` is not a directory hx knows; `hx orders --json` reads `tasks.json` only.
+8. Everything that referenced the above in `cli.py`, `board.py`, `show.py`, `orders.py`,
+   `doctor.py`, `install.py`, `dispatch.py`, `complete.py`, `resume.py`, `bench.py`,
+   `install.sh`, `start.sh`, the fake, and `tests/core/`.
 
-7. `hx show --json` gains `turn: {ts, background_tasks}` from `run/<id>/turn` (CONTRACTS.md);
-   publish it to the ui lane.
+## Keep unchanged
 
-Keep the done file short (ORCHESTRATION.md step 4, revised): the tests and transcript excerpts
-are the evidence; do not narrate.
+Launch and adapters (token, `IS_SANDBOX=1`, pre-seeded state file, persona file), `hx goal`,
+`hx complete` (checks, `HX-COMPLETE`, `HX-CHECK-FAILED`, wake partner, digest), `hx resume` for
+blocked/decision, `hx bench` (body archive only), the `context`, `log`, `subagent-*`, `stop`
+(turn marker, seam, Companion wake) hooks, the Companion session, `hx flush`, `hx show`,
+`hx archive`, `hx read`, `hx task`, `hx up`, `hx heartbeat`, `hx install` with the token gate.
 
 ## Done when
 
-- `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`
-  passes and its last lines are in the done file.
-- Committed path-scoped. `goals/build-7.done.md` written, with handoffs.
+- `tools/milestone-check.sh build` passes; `grep -rn` of `src/` for `after`, `queued`, `guard`,
+  `flock`, `goal-pending`, `sparse`, `mirror`, `push`, `upgrade`, `require-done` returns only
+  prose.
+- Committed path-scoped. `goals/build-7.done.md` written, short, with the line counts and a
+  `handoff/build-to-ui.md` entry naming the changed shapes.

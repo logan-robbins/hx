@@ -54,7 +54,14 @@ handoff entry. Never create a remote or push.
 - Every model call is a Claude Code session in tmux operated by pasting file paths. No
   `claude -p`, no headless mode, no API client. Every agent and Companion runs with
   `--dangerously-skip-permissions` and `IS_SANDBOX=1`; no dialog is ever shown to an agent.
-- The human never runs hx after setup and only talks to the Partner.
+- The human never runs hx after setup and only talks to the Partner, and gives the Partner its
+  goal in chat every time. The Partner has no work item and never dispatches itself.
+- v1 cut (spec 14 D25, 2026-09-20): no dependency chains (`after`, `queued`, promotion); no
+  guard hook; no locks or atomic-write ceremony on `tasks.json`; no state in filenames, no
+  transition tables, no board invariants, no doctor policing of items (state is a frontmatter
+  field hx sets); no mirror, sparse worktrees, `hx push`, `hx upgrade`, or unit files
+  (`hx install` only); task text in exactly two places (`tasks.json`, the work item; order and
+  addendum files are consumed inputs); bench archives the body only.
 
 ## Two rules enforced at every milestone
 

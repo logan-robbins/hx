@@ -1,10 +1,20 @@
 # gtm-9: the operator's view after M5–M6, and the texts checked against seams for real
 
-Sent after build-7 (M6) lands. Read `goals/build-6.done.md`, `goals/build-7.done.md`,
+Sent after build-7 (the v1 cut) lands; M6 is build-8. Read `goals/build-6.done.md`, `goals/build-7.done.md`,
 `handoff/orchestrator-to-gtm.md`, any other `handoff/*-to-gtm.md`, spec 02 (Seams), 07, 10,
 12, 16.
 
 ## Build
+
+0. **The v1 cut first** (spec 14 D25, ORCHESTRATION.md): delete `src/hx/packaging/` unit
+   templates, `packaging/e2e-deploy.sh`'s mirror/worktree/units/push/upgrade steps (keep the
+   install-with-token proof), and their tests; the skills and docs stop mentioning `after`,
+   queued items, Partner orders or self-dispatch, guard rules, `hx push`, `hx upgrade`, units,
+   mirrors, worktrees, `--require-done`; the Partner gets its goal from the human in chat; work
+   items are `pods/<pod>/<id>.md` with a `state:` field; `templates/work-item.md` drops
+   `{{after}}` and gains `{{state}}`; `templates/order.md` has no frontmatter. The M8 and m8b
+   packs: no `after`, no `orders/partner.md`, expected boards regenerated from the cut `hx board`
+   (Partner not a row), README sequence per the rewritten spec 12 and 13 M8.
 
 1. `docs/operating.md`: what the human sees and does day to day, in the spec's terms: talk to
    the Partner in `tmux attach -t partner`; what a `decision` looks like in chat and how the
