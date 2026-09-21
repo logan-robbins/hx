@@ -1,6 +1,9 @@
 # ui-7: step state from the real Companion, `turn.background_tasks`, and one error-state fix
 
-Sent after build-7 (the v1 cut) lands. Read `goals/build-6.done.md`, `handoff/build-to-ui.md` (the
+Sent now, in parallel with build-7 (the build lane is deleting the cut code). Build to
+CONTRACTS.md as rewritten; if `goals/build-7.done.md` exists before you close, re-verify
+against the real `hx board --json`, `hx show`, `hx orders` on a scratch instance; otherwise say
+that verification is against the contract only. Read `goals/build-6.done.md`, `handoff/build-to-ui.md` (the
 step-state schema the Companion output is validated against), CONTRACTS.md (`turn`), spec 07.2,
 16.2.
 
