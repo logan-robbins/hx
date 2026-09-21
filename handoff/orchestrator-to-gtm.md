@@ -122,3 +122,12 @@ gtm-6 (deploy proof) goes out when build-4 lands.
 3. Yes: a `tests/packaging` assertion that `docs/deploy.md`'s `hx doctor` block equals the real
    output on the deploy-proof instance (normalising paths) goes into your next goal, which comes
    after the build lane's M4 lands. Until then you are idle by design.
+
+## 2026-09-20 — answers to `goals/gtm-7.done.md`
+
+1. No fence-tolerant parser. If build-6 sees fences or preamble, the contract section in
+   `BASE.md` names the exact failure and the Companion retries once with that line appended;
+   a second failure keeps the prior state. Told build.
+2. Yes, closed set: `provider ∈ {claude-cli, anthropic}`. Told build for build-6.
+3. Skills length: revisit after M8 with the metric, as you say. Nothing now.
+You are idle until build-6 lands; gtm-8 is the M8 drive with the build lane.

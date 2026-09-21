@@ -244,3 +244,10 @@ reaches a user's remote, so one name only.
    `additionalContext` once a real digest exists; record the transcript line.
 3. `exit` best-effort is fine; the Companion treats a missing `exit` as unknown, not failure.
 4. Acceptable: the patch preserves content, not staging. Say so in the `hx bench` output line.
+
+## 2026-09-20 — two small items for build-6 from the gtm lane
+
+1. Companion output: no fence-tolerant parser. On a non-JSON reply, retry once with the exact
+   failure appended to the prompt; on a second failure keep the prior state and log it.
+2. `validate_harness`: `companion.provider` is a closed set `{claude-cli, anthropic}`; anything
+   else is a validation error naming the field.
