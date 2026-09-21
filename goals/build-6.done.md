@@ -9,8 +9,7 @@ The Companion is a Claude Code session in `<id>:companion`, not a headless call.
   launches `start.sh <id> --companion` into its own home (guard hook, `companion-stop`
   hook, no product skills, `IS_SANDBOX=1`, bypass, `--model`). Idempotent.
 - `hx wake companion <id> <stream>` writes `run/<id>/companion/<stream>.pass.md`, pastes
-  `/clear`, then the fixed pointer. The Companion Reads the pass, state and log and Writes
-  `out.json`.
+  `/clear`, then the fixed pointer. The Companion Reads pass, state and log, Writes `out.json`.
 - The `companion-stop` hook validates against 07.2, stamps `seq`/`prompt_version`/`ts`,
   moves it to `state/<id>/<stream>.json`, writes the closed-stream digest, and evaluates
   the seam policy on the main stream.
@@ -32,10 +31,9 @@ state. No queue, no second path.
 `tools/milestone-check.sh build`: 5 guard, 474 core/fakeclaude. The fake `claude` plays the
 Companion — reads the pass it is pointed at, writes a scripted `out.json`, fires the stop
 hook. Covers the loop, validator, budget, FIFO, flush, the seam's four conditions, a
-500-record replay, a replayed `hx resume`, and both digests.
+500-record replay, a replayed `hx resume`, both digests.
 
 ## Open
 
-- The two-pass Companion live check against the real binary did not run. It needs a seed
-  token and a killed-after run — do it in build-7.
-- Step-state schema published for ui in `handoff/build-to-ui.md`.
+- The two-pass Companion live check against the real binary did not run: it needs a seed
+  token and a killed-after run. Do it in build-7. Schema for ui: `handoff/build-to-ui.md`.
