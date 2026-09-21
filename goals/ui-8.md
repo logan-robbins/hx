@@ -6,6 +6,21 @@ selectors). That was wrong and it is reversed here. Read spec 16 (cut version), 
 `/Users/loganrobbins/workspace/autodev/src/autodev/web/{index.html,app.js,style.css}` in full
 (never `website/`), and `goals/ui-7.done.md`.
 
+## The reference
+
+`https://autodev-team.com/demo/index.html?demo=1#overview` is the look, screen for screen; open it
+in the in-app browser and keep it open while you work. Observed there, and the hx mapping:
+
+| Demo screen | hx |
+|---|---|
+| Sidebar: workspace, "All Pillars", the pillars with a live dot, agents listed under each | Sidebar: instance name, "All Pods", the pods (`backend`, `frontend`, `release`, …) with a live dot, the HarnessAgents under each |
+| Overview: one card per pillar: description, counters, a current line, avatars | One card per pod: the pod's agents as avatars; the current line is each working agent's open step; **no "open tasks / in progress / blocked" counters**: show the agents' states (idle, working, complete with outcome) instead |
+| Pillar page → Agent graph: manager at the root, agents below with role, current line, and status; GM chat, Task board, Agent list, Contract tabs | Pod page → fleet graph: the Partner at the root, this pod's agents below with role, current line (open step's next action), and state; each agent's Companion drawn beside it; tabs: Partner chat, Task board, Agent list. No Contract tab |
+| Task board: columns Queued / Working / Validating / Blocked, cards with assignee avatar and age | Task board: columns are the work-item state and outcome (`idle`, `working`, `complete: done`, `complete: decision`, `complete: blocked`, `complete: exhausted`); one card per work item with its agent's avatar, the order's first line, and **that agent's own `## Tasks` checklist from its work item** rendered inside the card; age from `dispatched` |
+| Harness Agents table: agent, status, current work, counts | Agent table: agent, pod, role, state and outcome, current work (open step's next action), session alive, seams; drawer opens the full Agent page (work item, step state, streams, pane) |
+| GM chat | Partner chat: `POST /api/partner/wake`; replies from the Partner's pane capture; the note that full control is `tmux attach -t partner` |
+| Demo banner, speed controls | none |
+
 ## Do
 
 1. Copy autodev's `index.html`, `app.js`, `style.css` into `src/hx/ui/static/`, replacing the
@@ -27,9 +42,26 @@ selectors). That was wrong and it is reversed here. Read spec 16 (cut version), 
    have no autodev counterpart only if nothing in the spec needs them (the Orders and Archive
    lists stay, as drawer contents or a page in the autodev shell, your call, written down).
 4. Every screen must explain what each HarnessAgent is doing in one line without opening it:
-   the board card shows the open step's next action; the agent row shows it too.
+   the pod card, the graph node, the board card, and the agent row all carry the open step's
+   next action from the step state (or the first unchecked `## Tasks` line when there is no
+   state yet). Task counters are gone; the agent's own `## Tasks` list is what is shown.
 5. Tests: the DOM harness runs the restored `app.js`; the earlier assertions (fields rendered,
    partner first, live update, cookie) are re-pointed, not deleted; `tests/ui` green.
+
+## The reference
+
+`https://autodev-team.com/demo/index.html?demo=1#overview` is the look, screen for screen; open it
+in the in-app browser and keep it open while you work. Observed there, and the hx mapping:
+
+| Demo screen | hx |
+|---|---|
+| Sidebar: workspace, "All Pillars", the pillars with a live dot, agents listed under each | Sidebar: instance name, "All Pods", the pods (`backend`, `frontend`, `release`, …) with a live dot, the HarnessAgents under each |
+| Overview: one card per pillar: description, counters, a current line, avatars | One card per pod: the pod's agents as avatars; the current line is each working agent's open step; **no "open tasks / in progress / blocked" counters**: show the agents' states (idle, working, complete with outcome) instead |
+| Pillar page → Agent graph: manager at the root, agents below with role, current line, and status; GM chat, Task board, Agent list, Contract tabs | Pod page → fleet graph: the Partner at the root, this pod's agents below with role, current line (open step's next action), and state; each agent's Companion drawn beside it; tabs: Partner chat, Task board, Agent list. No Contract tab |
+| Task board: columns Queued / Working / Validating / Blocked, cards with assignee avatar and age | Task board: columns are the work-item state and outcome (`idle`, `working`, `complete: done`, `complete: decision`, `complete: blocked`, `complete: exhausted`); one card per work item with its agent's avatar, the order's first line, and **that agent's own `## Tasks` checklist from its work item** rendered inside the card; age from `dispatched` |
+| Harness Agents table: agent, status, current work, counts | Agent table: agent, pod, role, state and outcome, current work (open step's next action), session alive, seams; drawer opens the full Agent page (work item, step state, streams, pane) |
+| GM chat | Partner chat: `POST /api/partner/wake`; replies from the Partner's pane capture; the note that full control is `tmux attach -t partner` |
+| Demo banner, speed controls | none |
 
 ## Done when
 
