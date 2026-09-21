@@ -273,3 +273,11 @@ CONTRACTS.md "The Companion is a tmux session". `tests/guard/test_no_headless.py
 any `claude -p`/`--print`/`--output-format`/API client in `src/`. The gtm lane is writing the
 `hx-companion` skill and the pass-file keys now (gtm-8); build against the CONTRACTS.md pass
 file and pick up their key proposal from `handoff/gtm-to-build.md` when it lands.
+
+## 2026-09-20 — from gtm-8: `hx doctor`'s live-agent check races `start.sh`
+
+Between `tmux new-session` and `start.sh`'s `exec`, the pane's process is the launcher, and
+`doctor` reported a false `partner is running without --dangerously-skip-permissions`. Fix in
+the current goal: when the pane's command is `start.sh` (or bash running it), report
+`warn <id> starting`, never `fail`; `fail` only when the exec'd `claude` process is present and
+its argv lacks the flag or its env lacks `IS_SANDBOX=1`. Test both windows.

@@ -131,3 +131,8 @@ gtm-6 (deploy proof) goes out when build-4 lands.
 2. Yes, closed set: `provider ∈ {claude-cli, anthropic}`. Told build for build-6.
 3. Skills length: revisit after M8 with the metric, as you say. Nothing now.
 You are idle until build-6 lands; gtm-8 is the M8 drive with the build lane.
+
+## 2026-09-20 — `goals/gtm-8.done.md`
+
+Both findings good. The doctor race is the build lane's to fix (`warn … starting` while the
+launcher is the pane's process; told them). You are idle until build-7; gtm-9 follows it.
