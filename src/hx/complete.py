@@ -127,19 +127,68 @@ def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> None:
         )
 
 
-def write_digest_placeholder(path: Path) -> None:
-    """The Companion writes `## Digest` in its final pass inside `hx complete` (spec 06).
+def final_digest(root: Path, item_id: str, outcome: str, *, env=None) -> str:
+    """The Companion's final pass: the Partner-facing summary (spec 10, 06).
 
-    Until M5 there is no Companion, so hx leaves a placeholder — but only over an empty
-    section or the template's own note, never over something already written there.
+    Composed from the main step state and every closed-stream digest. For `blocked` and
+    `decision` the blocker or the question comes **first**, because that is what the Partner's
+    addendum has to answer (spec 10 "Final pass").
     """
+    from .companion import digest_path, open_streams, state_path
+    from .stepstate import load as load_state
+
+    state = load_state(state_path(root, item_id, f"{item_id}-main")) or {}
+    lines: list[str] = []
+
+    if outcome in ("blocked", "decision"):
+        heading = "**Blocked on:**" if outcome == "blocked" else "**Decision needed:**"
+        first = [str(b) for b in (state.get("blockers") or []) if str(b).strip()]
+        if not first:
+            first = [str(d.get("d", "")) for d in (state.get("decisions") or []) if isinstance(d, dict)][-1:]
+        lines.append(f"{heading} {first[0] if first else 'see `## Open decision` in this item.'}")
+        lines.append("")
+
+    if state.get("goal"):
+        lines += [f"**Goal:** {state['goal']}", ""]
+
+    closed = [c for c in (state.get("closed_steps") or []) if isinstance(c, dict)]
+    if closed:
+        lines.append("**Done**")
+        for step in closed:
+            commit = f" `{step['commit']}`" if step.get("commit") else ""
+            mark = "" if step.get("verified") else " (unverified)"
+            lines.append(f"- {step.get('outcome', step.get('id', '?'))}{commit}{mark}")
+        lines.append("")
+
+    open_steps = [o for o in (state.get("open_steps") or []) if isinstance(o, dict)]
+    if open_steps:
+        lines.append("**Left open**")
+        for step in open_steps:
+            lines.append(f"- {step.get('intent', step.get('id', '?'))}"
+                         + (f" — next: {step['next']}" if step.get("next") else ""))
+        lines.append("")
+
+    for stream in open_streams(root, item_id):
+        if stream.endswith("-main"):
+            continue
+        path = digest_path(root, item_id, stream)
+        if path.is_file():
+            text = path.read_text().strip()
+            if text and text != "_pending companion_":
+                lines += [f"**{stream}**", text, ""]
+
+    return "\n".join(lines).strip() or DIGEST_PLACEHOLDER
+
+
+def write_digest(path: Path, text: str) -> None:
+    """Write `## Digest` once. Never over something already written there (spec 06)."""
     _, body = split_frontmatter_text(path.read_text())
     if section_bounds(body, SECTION_DIGEST) is None:
         return
     existing = (section_text(body, SECTION_DIGEST) or "").strip()
-    if existing and not _TEMPLATE_NOTE.match(existing):
+    if existing and not _TEMPLATE_NOTE.match(existing) and existing != DIGEST_PLACEHOLDER:
         return
-    replace_section(path, SECTION_DIGEST, DIGEST_PLACEHOLDER)
+    replace_section(path, SECTION_DIGEST, text)
 
 
 def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) -> dict:
@@ -157,8 +206,9 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
     preflight(root, item_id, outcome, env=env)
 
     ts = timestamps.now()
+    # The Companion has to be at the head of the stream before its final pass (spec 08).
     flush_mod.flush(root, item_id, env=env)
-    write_digest_placeholder(path)
+    write_digest(path, final_digest(root, item_id, outcome, env=env))
     set_frontmatter(path, outcome=outcome)
 
     promoted: list[str] = []

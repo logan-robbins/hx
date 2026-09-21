@@ -185,5 +185,48 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   fi
 fi
 
+# The Companion's own config dir (spec 05 `provider: claude-cli`, 10). It gets no hooks, no
+# skills and no CLAUDE.md: the Companion interprets a stream and returns JSON, and anything
+# that could make it act or load project context is a liability, not a feature. Onboarding and
+# trust are pre-seeded here too, for the same reason as the agent's home.
+companion_home=$root/run/$id/companion-home
+mkdir -p "$companion_home"
+HX_COMPANION_HOME=$companion_home HX_CWD=$root "$python" - <<'COMPANIONEOF'
+import json
+import os
+
+home = os.environ["HX_COMPANION_HOME"]
+with open(os.path.join(home, "settings.json"), "w") as handle:
+    json.dump({"skipDangerousModePermissionPrompt": True, "theme": "dark"}, handle, indent=2)
+    handle.write("\n")
+
+config_json = os.path.join(home, ".claude.json")
+existing = {}
+if os.path.exists(config_json):
+    try:
+        with open(config_json) as handle:
+            loaded = json.load(handle)
+        existing = loaded if isinstance(loaded, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        existing = {}
+existing["hasCompletedOnboarding"] = True
+existing.setdefault("theme", "dark")
+projects = existing.get("projects")
+if not isinstance(projects, dict):
+    projects = {}
+workdir = os.environ["HX_CWD"]
+project = projects.get(workdir)
+if not isinstance(project, dict):
+    project = {}
+project["hasTrustDialogAccepted"] = True
+project["hasClaudeMdExternalIncludesApproved"] = True
+projects[workdir] = project
+existing["projects"] = projects
+with open(config_json, "w") as handle:
+    json.dump(existing, handle, indent=2)
+    handle.write("\n")
+COMPANIONEOF
+
 printf 'install.sh: wrote %s\n' "$home/settings.json"
+printf 'install.sh: wrote %s (no hooks, no skills, no CLAUDE.md)\n' "$companion_home/settings.json"
 printf 'install.sh: auth is %s, exported by start.sh as CLAUDE_CODE_OAUTH_TOKEN\n' "$token_file"

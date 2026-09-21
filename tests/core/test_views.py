@@ -262,7 +262,11 @@ def test_read_prints_the_digest_and_the_open_decision(instance, hx, launched, or
 
     result = hx("read", "eng-001")
     assert result.returncode == 0, result.stderr
-    assert "## Digest" in result.stdout and "pending companion" in result.stdout
+    assert "## Digest" in result.stdout
+    # spec 10's final pass: for `decision`, the question comes first, because that is what the
+    # Partner's addendum has to answer.
+    digest = result.stdout.split("## Digest", 1)[1]
+    assert digest.lstrip().startswith("**Decision needed:**")
     assert "## Open decision" in result.stdout and "Flat list or a map?" in result.stdout
 
 

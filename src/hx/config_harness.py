@@ -25,9 +25,15 @@ _COMPANION_INT_FIELDS = (
     "batch_records",
     "state_budget_tokens",
     "seam_min_context_tokens",
-    "seam_min_interval_s",
 )
+
+#: Zero is meaningful here: no minimum interval between seams.
+_COMPANION_NON_NEGATIVE_FIELDS = ("seam_min_interval_s",)
 _COMPANION_STR_FIELDS = ("provider", "model", "cache_ttl")
+
+#: Spec 05: `claude-cli` goes through the pinned binary with the seed token and is the only one
+#: built; `anthropic` is the Messages API with an API key, for instances that have one.
+COMPANION_PROVIDERS = ("claude-cli", "anthropic")
 
 
 def resolve_workdir(workdir: str, root: Path) -> Path:
@@ -145,6 +151,13 @@ def validate_harness(
                 raise ValidationError(
                     f"{path}: `companion.{key}` must be a positive integer, got `{value!r}`"
                 )
+    for key in _COMPANION_NON_NEGATIVE_FIELDS:
+        if key in companion:
+            value = companion[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValidationError(
+                    f"{path}: `companion.{key}` must be a non-negative integer, got `{value!r}`"
+                )
     for key in _COMPANION_STR_FIELDS:
         if key in companion:
             value = companion[key]
@@ -152,7 +165,17 @@ def validate_harness(
                 raise ValidationError(
                     f"{path}: `companion.{key}` must be a non-empty string, got `{value!r}`"
                 )
-    unknown_companion = sorted(set(companion) - set(_COMPANION_INT_FIELDS) - set(_COMPANION_STR_FIELDS))
+    provider = companion.get("provider")
+    if provider is not None and provider not in COMPANION_PROVIDERS:
+        raise ValidationError(
+            f"{path}: `companion.provider` must be one of {', '.join(COMPANION_PROVIDERS)} "
+            f"(spec 05), got `{provider!r}`"
+        )
+
+    unknown_companion = sorted(
+        set(companion) - set(_COMPANION_INT_FIELDS) - set(_COMPANION_NON_NEGATIVE_FIELDS)
+        - set(_COMPANION_STR_FIELDS)
+    )
     if unknown_companion:
         raise ValidationError(
             f"{path}: unknown `companion` field(s) {', '.join(unknown_companion)}"

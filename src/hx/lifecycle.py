@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -123,11 +124,38 @@ def launch(root: Path, item_id: str, *, env=None) -> dict:
         if started.returncode != 0:
             raise HxError(f"launch {item_id}: start.sh failed:\n{started.stdout}{started.stderr}")
 
-    # `hx companion <id>` in window `companion` is spec 08's other half of launch; the
-    # Companion loop is M5, so the window is not created yet.
+    if not already:
+        start_companion(root, item_id, env=env)
+
     if path.name.endswith("-working.md"):
         result["goal"] = goal.send_goal(root, item_id, wait=True, env=env)
     return result
+
+
+def start_companion(root: Path, item_id: str, *, env=None) -> bool:
+    """`hx companion <id>` in window `companion` — the other half of launch (spec 08)."""
+    import shlex
+
+    hx_bin = None
+    hx_json = root / "config" / "hx.json"
+    if hx_json.is_file():
+        try:
+            hx_bin = json.loads(hx_json.read_text()).get("hx_bin")
+        except json.JSONDecodeError:
+            hx_bin = None
+    if not hx_bin:
+        hx_bin = shutil.which("hx")
+    if not hx_bin:
+        # Without a recorded entry point there is nothing to run; the agent still launches.
+        return False
+
+    command = f"{shlex.quote(hx_bin)} companion {shlex.quote(item_id)}"
+    result = subprocess.run(
+        [*tmux.tmux_command(env), "new-window", "-d", "-t", f"={item_id}:", "-n", "companion",
+         "-c", str(root), command],
+        capture_output=True, text=True, check=False,
+    )
+    return result.returncode == 0
 
 
 def restart(root: Path, item_id: str, *, env=None) -> dict:

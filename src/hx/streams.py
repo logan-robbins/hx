@@ -188,3 +188,56 @@ def append_record(root: Path, item_id: str, stream: str, record: dict) -> int:
             fcntl.flock(handle, fcntl.LOCK_UN)
         finally:
             os.close(handle)
+
+
+# --- FIFO retention (spec 07.1) --------------------------------------------------------------
+#
+# "`max_records` (default 500) and `max_bytes` (default 4 MB) per stream, whichever is hit
+# first. `hx-hook` truncates from the head on every append that would exceed a bound, but never
+# below `state.seq − keep_behind` (default 100), so the Companion always has a window of
+# already-processed evidence behind its cursor and everything ahead of it."
+
+MAX_RECORDS = 500
+MAX_BYTES = 4 * 1024 * 1024
+KEEP_BEHIND = 100
+
+
+def truncate(
+    path: Path,
+    *,
+    state_seq: int,
+    max_records: int = MAX_RECORDS,
+    max_bytes: int = MAX_BYTES,
+    keep_behind: int = KEEP_BEHIND,
+) -> int:
+    """Drop records from the head. Returns how many were dropped.
+
+    Evidence is never dropped ahead of the Companion's cursor, and never within `keep_behind`
+    of it: the floor wins over both bounds, so a stream whose Companion has fallen behind
+    grows rather than losing what it has not read.
+    """
+    if not path.is_file():
+        return 0
+    records = list(iter_records(path))
+    if len(records) <= max_records and path.stat().st_size <= max_bytes:
+        return 0
+
+    floor = max(0, state_seq - keep_behind)
+    keep = records[-max_records:] if len(records) > max_records else list(records)
+
+    while keep and path.stat().st_size > max_bytes:
+        if (keep[0].get("seq") or 0) > floor:
+            break
+        keep.pop(0)
+
+    # Nothing at or above the floor is ever dropped, whatever the bounds say.
+    protected = [r for r in records if (r.get("seq") or 0) > floor]
+    if protected and (not keep or (keep[0].get("seq") or 0) > (protected[0].get("seq") or 0)):
+        keep = protected
+
+    if len(keep) == len(records):
+        return 0
+    from . import store
+
+    store.atomic_write_text(path, "".join(json.dumps(r) + "\n" for r in keep))
+    return len(records) - len(keep)

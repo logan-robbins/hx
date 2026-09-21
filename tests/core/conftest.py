@@ -374,3 +374,62 @@ def fake_claude_on_path(tmp_path):
     binary.write_text(FAKE_CLAUDE_BIN.format(version=tested, real=FAKE_CLAUDE))
     binary.chmod(0o755)
     return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}", "HX_FAKE_CLAUDE_VERSION": tested}
+
+
+#: A stand-in for `claude -p` in Companion tests: it reads the payload on stdin and prints the
+#: `--output-format json` envelope, with a scripted step state in `structured_output`. The
+#: script is a JSON list of responses, consumed one per call.
+FAKE_COMPANION = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+
+script_path = pathlib.Path(os.environ["HX_FAKE_COMPANION_SCRIPT"])
+calls_path = script_path.with_suffix(".calls.jsonl")
+payload = sys.stdin.read()
+
+with calls_path.open("a") as handle:
+    handle.write(json.dumps({"argv": sys.argv[1:], "payload": payload}) + "\\n")
+
+responses = json.loads(script_path.read_text())
+index = sum(1 for _ in calls_path.read_text().splitlines()) - 1
+response = responses[min(index, len(responses) - 1)]
+
+envelope = {
+    "type": "result",
+    "session_id": "fake",
+    "usage": response.get("usage", {"input_tokens": 100, "cache_read_input_tokens": 0 if index == 0 else 4096}),
+    "total_cost_usd": 0.0,
+}
+if "raw_result" in response:
+    envelope["result"] = response["raw_result"]
+elif "state" in response:
+    envelope["structured_output"] = response["state"]
+else:
+    envelope["result"] = response.get("text", "")
+print(json.dumps(envelope))
+'''
+
+
+@pytest.fixture
+def fake_companion(tmp_path):
+    """Script the Companion's model. Returns (set_responses, calls) helpers."""
+    binary = tmp_path / "fake-companion"
+    script = tmp_path / "companion-script.json"
+    binary.write_text(FAKE_COMPANION)
+    binary.chmod(0o755)
+    script.write_text("[]")
+
+    class Fake:
+        env = {"HX_COMPANION_BIN": str(binary), "HX_FAKE_COMPANION_SCRIPT": str(script)}
+
+        def responses(self, *items):
+            script.write_text(json.dumps(list(items)))
+            calls = script.with_suffix(".calls.jsonl")
+            calls.unlink(missing_ok=True)
+
+        def calls(self):
+            path = script.with_suffix(".calls.jsonl")
+            if not path.is_file():
+                return []
+            return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+    return Fake()

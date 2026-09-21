@@ -54,7 +54,8 @@ def malformed():
         "unknown field": {**WORKER, "provider": "anthropic"},
         "harness args not strings": {**WORKER, "harness": {"args": [1]}},
         "companion budget not an integer": {**WORKER, "companion": {"state_budget_tokens": "big"}},
-        "companion negative interval": {**WORKER, "companion": {"seam_min_interval_s": 0}},
+        "companion negative interval": {**WORKER, "companion": {"seam_min_interval_s": -1}},
+        "companion unknown provider": {**WORKER, "companion": {"provider": "openai"}},
         "unknown companion field": {**WORKER, "companion": {"temperature": 1}},
     }
 
@@ -123,6 +124,22 @@ def test_workdir_must_exist(instance):
     with pytest.raises(ValidationError) as exc:
         load_harness(instance / "config" / "eng-001" / "harness.json", root=instance)
     assert "workdir" in str(exc.value)
+
+
+def test_zero_is_a_valid_seam_interval(tmp_path):
+    """Zero means no minimum interval between seams, which is a real setting (spec 05)."""
+    path = tmp_path / "eng-001" / "harness.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({**WORKER, "companion": {"seam_min_interval_s": 0}}))
+    assert load_harness(path, check_cross_file=False).companion["seam_min_interval_s"] == 0
+
+
+@pytest.mark.parametrize("provider", ["claude-cli", "anthropic"])
+def test_the_two_providers_of_spec_05(provider, tmp_path):
+    path = tmp_path / "eng-001" / "harness.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({**WORKER, "companion": {"provider": provider}}))
+    assert load_harness(path, check_cross_file=False).companion["provider"] == provider
 
 
 def test_a_relative_workdir_resolves_against_the_root(instance):
