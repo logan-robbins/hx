@@ -45,7 +45,8 @@ at every `hx launch`, so nothing accumulates in it either.
 
 Yours live in `~/.claude/skills` and are untouched. A harness home gets only the skills the
 package installs: `hx-partner` and `hx-fleet` for the Partner, `hx-worker` for everyone else,
-and `hx-memory` for both. They are copied, not symlinked — `install.sh` removes any previous copy and copies the directory in —
+and `hx-memory` for both (`hx-setup`, the installer's manual, ships in the package and goes
+into no home). They are copied, not symlinked — `install.sh` removes any previous copy and copies the directory in —
 so nothing in a harness home points back at the package or at you, and no skill of yours is
 visible to an agent.
 

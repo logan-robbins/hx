@@ -35,6 +35,7 @@ SKILL_FILES = [
     SKILLS / "hx-companion" / "SKILL.md",
     SKILLS / "hx-memory" / "SKILL.md",
     SKILLS / "hx-partner" / "SKILL.md",
+    SKILLS / "hx-setup" / "SKILL.md",
     SKILLS / "hx-worker" / "SKILL.md",
 ]
 
@@ -360,13 +361,30 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
 
 def test_the_skills_that_ship_are_the_ones_the_spec_names():
     assert sorted(p.name for p in SKILLS.iterdir()) == [
-        "hx-companion", "hx-fleet", "hx-memory", "hx-partner", "hx-worker",
+        "hx-companion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup", "hx-worker",
     ], (
         "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
         "spec 10 adds hx-companion for the Companion's home; hx-fleet is the Partner's manual "
         "for making and retiring agents, and is the Partner's alone; hx-memory is how either "
-        "kind of HarnessAgent searches the instance's episode store (docs/memory.md)"
+        "kind of HarnessAgent searches the instance's episode store (docs/memory.md); "
+        "hx-setup is for the coding agent or harness that installs hx, and is never copied "
+        "into an agent home"
     )
+
+
+def test_the_setup_skill_is_not_installed_into_any_home():
+    """It is read by whoever sets hx up, on the human's machine — never by a HarnessAgent."""
+    install_sh = (SKELETON / "adapters" / "claude" / "install.sh").read_text()
+    assert "hx-setup" not in install_sh
+
+
+def test_the_setup_skill_keeps_the_token_step_the_humans():
+    text = (SKILLS / "hx-setup" / "SKILL.md").read_text()
+    for line in ("claude setup-token", "exit code 4", "never run it for them",
+                 "Never touch the human's own Claude", "hx install --root"):
+        assert line in text, line
+    for cut in ("claude -p ", "hx push", "bare mirror"):
+        assert cut not in text.replace("Use `claude -p`", ""), cut
 
 
 FLEET_SKILL = SKILLS / "hx-fleet" / "SKILL.md"

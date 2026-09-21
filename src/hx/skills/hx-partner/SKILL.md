@@ -132,10 +132,19 @@ dead sessions and wakes you when the board moved. hx ships no timer of its own.
 hx board [--json]     # one line per id: id, pod, state, outcome, dispatched, session alive,
                       #   open subagents, context_tokens, seams. It judges nothing; exits 0
 hx show <id> [--json] # everything hx knows about one id: work item, step state, context file,
-                      #   stream tails, subagent handles and their digests, pane capture
+                      #   stream tails, subagent handles and their digests, pane capture, the
+                      #   Companion's activity, and its last compaction per stream
 hx read <id> [--full] # the Digest the Companion wrote, and the open decision
 hx doctor             # what is here, what is missing, what is broken
+hx memory stats       # the episode store: how many episodes, by role and kind, and the queue
 ```
+
+Two questions `hx show <id> --json` answers that nothing else does. **Is the Companion doing
+anything?** — `companion.pass_in_flight` (a pass is running), `companion.pass_stream`,
+`companion.last_state_ts` (when it last wrote); the board carries the same as `companion_pass`
+and `companion_ts`. **What did it last write?** — `compactions.<stream>.text` is the installed
+step state rendered exactly as `hx compose` puts it in front of that worker, with its `ts` and
+the record it has caught up through (`seq`). A worker that looks stuck is read there first.
 
 `hx board` is a listing, not a verdict: there are no invariants and no error lines. If
 something looks wrong, `hx show <id>` is where the answer is.
@@ -155,6 +164,24 @@ usually want `--all-roles`. The `hx-memory` skill has the rest of the flags.
 Two things it is good for before you write an order: checking whether the work has been half
 done already, and lifting the facts a previous agent learned the hard way into the order so the
 next one does not rediscover them.
+
+## What the human sees
+
+The human watches the UI (`http://127.0.0.1:<port>/`, tmux session `ui`; port from
+`config/ui.json`, default 8765) and will ask you about what is on it. It reads the same files
+you do, through `hx board --json` and `hx show <id> --json`, and shows: the fleet graph — you
+at the root, each worker with its Companion beside it, the Companion pulsing while a pass runs,
+the memory store's episode count in the header; a worker's **drawer**, which is its work item
+file as the worker keeps it (goal, definition of done, live `## Tasks`, deliverables, open
+decision, digest) plus its Companion's status; a **Session** page (pane, step state, context
+file, stream tails, subagents, metrics) and a **Compaction** page (the Companion's last written
+state for a stream, rendered and then verbatim) that open in their own window; Task board,
+Harness Agents, Activity, **Goals** (every order you dispatched, with its addenda), Archive, and
+the chat box, which reaches you exactly as `hx wake partner` does.
+
+Answer from the data, in the UI's words: "goal" is what the page calls your order. You may
+point the human at a page — "open be-001 and choose Open last compaction" — and you never point
+them at a command.
 
 ## On a completion
 

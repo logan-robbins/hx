@@ -175,10 +175,11 @@ hx ui
 ```
 
 serves an observing UI on `127.0.0.1` (port from `config/ui.json`, default 8765), with a
-bearer token in `run/ui-token`. It shows the board, each agent's work item and step state, the
-Partner's memory and a chat box, the orders and their dependency graph, and the archive. It
-observes; it does not operate. Full control — slash commands, interrupts — is
-`tmux attach -t partner`.
+bearer token in `run/ui-token`. It shows the fleet graph with each worker's Companion beside
+it, a drawer per worker that is its work item file plus its Companion's status, a Session page
+and a Compaction page (the Companion's last written state, verbatim) that open in their own
+window, the Task board, Activity, Goals, Archive, and the Partner chat. It observes; it does
+not operate. Full control — slash commands, interrupts — is `tmux attach -t partner`.
 
 ## Upgrading
 

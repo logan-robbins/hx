@@ -140,10 +140,18 @@ anyone else. Everything else is a `warn` naming the step that clears it.
 hx ui
 ```
 
-serves a read-only view on `127.0.0.1` (port from `config/ui.json`, default 8765). It shows
-the board, each worker's work item and step state rendered, the Partner's memory and a chat
-box, and the panes. Reach for it when you want to see what an agent *believes* it is doing —
-`## Tasks` and the step state side by side — without reading a transcript.
+serves a read-only view on `127.0.0.1` (port from `config/ui.json`, default 8765). The fleet
+graph is the home page: the Partner at the root, every worker as a card with its Companion
+beside it, the Companion pulsing while a pass runs, and the memory store's episode count in the
+header. Click a worker and its drawer opens: the work item file as the agent keeps it (goal,
+definition of done, live `## Tasks`, deliverables, open decision, digest) and its Companion's
+status. Two links open in their own window — **Open session** (the pane, step state, context
+file, stream tails, subagents, metrics) and **Open last compaction** (what the Companion last
+wrote for a stream, rendered and then verbatim as the master reads it; the Companion node in
+the graph opens the same page). Across pods: Task board, Harness Agents, Activity, Goals (every
+dispatched goal and its addenda, from `tasks.json`), Archive, and the Partner chat, whose box
+sends a message exactly as `hx wake partner` does. Reach for it when you want to see what an
+agent *believes* it is doing without reading a transcript.
 
 It observes. Full control, including slash commands and interrupts, is `tmux attach`.
 

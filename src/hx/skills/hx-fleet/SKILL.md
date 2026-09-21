@@ -74,7 +74,7 @@ One command does all of this. None of it is optional and none of it is yours to 
   `--id <id>` baked into its command, the bypass-permissions acceptance, instruction-files mode
   `claude-md` with `claudeMdExcludes`, and — for the Partner alone — `crossSessionInbound`. It
   copies `config/CLAUDE.md` in as the home's CLAUDE.md, installs the `hx-worker` skill (you get
-  `hx-partner` and `hx-fleet`; a worker gets neither), and pre-seeds the home's `.claude.json`
+  `hx-partner` and `hx-fleet`; a worker gets neither) and `hx-memory` for both, and pre-seeds the home's `.claude.json`
   so no first-run wizard or trust dialog can stop a launch.
 - **`adapters/claude/start.sh`** derives `run/<id>/persona.md` from the part of
   `config/<id>/AGENTS.md` **above** the header, reads `seed/token` in its own process and

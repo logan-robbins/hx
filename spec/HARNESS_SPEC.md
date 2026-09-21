@@ -811,7 +811,7 @@ Editing configuration or personas (the Partner does that on instruction; the hum
 
 Two things exist and are never mixed.
 
-- **Package** `hx`: the autodev rewrite. Python 3.14, zero runtime dependencies, `pyproject.toml`, entry points `hx` and `hx-hook`. Installed with `uv tool install hx` (or `pipx`). Ships `adapters/claude/{install.sh,start.sh}`, `templates/`, `companion/{BASE.md,roles/}`, `skills/{hx-partner,hx-worker}`, `ui/` static files, and the instance skeleton. Upgrading the package never writes into an instance.
+- **Package** `hx`: the autodev rewrite. Python 3.14, zero runtime dependencies, `pyproject.toml`, entry points `hx` and `hx-hook`. Installed with `uv tool install hx` (or `pipx`). Ships `adapters/claude/{install.sh,start.sh}`, `templates/`, `companion/{BASE.md,roles/}`, `skills/{hx-partner,hx-fleet,hx-worker,hx-memory,hx-companion,hx-setup}`, `ui/` static files, and the instance skeleton. Upgrading the package never writes into an instance.
 - **Instance** `HARNESS_ROOT`: the user's data, created by `hx install` (default `/srv/hx` on a server, `~/hx` on a workstation). Holds `config/`, `pods/`, `logs/`, `state/`, `run/`, `archive/`, `seed/` (`03-layout.md`). `config/` is the only part worth committing to the user's own git; everything else is runtime state.
 
 `bin/hx` and `bin/hx-hook` in `03-layout.md` are the package entry points; hook commands in `run/<id>/home/settings.json` reference the absolute path `hx install` recorded in `config/hx.json`. If a package upgrade moves the binary, `hx doctor` says so and `hx install` re-records it.
@@ -835,7 +835,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 |---|---|---|
 | Config dir | `~/.claude` | `CLAUDE_CONFIG_DIR=$HARNESS_ROOT/run/<id>/home` |
 | Settings and hooks | The user's | `home/settings.json` written by `install.sh`: hx hooks, bypass acceptance, `claudeMdExcludes`, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), Partner `crossSessionInbound: accept` |
-| Skills | The user's `~/.claude/skills` | `home/skills/hx-partner` or `home/skills/hx-worker` only |
+| Skills | The user's `~/.claude/skills` | `home/skills/{hx-partner,hx-fleet,hx-memory}` for the Partner, `home/skills/{hx-worker,hx-memory}` for a worker, `hx-companion` in the Companion's home; `hx-setup` ships in the package for whoever installs hx and is copied into no home |
 | CLAUDE.md | The user's and the repo's | `config/CLAUDE.md` only; the repo's is excluded |
 | Memory and transcripts | The user's, accumulating | Per home, wiped at every dispatch |
 | Credentials | The user's login (macOS Keychain or `~/.claude/.credentials.json`) | A long-lived token in `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`; the user's login is never read |
@@ -870,6 +870,8 @@ Operating knowledge is delivered in three layers, none of which touches `~/.clau
 - Skills, installed by `install.sh` into `run/<id>/home/skills/` from the package, loaded on demand:
   - `hx-partner`: the order file format and what makes a good definition of done and `### Checks`; `hx launch`, `dispatch`, `board`, `read`, `resume`, `bench`, `restart`; what each outcome means and the action for it; that sequencing is its own judgement, not a field; that its own goal comes from the human in chat and its memory is `PARTNER.md`.
   - `hx-worker`: `## Tasks` discipline, commit-as-you-go, one Read per file, subagent use and what `SUBAGENTS.md` gives them, `hx task`, `hx complete` and `HX-CHECK-FAILED`, memory below the header.
+  - `hx-fleet`: the Partner's manual for creating a worker from a shipped persona, writing a new role, updating a persona, retiring a worker. `hx-memory`: searching the episode store (docs/memory.md). `hx-companion`: the Companion's own instructions (spec 10).
+  - `hx-setup`: for a coding agent or another harness installing hx on a machine — prerequisites, the wheel install, `hx install` and its exit-4 stop for the seed token (the human's step, never the agent's), verification with `hx doctor`, models and cost for a trial instance, hand-over to the Partner, `hx up`, upgrading, and what never to do. Read from the package or the repository; never copied into an agent home.
 
 autodev's `autodev-operator` and `autodev-gm` skills are dropped: the operator role does not exist and the GM is the Partner. Nothing is symlinked into the user's skill directories.
 
@@ -888,7 +890,7 @@ autodev's `autodev-operator` and `autodev-gm` skills are dropped: the operator r
 | `chat.py` | Drop |
 | `fleet.py` | Reuse tmux snapshot and capture; feed `hx board --json` |
 | `service.py`, `web/` | Reuse server; rewrite the model (`16`) |
-| `skills/` | Replace with `hx-partner`, `hx-worker` |
+| `skills/` | Replace with `hx-partner`, `hx-fleet`, `hx-worker`, `hx-memory`, `hx-companion`, and `hx-setup` for the installer |
 | `scaffold.py`, `wizard.py` | Replace with `hx install` |
 | `cli.py` | Rewrite to the `08-hx-cli.md` command set plus `install`, `up`, `doctor`, `ui`, `show` |
 | tests with a fake harness in real tmux | Keep the pattern (`13`) |

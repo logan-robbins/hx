@@ -127,6 +127,8 @@ that judge them. That needs a live Claude Code, not a packaging script.
 ## Docs
 
 - [docs/getting-started.md](docs/getting-started.md) — a fresh machine to a working Partner
+- [src/hx/skills/hx-setup/SKILL.md](src/hx/skills/hx-setup/SKILL.md) — the same, as a skill for
+  a coding agent or another harness doing the setup for you (the token step stays yours)
 - [docs/operating.md](docs/operating.md) — what you see and do day to day
 - [docs/two-worlds.md](docs/two-worlds.md) — how your own Claude stays untouched
 - [docs/companion-eval.md](docs/companion-eval.md) — how the Companion gets measured

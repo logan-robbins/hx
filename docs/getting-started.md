@@ -1,6 +1,8 @@
 # Getting started: a fresh machine to a working Partner
 
-Everything here is done once by you. After it, you only ever talk to the Partner.
+Everything here is done once by you. After it, you only ever talk to the Partner. If a coding
+agent is doing this for you, hand it `src/hx/skills/hx-setup/SKILL.md`: it is this page as a
+procedure, and it leaves the token step (§2) to you.
 
 ## What you need
 

@@ -30,6 +30,13 @@ as milestones are accepted.
   read from `state/memory/stats.json` without opening ChromaDB. `hx show <id> --json` (and the
   Partner's reduced shape) carry a `companion` block with the same facts per stream. The SSE
   watcher adds the `memory` scope and watches `run/<id>/companion/`.
+- `hx-setup` skill (`src/hx/skills/hx-setup/SKILL.md`): how a coding agent or another harness
+  installs hx and brings up an instance — prerequisites, the wheel, `hx install` and its exit-4
+  stop for the seed token (the human's step), `hx doctor` verification, Sonnet/medium for a
+  trial instance, hand-over to the Partner, `hx up`, upgrading, and what never to do. Shipped in
+  the package, never copied into an agent home. `hx-partner` gains "What the human sees" (the
+  UI's pages and words) and the `hx show` fields that answer "is the Companion working" and
+  "what did it last write"; `docs/operating.md` and `docs/deploy.md` describe the current UI.
 - UI: a **Session** page (`#session?agent=<id>`) that the agent drawer opens in another window
   with the pane, step state, context file, stream tails, subagents and metrics.
 - `hx show <id> --json` carries `compactions`: per stream, the Companion's last written
