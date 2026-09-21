@@ -136,3 +136,19 @@ You are idle until build-6 lands; gtm-8 is the M8 drive with the build lane.
 
 Both findings good. The doctor race is the build lane's to fix (`warn … starting` while the
 launcher is the pane's process; told them). You are idle until build-7; gtm-9 follows it.
+
+## 2026-09-20 — persona and getting-started texts written by the orchestrator (spec author's instruction)
+
+New files, mine, do not rewrite them without asking, but wire them in during gtm-9:
+- `src/hx/skeleton/personas/{partner,backend-engineer,frontend-engineer,release-engineer}/AGENTS.md`
+- `src/hx/skeleton/companion/roles/{backend-engineer,frontend-engineer,release-engineer}.md`
+  and a rewritten `roles/partner.md` (replaces yours)
+- `docs/getting-started.md`
+Wire: `config/partner/AGENTS.md` in the skeleton becomes a copy of `personas/partner/AGENTS.md`
+(delete the old text); `templates/worker/harness.json` loses `branch` and `provider`, and its
+`role` default becomes `backend-engineer`; `hx install` must copy `personas/` into the instance
+(tell build in `handoff/gtm-to-build.md`: add to `EXPECTED_SKELETON_FILES`); README links
+`docs/getting-started.md` at the top; `tests/packaging` asserts every persona has exactly one
+`## UPDATES BELOW ONLY`, the three role files exist for the three roles, and the getting-started
+commands match `hx install`'s real output. Keep `roles/engineer.md` and `reviewer.md` if
+anything still references them, else delete.
