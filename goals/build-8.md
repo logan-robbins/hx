@@ -40,6 +40,10 @@ are the evidence; do not narrate.
 8. `hx install`'s last step and `hx up` start `hx ui` in tmux session `ui` (idempotent) and print
    the URL (spec 16.1, 17.2). `hx heartbeat` restarts it when dead.
 
+9. From build-7's findings: `hx heartbeat` launches the Partner when its session is dead
+   (spec 08); `hx doctor` checks each home's pre-seeded `.claude.json` as well as its
+   `settings.json`.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`

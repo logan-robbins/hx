@@ -232,7 +232,7 @@ when it is missing or its mode is wider than 0600. hx never reads `~/.claude`, a
 
 Claude Code's per-config-dir state file. `install.sh` writes it before the first launch so
 nothing about launch is interactive: onboarding marked complete and the workspace trust dialog
-pre-accepted for the agent's cwd (`wt/<id>`, `HARNESS_ROOT` for `partner`). Keys verified read-only against a real accepted config and proved live (build-3):
+pre-accepted for the agent's cwd (`harness.json.workdir`, `HARNESS_ROOT` for `partner`). Keys verified read-only against a real accepted config and proved live (build-3):
 `{"hasCompletedOnboarding": true, "projects": {"<abs cwd>": {"hasTrustDialogAccepted": true, "hasClaudeMdExternalIncludesApproved": true}}}`.
 `install.sh` merges into an existing file, never resets it.
 Found live 2026-09-20: without it the pane sits at "Quick safety check … Yes, I trust this folder".
@@ -256,7 +256,8 @@ Every model call in hx is a Claude Code session in tmux operated by pasting. The
 `start.sh <id> --companion` with `--dangerously-skip-permissions`, `IS_SANDBOX=1`,
 `--model <companion.model>`, `--append-system-prompt-file run/<id>/companion-system.md`.
 
-`hx wake companion <id> <stream>` writes `run/<id>/companion/<stream>.pass.md`:
+`hx companion <id> --wake <stream>` (the in-process `hx.companion.wake`) writes
+`run/<id>/companion/<stream>.pass.md`:
 
 ```
 # Companion pass

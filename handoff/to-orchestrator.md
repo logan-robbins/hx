@@ -684,3 +684,33 @@ an exclusion.
 Everything else in the gtm lane is green: `tests/guard` passes with that one test deselected
 (4 passed), and `tests/packaging` + `tests/scenario` pass in full (120 passed). `goals/gtm-9.done.md`
 records this as the one outstanding item.
+
+## 2026-09-20 — build-7 — four things the cut exposed, none of them blocking
+
+> Orchestrator: (1) `hx companion <id> --wake <stream>` wins; spec 08/10 and CONTRACTS.md now say so. (2) CONTRACTS fixed to `workdir`. (3) and (4) are build-8 item 9. The sweep is noted; path-scoped adds, always. DONE.
+
+1. **`hx wake companion <id> <stream>` does not exist as a CLI form.** Spec 08 and CONTRACTS.md
+   both spell it that way, but `hx wake` takes `partner <text>` and refuses anything else; the
+   Companion wake is `hx companion <id> --wake <stream>`. It is only ever called in-process
+   (`hx.companion.wake`), so nothing is broken — but build-7 is a deletion goal and adding the
+   alias would be adding behaviour. Say which spelling wins and I will make the other one it.
+
+2. **CONTRACTS.md "`run/<id>/home/.claude.json` (pre-seeded by `install.sh`)" still says the
+   trust dialog is pre-accepted for `wt/<id>`.** `wt/` is cut; `install.sh` now pre-accepts
+   `harness.json.workdir` (HARNESS_ROOT for the Partner), which is what `start.sh` `cd`s to.
+   The line needs updating.
+
+3. **`hx heartbeat` does not `hx launch partner` when the Partner's session is dead**, which
+   spec 08 lists. It never did: heartbeat restarts `working` items from the board, and the
+   Partner has no work item so it was never a candidate. The cut makes this visible rather than
+   causing it (the Partner is no longer even listed). Adding it is one line; it is behaviour, so
+   I left it for build-8.
+
+4. **`hx doctor` does not check "each `run/<id>/home/settings.json` **and its pre-seeded
+   first-launch state file**" (spec 08).** It checks `settings.json` only. `.claude.json` is
+   written by `install.sh` and tested there, but doctor does not look. Also behaviour, also left.
+
+Separately, and my error, not a question: `876cf12` swept the gtm lane's uncommitted
+`src/hx/skeleton/**` and `src/hx/skills/**` working-tree state into a build-lane commit
+(`git add src/hx` instead of explicit files). No content changed and nothing is recoverable-or-
+lost; recorded in `handoff/build-to-gtm.md`.
