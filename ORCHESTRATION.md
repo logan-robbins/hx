@@ -84,10 +84,12 @@ call the CLI. Published names are stable; unpublished ones may be renamed withou
    is another lane mid-commit: report it in a handoff entry, do not fix it, do not wait for it,
    and say so in the done file. "Passes" in any goal text means exactly this.
 3. Everything committed with explicit paths.
-4. Write `goals/<lane>-<n>.done.md`: what was built, how it was verified (exact commands and
-   their last lines), what was verified live against Claude Code and what only against the fake,
-   open questions, and every handoff entry you wrote. The orchestrator reads this file, nothing
-   else, to decide the next goal. Do not start the next milestone on your own.
+4. Write `goals/<lane>-<n>.done.md`, short: one paragraph of what was built; the last lines of
+   the test commands; what was verified live against Claude Code versus the fake, in a sentence
+   each; open questions as a numbered list; handoff entries you wrote, one line each. Aim for
+   under 80 lines; the code and tests are the record, the done file is the pointer. The
+   orchestrator reads this file, nothing else, to decide the next goal. Do not start the next
+   milestone on your own.
 
 ## Fake `claude` for M0–M5
 

@@ -34,6 +34,9 @@ handshake), 10 (seam policy), 11 (Compaction rows), 13 M6, 17.6.
 7. `hx show --json` gains `turn: {ts, background_tasks}` from `run/<id>/turn` (CONTRACTS.md);
    publish it to the ui lane.
 
+Keep the done file short (ORCHESTRATION.md step 4, revised): the tests and transcript excerpts
+are the evidence; do not narrate.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`
