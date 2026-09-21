@@ -94,7 +94,7 @@ def test_every_screen_renders_without_an_error_banner(rendered):
     assert rendered["banner"] is None
     assert set(rendered["views"]) == {
         "overview", "board", "agentTable", "activity", "orders", "archive",
-        "agents", "agent", "podFocus", "cardOpens", "partner",
+        "agents", "agent", "sessions", "session", "podFocus", "cardOpens", "partner",
     }
 
 
@@ -349,18 +349,49 @@ def work_item_section(show, name):
     return "\n".join(lines).strip()
 
 
-def test_the_agent_page_has_every_section_spec_16_2_names(rendered):
+def test_the_agent_page_is_the_work_item_file_plus_the_companion(rendered):
+    """The drawer renders the agent's own work item file, section by section in file order,
+    with the fleet's word for the order ("Goal"), plus the Companion's status. The pane and
+    the event stream are on the Session page, which opens in another window."""
     agent = rendered["views"]["agent"]
     assert agent["hidden"] is False
     assert agent["headings"] == ["eng-001"]
     labels = labels_of(agent)
-    for name in ("Work item", "Frontmatter", "Order", "Addenda", "Tasks", "Deliverables",
-                 "Commands", "Open decision", "Digest", "Step state", "Context file",
-                 "Streams", "Subagents", "Metrics", "Persona"):
+    body_sections = [line[3:].strip() for line in show_json()["work_item"]["body"].splitlines()
+                     if line.startswith("## ")]
+    assert body_sections[0] == "Order"
+    expected = ["Goal" if name == "Order" else name for name in body_sections]
+    in_file_order = [label for label in labels if label in expected]
+    assert in_file_order == expected, "every section of the file, in the file's order"
+    assert any(label.startswith("Goal addendum") for label in labels), "hx task addenda sit under the goal"
+    for name in ("Companion", "Persona"):
+        assert name in labels, name
+    for gone in ("Frontmatter", "Order", "Work item", "Step state", "Step state (raw)",
+                 "Context file", "Streams", "Subagents", "Metrics"):
+        assert gone not in labels, f"{gone} belongs to the Session page, not the drawer"
+    assert not any(label.startswith("Pane") for label in labels)
+    assert "Open session" in agent["text"]
+
+
+def test_the_session_page_has_the_pane_and_the_event_stream(rendered):
+    session = rendered["views"]["session"]
+    assert session["drawerHidden"] is True, "the Session page is a page, not the drawer"
+    assert session["hash"] == "#session?agent=eng-001"
+    labels = labels_of(session)
+    for name in ("Companion", "Step state", "Context file", "Streams", "Subagents", "Metrics"):
         assert name in labels, name
     assert any(label.startswith("Pane · eng-001") for label in labels)
     for name in ("open steps", "closed steps", "working set", "blockers", "dead ends", "tail"):
-        assert name in agent["subheadings"], name
+        assert name in session["subheadings"], name
+    assert session["breadcrumb"] == ["hx", "engineers", "eng-001", "Session"]
+
+
+def test_the_partner_session_page_has_its_pane_and_streams(rendered):
+    partner = rendered["views"]["sessions"]["partner"]
+    labels = labels_of(partner)
+    assert any(label.startswith("Pane · partner") for label in labels)
+    assert "Streams" in labels
+    assert "Metrics" not in labels, "the Partner has no seams (spec 12)"
 
 
 def test_the_agent_page_renders_the_work_item_sections(rendered):
@@ -383,7 +414,7 @@ def test_the_agent_page_renders_the_work_item_sections(rendered):
 
 def test_the_agent_page_renders_step_state(rendered):
     """Every field of the build-6 schema the human needs (ui-7 item 1)."""
-    agent = rendered["views"]["agent"]
+    agent = rendered["views"]["session"]
     text = agent["text"].replace("`", "")
     main = show_json()["step_state"]["eng-001-main"]
 
@@ -412,7 +443,7 @@ def test_the_agent_page_renders_step_state(rendered):
 def test_evidence_seqs_are_shown(rendered):
     """`ev` is the Companion's pointer back into the raw stream (spec 07.2)."""
     main = show_json()["step_state"]["eng-001-main"]
-    text = rendered["views"]["agent"]["text"]
+    text = rendered["views"]["session"]["text"]
     for step in main["open_steps"] + main["closed_steps"] + main["decisions"]:
         if step.get("ev"):
             assert "ev " + ", ".join(str(n) for n in step["ev"]) in text
@@ -422,23 +453,23 @@ def test_blockers_render_on_the_stream_that_has_them(rendered):
     blockers = show_json()["step_state"]["eng-001-s001"]["blockers"]
     assert blockers, "the subagent stream has a blocker"
     for blocker in blockers:
-        assert blocker in rendered["views"]["agent"]["text"]
+        assert blocker in rendered["views"]["session"]["text"]
 
 
 def test_the_budget_bar_reads_against_the_default(rendered):
     """Spec 10: chars/4, the same estimate hx evicts on."""
     compact = json.dumps(show_json()["step_state"]["eng-001-main"], separators=(",", ":"))
     used = -(-len(compact) // 4)
-    text = rendered["views"]["agent"]["text"]
+    text = rendered["views"]["session"]["text"]
     assert f"{used:,} of 10,000 tokens (est.)" in text
     assert "budget: the templates/worker default" in text, (
         "hx show does not carry state_budget_tokens, so say where the number came from"
     )
 
 
-def test_the_agent_page_renders_the_context_file_with_its_seam(rendered):
+def test_the_session_page_renders_the_context_file_with_its_seam(rendered):
     show = show_json()
-    text = rendered["views"]["agent"]["text"]
+    text = rendered["views"]["session"]["text"]
     assert show["context_file"]["path"] in text
     assert "seam 12:50:00Z" in text
     plain = text.replace("`", "")
@@ -450,9 +481,9 @@ def test_the_agent_page_renders_the_context_file_with_its_seam(rendered):
         assert line in plain, line
 
 
-def test_the_agent_page_renders_every_stream_tail(rendered):
+def test_the_session_page_renders_every_stream_tail(rendered):
     show = show_json()
-    text = rendered["views"]["agent"]["text"]
+    text = rendered["views"]["session"]["text"]
     for stream in show["streams"]:
         assert stream["handle"] in text
         assert stream["path"] in text
@@ -467,12 +498,12 @@ def test_a_seam_shows_its_context_file_size(tmp_path):
     assert "context file 2184 B" in agent["text"]
 
 
-def test_the_agent_page_renders_subagents_and_metrics_and_the_pane(rendered):
+def test_the_session_page_renders_subagents_and_metrics_and_the_pane(rendered):
     show = show_json()
-    text = rendered["views"]["agent"]["text"]
+    text = rendered["views"]["session"]["text"]
     for claude_id, handle in show["subagents"].items():
         assert claude_id in text and handle in text
-    assert rendered["views"]["agent"]["metrics"] is not None, "hx metrics is rendered"
+    assert rendered["views"]["session"]["metrics"] is not None, "hx metrics is rendered"
     for line in show["pane"]["lines"]:
         assert line in text
 
@@ -553,7 +584,7 @@ def test_the_partner_drawer_has_no_work_item(rendered):
     """v1 cut: `hx show partner --json` is `{id, partner_md, pane, streams}`."""
     partner = rendered["views"]["agents"]["partner"]
     assert partner["hidden"] is False
-    assert "no work item · no task · no step state" in partner["text"]
+    assert "no work item · no task · Companion" in partner["text"]
     assert "Work item" not in labels_of(partner)
     assert "PARTNER.md" in labels_of(partner)
 
@@ -642,11 +673,12 @@ def show_with_seam(**overrides):
 
 
 def seam_agent(tmp_path, show):
-    return render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    """The Session page, where seams and metrics render."""
+    return render({"/api/show/eng-001": show}, tmp_path)["views"]["session"]
 
 
 def test_the_metrics_table_has_a_column_per_contract_field(rendered):
-    table = rendered["views"]["agent"]["metrics"]
+    table = rendered["views"]["session"]["metrics"]
     assert table is not None, "metrics render as a table, not as raw JSON"
     assert table["headers"] == [
         "seq", "ts", "source", "prompt", "ctx tokens before", "context file",
@@ -656,7 +688,7 @@ def test_the_metrics_table_has_a_column_per_contract_field(rendered):
 
 def test_one_row_per_seam_in_order(rendered):
     seams = metrics_document()["seams"]
-    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    rows = rendered["views"]["session"]["metrics"]["rows"]
     assert len(rows) == len(seams)
     for row, seam in zip(rows, seams):
         cells = [cell["text"] for cell in row["cells"]]
@@ -677,7 +709,7 @@ def test_one_row_per_seam_in_order(rendered):
 def test_a_seam_is_marked_when_it_did_not_hand_over_cleanly(rendered):
     """Red on `reads_of_context_file != 1` or any `reads_of_working_set`."""
     seams = metrics_document()["seams"]
-    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    rows = rendered["views"]["session"]["metrics"]["rows"]
     for row, seam in zip(rows, seams):
         next_10 = seam["next_10_turns"]
         bad = next_10["reads_of_context_file"] != 1 or next_10["reads_of_working_set"] > 0
@@ -694,14 +726,14 @@ def test_a_seam_is_marked_when_it_did_not_hand_over_cleanly(rendered):
     ],
 )
 def test_the_offending_number_is_marked_and_explained(rendered, seq, offending, why):
-    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    rows = rendered["views"]["session"]["metrics"]["rows"]
     row = next(r for r in rows if r["cells"][0]["text"] == str(seq))
     assert [c["text"] for c in row["cells"] if "bad-cell" in c["class"]] == offending
     assert row["title"] == why, "hovering says why, so the colour is not the only signal"
 
 
 def test_a_clean_seam_marks_nothing(rendered):
-    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    rows = rendered["views"]["session"]["metrics"]["rows"]
     for seq in ("96", "412"):
         row = next(r for r in rows if r["cells"][0]["text"] == seq)
         assert row["class"] == ""
@@ -710,7 +742,7 @@ def test_a_clean_seam_marks_nothing(rendered):
 
 
 def test_a_stream_that_ended_early_shows_its_real_turn_count(rendered):
-    rows = rendered["views"]["agent"]["metrics"]["rows"]
+    rows = rendered["views"]["session"]["metrics"]["rows"]
     row = next(r for r in rows if r["cells"][0]["text"] == "412")
     turns = row["cells"][7]
     assert turns["text"] == "3", "next_10_turns.turns is fewer than 10 when the stream ended sooner"
@@ -719,7 +751,7 @@ def test_a_stream_that_ended_early_shows_its_real_turn_count(rendered):
 
 def test_the_totals_row_matches_the_contract_totals(rendered):
     totals = metrics_document()["totals"]
-    cells = [cell["text"] for cell in rendered["views"]["agent"]["metrics"]["totals"]["cells"]]
+    cells = [cell["text"] for cell in rendered["views"]["session"]["metrics"]["totals"]["cells"]]
     assert cells[0] == "totals"
     assert cells[2] == f"{totals['seams']} seams"
     assert cells[8] == str(totals["tool_calls"])
@@ -730,16 +762,16 @@ def test_the_totals_row_matches_the_contract_totals(rendered):
 
 def test_the_totals_row_marks_the_fleet_level_waste(rendered):
     """One context-file read per seam is the target; any working-set read is waste."""
-    totals = rendered["views"]["agent"]["metrics"]["totals"]
+    totals = rendered["views"]["session"]["metrics"]["totals"]
     marked = [cell["text"] for cell in totals["cells"] if "bad-cell" in cell["class"]]
     assert marked == ["4"], "5 ctx-file reads over 5 seams is right; 4 working-set reads is not"
 
 
 def test_the_metrics_section_says_how_many_seams_were_dirty(rendered):
-    warn = rendered["views"]["agent"]["metrics"]["warn"]
+    warn = rendered["views"]["session"]["metrics"]["warn"]
     assert len(warn) == 1
     assert warn[0].startswith("3 of 5 seams did not hand over cleanly")
-    assert not rendered["views"]["agent"]["metrics"]["ok"]
+    assert not rendered["views"]["session"]["metrics"]["ok"]
 
 
 def test_a_clean_run_says_so_instead(tmp_path):
@@ -749,7 +781,7 @@ def test_a_clean_run_says_so_instead(tmp_path):
         seam["next_10_turns"]["reads_of_working_set"] = 0
     show["metrics"]["totals"]["reads_of_context_file"] = len(show["metrics"]["seams"])
     show["metrics"]["totals"]["reads_of_working_set"] = 0
-    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["session"]
     assert agent["metrics"]["ok"] == ["every seam handed over cleanly."]
     assert not agent["metrics"]["warn"]
     assert not [row for row in agent["metrics"]["rows"] if row["class"]]
@@ -762,7 +794,7 @@ def test_an_agent_with_no_seams_yet_reads_not_yet(tmp_path):
                        "seams": [], "totals": {"seams": 0, "tool_calls": 0,
                                                "reads_of_context_file": 0,
                                                "reads_of_working_set": 0, "other": 0}}
-    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["session"]
     assert agent["metrics"] is None
     assert agent["notYet"] > 0
 
@@ -842,11 +874,14 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
 
     agent = rendered["views"]["agent"]
     labels = labels_of(agent)
-    for name in ("Work item", "Step state", "Context file", "Streams", "Subagents", "Metrics"):
+    for name in ("Goal", "Companion"):
         assert name in labels, name
-    assert any(label.startswith("Pane · eng-001") for label in labels)
-    assert agent["metrics"] is None, "a fresh instance has no seams yet"
-    assert agent["notYet"] > 0, "and the empty sections say so"
+    session = rendered["views"]["session"]
+    for name in ("Context file", "Streams", "Subagents"):
+        assert name in labels_of(session), name
+    assert any(label.startswith("Pane · eng-001") for label in labels_of(session))
+    assert session["metrics"] is None, "a fresh instance has no seams yet"
+    assert agent["notYet"] + session["notYet"] > 0, "and the empty sections say so"
     # build-8 put `turn` in `hx show --json`, so this is real data now rather
     # than the contract shape: no session has run here, so it is null.
     assert overrides["/api/show/eng-001"]["turn"] is None
@@ -917,7 +952,7 @@ def test_the_context_file_renders_as_markdown(tmp_path):
             "## Step state\n_none yet_\n"
         ),
     }
-    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["session"]
 
     text = agent["text"]
     for heading in ("Context for eng-001-main", "Memory", "Step state"):
@@ -934,7 +969,7 @@ def test_the_context_file_renders_as_markdown(tmp_path):
 def test_a_pane_with_no_session_and_no_log_says_so(tmp_path):
     show = show_json()
     show["pane"] = {"session": "eng-001", "alive": False, "lines": [], "source": "none", "error": "gone"}
-    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["session"]
     assert "no session, no log" in agent["text"]
     assert "from the none" not in agent["text"]
     assert "gone" in agent["text"], "the capture error is named"
@@ -945,7 +980,7 @@ def test_the_other_two_pane_sources_keep_their_wording(tmp_path, source, said):
     show = show_json()
     show["pane"] = {"session": "eng-001", "alive": source == "session",
                     "lines": ["a line"], "source": source, "error": None}
-    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["agent"]
+    agent = render({"/api/show/eng-001": show}, tmp_path)["views"]["session"]
     assert said in agent["text"]
 
 
@@ -956,7 +991,7 @@ def test_a_closed_stream_shows_the_companions_digest(rendered):
     show = show_json()
     closed = [s for s in show["streams"] if not s["open"] and not s["handle"].endswith("-main")]
     assert len(closed) == 2, "the fixture has two closed subagent streams"
-    text = rendered["views"]["agent"]["text"].replace("`", "")
+    text = rendered["views"]["session"]["text"].replace("`", "")
     for stream in closed:
         assert stream["digest"].strip() != "_pending companion_"
         for line in stream["digest"].strip().splitlines():
@@ -966,7 +1001,7 @@ def test_a_closed_stream_shows_the_companions_digest(rendered):
 
 
 def test_the_subagents_table_shows_the_real_digest(rendered):
-    rows = [row for row in rendered["views"]["agent"]["rows"] if len(row["cells"]) == 4]
+    rows = [row for row in rendered["views"]["session"]["rows"] if len(row["cells"]) == 4]
     assert rows, "the subagents table"
     digests = [row["cells"][3] for row in rows]
     assert not any("pending companion" in d for d in digests)

@@ -28,6 +28,7 @@ OUTCOMES = {None, "done", "blocked", "decision", "exhausted"}
 BOARD_KEYS = {
     "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
     "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
+    "companion_pass", "companion_ts",
 }
 
 
@@ -71,7 +72,7 @@ def test_every_timestamp_is_iso_8601_utc_with_a_z(name):
 
 def test_the_board_top_level_matches_the_contract(board):
     """v1 cut: no `errors` — `hx board` exits 0 always and polices nothing."""
-    assert set(board) == {"root_abs", "ts", "items"}
+    assert set(board) == {"root_abs", "ts", "items", "memory"}
     assert board["root_abs"].startswith("/")
 
 
@@ -112,8 +113,8 @@ def test_the_board_states_agree_with_their_other_columns(board):
 
 
 def test_the_partner_show_is_the_reduced_shape():
-    """v1 cut: `hx show partner --json` is only these four keys."""
-    assert set(load("show-partner.json")) == {"id", "partner_md", "pane", "streams"}
+    """v1 cut: `hx show partner --json` is only these keys (plus its Companion's activity)."""
+    assert set(load("show-partner.json")) == {"id", "partner_md", "pane", "streams", "companion"}
 
 
 @pytest.mark.parametrize("name", ["show-eng-001.json"])

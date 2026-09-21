@@ -222,5 +222,12 @@
     "background_tasks": []
   },
   "archive": [],
-  "bench": []
+  "bench": [],
+  "companion": {
+    "pass_in_flight": false,
+    "pass_stream": null,
+    "pass_since": null,
+    "last_state_ts": null,
+    "streams": 1
+  }
 }

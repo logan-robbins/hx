@@ -11,7 +11,7 @@ def test_board_matches_the_contract(ui):
     """v1 cut: no `errors`, no `after`/`ready`/`goal_pending`, no `partner` row."""
     status, payload = ui.client.json("/api/board")
     assert status == 200
-    assert set(payload) == {"root_abs", "ts", "items"}
+    assert set(payload) == {"root_abs", "ts", "items", "memory"}
     ids = [item["id"] for item in payload["items"]]
     assert ids == sorted(ids), "by id"
     assert "partner" not in ids, "the Partner has no work item"
@@ -19,6 +19,7 @@ def test_board_matches_the_contract(ui):
         assert set(item) == {
             "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
             "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
+    "companion_pass", "companion_ts",
         }
         assert item["state"] in {"idle", "working", "complete"}
         assert item["outcome"] in {None, "done", "blocked", "decision", "exhausted"}
@@ -39,7 +40,7 @@ def test_show_partner_is_the_reduced_shape(ui):
     """v1 cut: the Partner has no work item, task or step state."""
     status, payload = ui.client.json("/api/show/partner")
     assert status == 200
-    assert set(payload) == {"id", "partner_md", "pane", "streams"}
+    assert set(payload) == {"id", "partner_md", "pane", "streams", "companion"}
 
 
 @pytest.mark.parametrize("agent_id", ["eng-001"])

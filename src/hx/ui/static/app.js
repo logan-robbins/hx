@@ -223,7 +223,7 @@ function onlineColor(a) {
 
 /* autodev's fleet was pillars → agents → ledger tasks. hx's is pods →
  * HarnessAgents → the work item, and every agent has exactly one Companion.
- * The board is the whole fleet; `tasks.json` (the Orders view) says which of
+ * The board is the whole fleet; `tasks.json` (the Goals view) says which of
  * them the Partner has dispatched, which is where the graph's edges come from. */
 
 function buildFleet() {
@@ -247,6 +247,7 @@ function buildFleet() {
   return {
     root_abs: (board && board.root_abs) || "",
     ts: (board && board.ts) || null,
+    memory: (board && board.memory) || null,
     name: instanceName((board && board.root_abs) || ""),
     pods,
     agents: pods.flatMap((p) => p.agents),
@@ -280,6 +281,55 @@ function agentOf(item) {
  * the detail cache fills in after the board does. */
 function companionStreams(id) {
   return Object.keys((details.get(id) || {}).step_state || {});
+}
+
+/* `companion_pass` / `companion_ts` on a board row, or `show.companion` (CONTRACTS.md):
+ * the one thing that moves on a complete agent is its Companion writing state. */
+function companionNote(c) {
+  if (!c) return "Companion · no state yet";
+  const flight = c.pass_in_flight !== undefined ? c.pass_in_flight : c.companion_pass;
+  const ts = c.last_state_ts !== undefined ? c.last_state_ts : c.companion_ts;
+  if (flight) return "Companion · pass running" + (c.pass_stream ? " on " + c.pass_stream : "");
+  return ts ? "Companion · last state " + clock(ts) : "Companion · no state yet";
+}
+
+/* A drawer block that opens on demand. The `.small-label` sits in the summary so the
+ * block keeps its name in the drawer's outline. */
+/* The composed context carries a "Memory episodes" section (spec 07.6). The user wants the
+ * count, not the memories, so the drawer drops the section body and keeps a one-line tally. */
+function withoutMemoryEpisodes(text) {
+  const lines = (text || "").split("\n");
+  const start = lines.findIndex((l) => /^#{1,3}\s+Memory episodes\s*$/.test(l));
+  if (start < 0) return text;
+  let end = lines.findIndex((l, i) => i > start && /^#{1,3}\s+/.test(l));
+  if (end < 0) end = lines.length;
+  const episodes = lines.slice(start, end).filter((l) => /^\s*[-*]\s+\d{4}-\d{2}-\d{2}T/.test(l)).length;
+  const note = `_${count(episodes, "memory episode")} injected · not shown here (hx memory search)_`;
+  return [...lines.slice(0, start + 1), "", note, "", ...lines.slice(end)].join("\n");
+}
+
+/* What the Companion is doing for this agent, without exposing the step state itself:
+ * whether a pass is running, when it last wrote, and the open steps it is tracking. The
+ * raw state stays one click away for whoever needs to check it. */
+function companionPanel(show, a, steps) {
+  const c = show.companion || {};
+  const busy = c.pass_in_flight;
+  const status = busy
+    ? `<span class="dot green pulse"></span> pass running${c.pass_stream ? " on " + esc(c.pass_stream) : ""}${c.pass_since ? " since " + esc(clock(c.pass_since)) : ""}`
+    : c.last_state_ts
+      ? `<span class="dot muted"></span> idle · last wrote ${esc(clock(c.last_state_ts))}`
+      : `<span class="dot muted"></span> no state yet`;
+  const tracking = steps.length
+    ? `<ul class="companion-steps">${steps.map((s) => `<li><strong>${esc(s.id || "")}</strong> ${esc(s.next || s.intent || "")}</li>`).join("")}</ul>`
+    : `<p class="notyet">no open steps</p>`;
+  return `<div class="companion-status ${busy ? "busy" : ""}">${status} · ${esc(count(c.streams || 0, "stream"))} · window ${esc(a.id)}:companion</div>${tracking}`;
+}
+
+function memoryNote(memory) {
+  if (!memory) return "";
+  const episodes = memory.episodes === null || memory.episodes === undefined ? "no" : memory.episodes;
+  const queued = memory.queued ? " · " + memory.queued + " queued" : "";
+  return " · " + episodes + " memory episode" + (episodes === 1 ? "" : "s") + queued;
 }
 
 const allAgents = () => (fleet ? fleet.agents : []);
@@ -1048,8 +1098,9 @@ const PAGE_LABEL = {
   agents: "Harness Agents",
   partner: "Partner chat",
   activity: "Activity",
-  orders: "Orders",
+  orders: "Goals",
   archive: "Archive",
+  session: "Session",
 };
 
 function route() {
@@ -1171,7 +1222,15 @@ function graphNode(a, focusedId) {
 function companionNode(a) {
   const pos = graphNode.pos;
   const streams = companionStreams(a.id).length;
-  return `<div class="companion-node" style="left:${pos.x + 44}px;top:${pos.y + CARD_H + 22}px" title="${esc(a.id)}'s Companion — window ${esc(a.id)}:companion">${icon("clock")}<span>Companion</span><small>${streams ? esc(count(streams, "stream")) : "no state yet"}</small></div>`;
+  const live = a.companion_pass
+    ? `<span class="dot green pulse" title="a pass is running"></span>`
+    : "";
+  const detail = a.companion_pass
+    ? "pass running"
+    : a.companion_ts
+      ? `${streams ? esc(count(streams, "stream")) + " · " : ""}${esc(clock(a.companion_ts))}`
+      : streams ? esc(count(streams, "stream")) : "no state yet";
+  return `<div class="companion-node ${a.companion_pass ? "busy" : ""}" style="left:${pos.x + 44}px;top:${pos.y + CARD_H + 22}px" title="${esc(a.id)}'s Companion — window ${esc(a.id)}:companion · ${esc(companionNote(a))}">${icon("clock")}<span>Companion</span>${live}<small>${detail}</small></div>`;
 }
 
 function graphPage(focus) {
@@ -1215,7 +1274,7 @@ function graphPage(focus) {
   graphNode.pos = layout.partner;
   const partner = `<button class="agent-node manager ${focus.agent === "partner" ? "focused" : ""}" style="left:${layout.partner.x}px;top:${layout.partner.y}px" data-agent="partner" aria-label="Open the Partner"><div class="node-top">${avatar(fleet.partner)}<strong>Partner</strong><span class="dot ${partnerAlive() ? "green" : "muted"}"></span></div><div class="node-task">Operates the fleet on your instruction, in chat</div><div class="node-bottom"><span>no work item</span><span class="stage">${esc(count(dispatched.size, "dispatch", "dispatches"))}</span></div></button>`;
 
-  return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>${esc(fleet.name)} <span class="count">${fleet.agents.length}</span></h1><p class="subtitle">The Partner at the root, every HarnessAgent below it as a card clustered by pod, each with its Companion.</p></div><span class="badge">${esc(count(fleet.pods.length, "pod"))} · ${fleet.agents.filter((a) => a.session_alive).length} / ${fleet.agents.length} sessions alive</span></div>${tabs("overview")}<section class="panel graph-panel"><div class="panel-head"><div><h2>Fleet graph</h2><p>${esc(count(fleet.agents.length, "HarnessAgent"))} · ${esc(count(dispatched.size, "dispatch", "dispatches"))} from the Partner</p></div><div class="graph-toolbar"><span id="zoom-value">${Math.round(zoom * 100)}%</span><button class="icon-button" data-zoom="out" aria-label="Zoom out">${icon("minus")}</button><button class="icon-button" data-zoom="in" aria-label="Zoom in">${icon("plus")}</button><button class="button" data-zoom="fit">Fit</button></div></div><div class="graph-viewport" id="graph-viewport"><div style="width:${layout.width * zoom}px;height:${layout.height * zoom}px"><div class="graph-canvas" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg class="graph-edges" viewBox="0 0 ${layout.width} ${layout.height}" aria-label="Dispatch and Companion connections"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#6cbaa2"/></marker></defs>${edges}</svg>${clusterBoxes}${partner}${nodes}</div></div></div>${onlyPartner}<div class="graph-legend"><span><i class="legend-line handoff"></i>Dispatched by the Partner (tasks.json)</span><span><i class="legend-line"></i>No dispatch on record</span><span><span class="dot green"></span> Working</span><span><span class="dot amber"></span> Needs attention</span><span><span class="dot muted"></span> Idle or no session</span></div></section>`;
+  return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>${esc(fleet.name)} <span class="count">${fleet.agents.length}</span></h1><p class="subtitle">The Partner at the root, every HarnessAgent below it as a card clustered by pod, each with its Companion.</p></div><span class="badge">${esc(count(fleet.pods.length, "pod"))} · ${fleet.agents.filter((a) => a.session_alive).length} / ${fleet.agents.length} sessions alive${esc(memoryNote(fleet.memory))}</span></div>${tabs("overview")}<section class="panel graph-panel"><div class="panel-head"><div><h2>Fleet graph</h2><p>${esc(count(fleet.agents.length, "HarnessAgent"))} · ${esc(count(dispatched.size, "dispatch", "dispatches"))} from the Partner</p></div><div class="graph-toolbar"><span id="zoom-value">${Math.round(zoom * 100)}%</span><button class="icon-button" data-zoom="out" aria-label="Zoom out">${icon("minus")}</button><button class="icon-button" data-zoom="in" aria-label="Zoom in">${icon("plus")}</button><button class="button" data-zoom="fit">Fit</button></div></div><div class="graph-viewport" id="graph-viewport"><div style="width:${layout.width * zoom}px;height:${layout.height * zoom}px"><div class="graph-canvas" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg class="graph-edges" viewBox="0 0 ${layout.width} ${layout.height}" aria-label="Dispatch and Companion connections"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#6cbaa2"/></marker></defs>${edges}</svg>${clusterBoxes}${partner}${nodes}</div></div></div>${onlyPartner}<div class="graph-legend"><span><i class="legend-line handoff"></i>Dispatched by the Partner (tasks.json)</span><span><i class="legend-line"></i>No dispatch on record</span><span><span class="dot green"></span> Working</span><span><span class="dot amber"></span> Needs attention</span><span><span class="dot muted"></span> Idle or no session</span></div></section>`;
 }
 
 /* -- task board -------------------------------------------------------- *
@@ -1346,8 +1405,8 @@ function orderPanel(order) {
 
 function ordersPage() {
   const list = ((orders && orders.orders) || []).filter((o) => matches(o.id + " " + (o.order || "")));
-  return `<div class="page-heading"><div><div class="eyebrow">tasks.json</div><h1>Orders</h1><p class="subtitle">The order text and every addendum, per id. Order files are consumed at dispatch, so this is the whole source.</p></div><span class="badge">${esc(count(list.length, "order"))}</span></div>${section("Dispatched work", "", filters("Search orders…"))}${
-    list.length ? list.map(orderPanel).join("") : empty("Nothing dispatched yet", "The Partner dispatches with hx dispatch <id> <order-file>.", "file")
+  return `<div class="page-heading"><div><div class="eyebrow">tasks.json</div><h1>Goals</h1><p class="subtitle">The goal text and every addendum, per id. Goal files are consumed at dispatch, so this is the whole source.</p></div><span class="badge">${esc(count(list.length, "goal"))}</span></div>${section("Dispatched work", "", filters("Search goals…"))}${
+    list.length ? list.map(orderPanel).join("") : empty("Nothing dispatched yet", "The Partner dispatches with hx dispatch <id> <goal-file>.", "file")
   }`;
 }
 
@@ -1503,45 +1562,57 @@ function partnerDrawer() {
   const pane = show.pane || {};
   return (
     `<div class="drawer-head"><a href="#partner">Partner chat</a><span class="slash">/</span><span>partner</span><button class="icon-button" id="close-drawer" aria-label="Close details">${icon("close")}</button></div>` +
-    `<div class="drawer-title">${avatar({ id: "partner", session_alive: pane.alive })}<div><h2>Partner</h2><p>no work item · no task · no step state</p></div><span style="margin-left:auto">${badge(pane.alive ? "completed" : "unknown", pane.alive ? "session alive" : "no session")}</span></div>` +
-    `<div class="drawer-actions"><a class="button primary" href="#partner">${icon("terminal")}Open the chat</a></div>` +
-    `<div class="small-label">PARTNER.md</div>${slot(markdown(show.partner_md || "_not yet_"))}` +
-    `<div class="divider"></div><div class="small-label">Streams</div>${slot((show.streams || []).map((s) => streamCard(s, null)))}` +
-    `<div class="divider"></div>${paneBlock(pane, "partner")}`
+    `<div class="drawer-title">${avatar({ id: "partner", session_alive: pane.alive })}<div><h2>Partner</h2><p>no work item · no task · ${esc(companionNote(show.companion))}</p></div><span style="margin-left:auto">${badge(pane.alive ? "completed" : "unknown", pane.alive ? "session alive" : "no session")}</span></div>` +
+    `<div class="drawer-actions"><a class="button primary" href="#partner">${icon("terminal")}Open the chat</a>${sessionLink("partner")}</div>` +
+    `<div class="small-label">PARTNER.md</div>${slot(markdown(show.partner_md || "_not yet_"))}`
   );
+}
+
+/* The section names the work item file uses, said the fleet's way: "Order" is only the file
+ * the Partner wrote; the agent's word for it is the goal. */
+function sectionLabel(title) {
+  return String(title).replace(/^Order\b/, "Goal");
+}
+
+/* The drawer is the agent's work item file — the file it edits and appends to — rendered
+ * section by section in file order, with the goal addenda (`hx task`) under the goal. */
+function workItemBlocks(show) {
+  const found = sections((show.work_item || {}).body || "");
+  const addenda = ((show.task || {}).addenda || [])
+    .map((x) => `<div class="small-label">Goal addendum ${esc(clock(x.ts))}</div>${slot(markdown(x.text || ""), "addendum-block")}`)
+    .join("");
+  const notYet = '<p class="notyet">not yet</p>';
+  if (!found.length) {
+    const order = (show.task || {}).order;
+    return `<div class="small-label">Goal</div>${order ? slot(markdown(order)) : notYet}${addenda}`;
+  }
+  return found
+    .map((section) => {
+      const label = sectionLabel(section.title);
+      const block = `<div class="small-label">${esc(label)}</div>${section.text ? slot(markdown(section.text)) : notYet}`;
+      return label === "Goal" ? block + addenda : block;
+    })
+    .join("");
+}
+
+function sessionLink(id) {
+  return `<a class="button" href="#session?agent=${encodeURIComponent(id)}" target="_blank" rel="noopener">${icon("terminal")}Open session ↗</a>`;
 }
 
 function agentDrawer(a) {
   const show = details.get(a.id) || {};
-  const body = (show.work_item || {}).body || "";
   const tasks = taskList(a.id);
   const steps = openSteps(a.id);
-  const stepStates = show.step_state || {};
-  const subagents = show.subagents || {};
-  const contextFile = show.context_file;
   const turn = show.turn;
   const background = ((turn || {}).background_tasks || []).length
     ? `<div class="alert-note">Stopped with work still running — ${esc(count(turn.background_tasks.length, "background task"))}: ${esc(turn.background_tasks.join(", "))}</div>`
     : "";
 
-  const workItem =
-    `<div class="small-label">Frontmatter</div>${slot(frontmatterTable((show.work_item || {}).frontmatter))}` +
-    `<div class="small-label">Order</div>${slot(markdown((show.task || {}).order || "_not yet_"))}` +
-    (((show.task || {}).addenda || []).length
-      ? `<div class="small-label">Addenda</div>` +
-        show.task.addenda
-          .map((x) => `<div class="small-label">${esc(clock(x.ts))}</div>${slot(markdown(x.text || ""), "addendum-block")}`)
-          .join("")
-      : "") +
-    ["Tasks", "Deliverables", "Commands", "Open decision", "Digest"]
-      .map((name) => `<div class="small-label">${esc(name)}</div>${slot(markdown(findSection(body, name) || "_not yet_"))}`)
-      .join("");
-
   return (
     `<div class="drawer-head"><a href="#overview?pod=${encodeURIComponent(a.pod || "")}">${esc(a.pod || "fleet")}</a><span class="slash">/</span><span>${esc(a.id)}</span><button class="icon-button" id="close-drawer" aria-label="Close details">${icon("close")}</button></div>` +
     `<div class="drawer-title">${avatar(a)}<div><h2>${esc(a.id)}</h2><p>${esc(a.role || "—")} · ${esc(a.pod || "—")} · ${esc(a.file || "no work item")}</p></div><span style="margin-left:auto">${phaseBadge(a)}</span></div>` +
     `<p class="drawer-meta">${esc(a.file || "no work item")} · persona ${esc(show.persona_path || "—")} · ${esc(turnNote(turn, a))}</p>` +
-    `<div class="drawer-actions"><span class="badge">${a.session_alive ? "session alive" : "no session"}</span><span class="badge">${esc(count(a.seams === null || a.seams === undefined ? 0 : a.seams, "seam"))}</span><span class="badge">${esc(count(a.open_subagents || 0, "open subagent"))}</span></div>` +
+    `<div class="drawer-actions"><span class="badge">${a.session_alive ? "session alive" : "no session"}</span><span class="badge">${esc(count(a.seams === null || a.seams === undefined ? 0 : a.seams, "seam"))}</span><span class="badge">${esc(count(a.open_subagents || 0, "open subagent"))}</span><span class="badge ${(show.companion || {}).pass_in_flight ? "active" : ""}">${esc(companionNote(show.companion || a))}</span>${sessionLink(a.id)}</div>` +
     background +
     (show.__error
       ? `<div class="alert-note">${esc(a.id)} could not be read: ${esc(show.__error)}. The board still lists this id, so this is a read failure rather than a missing agent.</div>`
@@ -1552,27 +1623,47 @@ function agentDrawer(a) {
     `<div class="detail-stats"><div><strong>${steps.length}</strong>Open steps</div><div><strong>${tasks.filter((t) => t.done).length}/${tasks.length}</strong>Tasks checked</div><div><strong>${esc(number(a.context_tokens))}</strong>Context tokens</div></div>` +
     `<section class="drawer-task"><div class="small-label">Current work · the open step's next action</div>${phaseBadge(a)}<h3>${esc(currentText(a))}</h3>${executionFlow(a)}` +
     `<div class="small-label">Dispatched</div><p class="task-instructions">${esc(a.dispatched ? a.dispatched + " (" + age(a.dispatched) + ")" : "not dispatched")}</p>` +
-    `<div class="divider"></div><div class="small-label">Work item</div>${workItem}` +
-    `<div class="divider"></div><div class="small-label">Step state</div>${
-      Object.keys(stepStates).length
-        ? slot(Object.entries(stepStates).map(([handle, state]) => stepState(handle, state)))
-        : '<p class="notyet">not yet</p>'
-    }` +
-    `<div class="divider"></div><div class="small-label">Context file</div>${
-      contextFile
-        ? `<code class="file-path">${esc(contextFile.path)} · seam ${esc(clock(contextFile.seam_ts))}</code>${slot(markdown(contextFile.text || "_not composed yet_"), "context")}`
-        : '<p class="notyet">not yet</p>'
-    }` +
-    `<div class="divider"></div><div class="small-label">Streams</div>${slot((show.streams || []).map((s) => streamCard(s, show.metrics)))}` +
-    `<div class="divider"></div><div class="small-label">Subagents</div>${
-      Object.keys(subagents).length
-        ? slot(subagentTable(show))
-        : '<p class="notyet">not yet</p>'
-    }` +
-    `<div class="divider"></div><div class="small-label">Metrics</div>${slot(renderMetrics(show.metrics))}` +
-    `<div class="divider"></div>${paneBlock(show.pane, a.id)}` +
-    `<div class="small-label">Persona</div><code class="file-path">${esc(show.persona_path || "—")}</code>` +
+    `<div class="divider"></div><div class="small-label">Companion</div>${companionPanel(show, a, steps)}` +
+    `<div class="divider"></div>${workItemBlocks(show)}` +
+    `<div class="divider"></div><div class="small-label">Persona</div><code class="file-path">${esc(show.persona_path || "—")}</code>` +
     `</section>`
+  );
+}
+
+/* The Session page: everything `hx show <id>` carries that is not the work item — the tmux
+ * pane, the Companion's raw step state, the last composed context file, the stream tails,
+ * the subagents and `hx metrics`. The drawer links here with target=_blank, so it opens in
+ * its own window and the drawer stays the agent's file. */
+function sessionPage(focus) {
+  const id = focus.agent;
+  if (!id) {
+    return `<div class="page-heading"><div><div class="eyebrow">Session</div><h1>Session</h1><p class="subtitle">The pane and the event stream of one agent.</p></div></div>${empty("No agent named", "Open an agent and choose Open session.", "terminal")}`;
+  }
+  const partner = id === "partner";
+  const a = partner ? null : findAgent(id);
+  const show = partner ? partnerShow || {} : details.get(id) || {};
+  const pane = show.pane || {};
+  const stepStates = show.step_state || {};
+  const contextFile = show.context_file;
+  const subagents = show.subagents || {};
+  const block = (label, body) => `<section class="panel"><div class="panel-body"><div class="small-label">${esc(label)}</div>${body}</div></section>`;
+  const notYet = '<p class="notyet">not yet</p>';
+  return (
+    `<div class="page-heading"><div><div class="eyebrow">${esc(partner ? "Partner" : (a && a.pod) || "fleet")} · session</div><h1>${esc(id)}</h1><p class="subtitle">The tmux pane and the event stream behind this agent. The work item stays in the agent's drawer; this is the rest of <code class="code-inline">hx show ${esc(id)}</code>.${a ? " · " + esc(turnNote(show.turn, a)) : ""}</p></div>${a ? phaseBadge(a) : ""}</div>` +
+    (show.__error ? `<div class="alert-note">${esc(id)} could not be read: ${esc(show.__error)}.</div>` : "") +
+    `<section class="panel"><div class="panel-body">${paneBlock(pane, id)}</div></section>` +
+    (partner
+      ? ""
+      : block("Companion", a ? companionPanel(show, a, openSteps(id)) : notYet) +
+        block("Step state", Object.keys(stepStates).length ? slot(Object.entries(stepStates).map(([handle, state]) => stepState(handle, state))) : notYet) +
+        block("Context file", contextFile
+          ? `<code class="file-path">${esc(contextFile.path)} · seam ${esc(clock(contextFile.seam_ts))}</code>${slot(markdown(withoutMemoryEpisodes(contextFile.text) || "_not composed yet_"), "context")}`
+          : notYet)) +
+    block("Streams", (show.streams || []).length ? slot((show.streams || []).map((s) => streamCard(s, show.metrics || null))) : notYet) +
+    (partner
+      ? ""
+      : block("Subagents", Object.keys(subagents).length ? slot(subagentTable(show)) : notYet) +
+        block("Metrics", slot(renderMetrics(show.metrics))))
   );
 }
 
@@ -1621,7 +1712,7 @@ function subagentTable(show) {
 }
 
 /* ui-7's finding, kept: an id the board no longer lists must not be a dead end.
- * The Orders view still reaches it — `tasks.json` outlives the work item — so
+ * The Goals view still reaches it — `tasks.json` outlives the work item — so
  * the drawer says which kind of absence this is and offers the ids that exist. */
 function unknownDrawer(id) {
   return (
@@ -1636,7 +1727,9 @@ function unknownDrawer(id) {
 
 function renderDrawer() {
   const r = route();
-  const id = r.params.get("agent");
+  // The Session page names its agent in the same `agent=` parameter, but it is a page of
+  // its own (opened in another window), not the drawer over one.
+  const id = r.parts[0] === "session" ? null : r.params.get("agent");
   const drawer = $("drawer");
   if (!id) {
     if (!drawer.hidden) {
@@ -1688,7 +1781,9 @@ function breadcrumb(parts, focusPod, focusAgent) {
   const name = fleet ? fleet.name : "hx";
   const trail = [`<a href="#overview">${esc(name)}</a>`];
   if (focusPod) trail.push(`<span class="slash">/</span><a href="#overview?pod=${encodeURIComponent(focusPod)}">${esc(focusPod)}</a>`);
-  if (focusAgent) trail.push(`<span class="slash">/</span><strong aria-current="page">${esc(focusAgent)}</strong>`);
+  if (focusAgent && parts[0] === "session") {
+    trail.push(`<span class="slash">/</span><a href="#overview?agent=${encodeURIComponent(focusAgent)}">${esc(focusAgent)}</a><span class="slash">/</span><strong aria-current="page">Session</strong>`);
+  } else if (focusAgent) trail.push(`<span class="slash">/</span><strong aria-current="page">${esc(focusAgent)}</strong>`);
   if (!focusPod && !focusAgent) {
     trail.push(`<span class="slash">/</span><strong aria-current="page">${esc(PAGE_LABEL[parts[0]] || "All Pods")}</strong>`);
   }
@@ -1709,6 +1804,7 @@ const PAGES = {
   activity: activityPage,
   orders: ordersPage,
   archive: archivePage,
+  session: sessionPage,
 };
 
 function render() {
@@ -1772,6 +1868,7 @@ function render() {
       ? allAgents().map((a) => a.id)
       : [];
   if (focusAgent && focusAgent !== "partner") wanted.push(focusAgent);
+  if (parts[0] === "session" && focusAgent === "partner" && !partnerShow) refreshPartner().then(() => render());
   if (wanted.length) fillDetails(wanted);
 }
 

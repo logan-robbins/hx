@@ -35,5 +35,12 @@
         }
       ]
     }
-  ]
+  ],
+  "companion": {
+    "pass_in_flight": false,
+    "pass_stream": null,
+    "pass_since": null,
+    "last_state_ts": "2026-09-20T13:09:35Z",
+    "streams": 1
+  }
 }

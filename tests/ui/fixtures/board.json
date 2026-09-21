@@ -16,7 +16,9 @@
       "session_alive": true,
       "context_tokens": 132880,
       "seams": 2,
-      "turn_ts": "2026-09-20T11:58:12Z"
+      "turn_ts": "2026-09-20T11:58:12Z",
+      "companion_pass": false,
+      "companion_ts": "2026-09-20T13:09:35Z"
     },
     {
       "id": "eng-001",
@@ -32,7 +34,9 @@
       "session_alive": true,
       "context_tokens": 48211,
       "seams": 2,
-      "turn_ts": "2026-09-20T13:09:40Z"
+      "turn_ts": "2026-09-20T13:09:40Z",
+      "companion_pass": true,
+      "companion_ts": "2026-09-20T13:09:35Z"
     },
     {
       "id": "eng-002",
@@ -48,7 +52,9 @@
       "session_alive": true,
       "context_tokens": null,
       "seams": null,
-      "turn_ts": null
+      "turn_ts": null,
+      "companion_pass": false,
+      "companion_ts": null
     },
     {
       "id": "eng-003",
@@ -64,7 +70,9 @@
       "session_alive": true,
       "context_tokens": 74902,
       "seams": 1,
-      "turn_ts": "2026-09-20T12:47:31Z"
+      "turn_ts": "2026-09-20T12:47:31Z",
+      "companion_pass": false,
+      "companion_ts": "2026-09-20T13:09:35Z"
     },
     {
       "id": "res-001",
@@ -80,7 +88,14 @@
       "session_alive": false,
       "context_tokens": 20118,
       "seams": 0,
-      "turn_ts": "2026-09-20T09:02:11Z"
+      "turn_ts": "2026-09-20T09:02:11Z",
+      "companion_pass": false,
+      "companion_ts": "2026-09-20T13:09:35Z"
     }
-  ]
+  ],
+  "memory": {
+    "episodes": 12,
+    "queued": 1,
+    "indexed_ts": "2026-09-20T13:05:00Z"
+  }
 }

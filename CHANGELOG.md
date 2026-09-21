@@ -24,11 +24,36 @@ as milestones are accepted.
   `memory_inject_k`, `memory_episode_chars`, `memory_half_life_h`; new dependency `chromadb`.
 - `hx-memory` skill: read the context file's Memory episodes first, search your own role next,
   widen with `--all-roles` only when that is empty or off-topic.
+- Companion activity in the contracts: `hx board --json` items carry `companion_pass` (a pass is
+  in flight: `run/<id>/companion/*.pass.md` exists) and `companion_ts` (newest `state/<id>/*.json`
+  write), and the board carries a top-level `memory` summary (`episodes`, `queued`, `indexed_ts`)
+  read from `state/memory/stats.json` without opening ChromaDB. `hx show <id> --json` (and the
+  Partner's reduced shape) carry a `companion` block with the same facts per stream. The SSE
+  watcher adds the `memory` scope and watches `run/<id>/companion/`.
+- UI: a **Session** page (`#session?agent=<id>`) that the agent drawer opens in another window
+  with the pane, step state, context file, stream tails, subagents and metrics.
 - `models.json` rows accept `autocompact_window`; `start.sh` exports it as
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, validation requires `threshold < autocompact_window <=
   window`, and `hx doctor` reports it. Shipped defaults: 1M window, 250k autocompact, 200k seam.
 
 ### Changed
+
+- UI: the agent drawer is now the agent's work item file, rendered section by section in the
+  file's order with `## Order` labelled **Goal** and the `hx task` addenda under it, plus a
+  Companion status line (pass running on which stream since when, or idle since its last
+  write) and the open steps' next actions. The step-state dump, context file, stream tails,
+  subagents, metrics and pane moved to the Session page; the composed context's **Memory
+  episodes** section is shown there as a count only. The **Orders** view is named **Goals**
+  (`/api/orders` and the `order` JSON keys are unchanged); the fleet graph's Companion node
+  pulses during a pass and the page header shows the memory store's episode count.
+
+### Fixed
+
+- The Partner is never seamed (spec 12): `seam_is_due` returns false for the Partner, the hard
+  threshold in the log hook skips it, and its stop hook drops a stale `run/partner/seam` marker
+  instead of running `hx seam partner`, which raised `NotFound` on every stop once the Partner's
+  context passed the threshold (18 tracebacks in `logs/partner/hook-errors.log` on a live
+  instance).
 
 - Companion output is written for a model, not a person: `companion/BASE.md` and the role files
   ask for telegraphic strings (exact `path:line`, sha7, verbatim commands and error lines, no

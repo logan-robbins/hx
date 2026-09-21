@@ -44,6 +44,7 @@ SCOPE_BOARD = "board"
 SCOPE_ORDERS = "orders"
 SCOPE_ARCHIVE = "archive"
 SCOPE_TASKS = "tasks"
+SCOPE_MEMORY = "memory"
 VIEW_SCOPES = (SCOPE_BOARD, SCOPE_ORDERS, SCOPE_ARCHIVE, SCOPE_TASKS)
 
 # Work items, orders and bench files are all named `<id>-…` or `<id>.…`; spec 06.
@@ -108,6 +109,14 @@ class Source:
     def scan(self) -> dict[str, float]:
         """`{scope: latest mtime}` over the paths spec 16.1 watches."""
         raise NotImplementedError
+
+
+def _dir_mtime(path: Path) -> float:
+    """A directory's own mtime moves when an entry is created or deleted; 0 when absent."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _newest(table: dict[str, float], scope: str, mtime: float) -> None:
@@ -441,6 +450,15 @@ class InstanceSource(Source):
                 continue
             for marker in self.RUN_MARKERS:
                 self._scan_file(entry / marker, agent_id, table)
+            # A pass file appearing or vanishing is the Companion starting or finishing a
+            # pass; the board's `companion_pass` reads it.
+            try:
+                passes = sorted((entry / "companion").glob("*.pass.md"))
+            except OSError:
+                passes = []
+            for path in passes:
+                self._scan_file(path, agent_id, table)
+            _newest(table, agent_id, _dir_mtime(entry / "companion"))
         return table
 
     def _scan_file(self, path: Path, scope: str, table: dict[str, float]) -> None:
@@ -471,6 +489,10 @@ class InstanceSource(Source):
         `pods/<pod>/<id>-<state>.md` and `orders/<id>.md` by their filename.
         """
         relative = path.relative_to(root).parts
+        if relative[0] == "memory":
+            # `state/memory/**` is the episode store (docs/memory.md): the board's `memory`
+            # block, not an id (CONTRACTS.md, SSE scopes).
+            return SCOPE_MEMORY
         for part in (relative[0], path.name):
             agent_id = id_of(part)
             if agent_id is not None:

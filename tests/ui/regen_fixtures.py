@@ -84,7 +84,14 @@ BOARD_ITEMS = [
     },
 ]
 
-BOARD = {"root_abs": ROOT_ABS, "ts": TS, "items": BOARD_ITEMS}
+for _item in BOARD_ITEMS:
+    # Companion activity (CONTRACTS.md): eng-001's Companion is mid-pass in the fixture.
+    _item.setdefault("companion_pass", _item["id"] == "eng-001")
+    _item.setdefault("companion_ts", "2026-09-20T13:09:35Z" if _item.get("turn_ts") else None)
+BOARD = {
+    "root_abs": ROOT_ABS, "ts": TS, "items": BOARD_ITEMS,
+    "memory": {"episodes": 12, "queued": 1, "indexed_ts": "2026-09-20T13:05:00Z"},
+}
 
 
 # -- orders (v1 cut: one entry per tasks.json id, no graph, no file compare) ---
@@ -319,6 +326,13 @@ def show_document(
                                                        "reads_of_working_set": 0, "other": 0}},
         "pane": pane,
         "turn": turn,
+        "companion": {
+            "pass_in_flight": id == "eng-001",
+            "pass_stream": f"{id}-main" if id == "eng-001" else None,
+            "pass_since": "2026-09-20T13:09:41Z" if id == "eng-001" else None,
+            "last_state_ts": "2026-09-20T13:09:35Z" if id != "eng-000" else None,
+            "streams": len(step_state) if isinstance(step_state, dict) else 0,
+        },
         "archive": [],
         "bench": [],
     }

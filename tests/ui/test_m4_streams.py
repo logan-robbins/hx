@@ -77,7 +77,9 @@ def m4_agent(m4_root, tmp_path_factory):
         overrides[f"/api/show/{item_id}"] = source.show(item_id)
     rendered = render(overrides, tmp_path_factory.mktemp("render"), open_ids=[ITEM])
     assert rendered["banner"] is None
-    return rendered["views"]["agents"][ITEM]
+    # Streams, subagents and step state render on the agent's Session page (the drawer
+    # keeps the work item), so that is the view these tests read.
+    return rendered["views"]["sessions"][ITEM]
 
 
 # -- the records the hooks really wrote ----------------------------------
@@ -336,7 +338,7 @@ def test_the_agent_view_renders_a_real_step_state(companion_root, tmp_path):
          "/api/show/partner": source.show("partner")},
         tmp_path, open_ids=[ITEM],
     )
-    agent = rendered["views"]["agents"][ITEM]
+    agent = rendered["views"]["sessions"][ITEM]
     assert agent["banner"] is None
     text = agent["text"].replace("`", "")
 
@@ -363,7 +365,7 @@ def test_the_real_digests_replace_the_placeholder(companion_root, tmp_path):
          "/api/show/partner": source.show("partner")},
         tmp_path, open_ids=[ITEM],
     )
-    text = rendered["views"]["agents"][ITEM]["text"]
+    text = rendered["views"]["sessions"][ITEM]["text"]
     for stream in closed:
         assert stream["digest"].strip() in text
 
@@ -373,11 +375,11 @@ def test_the_v1_shapes_are_what_the_real_commands_return(companion_root):
     source = isolated_source(companion_root)
 
     board = source.board()
-    assert set(board) == {"root_abs", "ts", "items"}
+    assert set(board) == {"root_abs", "ts", "items", "memory"}
     assert "partner" not in {item["id"] for item in board["items"]}
     assert set(board["items"][0]) == {
         "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
-        "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
+        "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts", "companion_pass", "companion_ts",
     }
 
     orders = source.orders()
@@ -387,4 +389,4 @@ def test_the_v1_shapes_are_what_the_real_commands_return(companion_root):
     assert "after" not in show["task"]
     assert "after" not in show["work_item"]["frontmatter"]
 
-    assert set(source.show("partner")) == {"id", "partner_md", "pane", "streams"}
+    assert set(source.show("partner")) == {"id", "partner_md", "pane", "streams", "companion"}

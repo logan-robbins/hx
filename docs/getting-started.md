@@ -81,10 +81,12 @@ instead.
 - `tmux attach -t partner` is the only control surface. Detach with `Ctrl-b d`.
 - The UI is already running: `hx install` started it in tmux session `ui`. Open
   `http://127.0.0.1:8765/`. It is read-only: the Board (every worker, its state and outcome,
-  whether its session is alive, its context size and seams), an Agent page per worker (the work
-  item with the order, checks, and live `## Tasks`; the Companion's step state; stream tails;
-  the pane), Orders and Archive, and a Partner page with `PARTNER.md`, the board, the Partner's
-  pane, and a chat box that sends a message to the Partner exactly as `hx wake partner` does.
+  whether its session is alive, its context size and seams), an Agent drawer per worker (its
+  work item file: the goal, checks, live `## Tasks`, deliverables, open decision, digest; plus
+  whether its Companion is running a pass right now), an **Open session** link that opens the
+  pane, step state, context file and stream tails in another window, Goals and Archive, and a
+  Partner page with `PARTNER.md`, the board, and a chat box that sends a message to the Partner
+  exactly as `hx wake partner` does.
   Full control (slash commands, interrupts) stays in `tmux attach -t partner`.
 - `~/hx/PARTNER.md` is the Partner's memory: the fleet, open questions, decisions.
 

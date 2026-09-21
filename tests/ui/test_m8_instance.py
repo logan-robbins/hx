@@ -199,8 +199,9 @@ def test_every_view_renders_at_every_step(step_roots, pack, stem, states, worker
         agent = rendered["views"]["agents"][item_id]
         assert agent["headings"] == [item_id]
         labels = [entry["label"] for entry in agent["labels"]]
-        assert "Work item" in labels
-        assert any(label.startswith(f"Pane · {item_id}") for label in labels)
+        assert "Goal" in labels
+        session_labels = [entry["label"] for entry in rendered["views"]["sessions"][item_id]["labels"]]
+        assert any(label.startswith(f"Pane · {item_id}") for label in session_labels)
     assert "PARTNER.md" in rendered["views"]["partner"]["headings"]
     fleet = [row for row in rendered["views"]["partner"]["rows"] if row["agent"]]
     assert len(fleet) == len(ids), "the whole fleet is on the Partner page"

@@ -555,5 +555,12 @@
       "path": "pods/engineers/archive/eng-001-2026-09-19T10:00:00Z.md",
       "digest": "`hx board --json` shipped with the CONTRACTS.md shape; one invariant check per spec 08."
     }
-  ]
+  ],
+  "companion": {
+    "pass_in_flight": true,
+    "pass_stream": "eng-001-main",
+    "pass_since": "2026-09-20T13:09:41Z",
+    "last_state_ts": "2026-09-20T13:09:35Z",
+    "streams": 2
+  }
 }
