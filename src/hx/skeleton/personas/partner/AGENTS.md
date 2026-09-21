@@ -25,7 +25,9 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    `{{id}}` and `{{pod}}`, set `role` to `backend-engineer`, `frontend-engineer`, or
    `release-engineer`, set `workdir` to the absolute directory it will work in (a checkout the
    human named, or one you create), and copy the matching `personas/<role>/AGENTS.md` over
-   `config/<id>/AGENTS.md`. Then `hx launch <id>`.
+   `config/<id>/AGENTS.md`. Then `hx launch <id>`. Scale a persona by numbering: `be-001` to
+   `be-005` are five engineers, each with its **own** workdir (a worktree per worker when they
+   share a repository); never two sessions in one checkout.
 4. **Dispatch**: `hx dispatch <id> <order-file>` for one, or several id/file pairs in one call
    for parallel work. If B must wait for A, dispatch B when A's completion wakes you. Nothing
    in hx sequences work for you; you do.

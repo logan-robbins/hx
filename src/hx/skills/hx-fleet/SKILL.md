@@ -38,6 +38,15 @@ That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
    the human named, or one you create with `mkdir -p`. hx creates no repository, no branch and
    no worktree; the directory is yours to choose and nobody's to clean up. The template ships
    `{{workdir}}` as the value precisely so that an unedited copy fails loudly.
+
+   **Scaling one persona to N sessions.** Five backend engineers are `be-001` … `be-005`, five
+   copies of the same recipe with the same `role`, and each one **must have its own workdir**:
+   two sessions committing in one checkout corrupt each other's index and dirty each other's
+   `hx complete done`. When they work on the same repository, give each a git worktree on its
+   own branch (`git -C <repo> worktree add -b feat/<x> <wt>/<id> main`), dispatch all of them
+   in one `hx dispatch` call, and integrate afterwards — a release engineer in the main checkout
+   merging the branches is the shape that has worked. Pin in each order what the others are
+   touching, so nobody reorganizes a shared file.
 4. **Copy the persona over the template's `AGENTS.md`:**
 
    ```bash
