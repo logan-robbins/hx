@@ -99,6 +99,27 @@ def _pane(root: Path, item_id: str, env) -> dict:
     return {"session": item_id, "alive": alive, "lines": lines}
 
 
+def _turn(root: Path, item_id: str) -> dict | None:
+    """`run/<id>/turn` as CONTRACTS.md renders it: `{ts, background_tasks}`, or null.
+
+    Written by the `stop` hook at every turn boundary. A non-empty `background_tasks` is the
+    UI's "stopped with work still running", and is what `hx seam` defers on (spec 09.2).
+    """
+    from .hook_stop import turn_marker
+
+    path = turn_marker(root, item_id)
+    if not path.is_file():
+        return None
+    try:
+        marker = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(marker, dict):
+        return None
+    tasks = marker.get("background_tasks")
+    return {"ts": marker.get("ts"), "background_tasks": tasks if isinstance(tasks, list) else []}
+
+
 def collect(root: Path, item_id: str, *, env=None) -> dict:
     """The `hx show <id> --json` document. Raises `NotFound` when the id is unknown."""
     root = Path(root)
@@ -175,6 +196,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         # `hx metrics` is M7; the key is present and null until then.
         "metrics": None,
         "pane": _pane(root, item_id, env),
+        "turn": _turn(root, item_id),
         "archive": archive.archive_entries(root, item_id),
         "bench": archive.bench_entries(root, pod, item_id),
     }

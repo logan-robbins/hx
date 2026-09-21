@@ -3,7 +3,8 @@
 Two jobs at every turn boundary, in this order:
 
   1. record the turn and its `background_tasks` in `run/<id>/turn`, and wake the Companion
-  2. take a seam if one is pending
+  2. take a seam if one is pending — `hx seam` reads the marker this hook just wrote, so the
+     `background_tasks` it gates on are this turn's
 
 It returns no decision output: `/goal` owns whether the agent keeps working (spec 09.1).
 The v1 cut (spec 14 D25) removed `goal-pending` delivery: it existed only for the Partner
@@ -49,14 +50,11 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     from .hook_log import seam_marker
 
     if seam_marker(root, item_id).exists():
-        # `hx seam` lands in build-8. The marker stays, so the next boundary tries again —
-        # which is exactly what spec 09.2 step 2 says happens when a seam cannot be taken yet.
-        from .hooks import log_error
+        # The `/clear` this queues runs after this hook returns — live-verified, spec 09.2
+        # step 3. A seam that cannot be taken yet leaves its marker for the next boundary.
+        from . import seam as seam_mod
 
-        log_error(
-            root, item_id, "stop",
-            "seam marker present but `hx seam` is not implemented (build-8); marker left in place",
-        )
+        seam_mod.seam(root, item_id, env=env)
     return 0, ""
 
 

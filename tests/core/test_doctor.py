@@ -136,3 +136,49 @@ def test_json_form(run_hx, instance):
     assert payload["root_abs"] == str(instance)
     assert {c["check"] for c in payload["checks"]} >= {"root", "python", "tmux", "git"}
     assert {c["status"] for c in payload["checks"]} <= {OK, WARN, FAIL}
+
+
+# --- build-8 item 9: the pre-seeded first-launch state ------------------------------------------
+
+
+def seed_home(instance, item_id="eng-001", **state):
+    import json
+
+    home = instance / "run" / item_id / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "settings.json").write_text("{}\n")
+    if state:
+        (home / ".claude.json").write_text(json.dumps(state))
+    return home
+
+
+def home_checks(instance, item_id="eng-001"):
+    return [c for c in run_checks(instance) if c[1] == f"home:{item_id}"]
+
+
+def test_doctor_fails_when_the_first_launch_state_is_missing(instance):
+    """spec 08: each home's settings **and its pre-seeded first-launch state file**."""
+    seed_home(instance)
+    failures = [c for c in home_checks(instance) if c[0] == FAIL]
+    assert failures and ".claude.json missing" in failures[0][2]
+
+
+def test_doctor_fails_when_onboarding_is_not_marked_complete(instance):
+    seed_home(instance, projects={"/w": {"hasTrustDialogAccepted": True}})
+    failures = [c for c in home_checks(instance) if c[0] == FAIL]
+    assert failures and "hasCompletedOnboarding" in failures[0][2]
+
+
+def test_doctor_fails_when_no_workspace_trust_is_accepted(instance):
+    seed_home(instance, hasCompletedOnboarding=True, projects={})
+    failures = [c for c in home_checks(instance) if c[0] == FAIL]
+    assert failures and "trust" in failures[0][2].lower()
+
+
+def test_doctor_passes_a_properly_seeded_home(instance):
+    seed_home(
+        instance,
+        hasCompletedOnboarding=True,
+        projects={"/w": {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True}},
+    )
+    assert [c for c in home_checks(instance) if c[0] == FAIL] == []

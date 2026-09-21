@@ -24,6 +24,9 @@ from .workitems import find_work_item, load_template, render, work_item_path
 
 HEARTBEAT_BOARD = "run/heartbeat-board.txt"
 
+#: The UI runs in its own tmux session, like everything else hx starts (spec 16.1, 17.2).
+UI_SESSION = "ui"
+
 
 def package_skills_dir() -> Path:
     """The package's `skills/`, which `install.sh` copies into `run/<id>/home/skills/`."""
@@ -139,6 +142,48 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     return result
 
 
+def ui_url(root: Path) -> str:
+    from .ui.server import LOOPBACK_HOST, instance_port
+
+    return f"http://{LOOPBACK_HOST}:{instance_port(root)}/"
+
+
+def start_ui(root: Path, *, env=None) -> bool:
+    """`hx ui` in tmux session `ui` (spec 16.1, 17.2). Idempotent: a live one is left alone.
+
+    It is a session and not a daemon for the same reason every agent is: one place to look,
+    `tmux attach -t ui`, and `hx heartbeat` can see whether it is still there.
+    """
+    import os
+
+    if tmux.has_session(UI_SESSION, env):
+        return False
+    hx_bin = root / "bin" / "hx"
+    if not hx_bin.exists():
+        hx_json = root / "config" / "hx.json"
+        recorded = json.loads(hx_json.read_text()).get("hx_bin") if hx_json.is_file() else None
+        if not recorded:
+            raise NotFound(
+                f"{root}: no bin/hx and no `hx_bin` in config/hx.json; `hx install` records both"
+            )
+        hx_bin = Path(recorded)
+
+    # The session env, as `start.sh` builds it: HARNESS_ROOT plus every HX_* the caller has,
+    # so a scratch instance's UI talks to the scratch tmux server and nothing else.
+    session_env = ["-e", f"HARNESS_ROOT={root}"]
+    for key, value in (os.environ if env is None else env).items():
+        if key.startswith("HX_"):
+            session_env += ["-e", f"{key}={value}"]
+    subprocess.run(
+        [
+            *tmux.tmux_command(env), "new-session", "-d", "-s", UI_SESSION,
+            "-c", str(root), *session_env, str(hx_bin), "ui",
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    return True
+
+
 def start_companion(root: Path, item_id: str, *, env=None) -> bool:
     """The Companion's own Claude Code session in window `companion` (spec 10).
 
@@ -179,22 +224,57 @@ def restart(root: Path, item_id: str, *, env=None) -> dict:
 
 
 def up(root: Path, *, env=None) -> list[dict]:
-    """Boot: `hx launch` for every `config/<id>/`, `partner` first (spec 08, 17.4)."""
-    return [launch(root, item_id, env=env) for item_id in config_ids(root)]
+    """Boot: `hx launch` for every `config/<id>/`, `partner` first, and the UI (spec 08, 17.4)."""
+    launched = [launch(root, item_id, env=env) for item_id in config_ids(root)]
+    start_ui(root, env=env)
+    return launched
+
+
+def goal_was_lost(root: Path, item_id: str, *, env=None) -> bool:
+    """A `working` agent that is alive, idle, and has not completed (build-8 item 12).
+
+    Seen live 2026-09-20: a `/goal` evaluator can clear itself, and the agent then sits at
+    its prompt with nothing to do and no way to say so. The board shows exactly this — a
+    live session on a `working` item — so the heartbeat re-sends the pointer. It is
+    idempotent for an agent that is merely between turns: the pointer is the same one it
+    already has.
+    """
+    from . import streams
+
+    pane = goal.capture_pane(item_id, env)
+    if pane is None or not goal.pane_is_idle(pane):
+        return False
+    for record in streams.iter_records(streams.main_stream(root, item_id)):
+        if "HX-COMPLETE" in json.dumps(record, default=str):
+            return False
+    return True
 
 
 def heartbeat(root: Path, *, env=None) -> dict:
     """The human's own cron, if they want one (spec 08, 12 step 4, 17.2)."""
     view = board.collect(root, env=env)
-    text = board.render_text(view)
+
+    # The Partner is not a board item, so it is checked on its own (spec 08, build-8 item 9).
+    partner_launched = False
+    if not tmux.has_session(PARTNER, env) and (root / "config" / PARTNER).is_dir():
+        launch(root, PARTNER, env=env)
+        partner_launched = True
+
+    ui_started = start_ui(root, env=env)
 
     restarted = []
+    regoaled = []
     for item in view["items"]:
-        if item["state"] == "working" and not item["session_alive"]:
+        if item["state"] != "working":
+            continue
+        if not item["session_alive"]:
             restart(root, item["id"], env=env)
             restarted.append(item["id"])
+        elif goal_was_lost(root, item["id"], env=env):
+            goal.send_goal(root, item["id"], env=env)
+            regoaled.append(item["id"])
 
-    after = board.collect(root, env=env) if restarted else view
+    after = board.collect(root, env=env) if (restarted or regoaled) else view
     text = board.render_text(after)
 
     previous_path = root / HEARTBEAT_BOARD
@@ -207,7 +287,15 @@ def heartbeat(root: Path, *, env=None) -> dict:
     if active and changed:
         woke = wake.wake_partner_status(root, f"check on each HarnessAgent: {_diff(previous, text)}")
 
-    return {"restarted": restarted, "changed": changed, "woke_partner": woke, "ts": timestamps.now()}
+    return {
+        "restarted": restarted,
+        "regoaled": regoaled,
+        "partner_launched": partner_launched,
+        "ui_started": ui_started,
+        "changed": changed,
+        "woke_partner": woke,
+        "ts": timestamps.now(),
+    }
 
 
 def _diff(previous: str | None, current: str) -> str:
@@ -248,6 +336,7 @@ def main_up(argv: list[str], root: Path, *, env=None) -> int:
     parser.parse_args(argv)
     for result in up(root, env=env):
         print(f"HX-LAUNCH {result['id']} {result['session']} goal={result['goal'] or 'none'}")
+    print(f"HX-UI {ui_url(root)}")
     return 0
 
 
@@ -264,6 +353,9 @@ def main_heartbeat(argv: list[str], root: Path, *, env=None) -> int:
         )
     print(
         f"HX-HEARTBEAT restarted={','.join(result['restarted']) or 'none'} "
+        f"regoaled={','.join(result['regoaled']) or 'none'} "
+        f"partner={'launched' if result['partner_launched'] else 'alive'} "
+        f"ui={'started' if result['ui_started'] else 'alive'} "
         f"changed={str(result['changed']).lower()} woke={result['woke_partner'] or 'not-needed'}"
     )
     return 0

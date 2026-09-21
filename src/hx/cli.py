@@ -29,6 +29,7 @@ from . import lifecycle
 from . import orders as orders_cmd
 from . import read as read_cmd
 from . import resume as resume_cmd
+from . import seam as seam_cmd
 from . import show as show_cmd
 from . import task as task_cmd
 from . import ui_cmd
@@ -39,7 +40,6 @@ from .errors import HxError
 #: (spec 14 D25) removed `repo`, `push` and `upgrade`: hx does not manage git or its own
 #: version. The value is the build-lane goal that delivers each remaining command.
 NOT_IMPLEMENTED = {
-    "seam": 8,
     "metrics": 8,
 }
 
@@ -63,6 +63,7 @@ IMPLEMENTED = {
     "read": read_cmd.main,
     "restart": lifecycle.main_restart,
     "resume": resume_cmd.main,
+    "seam": seam_cmd.main,
     "show": show_cmd.main,
     "task": task_cmd.main,
     "ui": ui_cmd.main,
@@ -85,6 +86,7 @@ the control plane:
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   bench ID                     archive the body and free the id
+  seam ID                      flush, recompose, and cut the conversation
   read ID [--full]             the Digest and the open decision
   companion ID [--once]        the Companion loop, one per agent
   flush ID                     wait for the Companion to reach the log head

@@ -295,16 +295,118 @@ def test_stop_writes_the_turn_marker(working):
     assert marker["ts"].endswith("Z") and marker["session_id"] == "s1"
 
 
-def test_stop_leaves_a_pending_seam_for_build_8(working):
+# --- build-8 items 1 and 2: `hx seam` ---------------------------------------------------------
+
+
+def seam_marker_for(instance, item_id="eng-001"):
     from hx.hook_log import seam_marker
 
-    marker = seam_marker(working, "eng-001")
+    marker = seam_marker(instance, item_id)
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
-    result = run_hook(working, "eng-001", "stop", {"hook_event_name": "Stop", "background_tasks": []})
-    assert result.returncode == 0
-    assert marker.is_file(), "the marker stays, so the next boundary tries again (spec 09.3)"
-    assert "build-8" in (working / "logs" / "eng-001" / "hook-errors.log").read_text()
+    return marker
+
+
+def test_stop_takes_a_pending_seam(working, tmux_server):
+    """spec 09.2: the marker is written, the next `stop` consumes it via `hx seam`."""
+    from .test_transitions import pasted
+
+    marker = seam_marker_for(working)
+    (working / "run" / "eng-001" / "fake-input.log").write_text("")
+
+    result = run_hook(working, "eng-001", "stop",
+                      {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
+    assert result.returncode == 0, result.stderr
+    assert not marker.exists(), "a taken seam consumes its marker"
+    wait_for(lambda: "/clear" in pasted(working, "eng-001"), what="the `/clear` hx seam pasted")
+    assert events(working, "eng-001", "eng-001-main")[-1] == "seam"
+
+
+def test_a_seam_is_deferred_while_background_work_runs(working, tmux_server):
+    """spec 09.2 step 2: not a boundary. The marker stays and the next `stop` retries."""
+    from .test_transitions import pasted
+
+    marker = seam_marker_for(working)
+    (working / "run" / "eng-001" / "fake-input.log").write_text("")
+
+    result = run_hook(working, "eng-001", "stop",
+                      {"hook_event_name": "Stop", "background_tasks": ["bg_1"]}, tmux=tmux_server)
+    assert result.returncode == 0, result.stderr
+    assert marker.is_file(), "the marker stays for the next boundary"
+    assert "/clear" not in pasted(working, "eng-001")
+    assert "seam" not in events(working, "eng-001", "eng-001-main")
+
+
+def test_the_deferred_seam_is_taken_at_the_next_quiet_boundary(working, tmux_server):
+    from .test_transitions import pasted
+
+    marker = seam_marker_for(working)
+    (working / "run" / "eng-001" / "fake-input.log").write_text("")
+    run_hook(working, "eng-001", "stop",
+             {"hook_event_name": "Stop", "background_tasks": ["bg_1"]}, tmux=tmux_server)
+    assert marker.is_file()
+
+    run_hook(working, "eng-001", "stop",
+             {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
+    assert not marker.exists()
+    wait_for(lambda: "/clear" in pasted(working, "eng-001"), what="the `/clear`")
+
+
+def test_hx_seam_recomposes_the_context_file_before_it_cuts(working, tmux_server):
+    """The file the agent Reads after the seam is composed *at* the seam, not before it."""
+    from hx.seam import seam
+
+    context = working / "run" / "eng-001" / "eng-001-main.context.md"
+    context.write_text("stale\n")
+    seam_marker_for(working)
+    result = seam(working, "eng-001", env={"HX_TMUX": " ".join(tmux_server)})
+    assert result["outcome"] == "taken"
+    assert context.read_text() != "stale\n"
+    assert "## Tasks" in context.read_text()
+
+
+def test_the_seam_record_is_the_spec_07_4_shape(working, tmux_server):
+    """CONTRACTS.md `hx metrics`: this record is what the metric is computed from."""
+    from hx.seam import seam
+
+    logs = working / "logs" / "eng-001"
+    with (logs / "eng-001-main.jsonl").open("a") as handle:
+        handle.write(json.dumps({
+            "seq": 900, "ts": "2026-09-20T12:00:00Z", "stream": "eng-001-main",
+            "event": "post_tool", "context_tokens": 91044,
+        }) + "\n")
+    state = working / "state" / "eng-001"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "eng-001-main.json").write_text(json.dumps({
+        "seq": 900, "goal": "g", "prompt_version": {"base": "abc", "role": "def"},
+        "open_steps": [], "closed_steps": [],
+        "working_set": {"files": [{"path": "a.py", "note": "n"}, {"path": "b.py", "note": "n"}]},
+    }))
+
+    seam_marker_for(working)
+    seam(working, "eng-001", env={"HX_TMUX": " ".join(tmux_server)})
+
+    record = records(working, "eng-001", "eng-001-main")[-1]
+    assert record["event"] == "seam"
+    assert record["source"] == "clear"
+    assert record["prompt_version"] == {"base": "abc", "role": "def"}
+    assert record["context_tokens_before"] == 91044
+    assert record["context_file_bytes"] > 0
+    assert record["working_set_size"] == 2
+    assert isinstance(record["seq"], int) and record["ts"].endswith("Z")
+
+
+def test_hx_seam_defers_from_the_cli_without_touching_anything(working, tmux_server, hx):
+    from hx.hook_stop import turn_marker
+
+    marker = seam_marker_for(working)
+    turn_marker(working, "eng-001").write_text(json.dumps({
+        "ts": "2026-09-20T12:00:00Z", "background_tasks": ["bg_1"], "session_id": "s1",
+    }))
+    result = hx("seam", "eng-001")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "HX-SEAM eng-001 deferred background_tasks=1"
+    assert marker.is_file()
 
 
 def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(working):
@@ -322,3 +424,43 @@ def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(work
     section = text[text.index("## Task"):text.index("## Step state")]
     assert "_none yet_" not in section, "an empty task section tells the subagent nothing"
     assert "already in this conversation" in section
+
+
+# --- build-8 item 3: the compaction hooks are log-only ----------------------------------------
+
+
+def test_precompact_records_and_never_blocks(working):
+    """spec 02, 09.1: a block suppresses compaction for the whole turn (live E4)."""
+    result = run_hook(working, "eng-001", "precompact",
+                      {"hook_event_name": "PreCompact", "trigger": "auto"})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "", "no decision output, ever"
+    record = records(working, "eng-001", "eng-001-main")[-1]
+    assert record["event"] == "compact_pending" and record["trigger"] == "auto"
+
+
+def test_postcompact_records_what_claude_kept(working):
+    result = run_hook(working, "eng-001", "postcompact", {
+        "hook_event_name": "PostCompact", "trigger": "auto",
+        "compact_summary": "kept the importer work, dropped the log output",
+    })
+    assert result.returncode == 0, result.stderr
+    record = records(working, "eng-001", "eng-001-main")[-1]
+    assert record["event"] == "compact"
+    assert "kept the importer work" in record["compact_summary"]
+
+
+def test_a_subagents_compaction_lands_on_its_own_stream(working):
+    """Live E8: PreCompact fires for subagent compactions with the parent's session_id."""
+    run_hook(working, "eng-001", "subagent-start",
+             {"hook_event_name": "SubagentStart", "agent_id": "agt_x", "agent_type": "general-purpose"})
+    run_hook(working, "eng-001", "precompact",
+             {"hook_event_name": "PreCompact", "trigger": "auto", "agent_id": "agt_x"})
+    assert events(working, "eng-001", "eng-001-s001")[-1] == "compact_pending"
+    assert "compact_pending" not in events(working, "eng-001", "eng-001-main")
+
+
+def test_an_unknown_agent_id_falls_back_to_the_main_stream(working):
+    run_hook(working, "eng-001", "precompact",
+             {"hook_event_name": "PreCompact", "trigger": "auto", "agent_id": "never-seen"})
+    assert events(working, "eng-001", "eng-001-main")[-1] == "compact_pending"

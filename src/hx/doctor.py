@@ -130,6 +130,31 @@ def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
     return found
 
 
+def _first_launch_state(home: Path, item_id: str) -> tuple[str, str, str]:
+    """`run/<id>/home/.claude.json`: onboarding done and the cwd's trust dialog accepted."""
+    path = home / ".claude.json"
+    label = f"home:{item_id}"
+    if not path.is_file():
+        return (FAIL, label, ".claude.json missing; `hx launch` pre-seeds it, and without it "
+                             "the pane stops at the onboarding wizard (CONTRACTS.md)")
+    try:
+        state = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        return (FAIL, label, f".claude.json is not valid JSON: {exc}")
+    if not isinstance(state, dict) or state.get("hasCompletedOnboarding") is not True:
+        return (FAIL, label, ".claude.json has no `hasCompletedOnboarding: true`; the first "
+                             "launch would stop at the onboarding wizard")
+    projects = state.get("projects")
+    trusted = [
+        cwd for cwd, entry in (projects or {}).items()
+        if isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True
+    ] if isinstance(projects, dict) else []
+    if not trusted:
+        return (FAIL, label, ".claude.json accepts no workspace trust dialog; the first launch "
+                             'would stop at "Quick safety check … Yes, I trust this folder"')
+    return (OK, label, f".claude.json (onboarding done, {len(trusted)} trusted cwd)")
+
+
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
 
@@ -233,6 +258,24 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             (WARN, "hx.json", "config/hx.json absent; `hx install --skeleton-only` records it (CONTRACTS.md)")
         )
 
+    # `bin/hx` and `bin/hx-hook` are what puts hx on every agent's PATH (spec 03, 17.1).
+    for name in ("hx", "hx-hook"):
+        link = root / "bin" / name
+        if not link.exists():
+            checks.append((
+                FAIL, "bin",
+                f"bin/{name} is missing; agents get hx on their PATH from $HARNESS_ROOT/bin "
+                f"(spec 03). `hx install` writes it",
+            ))
+        elif not os.access(link, os.X_OK):
+            checks.append((
+                FAIL, "bin",
+                f"bin/{name} does not resolve to an executable "
+                f"(-> {os.readlink(link) if link.is_symlink() else link}); re-run `hx install`",
+            ))
+        else:
+            checks.append((OK, "bin", f"bin/{name} -> {os.path.realpath(link)}"))
+
     token = root / "seed" / "token"
     if not token.is_file():
         checks.append((
@@ -263,6 +306,10 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             if target.is_file()
             else (FAIL, f"home:{item_id}", "settings.json missing; `hx launch` writes it")
         )
+        # The pre-seeded first-launch state (spec 08): without it the pane stops at the
+        # onboarding wizard or the workspace-trust dialog and nothing about launch is
+        # non-interactive any more (CONTRACTS.md `run/<id>/home/.claude.json`).
+        checks.append(_first_launch_state(home, item_id))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the

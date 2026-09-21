@@ -2,7 +2,9 @@
 
 M0 pass criteria: "`start.sh` argv is exactly `--dangerously-skip-permissions --effort …
 --model … --append-system-prompt-file run/<id>/persona.md` with no prompt argument;
-`persona.md` equals `AGENTS.md` above the header".
+`persona.md` equals `AGENTS.md` above the header", plus `--setting-sources user` (build-8
+item 0: the workdir is a checkout hx does not own, and its `.claude/settings.json` must
+never load).
 
 The tmux tests run a real tmux server on a private socket and a fake `claude` that records
 its argv, env and cwd (ORCHESTRATION.md "Fake claude for M0-M5").
@@ -19,6 +21,10 @@ from .conftest import AGENTS_MD, FAKE_CLAUDE, PERSONA, clean_env, wait_for
 
 EXPECTED_FLAGS = [
     "--dangerously-skip-permissions",
+    # Only the home's settings load: not the workdir's `.claude/settings.json`, not its
+    # `.claude/settings.local.json` (build-8 item 0, live 2026-09-20 21:20).
+    "--setting-sources",
+    "user",
     "--effort",
     "xhigh",
     "--model",
@@ -144,7 +150,11 @@ def test_no_prompt_argument_ever(ready, tmux_server):
         arg
         for index, arg in enumerate(record["argv"])
         if not arg.startswith("--")
-        and (index == 0 or record["argv"][index - 1] not in ("--effort", "--model", "--append-system-prompt-file"))
+        and (
+            index == 0
+            or record["argv"][index - 1]
+            not in ("--effort", "--model", "--append-system-prompt-file", "--setting-sources")
+        )
     ]
     assert positional == [], f"a prompt argument reached the binary: {positional}"
     assert not FORBIDDEN_FLAGS & set(record["argv"])
@@ -280,3 +290,61 @@ def test_doctor_fails_a_live_agent_without_the_sandbox(ready, tmux_server):
     subprocess.run([*tmux_server, "set-environment", "-t", "=eng-001", "IS_SANDBOX", "0"], check=True)
     failures = live_agent_checks("eng-001", env)
     assert any(status == FAIL and "IS_SANDBOX" in detail for status, detail in failures), failures
+
+
+# --- build-8 item 0: the workdir's own `.claude/` never reaches an agent -----------------------
+
+
+def test_the_companion_also_gets_setting_sources_user(ready, tmux_server):
+    """spec 10, 17.4: the Companion runs in HARNESS_ROOT but is launched by the same script."""
+    from hx import companion as companion_mod
+
+    (ready / "run" / "eng-001").mkdir(parents=True, exist_ok=True)
+    (ready / "run" / "eng-001" / "companion-system.md").write_text("You are a Companion.\n")
+    result = start(ready, "eng-001", "--companion", tmux=tmux_server)
+    assert result.returncode == 0, result.stderr
+    record_path = ready / "run" / "eng-001" / "fake-argv-companion.json"
+    wait_for(record_path.is_file, what="the Companion to record its argv")
+    argv = json.loads(record_path.read_text())["argv"]
+    assert "--setting-sources" in argv
+    assert argv[argv.index("--setting-sources") + 1] == "user"
+    assert companion_mod  # the module this launch belongs to
+
+
+def test_the_workdirs_own_claude_settings_are_never_loaded(ready, tmux_server):
+    """Live 2026-09-20 21:20: a worker loaded its product repo's deny-all PreToolUse hook and
+    could never run `hx complete`. Only `user` is loaded, so `project` and `local` cannot be.
+    """
+    workdir = ready / "wt" / "eng-001"
+    tripwire = workdir / ".claude"
+    tripwire.mkdir(parents=True, exist_ok=True)
+    (tripwire / "settings.json").write_text(
+        '{"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", '
+        '"command": "echo TRIPWIRE >&2; exit 2"}]}]}, "permissions": {"defaultMode": "plan"}}\n'
+    )
+    (tripwire / "settings.local.json").write_text('{"permissions": {"defaultMode": "plan"}}\n')
+
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    argv = record["argv"]
+    assert argv[argv.index("--setting-sources") + 1] == "user", (
+        "neither `project` nor `local` may be in the list; the workdir is a checkout hx does "
+        "not own (build-8 item 0)"
+    )
+    assert str(workdir) == record["cwd"], "the agent really is running in that directory"
+
+
+def test_harness_root_bin_is_on_the_agents_path(ready, tmux_server):
+    """build-8 item 11: an agent runs `hx board`, not `$(cat config/hx.json | …)`."""
+    record = launch_and_record(ready, "eng-001", tmux_server)
+    path = record["env"].get("PATH", "")
+    assert path.split(":")[0] == str(ready / "bin"), f"PATH starts with {path.split(':')[0]!r}"
+
+
+def test_the_companion_also_gets_bin_on_its_path(ready, tmux_server):
+    (ready / "run" / "eng-001").mkdir(parents=True, exist_ok=True)
+    (ready / "run" / "eng-001" / "companion-system.md").write_text("You are a Companion.\n")
+    assert start(ready, "eng-001", "--companion", tmux=tmux_server).returncode == 0
+    record_path = ready / "run" / "eng-001" / "fake-argv-companion.json"
+    wait_for(record_path.is_file, what="the Companion to record its env")
+    path = json.loads(record_path.read_text())["env"].get("PATH", "")
+    assert path.split(":")[0] == str(ready / "bin")

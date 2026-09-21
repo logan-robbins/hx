@@ -5,7 +5,7 @@ Four steps, in order:
   1. refuse root; check tmux, git, Python; find `claude` and pin a tested version
   2. create the instance from the package skeleton
   3. the seed token — the one thing only a human can do
-  4. `hx launch partner`, then print `tmux attach -t partner`
+  4. `hx launch partner` and `hx ui`, then print `tmux attach -t partner` and the URL
 
 That is the whole of deployment (spec 14 D25): no mirror, no worktrees, no unit files. After
 this the human types nothing but chat.
@@ -33,6 +33,7 @@ from .root import resolve_root
 LAYOUT_DIRS = (
     "adapters",
     "archive",
+    "bin",
     "config",
     "logs",
     "pods",
@@ -98,7 +99,38 @@ def write_hx_json(root: Path) -> dict[str, str]:
     """Record the entry points the adapters and hooks read (CONTRACTS.md, spec 17.1)."""
     recorded = entry_points()
     store.atomic_write_json(root / "config" / "hx.json", recorded)
+    link_bin(root, recorded)
     return recorded
+
+
+#: `bin/hx` and `bin/hx-hook` of spec 03, as symlinks to whatever `config/hx.json` records.
+BIN_LINKS = (("hx", "hx_bin"), ("hx-hook", "hook_bin"))
+
+
+def link_bin(root: Path, recorded: dict[str, str]) -> list[Path]:
+    """Point `$HARNESS_ROOT/bin/{hx,hx-hook}` at the package's entry points (spec 03).
+
+    `start.sh` prepends this directory to every agent's `PATH`, so an agent runs `hx board`
+    rather than hunting for the binary through `config/hx.json` — which is what the Partner
+    had to do in the live rehearsal of 2026-09-20 21:20 (build-8 item 11). Symlinks, not
+    copies, so a package upgrade that moves the entry point is followed by one `hx install`.
+    """
+    bindir = root / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for name, key in BIN_LINKS:
+        target = recorded.get(key)
+        link = bindir / name
+        if not target:
+            continue
+        if link.is_symlink() or link.exists():
+            if link.is_symlink() and os.readlink(link) == target:
+                written.append(link)
+                continue
+            link.unlink()
+        link.symlink_to(target)
+        written.append(link)
+    return written
 
 
 def skeleton_dir() -> Path:
@@ -282,6 +314,9 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
 
     launched = lifecycle.launch(root, PARTNER, env=env)
     print(f"4. partner {launched['session']}")
+    lifecycle.start_ui(root, env=env)
+    print(f"   ui {lifecycle.ui_url(root)}")
     print()
     print("tmux attach -t partner")
+    print(lifecycle.ui_url(root))
     return 0

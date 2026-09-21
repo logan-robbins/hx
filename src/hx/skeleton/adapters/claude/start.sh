@@ -10,6 +10,17 @@
 #
 # The argv is exactly spec 17.4: no prompt argument, no --resume, no compaction variables.
 #
+# `--setting-sources user` is not optional. Claude Code loads three settings sources — `user`
+# ($CLAUDE_CONFIG_DIR/settings.json), `project` (<cwd>/.claude/settings.json) and `local`
+# (<cwd>/.claude/settings.local.json) — and the workdir is a checkout hx does not own. In the
+# live rehearsal of 2026-09-20 21:20 a worker loaded its product repo's own
+# `.claude/settings.json`, whose deny-all PreToolUse hook and `defaultMode: plan` denied every
+# tool call, so the agent could never reach `hx complete` and its goal evaluator gave up. Only
+# the home's settings may apply, so only `user` is loaded. Verified 2026-09-20 against
+# `claude --help` on the pinned 2.1.278 and against
+# code.claude.com/docs/en/cli-reference ("Comma-separated list of setting sources to load
+# (`user`, `project`, `local`)"). Managed settings are a separate level and still apply.
+#
 # Auth is the instance token at $HARNESS_ROOT/seed/token (spec 11 Auth, CONTRACTS.md), read
 # from the file by the launcher itself and exported as CLAUDE_CODE_OAUTH_TOKEN. It is never an
 # argument to anything — not to `env`, not to `tmux -e` — so it cannot appear in `ps` output,
@@ -141,6 +152,9 @@ if [ "$mode" = exec ]; then
   export HARNESS_ROOT="$root"
   export CLAUDE_CONFIG_DIR="$home"
   export DISABLE_AUTOUPDATER=1
+  # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of
+  # 2026-09-20 21:20 the Partner had to dig the absolute path out of config/hx.json.
+  export PATH="$root/bin:$PATH"
   # Every agent runs sandboxed and with permissions bypassed, always (spec 11). The
   # `.claude.json` pre-seed stays too: both mechanisms, so no dialog can ever appear.
   export IS_SANDBOX=1
@@ -150,6 +164,7 @@ if [ "$mode" = exec ]; then
   # Spec 17.4, exactly. No prompt argument, ever.
   exec "$bin" \
     --dangerously-skip-permissions \
+    --setting-sources user \
     --effort "$effort" \
     --model "$model" \
     --append-system-prompt-file "$system_prompt"
@@ -167,6 +182,7 @@ env_args=(
   -e CLAUDE_CONFIG_DIR="$home"
   -e DISABLE_AUTOUPDATER=1
   -e IS_SANDBOX=1
+  -e PATH="$root/bin:$PATH"
 )
 while IFS='=' read -r name value; do
   case "$name" in HX_*) env_args+=(-e "$name=$value") ;; esac

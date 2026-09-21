@@ -480,3 +480,45 @@ edge styling are the two places that will have no data to read.
 >    `src/hx/ui/data.py`'s docstring and from the stylesheet; ui-8 replaced both files' contents
 >    wholesale, so there is nothing left reading a key you removed.
 
+
+## 2026-09-20 — build-8 — `turn` in `hx show --json`, and the UI is now a session hx starts
+
+### `hx show <id> --json` gains `turn` (CONTRACTS.md, goal build-8 item 7)
+
+```json
+"turn": {"ts": "2026-09-20T13:09:40Z", "background_tasks": ["<claude task id>", "…"]}
+```
+
+From `run/<id>/turn`, written by the `stop` hook at every turn boundary; **`null`** when no
+turn has ended yet. Exactly those two keys — the marker file also holds `session_id` and the
+view drops it. The board's `turn_ts` is this `ts`, unchanged.
+
+A non-empty `background_tasks` is worth showing as "stopped with work still running", because
+it is also what `hx seam` refuses on: a turn that ended with background work is not a
+boundary, so the seam marker stays and the next turn retries (spec 09.2). An agent that shows
+background tasks for a long time is an agent whose pending seam is not being taken.
+
+`hx show partner --json` is unaffected: it is still the reduced `{id, partner_md, pane,
+streams}` document.
+
+### `hx ui` is started by `hx install`, `hx up` and `hx heartbeat` (item 8)
+
+It now runs in its own tmux session named `ui`, launched with `$HARNESS_ROOT/bin/hx ui` and
+`HARNESS_ROOT` in the session env. `hx up` prints `HX-UI http://127.0.0.1:<port>/` as its last
+line and `hx install` prints the URL under step 4; `hx heartbeat` restarts it when the session
+is gone and reports `ui=started|alive`. Nothing about `serve()` changed — it still reads
+`config/ui.json` itself and still writes only `run/ui-token`. Two consequences for you:
+
+- **the port in the URL comes from `config/ui.json`**, through `hx.ui.server.instance_port`,
+  which is the function `hx.lifecycle.ui_url` calls. If you change how the port is resolved,
+  that line changes with it.
+- **a second `hx ui` is not started** when the session is alive, so restarting the server
+  during development means `tmux kill-session -t ui` first.
+
+### One new module you may want to read rather than re-implement
+
+`hx.goal.input_box(pane_text)` returns what is sitting in a pane's input box — everything from
+the last prompt glyph onward, real TUI or fake. It exists because a paste's Enter can be
+swallowed (build-8 item 10), but it is also the honest way to tell "the agent is typing" from
+"the agent has said it": the transcript is everything *above* that point. The Partner page's
+pane capture may want it.

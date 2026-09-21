@@ -169,7 +169,8 @@ def test_up_launches_every_config_id_partner_first(instance, hx, agent):
     agent("eng-002")
     result = hx("up")
     assert result.returncode == 0, result.stderr
-    launched_ids = [line.split()[1] for line in result.stdout.strip().split("\n")]
+    lines = [l for l in result.stdout.strip().split("\n") if l.startswith("HX-LAUNCH")]
+    launched_ids = [line.split()[1] for line in lines]
     assert launched_ids[0] == "partner", "partner first (spec 08)"
     assert set(launched_ids) == {"partner", "eng-001", "eng-002"}
     for item_id in launched_ids:
@@ -191,6 +192,68 @@ def test_heartbeat_restarts_a_dead_session(instance, hx, launched, orders, tmux_
     ).returncode == 0
 
 
+def test_heartbeat_launches_a_dead_partner(instance, hx, launched, tmux_server):
+    """spec 08, build-8 item 9: the Partner is not a board item, so it is checked on its own."""
+    launched("partner")
+    subprocess.run([*tmux_server, "kill-session", "-t", "=partner"], check=True)
+
+    result = hx("heartbeat")
+    assert result.returncode == 0, result.stderr
+    assert "partner=launched" in result.stdout
+    assert subprocess.run(
+        [*tmux_server, "has-session", "-t", "=partner"], capture_output=True
+    ).returncode == 0
+
+
+def test_heartbeat_leaves_a_live_partner_alone(instance, hx, launched):
+    launched("partner")
+    assert "partner=alive" in hx("heartbeat").stdout
+
+
+def test_heartbeat_repastes_the_goal_to_an_idle_working_agent(instance, hx, launched, orders):
+    """build-8 item 12: a `/goal` evaluator that cleared itself leaves the agent stranded."""
+    launched("eng-001")
+    orders("eng-001")
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
+    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
+    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
+
+    result = hx("heartbeat")
+    assert result.returncode == 0, result.stderr
+    assert "regoaled=eng-001" in result.stdout
+    wait_for(lambda: "/goal The order for" in pasted(instance, "eng-001"), what="the pointer again")
+
+
+def test_heartbeat_does_not_repaste_to_an_agent_that_completed(instance, hx, launched, orders):
+    """`HX-COMPLETE` in the stream means the agent is done, whatever the pane looks like."""
+    from hx.streams import append_record
+
+    launched("eng-001")
+    orders("eng-001")
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
+    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
+    append_record(instance, "eng-001", "eng-001-main", {
+        "event": "post_tool", "tool": "Bash", "output": "HX-COMPLETE eng-001 done",
+    })
+    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
+
+    assert "regoaled=none" in hx("heartbeat").stdout
+    assert "/goal" not in pasted(instance, "eng-001")
+
+
+def test_heartbeat_does_not_repaste_to_a_busy_agent(instance, hx, launched, orders, tmux_server):
+    from .test_transitions import hold_pane
+
+    launched("eng-001")
+    orders("eng-001")
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
+    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
+    hold_pane(tmux_server, "eng-001")
+    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
+
+    assert "regoaled=none" in hx("heartbeat").stdout
+
+
 def test_heartbeat_wakes_the_partner_only_when_the_board_changed(instance, hx, launched, orders):
     launched("partner", "eng-001")
     orders("eng-001")
@@ -206,6 +269,49 @@ def test_heartbeat_wakes_the_partner_only_when_the_board_changed(instance, hx, l
     assert hx("complete", "done", harness_id="eng-001").returncode == 0
     third = hx("heartbeat")
     assert "changed=true" in third.stdout
+
+
+# --- build-8 item 8: the UI is a tmux session hx starts --------------------------------------
+
+
+def test_up_starts_the_ui_session_and_prints_the_url(instance, hx, tmux_server):
+    """spec 16.1, 17.2: `hx up` brings up the read-only view with the fleet."""
+    result = hx("up")
+    assert result.returncode == 0, result.stderr
+    assert "HX-UI http://127.0.0.1:8765/" in result.stdout
+    assert subprocess.run(
+        [*tmux_server, "has-session", "-t", "=ui"], capture_output=True
+    ).returncode == 0
+
+
+def test_starting_the_ui_is_idempotent(instance, hx, tmux_server):
+    from hx.lifecycle import start_ui
+
+    env = {"HX_TMUX": " ".join(tmux_server)}
+    assert start_ui(instance, env=env) is True
+    assert start_ui(instance, env=env) is False, "a live UI session is left alone"
+
+
+def test_the_url_follows_config_ui_json(instance):
+    import json
+
+    from hx.lifecycle import ui_url
+
+    assert ui_url(instance) == "http://127.0.0.1:8765/"
+    (instance / "config" / "ui.json").write_text(json.dumps({"port": 9111}))
+    assert ui_url(instance) == "http://127.0.0.1:9111/"
+
+
+def test_heartbeat_restarts_the_ui_when_it_is_dead(instance, hx, launched, tmux_server):
+    launched("partner")
+    assert "ui=started" in hx("heartbeat").stdout
+    assert "ui=alive" in hx("heartbeat").stdout
+
+    subprocess.run([*tmux_server, "kill-session", "-t", "=ui"], check=True)
+    assert "ui=started" in hx("heartbeat").stdout
+    assert subprocess.run(
+        [*tmux_server, "has-session", "-t", "=ui"], capture_output=True
+    ).returncode == 0
 
 
 # --- hx wake ----------------------------------------------------------------------------------------
@@ -410,3 +516,69 @@ def test_a_pane_that_has_not_drawn_yet_is_not_idle(instance):
 
     assert pane_is_idle("") is False
     assert pane_is_idle("$ \n") is False
+
+
+# --- build-8 item 10: the input box, and what is still sitting in it ----------------------------
+#
+# The live chrome of a pane holding an unsubmitted paste (2.1.278, 2026-09-20 04:10 and 21:17).
+# The Enter that followed `paste-buffer` was swallowed and the text stayed put.
+
+REAL_UNSUBMITTED = "\n".join([
+    "❯ /clear",
+    "",
+    "─" * 80,
+    "❯ Companion pass: read /abs/run/eng-001/companion/eng-001-main.pass.md and do",
+    "  what it says.",
+    "",
+    "─" * 80,
+    "  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+    "",
+])
+REAL_SUBMITTED = "\n".join([
+    "❯ Companion pass: read /abs/run/eng-001/companion/eng-001-main.pass.md and do",
+    "  what it says.",
+    "",
+    "  Reading /abs/run/eng-001/companion/eng-001-main.pass.md",
+    "",
+    "─" * 80,
+    '❯ Try "create a util logging.py that..."',
+    "─" * 80,
+    "  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt",
+    "",
+])
+FAKE_UNSUBMITTED = "hx-fake-idle>\n/goal The order for eng-001 is in /abs/item.md\n"
+FAKE_SUBMITTED = "hx-fake-idle>\n/goal The order for eng-001 is in /abs/item.md\nhx-fake-idle>\n"
+
+
+def holds(pane, text):
+    """What `hx.goal.submit` asks: is this text still waiting in the input box?"""
+    from hx.goal import _squash, input_box
+
+    return _squash(text)[:40] in _squash(input_box(pane))
+
+
+def test_an_unsubmitted_paste_is_still_in_the_input_box():
+    assert holds(REAL_UNSUBMITTED, "Companion pass: read /abs/run/eng-001/companion/"
+                                   "eng-001-main.pass.md and do what it says.")
+
+
+def test_a_submitted_paste_is_above_the_prompt_not_in_the_box():
+    """The transcript is drawn above the prompt, so the echo there must not read as pending."""
+    assert not holds(REAL_SUBMITTED, "Companion pass: read /abs/run/eng-001/companion/"
+                                     "eng-001-main.pass.md and do what it says.")
+
+
+def test_the_placeholder_is_not_mistaken_for_pending_text():
+    assert not holds(REAL_SUBMITTED, "/clear")
+
+
+def test_the_fake_pane_reads_the_same_way():
+    """One detector for both, as with `pane_is_idle` (ORCHESTRATION.md "Fake claude")."""
+    pointer = "/goal The order for eng-001 is in /abs/item.md"
+    assert holds(FAKE_UNSUBMITTED, pointer)
+    assert not holds(FAKE_SUBMITTED, pointer)
+
+
+def test_a_pane_with_no_prompt_yet_holds_everything():
+    """Before the TUI draws, there is no box; the paste cannot have been submitted."""
+    assert holds("starting up\n", "starting up")

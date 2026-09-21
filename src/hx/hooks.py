@@ -20,7 +20,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import hook_context, hook_log, hook_stop, hook_subagent
+from . import hook_compact, hook_context, hook_log, hook_stop, hook_subagent
 from .errors import HxError
 from .ids import is_id
 from .root import resolve_root
@@ -43,7 +43,7 @@ EVENTS = {
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
-    "companion-stop",
+    "precompact", "postcompact", "companion-stop",
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
@@ -56,6 +56,9 @@ _HANDLERS = {
     "subagent-stop": hook_subagent.stop,
     "subagent-result": hook_subagent.result,
     "stop": hook_stop.handle,
+    # Log-only, and `precompact` never blocks (spec 02, 09.1; live findings E4 and E8).
+    "precompact": hook_compact.pre,
+    "postcompact": hook_compact.post,
     "companion-stop": hook_stop.companion_handle,
 }
 

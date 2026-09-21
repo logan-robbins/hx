@@ -378,9 +378,13 @@ def test_a_matching_harness_id_is_fine(instance, hx, launched, tmux_server):
     assert result.returncode == 0 and result.stdout.startswith("Use the Read tool once on ")
 
 
-def test_an_unimplemented_event_names_its_build_goal(instance, hx, launched):
-    """`precompact` and `postcompact` are log-only and land with the Companion (spec 09.1)."""
+def test_every_spec_09_event_is_implemented(instance, hx, launched):
+    """build-8 item 3 closed the last two: `precompact` and `postcompact` are log-only."""
+    from hx.hooks import EVENTS, IMPLEMENTED
+
+    assert set(EVENTS) == set(IMPLEMENTED), set(EVENTS) ^ set(IMPLEMENTED)
+
     launched("eng-001")
     result = run_hook(instance, "eng-001", "precompact", {})
     assert result.returncode == 0
-    assert "not implemented (build-5)" in result.stderr
+    assert "not implemented" not in result.stderr

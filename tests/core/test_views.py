@@ -10,7 +10,7 @@ from .conftest import wait_for
 
 SHOW_KEYS = {
     "id", "pod", "role", "state", "file", "work_item", "task", "persona_path", "step_state",
-    "context_file", "streams", "subagents", "metrics", "pane", "archive", "bench",
+    "context_file", "streams", "subagents", "metrics", "pane", "turn", "archive", "bench",
 }
 ORDERS_KEYS = {"root_abs", "ts", "orders"}
 ORDER_ENTRY_KEYS = {
@@ -128,6 +128,22 @@ def test_show_falls_back_to_the_pane_log_for_a_dead_session(instance, hx, launch
     document = json.loads(hx("show", "eng-001", "--json").stdout)
     assert document["pane"]["alive"] is False
     assert document["pane"]["lines"], "the pane log is the fallback for a dead session"
+
+
+def test_show_carries_the_turn_marker(instance, hx, launched, orders):
+    """CONTRACTS.md `turn`: from `run/<id>/turn`, null before the first turn ends."""
+    launched("eng-001")
+    dispatched(instance, hx, orders)
+    assert json.loads(hx("show", "eng-001", "--json").stdout)["turn"] is None
+
+    from hx.hook_stop import turn_marker
+
+    turn_marker(instance, "eng-001").write_text(json.dumps({
+        "ts": "2026-09-20T13:09:40Z", "background_tasks": ["task_1"], "session_id": "s1",
+    }))
+    turn = json.loads(hx("show", "eng-001", "--json").stdout)["turn"]
+    assert turn == {"ts": "2026-09-20T13:09:40Z", "background_tasks": ["task_1"]}
+    assert "session_id" not in turn, "only the two keys CONTRACTS.md names"
 
 
 # --- hx orders ---------------------------------------------------------------------------------

@@ -136,3 +136,70 @@ def test_cli_honours_harness_root_env(run_hx, tmp_path):
     result = run_hx("install", "--skeleton-only", env_extra={"HARNESS_ROOT": str(root)})
     assert result.returncode == 0, result.stderr
     assert (root / "config" / "models.json").is_file()
+
+
+# --- build-8 item 11: `hx` on the agents' PATH -------------------------------------------------
+
+
+def test_install_links_bin_hx_to_the_recorded_entry_points(tmp_path):
+    """spec 03: `bin/hx` and `bin/hx-hook`, symlinks to what `config/hx.json` records."""
+    import json
+    import os
+
+    from hx.install import install_skeleton
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    recorded = json.loads((root / "config" / "hx.json").read_text())
+
+    for name, key in (("hx", "hx_bin"), ("hx-hook", "hook_bin")):
+        link = root / "bin" / name
+        assert link.is_symlink(), f"bin/{name} is not a symlink"
+        assert os.readlink(link) == recorded[key]
+        assert os.access(link, os.X_OK), f"bin/{name} does not resolve to an executable"
+
+
+def test_the_links_are_refreshed_when_the_entry_point_moves(tmp_path):
+    """A package upgrade that moves the binary is followed by one `hx install` (spec 17.1)."""
+    import os
+
+    from hx.install import install_skeleton, link_bin
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    moved = tmp_path / "elsewhere" / "hx"
+    moved.parent.mkdir()
+    moved.write_text("#!/bin/sh\n")
+    moved.chmod(0o755)
+
+    link_bin(root, {"hx_bin": str(moved), "hook_bin": str(moved)})
+    assert os.readlink(root / "bin" / "hx") == str(moved)
+
+
+def test_doctor_fails_when_bin_hx_is_missing(tmp_path):
+    from hx.doctor import FAIL, run_checks
+    from hx.install import install_skeleton
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    (root / "bin" / "hx").unlink()
+
+    failures = [c for c in run_checks(root) if c[0] == FAIL and c[1] == "bin"]
+    assert failures and "bin/hx is missing" in failures[0][2]
+
+
+def test_doctor_fails_when_bin_hx_dangles(tmp_path):
+    """A symlink to a binary that has moved is worse than none: it fails silently at launch."""
+    import os
+
+    from hx.doctor import FAIL, run_checks
+    from hx.install import install_skeleton
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    link = root / "bin" / "hx"
+    link.unlink()
+    os.symlink(str(tmp_path / "gone" / "hx"), link)
+
+    failures = [c for c in run_checks(root) if c[0] == FAIL and c[1] == "bin"]
+    assert failures, "a dangling bin/hx must fail the doctor"

@@ -126,11 +126,80 @@ def capture_pane(name: str, env=None, *, lines: int = 40) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
+# --- submitting a paste (build-8 item 10) ------------------------------------------------------
+#
+# Live, 2.1.278, twice on 2026-09-20 (build-7's Companion check at 04:10 and the orchestrator's
+# Partner rehearsal at 21:17): an Enter sent immediately after `paste-buffer` is **swallowed**.
+# The TUI is still ingesting the paste, the Enter is eaten with it, and the text sits in the
+# input box forever — on a fresh pane, where the first paste of a session lands. A later Enter
+# submits the same text fine, so this is a race, not a rejection.
+#
+# Every paste in hx goes through this one function — the `/goal` pointer, `hx seam`'s `/clear`,
+# and both pastes of every Companion wake — so the fix belongs here and nowhere else: watch the
+# input box rather than guess at a delay.
+
+#: The line that draws the input prompt, in the real TUI or in the fake.
+_PROMPT_LINE = re.compile(r"^\s*(?:[│|]\s*)?(?:[❯>]|hx-fake-idle>)")
+#: The glyph itself, stripped so the rest of that line is what is *in* the box.
+_PROMPT_GLYPH = re.compile(r"^\s*(?:[│|]\s*)?(?:[❯>]|hx-fake-idle>)\s?")
+
+#: How many capture-pane polls each stage gets before the next step happens anyway. This is
+#: not a timeout in the spec-08 sense — nothing fails when it runs out, hx simply presses
+#: Enter again — and it is what keeps a paste from hanging a launch forever.
+_POLL_ATTEMPTS = 30
+_POLL_INTERVAL_S = 0.05
+
+#: How many times Enter is pressed before hx stops trying. Two are routinely needed: a
+#: **slash command** opens the autocomplete menu as it is typed, and the first Enter goes to
+#: the menu, not to the prompt (live, 2.1.278, 2026-09-20 — `hx seam` pasted `/clear` from
+#: inside the `stop` hook and it sat in the box with the menu open until a second Enter).
+#: Everything hx pastes but the `/goal` pointer and the Companion pass is a slash command.
+_ENTER_ATTEMPTS = 4
+
+
+def _squash(text: str) -> str:
+    """Drop every space and newline, so a probe survives the TUI wrapping what it drew."""
+    return "".join(text.split())
+
+
+def input_box(pane_text: str) -> str:
+    """What is sitting in the input box: everything from the last prompt glyph onward.
+
+    The transcript is drawn *above* the prompt, so text that has been submitted is not in
+    here — which is the whole point. Text still waiting to be sent is.
+    """
+    lines = pane_text.split("\n")
+    for index in range(len(lines) - 1, -1, -1):
+        if _PROMPT_LINE.match(lines[index]):
+            head = _PROMPT_GLYPH.sub("", lines[index], count=1)
+            return "\n".join([head, *lines[index + 1 :]])
+    return pane_text
+
+
+def _poll(name: str, env, wanted: bool, probe: str) -> bool:
+    """Poll the input box until `probe`'s presence matches `wanted`. True when it did."""
+    import time
+
+    for attempt in range(_POLL_ATTEMPTS):
+        pane = capture_pane(name, env)
+        if pane is None:
+            return False
+        if (probe in _squash(input_box(pane))) == wanted:
+            return True
+        if attempt + 1 < _POLL_ATTEMPTS:
+            time.sleep(_POLL_INTERVAL_S)
+    return False
+
+
 def paste(name: str, text: str, env=None) -> None:
-    """Paste through a tmux buffer loaded from a file, then Enter (goal build-2 item 3).
+    """Paste through a tmux buffer loaded from a file, then submit it (build-2 item 3).
 
     `load-buffer` from a file rather than `set-buffer` with an argument, so what is pasted
     never passes through a command line and no shell can touch it.
+
+    Submitting is not one `send-keys Enter`: wait for the pasted text to appear in the input
+    box, press Enter, wait for the box to let go of it, and press Enter once more if it has
+    not. No fixed sleep anywhere — each stage returns the moment its condition holds.
     """
     command = tmux.tmux_command(env)
     buffer_name = f"hx-goal-{name.replace(':', '-')}"
@@ -140,10 +209,36 @@ def paste(name: str, text: str, env=None) -> None:
     try:
         subprocess.run([*command, "load-buffer", "-b", buffer_name, source], check=True)
         subprocess.run([*command, "paste-buffer", "-b", buffer_name, "-t", target_of(name)], check=True)
-        subprocess.run([*command, "send-keys", "-t", target_of(name), "Enter"], check=True)
+        submit(name, text, env)
     finally:
         subprocess.run([*command, "delete-buffer", "-b", buffer_name], capture_output=True, check=False)
         Path(source).unlink(missing_ok=True)
+
+
+def submit(name: str, text: str, env=None) -> bool:
+    """Press Enter until the pasted text has left the input box (build-8 item 10).
+
+    Two things eat an Enter, and both were found live on 2.1.278:
+
+      1. the paste itself — an Enter arriving while the TUI is still ingesting it is
+         swallowed with it, which is what stranded the first paste of every session;
+      2. the slash-command autocomplete — pasting `/clear` opens the command menu, and the
+         first Enter goes to the menu rather than to the prompt.
+
+    So this waits for the text to appear, then presses Enter and waits for the box to let go
+    of it, and tries again if it has not. An Enter on an empty prompt submits nothing, so an
+    extra press costs nothing. Returns whether the box did let go.
+    """
+    command = tmux.tmux_command(env)
+    #: A short distinctive slice is enough, and short enough to survive any wrapping.
+    probe = _squash(text)[:40]
+
+    _poll(name, env, wanted=True, probe=probe)
+    for _ in range(_ENTER_ATTEMPTS):
+        subprocess.run([*command, "send-keys", "-t", target_of(name), "Enter"], check=True)
+        if _poll(name, env, wanted=False, probe=probe):
+            return True
+    return False
 
 
 def wait_for_prompt(item_id: str, env=None) -> None:
