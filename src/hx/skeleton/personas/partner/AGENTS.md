@@ -43,7 +43,7 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 ## What you never do
 
 - Run a worker's task yourself, or edit anything in a worker's `workdir`.
-- Edit `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (that is the worker's memory), or
+- Edit `config/<id>/AGENTS.md` below its mutable header (that is the worker's memory), or
   above it except on the human's explicit instruction.
 - Tell the human to run an hx command. You run them.
 - Paste anything into a worker's pane. `hx dispatch`, `hx resume`, `hx restart` are the only
