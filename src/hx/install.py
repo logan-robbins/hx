@@ -1,25 +1,23 @@
 """`hx install` — the one manual command (spec 17.2).
 
-Six steps, in order:
+Four steps, in order:
 
   1. refuse root; check tmux, git, Python; find `claude` and pin a tested version
   2. create the instance from the package skeleton
   3. the seed token — the one thing only a human can do
-  4. mirror the product repo, if one was named
-  5. render the boot and heartbeat units into this user's own HOME, without enabling them
-  6. `hx launch partner`, then print `tmux attach -t partner`
+  4. `hx launch partner`, then print `tmux attach -t partner`
 
-After this the human types nothing but chat.
+That is the whole of deployment (spec 14 D25): no mirror, no worktrees, no unit files. After
+this the human types nothing but chat.
 
 hx reads nothing from the user's `~/.claude` at any point, on any platform: auth is the
 instance token at `seed/token` (spec 11 Auth). `--skeleton-only` stops after step 2, which is
-what the test suites and `hx upgrade` use.
+what the test suites use.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import platform
 import shutil
@@ -37,15 +35,10 @@ LAYOUT_DIRS = (
     "archive",
     "config",
     "logs",
-    "orders",
     "pods",
-    "pods/partner",
-    "repos",
     "run",
     "seed",
-    "seed/home",
     "state",
-    "wt",
 )
 
 #: Spec 03: everything but `config/` is runtime state, so the instance ignores it in git.
@@ -54,7 +47,6 @@ pods/
 logs/
 state/
 run/
-orders/
 tasks.json
 """
 
@@ -72,6 +64,7 @@ EXPECTED_SKELETON_FILES = (
     "config/partner/AGENTS.md",
     "config/partner/SUBAGENTS.md",
     "config/partner/harness.json",
+    "personas/partner/AGENTS.md",
     "templates/work-item.md",
 )
 
@@ -82,8 +75,8 @@ def entry_points() -> dict[str, str]:
     The entry-point scripts sit next to the running interpreter — that is where `uv tool
     install` and a venv both put them — so resolve from `sys.executable` first and fall back
     to PATH. Hook commands in every `run/<id>/home/settings.json` reference these, so a
-    package upgrade that moves them is followed by `hx upgrade`, not by broken hooks
-    (spec 17.1).
+    package upgrade that moves them is followed by another `hx install`, which re-records
+    them (spec 17.1).
     """
     # `sys.executable` unresolved: inside a venv that is the venv's own python, which is the
     # interpreter hx runs on and the one whose bin/ holds the entry-point scripts. Resolving
@@ -242,7 +235,6 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     parser = argparse.ArgumentParser(prog="hx install", add_help=True)
     parser.add_argument("--root", help="HARNESS_ROOT to create (default: $HARNESS_ROOT, else ~/hx)")
     parser.add_argument("--claude", default=None, help="the claude binary to pin (default: PATH)")
-    parser.add_argument("--repo", default=None, help="the product repo to mirror (spec 17.2 step 4)")
     parser.add_argument(
         "--skeleton-only",
         action="store_true",
@@ -286,38 +278,10 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     print(f"3. seed token at {seed_token_path(root)}, mode 0600")
 
     # --- step 4 ------------------------------------------------------------------------
-    if args.repo:
-        from . import repo as repo_mod
-
-        config = repo_mod.add(root, args.repo, env=env)
-        print(f"4. mirrored {config['name']} from {config['upstream']} ({config['base_branch']})")
-    else:
-        from . import repo as repo_mod
-
-        existing = repo_mod.load_repo(root)
-        print(
-            f"4. product repo {existing['name']}" if existing
-            else "4. no product repo yet; `hx repo add <url|path>` mirrors one"
-        )
-
-    # --- step 5 ------------------------------------------------------------------------
-    from . import units
-
-    hx_bin = json.loads((root / "config" / "hx.json").read_text()).get("hx_bin", "")
-    home = Path(env.get("HOME") or Path.home())
-    written = units.install_units(root, hx_bin, home)
-    print(f"5. units written to {units.target_dir(home)}")
-    for path in written:
-        print(f"   created  {path.name}")
-    print("   hx does not enable them. To start them at login, run:")
-    for command in units.enable_commands(home):
-        print(f"     {command}")
-
-    # --- step 6 ------------------------------------------------------------------------
     from . import lifecycle
 
     launched = lifecycle.launch(root, PARTNER, env=env)
-    print(f"6. partner {launched['session']}")
+    print(f"4. partner {launched['session']}")
     print()
     print("tmux attach -t partner")
     return 0

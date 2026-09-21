@@ -3,7 +3,8 @@
 # process (spec 17.4).
 #
 #   start.sh <id>          ensure tmux session <id> with the session env of spec 11, and run
-#                          the launcher in window `main` (cwd wt/<id>, HARNESS_ROOT for partner)
+#                          the launcher in window `main` (cwd harness.json.workdir,
+#                          HARNESS_ROOT for partner)
 #   start.sh --exec <id>   the launcher itself: derive run/<id>/persona.md from
 #                          config/<id>/AGENTS.md above `## UPDATES BELOW ONLY`, then exec
 #
@@ -87,11 +88,19 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
   "refuse: $token_file is readable by group or other; it holds a year-long credential and must
   be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
+# The directory this agent runs in: `workdir` from config/<id>/harness.json, whatever the
+# Partner chose for it (spec 17.2). hx creates no repository and no branch there.
 if [ "$id" = partner ]; then
   cwd=$root
 else
-  cwd=$root/wt/$id
-  [ -d "$cwd" ] || die "refuse: no worktree $cwd; \`hx launch $id\` cuts it from the mirror (spec 17.3)"
+  cwd=$("$python" - "$harness" "$root" <<'CWDEOF'
+import json, os, sys
+workdir = (json.load(open(sys.argv[1])).get("workdir") or "").strip()
+print(workdir if os.path.isabs(workdir) else os.path.join(sys.argv[2], workdir) if workdir
+      else sys.argv[2])
+CWDEOF
+)
+  [ -d "$cwd" ] || die "refuse: no workdir $cwd; it is \`workdir\` in $harness and must exist (spec 17.2)"
 fi
 
 bin=${HX_CLAUDE_BIN:-}

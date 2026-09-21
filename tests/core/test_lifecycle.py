@@ -14,8 +14,8 @@ import pytest
 from .conftest import wait_for
 
 PARTNER_ONLY = [
-    ("dispatch", ["eng-001", "orders/eng-001.md"]),
-    ("resume", ["eng-001", "orders/eng-001.addendum.md"]),
+    ("dispatch", ["eng-001", "run/order-eng-001.md"]),
+    ("resume", ["eng-001", "run/addendum-eng-001.md"]),
     ("bench", ["eng-001"]),
     ("launch", ["eng-001"]),
     ("restart", ["eng-001"]),
@@ -52,7 +52,7 @@ def test_partner_commands_allow_a_system_caller(instance, hx, command, args):
 def test_goal_pastes_at_the_idle_prompt(instance, hx, launched, orders):
     launched("eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
 
     result = hx("goal", "eng-001")
@@ -62,24 +62,40 @@ def test_goal_pastes_at_the_idle_prompt(instance, hx, launched, orders):
     assert (instance / "run" / "eng-001" / "goal").is_file()
 
 
-def test_goal_is_left_pending_when_the_pane_is_mid_turn(instance, hx, launched, orders, tmux_server):
+def test_goal_waits_for_the_idle_prompt(instance, hx, launched, orders, tmux_server):
+    """spec 08: `hx goal` waits for the pane, with no timeout. `goal-pending` is gone (D25)."""
+    import threading
+
     from .test_transitions import hold_pane
 
     launched("eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-    (instance / "run" / "eng-001" / "goal").unlink()
     hold_pane(tmux_server, "eng-001")
 
-    result = hx("goal", "eng-001")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "HX-GOAL eng-001 pending"
-    assert (instance / "run" / "eng-001" / "goal-pending").is_file()
-    # The marker is written in both cases, so the `working` invariant holds during the turn
-    # in which a busy pane is owed its goal (spec 08).
-    assert (instance / "run" / "eng-001" / "goal").is_file()
-    assert "/goal The order for" not in pasted(instance, "eng-001")
+    held = {}
+
+    def send():
+        held["result"] = hx("goal", "eng-001")
+
+    thread = threading.Thread(target=send)
+    thread.start()
+    try:
+        # It is still waiting: nothing was pasted and no pending marker was left behind.
+        thread.join(1.0)
+        assert thread.is_alive(), "hx goal returned instead of waiting for the prompt"
+        assert not (instance / "run" / "eng-001" / "goal-pending").exists()
+        assert "/goal The order for" not in pasted(instance, "eng-001")
+    finally:
+        subprocess.run(
+            [*tmux_server, "send-keys", "-t", "=eng-001:main", "/fake-release", "Enter"],
+            check=True,
+        )
+        thread.join(30)
+
+    assert held["result"].stdout.strip() == "HX-GOAL eng-001 pasted"
+    wait_for(lambda: "/goal The order for" in pasted(instance, "eng-001"), what="the pointer")
 
 
 def test_goal_now_pastes_into_a_busy_pane(instance, hx, launched, orders, tmux_server):
@@ -88,7 +104,7 @@ def test_goal_now_pastes_into_a_busy_pane(instance, hx, launched, orders, tmux_s
 
     launched("eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
     hold_pane(tmux_server, "eng-001")
 
@@ -96,15 +112,6 @@ def test_goal_now_pastes_into_a_busy_pane(instance, hx, launched, orders, tmux_s
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "HX-GOAL eng-001 pasted"
     wait_for(lambda: "/goal The order for" in pasted(instance, "eng-001"), what="the pointer")
-
-
-def test_goal_clears_a_pending_marker_once_pasted(instance, hx, launched, orders):
-    launched("eng-001")
-    orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
-    (instance / "run" / "eng-001" / "goal-pending").write_text("2026-09-20T12:00:00Z\n")
-    assert hx("goal", "eng-001", "--now").returncode == 0
-    assert not (instance / "run" / "eng-001" / "goal-pending").exists()
 
 
 def test_goal_without_a_pane_says_so(instance, hx):
@@ -120,7 +127,7 @@ def test_the_pointer_never_carries_the_order(instance, hx, launched, orders):
     """spec 06: what `hx goal` pastes is a fixed short form that never grows with the task."""
     launched("eng-001")
     orders("eng-001", order="A very long order " * 50)
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
     pointer = [line for line in pasted(instance, "eng-001").split("\n") if line.startswith("/goal")][0]
     assert "A very long order" not in pointer
@@ -136,7 +143,7 @@ def test_restart_relaunches_and_resends_the_goal(instance, hx, launched, orders,
     # record has to be read before it.
     first = json.loads((instance / "run" / "eng-001" / "fake-argv.json").read_text())
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the first pointer")
     assert not (instance / "run" / "eng-001" / "fake-argv.json").exists()
 
@@ -172,7 +179,7 @@ def test_up_launches_every_config_id_partner_first(instance, hx, agent):
 def test_heartbeat_restarts_a_dead_session(instance, hx, launched, orders, tmux_server):
     launched("eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
     subprocess.run([*tmux_server, "kill-session", "-t", "=eng-001"], check=True)
 
@@ -187,7 +194,7 @@ def test_heartbeat_restarts_a_dead_session(instance, hx, launched, orders, tmux_
 def test_heartbeat_wakes_the_partner_only_when_the_board_changed(instance, hx, launched, orders):
     launched("partner", "eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
 
     first = hx("heartbeat")
     assert first.returncode == 0

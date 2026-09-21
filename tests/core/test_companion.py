@@ -108,17 +108,18 @@ def test_the_system_prompt_is_composed_before_launch(instance, hx):
     assert "state budget:" in text and "seam policy:" in text
 
 
-def test_the_companion_home_has_only_its_two_hooks(instance, hx):
-    """spec 10: the guard, and its own stop. No product skills, no CLAUDE.md."""
+def test_the_companion_home_has_only_its_own_stop_hook(instance, hx):
+    """spec 10, spec 14 D25: its own stop and nothing else. No guard, no CLAUDE.md."""
     assert hx("launch", "eng-001").returncode == 0
     home = instance / "run" / "eng-001" / "companion-home"
     settings = json.loads((home / "settings.json").read_text())
-    assert sorted(settings["hooks"]) == ["PreToolUse", "Stop"]
+    assert sorted(settings["hooks"]) == ["Stop"]
     commands = [h["command"] for entries in settings["hooks"].values()
                 for entry in entries for h in entry["hooks"]]
-    assert any(c.endswith("guard") for c in commands)
-    assert any(c.endswith("companion-stop") for c in commands)
-    assert not (home / "CLAUDE.md").exists() and not (home / "skills").exists()
+    assert commands == [c for c in commands if c.endswith("companion-stop")]
+    assert not (home / "CLAUDE.md").exists()
+    # The one skill it gets (handoff/orchestrator-to-build.md, 2026-09-20).
+    assert [p.name for p in (home / "skills").iterdir()] == ["hx-companion"]
 
 
 def test_there_is_no_headless_runner_left(instance):
@@ -446,7 +447,7 @@ def test_a_replayed_resume_keeps_closed_steps(companion, hx, companion_script):
 
     assert hx("complete", "decision", harness_id="eng-001").returncode == 0
     write_addendum(companion, "eng-001", "Use a generator, not a list.")
-    assert hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=companion).returncode == 0
+    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=companion).returncode == 0
 
     state = state_of(companion, "eng-001", "eng-001-main")
     assert state["closed_steps"][0]["outcome"] == "read the importer"

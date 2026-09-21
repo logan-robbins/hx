@@ -20,7 +20,7 @@ def caller(env=None) -> str | None:
 
 
 def require_partner_caller(command: str, env=None) -> None:
-    """`hx dispatch`, `resume`, `bench`, `launch`, `restart`, `read`, `push` are the Partner's."""
+    """`hx dispatch`, `resume`, `bench`, `launch`, `restart` and `read` are the Partner's."""
     who = caller(env)
     if who is not None and who != PARTNER:
         raise Refused(

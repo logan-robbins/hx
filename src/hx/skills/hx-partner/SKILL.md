@@ -1,56 +1,51 @@
 ---
 name: hx-partner
-description: Operating manual for the hx Partner — write order files, dispatch a plan with after dependencies, read digests, resume or bench by outcome, and keep the fleet's invariants. Use when writing an order, dispatching or resuming any id including yourself, reading the board, acting on a completion, or answering the human about fleet state.
+description: Operating manual for the hx Partner — write an order file, create and launch a worker, dispatch, read digests, resume or bench by outcome, and report to the human in chat. Use when writing an order, creating or dispatching a worker, acting on a completion, or answering the human about the fleet.
 ---
 
 # hx-partner
 
-You are the Partner of an hx instance. This skill is the mechanics: the exact files, the exact
-commands, and what to do with each outcome. Who you are and how you should think is in your
-system prompt; do not look for it here.
+You are the Partner of an hx instance. Your persona says what you do; **this skill is the
+mechanics** — the exact file shapes, the exact commands, and what each one prints.
 
 Two facts govern everything below.
 
 **The human never runs hx.** They attach to your tmux session, talk to you, and read what you
-tell them. Every command in this file is run by you, by a worker, or by `hx up` / `hx heartbeat`
-on a timer. Never tell the human to run one. If something needs doing, do it.
+tell them. Every command here is run by you or by a worker. Never tell the human to run one.
 
-**No task text is ever a command-line argument.** Orders and addenda are files. Agents receive
-a pointer to a file, never prose in argv. If you are about to put a sentence of instruction
-inside quotes on a command line, you are doing it wrong.
+**You have no work item, no order file of your own, and no `/goal`.** The human's message in
+chat is your goal. Nothing dispatches you, nothing completes you, and there is no check to run
+against your own work. You are the one participant here that hx does not manage.
 
 ## At every boundary, one Read
 
-You are a HarnessAgent like any other, so this applies to you too. Every conversation you have
-starts at a boundary — startup, a seam, a restart, a compaction — and at each one a hook prints
-a single line (spec 09.1, verbatim):
+You have no `/goal`, but you do have a Companion and you do take seams — your conversation is
+cut and rebuilt exactly as a worker's is. At each boundary a hook prints one line (spec 09.1,
+verbatim):
 
 ```
 Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
 **Use the Read tool, exactly once, before anything else.** Not `cat`, not `head`, not any Bash
-command. A `Bash cat` of that path costs the same tokens, does not count as the one Read the
-seam metric measures, and is recorded as waste. Do not read it again later in the turn.
+command: those cost the same tokens and do not count as the one Read the seam metric measures.
+Do not read it again later in the turn.
 
-Your context file holds your memory, your own order and its addenda, your `## Tasks`, the step
-state your Companion kept, and — because you are the Partner — `PARTNER.md` and the current
-board. That last part matters: **after a boundary you do not need to run `hx board` to find out
-where things stand.** It is already in front of you. Running it again is the Partner's version
-of re-reading a file the working set already covers.
+Your context file holds your memory, the step state your Companion kept, and — because you are
+the Partner — `PARTNER.md` and the current board. That last part matters: **after a boundary
+you do not need to run `hx board` to find out where things stand.** It is already in front of
+you, and running it again is the Partner's version of re-reading a file the working set
+already covers.
 
 Your persona is in your system prompt, so never read a file to find out who you are.
 
 ## The order file
 
-`orders/<id>.md`. You write it with the Write tool. It has optional frontmatter and exactly two
-sections:
+You write it with the Write tool, to any path you like — `hx dispatch` reads it, copies it
+verbatim into the work item, and **deletes it**. The order then lives in `tasks.json` and the
+work item, and nowhere else. It has exactly two sections and no frontmatter:
 
 ````markdown
----
-after: [eng-001]
----
-
 ## Order
 
 <everything the agent needs, in full>
@@ -66,228 +61,136 @@ after: [eng-001]
 ```
 ````
 
-`hx dispatch` refuses the file if `## Order`, `## Definition of done`, or a non-empty
-`### Checks` bash block is missing. The order has no length limit and is copied verbatim into
-the work item.
+`hx dispatch` refuses a file missing `## Order`, `## Definition of done`, or a non-empty
+`### Checks` bash block. There is no length limit. `templates/order.md` is a worked example.
 
 ### Writing `## Order`
 
 The order is the whole task. The agent gets a pointer to its work item and nothing else; it
-cannot ask you a question mid-flight, and anything you leave out it will either guess at or
-burn context rediscovering. Put in:
-
-- What to build or change, in the terms the codebase uses.
-- The paths that matter, named. A path you know and withhold costs the agent a search.
-- What you already know that it would otherwise have to derive — the shape of an existing
-  module it should follow, the convention in force, the thing that looks wrong but is
-  deliberate.
-- What is explicitly out of scope, and what must not change.
-- Why, when the why would change how it decides an ambiguous case.
+cannot ask you a question mid-flight, and anything you leave out it will guess at or burn
+context rediscovering. Put in what to change in the terms the codebase uses, the paths that
+matter, what you already know that it would otherwise derive, what is out of scope, and why —
+where the why would change how it decides an ambiguous case.
 
 Size it to finish inside one context window. Seams are backup, not plan: an order that assumes
-five seams is an order that should have been two orders with an `after` between them.
-
-### Writing `## Definition of done`
-
-Numbered, concrete, and checkable from the transcript. The goal evaluator reads the
-conversation including tool results, and judges met / not yet met / impossible against this
-list. "Works correctly" is not a criterion; "`hx doctor --json` emits every check the text form
-emits, and both exit 1 when any check fails" is.
+five seams should have been two orders.
 
 ### Writing `### Checks`
 
-This is the contract. `hx complete done` runs the block with `bash -e` in the agent's worktree
-(`HARNESS_ROOT` for your own item) and every command must exit 0. If any fails, the agent gets
-`HX-CHECK-FAILED <id>` with the output, the item stays `working`, its goal stays active, and it
-fixes and retries. You are not involved.
+This is the contract. `hx complete done` runs the block with `bash -e` in the worker's
+`workdir` and every command must exit 0. If any fails the agent gets `HX-CHECK-FAILED <id>`
+with the output, the item stays `working`, its goal stays active, and it fixes and retries —
+you are not involved.
 
-Write checks that fail on work that looks finished but is not:
-
-```bash
-.venv/bin/python -m pytest tests/test_doctor.py -q
-.venv/bin/python -m hx doctor --json | .venv/bin/python -c 'import json,sys; json.load(sys.stdin)'
-git diff --quiet HEAD -- docs
-```
-
-When nothing is executable, check the deliverable exists and is not empty: `test -s report.md`.
-An empty block is refused at dispatch. Checks run in the worktree, so they see the agent's
-branch, not yours.
-
-Your own item's checks are usually `hx board --require-done eng-001 eng-002 qa-001`, which
-exits 0 only when every listed id is `complete` with outcome `done`.
+Write checks that fail on work that looks finished but is not. When nothing is executable,
+check the deliverable exists and is not empty: `test -s report.md`. An empty block is refused
+at dispatch.
 
 ## Creating a worker
 
-A fresh instance has exactly one agent: you. Every other id is one you create, and creating one
-is three steps:
+A fresh instance has one agent: you. Every other id is one you make.
 
-1. **Copy the template.** `templates/worker/` holds `AGENTS.md`, `SUBAGENTS.md`, and
-   `harness.json`. Copy all three to `config/<id>/`, where `<id>` matches
-   `[a-z]+-[0-9]{3}` — `eng-001`, `qa-002`, `rev-001`.
-2. **Fill it in.** Replace `{{id}}` and `{{pod}}` throughout all three files. In `harness.json`
-   set `role` to one that has a `companion/roles/<role>.md` (shipped:
-   `engineer`, `reviewer`; `partner` is yours), and set `model` to a full id listed in
-   `config/models.json` — never an alias. In `AGENTS.md`, **rewrite the indented paragraph**
-   with what this id is actually for: its domain, the part of the codebase it owns, the
-   judgement you want it to exercise. That paragraph is the whole difference between this agent
-   and the next one, and it reaches it as system prompt in every turn.
-3. **Leave everything below `## UPDATES BELOW ONLY` empty.** That section belongs to the agent.
+1. Copy `templates/worker/` to `config/<id>/`, where `<id>` is `<pod>-NNN` — `be-001`,
+   `fe-001`, `rel-001`.
+2. Replace `{{id}}` and `{{pod}}`. Set `role` to `backend-engineer`, `frontend-engineer` or
+   `release-engineer` — each has a `companion/roles/<role>.md`, and a role without one is
+   refused. Set `workdir` to the **absolute path of a directory that already exists**: a
+   checkout the human named, or one you create. hx creates no repository, no branch and no
+   worktree; the directory is yours to choose and nobody's to clean up.
+3. Copy `personas/<role>/AGENTS.md` over `config/<id>/AGENTS.md`, then edit the paragraph that
+   says what this particular id is for. Leave everything below `## UPDATES BELOW ONLY` empty —
+   that section is the worker's own memory.
+4. `hx launch <id>`.
 
-Then `hx launch <id>`, and the id is ready to be dispatched. `hx doctor` will tell you if the
-config does not validate.
+`hx doctor` tells you if the config does not validate.
 
-Editing a persona later is rare and only on direct human instruction; it takes effect at that
-worker's next `hx restart`.
-
-## Dispatching a plan
+## Dispatching
 
 ```bash
-hx launch eng-001                    # only if the id has no session yet; idempotent
-hx dispatch eng-001 orders/eng-001.md eng-002 orders/eng-002.md qa-001 orders/qa-001.md
+hx dispatch be-001 /tmp/order-be-001.md                        # one worker
+hx dispatch be-001 /tmp/o1.md fe-001 /tmp/o2.md                # two at once
 ```
 
-One call for the whole plan. Items whose `after` entries are all `done` go to `working` and get
-their goal immediately; the rest go to `queued` with no goal, and hx promotes each one the
-moment its last dependency completes `done`. You are not woken in between, and you do not
-sequence dispatches by hand.
+Prints `HX-DISPATCH <id> working goal=sent` per id.
 
-Readiness is `tasks.json[<dep>].outcome == "done"`. Re-dispatching a dependency resets its
-outcome to `null`, so a stale completion never satisfies a newer dependent.
+**There is no dependency field and no queue.** If `fe-001` must not start until `be-001` is
+done, you wait for `be-001` to complete and then dispatch `fe-001` — exactly as a human running
+two sessions would. Nothing sequences work for you; you do.
 
-Use `after` for real dependencies only — one item genuinely needs another's output. Two items
-that merely touch the same area are not dependent; give them separate write scopes instead and
-run them together.
+## Waiting
 
-## Dispatching yourself
+`hx complete` wakes you with `<id> complete: <outcome>; hx read <id>`. Between wakes you have
+nothing to do. **Do not poll the board and do not watch panes** — a wake is never lost, and a
+busy session reads it between tool calls.
 
-An ask from the human becomes your own order, exactly like a worker's:
+`hx heartbeat` is an ordinary command; if the human has put it in their own cron it restarts
+dead sessions and wakes you when the board moved. hx ships no timer of its own.
 
-1. Write `orders/partner.md`: `## Order` capturing what they want, `## Definition of done` with
-   `### Checks` that prove it (`hx board --require-done …`).
-2. `hx dispatch partner orders/partner.md`.
-
-Your pane is mid-turn when you run it, so `hx goal` cannot paste into it. It leaves
-`run/partner/goal-pending`, and the hook that runs at the end of your turn delivers it — which
-is why **you have to let the turn end**. Do not sit waiting for the goal to appear inside the
-turn that asked for it; finish, and it arrives. From the next turn you are working under a
-goal.
-
-Nothing is archived and nothing is wiped — your session, streams, and step state are
-continuous. Human prompts in the same chat keep working at any point; the goal just means you
-are no longer waiting to be prompted. The same is true of `hx resume partner`.
-
-## Watching
+## Looking
 
 ```bash
-hx board                 # one line per id, partner first, then invariant errors; exit 1 on any error
-hx board --json          # same, structured
-hx show <id>             # work item, step state, context file, stream tails, metrics, subagents
-hx orders                # every order and addendum, with the tasks.json record it produced
-hx archive               # benched bodies and archived dispatches, per id
-hx metrics <id>          # per-seam tool-call counts; how well continuity is actually working
-hx doctor                # tmux, git, pinned claude binary and version, credentials, homes, mirror
+hx board [--json]     # one line per id: id, pod, state, outcome, dispatched, session alive,
+                      #   open subagents, context_tokens, seams. It judges nothing; exits 0
+hx show <id> [--json] # everything hx knows about one id: work item, step state, context file,
+                      #   stream tails, subagent handles and their digests, pane capture
+hx read <id> [--full] # the Digest the Companion wrote, and the open decision
+hx doctor             # what is here, what is missing, what is broken
 ```
 
-`hx orders` is the one to reach for when you are about to write an order and want to see how
-you scoped the last one, or when a `queued` item's `after` is not what you meant. `hx archive`
-is how you find what a benched id actually delivered, after its work item has been reset.
-All of these take `--json` and none of them changes anything.
-
-`hx show <id>` is where the subagent picture is: each worker's streams, one per subagent
-(`<id>-sNNN`, open or closed), and the digest each closed one produced. You do not read a
-worker's raw stream — that is the Companion's, and it is the one reader — but the open-subagent
-count on the board tells you why a worker has not completed yet. `hx complete` refuses while any
-stream is still open, so "still has subagents running" is a normal state, not a stuck one.
-
-You are woken when something changes: `hx complete` sends you `<id> complete: <outcome>;
-hx read <id>`, and `hx heartbeat` (system cron, every 15 minutes) wakes you with a board diff
-when a `working` or `queued` item exists and the board changed. You do not need to poll. Do not
-build a loop that checks the board on a timer — one already exists, outside your session, and
-it survives your seams.
-
-**Board invariant errors are yours to fix.** A `working` item with a dead session or no goal
-marker means that agent is not actually working: `hx restart <id>`. It flushes, recomposes the
-context file, relaunches the pane bare, and sends the goal once the pane is ready.
+`hx board` is a listing, not a verdict: there are no invariants and no error lines. If
+something looks wrong, `hx show <id>` is where the answer is.
 
 ## On a completion
 
-```bash
-hx read <id>             # the Digest the Companion wrote for you
-hx read <id> --full      # the whole work item body when the Digest is not enough
-```
-
-Read it before acting, then update `PARTNER.md` — what landed, what is open, what you learned.
-`PARTNER.md` is your memory and it is the only place a benched item's story survives.
-
-Then act on the outcome:
+`hx read <id>`, then update `PARTNER.md`, then act on the outcome:
 
 | Outcome | What it means | What you do |
 |---|---|---|
-| `done` | Checks passed, worktree clean, no open streams | Dependents were already promoted by hx. `hx bench <id>` once you have consumed the digest, freeing the id for the next order |
-| `blocked` | Something outside the task is in the way | If an addendum can lift it, `hx resume`. If the work belongs to another id or another shape, `hx bench <id>` and dispatch a new order |
-| `decision` | Someone has to choose, and it is not the agent | Ask the human in chat; record the question in `PARTNER.md`. When they answer, write `orders/<id>.addendum.md` and `hx resume <id> orders/<id>.addendum.md` |
-| `exhausted` | The task was bigger than one agent | `hx bench <id>`, split into two order files with an `after` between them, dispatch both |
+| `done` | Checks passed, workdir clean, no open subagent stream | Dispatch whatever it unblocks. `hx bench <id>` when you want the id for something else |
+| `blocked` | Something outside the task is in the way | If an addendum can lift it, `hx resume`. If the work belongs elsewhere, `hx bench` and dispatch a new order to another id |
+| `decision` | Someone has to choose, and it is not the agent | Ask the human in chat; record the question in `PARTNER.md`. When they answer, write an addendum file and `hx resume <id> <file>` |
+| `exhausted` | The task was bigger than one agent | `hx bench <id>`, split it into two orders, dispatch the first |
 
-### Resume vs. bench
-
-```bash
-hx resume <id> orders/<id>.addendum.md
-```
-
-`hx resume` continues the *same* task: the agent keeps its `## Tasks`, its step state, its
-memory, its worktree, and its logs. Only the order grows — the addendum is appended beneath
-`## Order` as `## Order addendum <ts>`, the outcome is cleared, the item goes back to
-`working`, and the goal is sent. This is the right move whenever the work so far is still
-good. It requires the item to be `complete` with outcome `blocked` or `decision`.
-
-The addendum file is prose. It does not repeat the order and it carries no `##` headings of
-its own — it lands underneath `## Order` in the work item. Say what changed, answer the
-question that was asked, and tell the agent explicitly what still stands so it does not
-re-derive it.
+### Resume, not re-dispatch
 
 ```bash
-hx bench <id>
+hx resume be-001 /tmp/addendum-be-001.md      # HX-RESUME be-001 working goal=sent
 ```
 
-`hx bench` archives the body to `pods/<pod>/archive/<id>-<ts>.md`, resets the item from the
-template, and returns it to `idle`. It is a fresh start and it does not touch `tasks.json`.
-Use it when the task itself changes or moves to another id — never as a way to "retry", which
-throws away everything the agent learned.
+The worker keeps its `## Tasks`, its step state, its memory and its workdir. Only the order
+grows: the addendum is appended beneath `## Order` as `## Order addendum <ts>`, the outcome is
+cleared, and the goal is re-sent. This is right whenever the work so far is still good, and it
+requires the item to be `complete` with outcome `blocked` or `decision`.
 
-You can resume yourself the same way: `orders/partner.addendum.md`, then
-`hx resume partner orders/partner.addendum.md`. The goal lands in `goal-pending` and your
-`stop` hook delivers it, exactly as with self-dispatch.
-
-## Finishing your own item
-
-When the plan is done, run `hx complete done` yourself. Your `### Checks` — the
-`hx board --require-done …` — prove it, your Companion writes your `## Digest`, and then you
-report to the human in chat, in their terms, not in ids and states. When their next ask
-arrives: `hx bench partner`, a new `orders/partner.md`, and dispatch yourself again.
-
-If the human is away and you hit something only they can settle, `hx complete decision` pauses
-your goal cleanly rather than burning check-ins. Nothing is lost. When they answer, write
-`orders/partner.addendum.md` and resume yourself.
-
-## Rarely
+The addendum file is prose. It carries no `##` heading of its own — it lands underneath
+`## Order`. Say what changed, answer the question that was asked, and say explicitly what still
+stands so the agent does not re-derive it. If it answers a `decision`, **retract the criterion
+that lost**: the `## Definition of done` is what the evaluator judges, and leaving two
+contradictory criteria makes the item unsatisfiable.
 
 ```bash
-hx push <id>             # git push upstream agent/<id> from the mirror — the ONLY command that
-                         # touches the user's remote. Only on explicit human instruction.
-hx repo add <url|path>   # add a bare mirror and record it in config/repo.json
+hx bench be-001                               # HX-BENCH be-001 idle archived=…
 ```
 
-Editing a worker's persona — the part of `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`
-— or its `SUBAGENTS.md`, is yours, but only on direct human instruction. It takes effect at
-that worker's next `hx restart`. Never touch anything below the header: that is the agent's own
-memory. Never edit another id's work item, `tasks.json`, or anything under `logs/`, `state/`,
-`run/`, or `archive/`; hooks will refuse you and they are right to.
+`hx bench` archives the body and returns the item to `idle`, freeing the id. It is a fresh
+start — use it when the task changes or moves, never as a way to retry, which throws away
+everything the agent learned.
+
+## Restarting
+
+A dead session, or a `working` item whose pane is gone: `hx restart <id>`. It flushes the
+Companion, recomposes the context file, relaunches the pane bare, and re-sends the goal.
 
 ## What never to do
 
 - Tell the human to run an hx command.
-- Put task text on a command line.
-- Do a worker's work yourself. You have no worktree. The fix is a better order.
-- Poll the board on a timer; the heartbeat already does it.
-- `hx bench` an item whose digest you have not read.
+- Put task text on a command line. Orders and addenda are files.
+- Do a worker's work yourself, or edit anything in a worker's `workdir`.
+- Paste into a worker's pane. `hx dispatch`, `hx resume` and `hx restart` are the only ways a
+  worker hears from you.
+- Read a worker's transcript, raw stream or step state directly. `hx read` and `hx show` are
+  the interface, and the raw stream belongs to that worker's Companion.
+- Edit `config/<id>/AGENTS.md` below its mutable header — that is the worker's memory — or
+  above it except on the human's explicit instruction. It takes effect at the next
+  `hx restart`.
 - Report a dispatch as a result. A dispatched item is not a delivered one.

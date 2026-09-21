@@ -99,13 +99,14 @@ def test_refuses_a_missing_agents_md(ready):
     assert result.returncode != 0 and "refuse" in result.stderr
 
 
-def test_refuses_a_missing_worktree(ready):
+def test_refuses_a_missing_workdir(ready):
+    """17.2: the workdir is whatever `harness.json` names, and it has to be there."""
     import shutil
 
     shutil.rmtree(ready / "wt" / "eng-001")
     result = start(ready, "eng-001")
     assert result.returncode != 0
-    assert "refuse" in result.stderr and "worktree" in result.stderr
+    assert "refuse" in result.stderr and "workdir" in result.stderr
 
 
 def test_refuses_a_non_id(ready):
@@ -254,7 +255,7 @@ def test_the_board_sees_the_launched_session(ready, tmux_server, work_item):
     board = collect(ready, env={"HX_TMUX": " ".join(tmux_server)})
     item = {i["id"]: i for i in board["items"]}["eng-001"]
     assert item["session_alive"] is True
-    assert [e for e in board["errors"] if "eng-001" in e] == []
+    assert item["state"] == "working"
 
 
 def test_the_agent_is_sandboxed_and_bypasses_permissions(ready, tmux_server):

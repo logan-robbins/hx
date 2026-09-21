@@ -15,11 +15,12 @@ import subprocess
 
 import pytest
 
-from .conftest import clean_env
+from .conftest import SRC, clean_env
 
 #: spec 09.1, `<hx-hook> --id <id> <event>`.
+#: No `guard`: there is no PreToolUse hook at all (spec 09.1, spec 14 D25).
 HX_EVENTS = {
-    "context", "guard", "log", "subagent-start", "subagent-stop",
+    "context", "log", "subagent-start", "subagent-stop",
     "subagent-result", "stop", "precompact", "postcompact",
 }
 PARTNER_EVENTS = HX_EVENTS - {"subagent-start", "subagent-stop", "subagent-result"}
@@ -133,7 +134,7 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
                 by_event[hook["command"].rsplit(" ", 1)[1]] = (claude_event, entry.get("matcher"))
 
     assert by_event["context"] == ("SessionStart", "startup|resume|clear|compact")
-    assert by_event["guard"] == ("PreToolUse", "*")
+    assert "PreToolUse" not in settings["hooks"], "no guard hook (spec 09.1, spec 14 D25)"
     assert by_event["log"] == ("PostToolUse", "*")
     assert by_event["subagent-result"] == ("PostToolUse", "Agent")
     assert by_event["subagent-start"][0] == "SubagentStart"
@@ -159,15 +160,16 @@ def test_instruction_files_mode_is_claude_md(installed):
     assert settings["pluginConfigs"]["agents-md@builtin"]["options"]["instructionFiles"] == "claude-md"
 
 
-def test_claude_md_excludes_cover_the_product_repo(installed):
+def test_claude_md_excludes_cover_the_agents_own_workdir(installed):
+    """The workdir is whatever `harness.json` names; nothing in it is ever discovered."""
     excludes = settings_for(installed, "eng-001")["claudeMdExcludes"]
-    root = str(installed)
-    assert f"{root}/wt/**/CLAUDE.md" in excludes
-    assert f"{root}/wt/**/AGENTS.md" in excludes
-    assert f"{root}/repos/**/CLAUDE.md" in excludes
+    workdir = str(installed / "wt" / "eng-001")
+    assert f"{workdir}/**/CLAUDE.md" in excludes
+    assert f"{workdir}/**/AGENTS.md" in excludes
+    assert f"{workdir}/**/.claude/CLAUDE.md" in excludes
     # The home's own CLAUDE.md, which is the one that must load, is never excluded.
-    assert all(not pattern.startswith(f"{root}/run/") for pattern in excludes)
-    assert all(pattern.startswith(root) for pattern in excludes), "patterns are absolute globs"
+    assert all(not pattern.startswith(str(installed / "run")) for pattern in excludes)
+    assert all(pattern.startswith("/") for pattern in excludes), "patterns are absolute globs"
 
 
 def test_the_bypass_acceptance_is_written(installed):
@@ -238,14 +240,33 @@ def test_rerunning_is_idempotent(instance):
     assert (instance / "run" / "eng-001" / "home" / "settings.json").read_text() == first
 
 
-def test_the_board_accepts_a_home_install_sh_wrote(instance, work_item):
-    """The board invariant "every run/<id>/home/ has its settings file" (spec 08)."""
-    from hx.board import collect
+SKILLS_DIR = str(SRC / "hx" / "skills")
 
-    work_item("eng-001", "idle")
-    work_item("partner", "idle")
-    assert run_install(instance, "eng-001").returncode == 0
-    assert [e for e in collect(instance)["errors"] if "home" in e] == []
+
+def test_the_companion_home_gets_only_its_stop_hook_and_hx_companion(instance):
+    """spec 10, handoff/orchestrator-to-build.md 2026-09-20: one hook, one skill."""
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    home = instance / "run" / "eng-001" / "companion-home"
+    settings = json.loads((home / "settings.json").read_text())
+    assert set(settings["hooks"]) == {"Stop"}
+    assert (home / "skills" / "hx-companion" / "SKILL.md").is_file()
+    assert not (home / "CLAUDE.md").exists()
+
+
+def test_the_partner_home_gets_hx_partner_and_hx_fleet(instance):
+    """handoff/orchestrator-to-build.md 2026-09-20."""
+    assert run_install(instance, "partner", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    skills = instance / "run" / "partner" / "home" / "skills"
+    assert (skills / "hx-partner" / "SKILL.md").is_file()
+    assert (skills / "hx-fleet" / "SKILL.md").is_file()
+    assert not (skills / "hx-worker").exists()
+
+
+def test_a_worker_home_gets_hx_worker_only(instance):
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    skills = instance / "run" / "eng-001" / "home" / "skills"
+    assert (skills / "hx-worker" / "SKILL.md").is_file()
+    assert not (skills / "hx-partner").exists() and not (skills / "hx-fleet").exists()
 
 
 def test_python_bin_from_config_hx_json_is_preferred(instance):

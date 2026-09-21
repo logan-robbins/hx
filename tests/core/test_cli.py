@@ -6,9 +6,10 @@ import pytest
 
 from hx.cli import COMMANDS, IMPLEMENTED, NOT_IMPLEMENTED
 
-#: Spec 08's table, plus install/up/doctor/ui/show/repo/push/upgrade from 17.2 and 17.6.
+#: Spec 08's table, plus install/up/doctor/ui/show from 17.2. The v1 cut (spec 14 D25)
+#: removed `repo`, `push` and `upgrade`.
 SPEC_08_COMMANDS = {
-    "launch", "install", "doctor", "repo", "push", "show", "ui", "upgrade", "up",
+    "launch", "install", "doctor", "show", "ui", "up",
     "dispatch", "goal", "task", "compose", "seam", "restart", "complete", "resume",
     "read", "bench", "board", "flush", "companion", "wake", "heartbeat", "metrics",
     "orders", "archive",
@@ -16,8 +17,7 @@ SPEC_08_COMMANDS = {
 
 
 def test_every_spec_08_command_is_dispatched():
-    missing = SPEC_08_COMMANDS - set(COMMANDS)
-    assert not missing, f"commands in spec 08 with no dispatch entry: {sorted(missing)}"
+    assert set(COMMANDS) == SPEC_08_COMMANDS, set(COMMANDS) ^ SPEC_08_COMMANDS
 
 
 def test_no_command_is_both_implemented_and_not():
@@ -61,9 +61,10 @@ def test_hook_entrypoint_knows_the_spec_09_events():
     from hx.hooks import EVENTS
 
     assert set(EVENTS) == {
-        "context", "guard", "log", "subagent-start", "subagent-stop",
+        # No `guard`: there is no PreToolUse hook at all (spec 09.1, spec 14 D25).
+        "context", "log", "subagent-start", "subagent-stop",
         "subagent-result", "stop", "precompact", "postcompact",
         # The Companion's own `stop`, in its own home — the other half of the pass protocol
-        # (spec 10), not one of the agent's nine.
+        # (spec 10), not one of the agent's own.
         "companion-stop",
     }

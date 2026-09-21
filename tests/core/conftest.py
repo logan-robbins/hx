@@ -93,7 +93,6 @@ def instance(tmp_path):
         }
         if item_id != "partner":
             harness["workdir"] = str(root / "wt" / item_id)
-            harness["branch"] = f"agent/{item_id}"
             (root / "wt" / item_id).mkdir(parents=True, exist_ok=True)
         (config / "harness.json").write_text(json.dumps(harness, indent=2) + "\n")
         (config / "AGENTS.md").write_text(
@@ -135,19 +134,17 @@ def instance(tmp_path):
 def work_item(instance):
     """Write a work item for an id in a given state, with its frontmatter."""
 
-    def _write(item_id: str, state: str, *, pod: str | None = None, after=(), outcome=None, dispatched=None):
+    def _write(item_id: str, state: str, *, pod: str | None = None, outcome=None, dispatched=None):
         pod = pod or ("partner" if item_id == "partner" else "engineers")
         directory = instance / "pods" / pod
         directory.mkdir(parents=True, exist_ok=True)
         for existing in directory.glob(f"{item_id}-*.md"):
             existing.unlink()
         path = directory / f"{item_id}-{state}.md"
-        after_text = "[" + ", ".join(after) + "]" if after else "[]"
         path.write_text(
             "---\n"
             f"id: {item_id}\n"
             f"pod: {pod}\n"
-            f"after: {after_text}\n"
             f"outcome: {outcome or ''}\n"
             f"dispatched: {dispatched or ''}\n"
             "---\n\n## Order\n\nDo it.\n\n## Tasks\n- [ ] one\n"
@@ -157,10 +154,7 @@ def work_item(instance):
     return _write
 
 
-ORDER = """---
-after: [{after}]
----
-## Order
+ORDER = """## Order
 
 {order}
 
@@ -176,11 +170,11 @@ after: [{after}]
 """
 
 
-def write_order(root: Path, item_id: str, *, order="Do the thing.", after=(), checks="true") -> Path:
-    """An order file that passes spec 06, written where `hx dispatch` expects it."""
-    path = root / "orders" / f"{item_id}.md"
+def write_order(root: Path, item_id: str, *, order="Do the thing.", checks="true") -> Path:
+    """An order file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
+    path = root / "run" / f"order-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(ORDER.format(after=", ".join(after), order=order, checks=checks))
+    path.write_text(ORDER.format(order=order, checks=checks))
     return path
 
 
@@ -218,7 +212,6 @@ def agent(instance):
                     "model": "claude-opus-5",
                     "effort": "high",
                     "workdir": f"wt/{item_id}",
-                    "branch": f"agent/{item_id}",
                 },
                 indent=2,
             )

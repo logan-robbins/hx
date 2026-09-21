@@ -1,10 +1,12 @@
 """`hx doctor` — what is here, what is missing, what is broken (spec 08).
 
-Every line is `<status>  <check>  <detail>`. `fail` is reserved for what this milestone
-owns and can be sure about: tmux, git, the Python floor, and a `config/claude.json` whose
-binary is not there. Everything the later milestones bring — the seed login, per-agent
-homes, the repo mirror — is reported as `warn` until its milestone lands, so `hx doctor` on
-a freshly created skeleton exits 0.
+Every line is `<status>  <check>  <detail>`. It checks exactly what spec 08 lists: tmux, git,
+the Python floor, the pinned `claude` binary and version, the paths in `config/hx.json`, the
+seed token, each `run/<id>/home/settings.json`, and the sandbox flags of every running agent.
+
+It does not inspect work items (spec 14 D25): the board is a listing and the doctor is not a
+policeman. `warn` is for what a milestone has not delivered yet, so `hx doctor` on a freshly
+created skeleton exits 0.
 """
 
 from __future__ import annotations
@@ -179,7 +181,8 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                         FAIL,
                         "claude",
                         f"{binary} reports {installed_version} but config/claude.json pins "
-                        f"{pinned_version}; run `hx upgrade` (spec 17.6)",
+                        f"{pinned_version}; install the pinned version or re-run "
+                        f"`hx install --claude <bin>` (spec 17.1)",
                     ))
                 else:
                     checks.append(
@@ -269,45 +272,6 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             continue
         for status, detail in live_agent_checks(item_id, env):
             checks.append((status, f"sandbox:{item_id}", detail))
-
-    repo_json = root / "config" / "repo.json"
-    if not repo_json.is_file():
-        checks.append((
-            WARN, "repo",
-            "config/repo.json absent; `hx repo add <url|path>` mirrors the product repo "
-            "(spec 17.2 step 4)",
-        ))
-    else:
-        try:
-            recorded = json.loads(repo_json.read_text())
-            name = recorded["name"]
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            checks.append((FAIL, "repo", f"config/repo.json is unusable: {exc}"))
-        else:
-            mirror = root / "repos" / f"{name}.git"
-            head = subprocess.run(
-                ["git", "--git-dir", str(mirror), "rev-parse", "HEAD"],
-                capture_output=True, text=True, check=False,
-            )
-            if head.returncode == 0:
-                base = recorded.get("base_branch")
-                verified = subprocess.run(
-                    ["git", "--git-dir", str(mirror), "rev-parse", "--verify", f"{base}^{{commit}}"],
-                    capture_output=True, text=True, check=False,
-                ) if base else None
-                if base and verified is not None and verified.returncode != 0:
-                    checks.append((
-                        FAIL, "repo",
-                        f"config/repo.json base_branch `{base}` is not a ref in {mirror.name}; "
-                        f"worktrees are cut from it (spec 17.3)",
-                    ))
-                else:
-                    checks.append((OK, "repo", f"{name} at {head.stdout.strip()[:12]} ({base})"))
-            else:
-                checks.append((
-                    FAIL, "repo",
-                    f"{mirror} is not readable: {head.stderr.strip() or 'no HEAD'}",
-                ))
 
     return checks
 

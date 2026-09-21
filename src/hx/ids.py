@@ -13,8 +13,10 @@ ID_RE = re.compile(rf"^(?:{ID_PATTERN})$")
 
 PARTNER = "partner"
 
-#: Work item states; the filename suffix is the state (spec 06).
-STATES = ("idle", "queued", "working", "complete")
+#: Work item states; the filename suffix is the state (spec 06). Nothing gates on this
+#: list — the v1 cut (spec 14 D25) removed the filename regex as a validation gate and the
+#: transition table with it — but hx itself only ever writes one of these three.
+STATES = ("idle", "working", "complete")
 
 #: Outcomes `hx complete` may record (spec 06 "Outcome mapping").
 OUTCOMES = ("done", "blocked", "decision", "exhausted")

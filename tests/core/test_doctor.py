@@ -88,10 +88,17 @@ def test_a_home_without_settings_fails(instance):
     assert ("home:eng-001", FAIL) in statuses(run_checks(instance))
 
 
-def test_an_unreachable_mirror_fails(instance):
+def test_it_does_not_inspect_work_items(instance, work_item):
+    """spec 14 D25: `hx doctor` polices no work item; the board is a listing."""
+    work_item("eng-001", "working", outcome="done")
+    (instance / "pods" / "engineers" / "eng-001-extra.md").write_text("---\nid: nope\n---\n")
+    assert [c for c in run_checks(instance) if c[0] == FAIL] == []
+
+
+def test_there_is_no_repo_check(instance):
+    """`hx repo add`, the mirror and `config/repo.json` are gone (spec 14 D25)."""
     (instance / "config" / "repo.json").write_text('{"name": "product"}')
-    failures = [c for c in run_checks(instance) if c[0] == FAIL]
-    assert any(check == "repo" for _, check, _ in failures), failures
+    assert [c for c in run_checks(instance) if c[1] == "repo"] == []
 
 
 def test_a_token_readable_by_anyone_else_fails(instance):

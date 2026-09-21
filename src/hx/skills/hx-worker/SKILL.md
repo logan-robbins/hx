@@ -6,7 +6,7 @@ description: Operating manual for an hx HarnessAgent — read the context file o
 # hx-worker
 
 You are a HarnessAgent in an hx instance: a full Claude Code session, in your own tmux session,
-with your own worktree, running under a `/goal`. This skill is the mechanics. Who you are came
+with your own workdir, running under a `/goal`. This skill is the mechanics. Who you are came
 with your system prompt at launch and is always there; you never look it up.
 
 ## Your lifecycle, start to finish
@@ -79,12 +79,15 @@ Commit each finished sub-task immediately, with a message that says what it does
 --oneline` is your memory of what is done, and your Companion records the commit sha on the
 closed step instead of describing the change.
 
-Do not leave the worktree open across a long stretch of work. `hx complete done` refuses a
-dirty worktree, and an uncommitted pile is the one state a seam cannot carry for you.
+Do not leave work uncommitted across a long stretch. `hx complete done` refuses a dirty
+workdir when it is a git repository, and an uncommitted pile is the one state a seam cannot
+carry for you.
 
-You are on your own branch `agent/<id>` in your own worktree, cut from a bare mirror. Nothing
-you do reaches the user's checkout or their remote. Never `git push` — that is the Partner's
-command, on the human's instruction.
+You work in the directory `config/<id>/harness.json` names as your `workdir`. hx did not
+create it, does not manage it, and will not clean it up: it is an ordinary directory, often a
+checkout somebody already had. If it is a git repository, `hx complete done` requires it clean,
+and that is the only git hx ever runs. Branching, pushing and merging are yours and the
+human's, not the harness's.
 
 ### 5. Read a file once
 
@@ -114,7 +117,7 @@ Use them freely, for bounded separable pieces: a survey, an independent module, 
   digest of what it did, what it committed, and what it left open, handed to you on the
   `Agent` tool result. **That digest is all that crosses back** — not its transcript, not its
   stream, not its step state. Anything you need that the digest omits is gone.
-- Subagents share your worktree. Give them non-overlapping scopes.
+- Subagents share your workdir. Give them non-overlapping scopes.
 
 `hx complete` refuses while any subagent stream is still open, so let them finish.
 
@@ -132,20 +135,41 @@ never ends is a seam never taken and a goal never delivered. And **background wo
 seam**, not forever, but a seam is only taken when nothing is running, so leaving background
 tasks alive across many turns keeps pushing it out.
 
-### 8. Seams
+### 8. Seams, and the Companion that makes them cheap
 
-Your conversation will be cut and rebuilt. That is a seam: `/clear` plus rehydration from your
-context file. It is normal, planned, and cheap, and it happens at a turn boundary with no
-background work running.
+Your conversation will be cut and rebuilt. That is a **seam**: `/clear`, then the same boundary
+you started at — the hook line, one Read, and your `/goal` again. It happens at a turn boundary
+with no background work running, either because your context crossed a threshold or because
+your Companion saw a good moment.
 
-You do not trigger it, you do not prevent it, and you will not notice it happening — you will
-simply find yourself at step 1 again. It costs nothing if `## Tasks` is current and your work
-is committed. Everything in sections 3, 4 and 5 exists for this moment.
+**Claude Code's own compaction is not what happens to you.** hx takes a seam long before the
+native window is reached, so nothing summarises your conversation and decides for you what
+mattered. What survives is what is on disk: your `## Tasks`, your commits, your memory below
+the header, and the step state.
+
+The **Companion** is a second session, paired with you, that reads your tool calls and keeps
+that step state current. You never talk to it and it never talks to you. What it produces is
+sections 4 and 5 of your context file:
+
+- **open steps with a `next` action** — the sentence that tells you where to put your hands
+  when you come back;
+- **a working set** — commits, what is dirty, and *files you read but did not change, each with
+  the one fact you took from it.*
+
+That last part is why **re-reading a file your working set already covers is waste**, and it is
+measured: the metric for whether all this works is what you do in the ten turns after a seam,
+counting re-Reads of noted files against it. If a note is there, trust it. If a note turned out
+to be wrong or the file has changed since, read it again and say so in `## Tasks` — that is not
+the waste, that is the system working.
+
+You do not trigger a seam, you do not prevent one, and you will not notice it happening — you
+will simply find yourself at step 1 again. It costs nothing if `## Tasks` is current and your
+work is committed. Everything in sections 3, 4 and 5 exists for this moment.
 
 ### 9. Finishing
 
 ```bash
-hx complete done        # checks run, worktree must be clean, no open subagent stream
+hx complete done        # checks run, workdir must be clean, no open subagent stream
 hx complete blocked     # something outside your task is in the way
 hx complete decision    # someone else has to choose
 hx complete exhausted   # the task was larger than one agent
@@ -163,7 +187,7 @@ proves you are done.
 
 ### 10. `HX-CHECK-FAILED`
 
-`hx complete done` is machine-checked. If a check exits non-zero, the worktree is dirty, or a
+`hx complete done` is machine-checked. If a check exits non-zero, the workdir is dirty, or a
 subagent stream is open, it prints:
 
 ```
@@ -192,15 +216,23 @@ better than forcing a `done` that is not true.
   State the question and the options in `## Open decision`, with what each one costs.
 - `exhausted` — the task was too large. Say where the natural split is.
 
-All three keep everything: your `## Tasks`, your step state, your memory, your worktree, your
+All three keep everything: your `## Tasks`, your step state, your memory, your workdir, your
 logs. The Partner resumes you with an addendum appended to your order, and you pick up exactly
 where you stopped. You are not restarted.
 
 ## What is not yours
 
-`config/` other than the part of your own `AGENTS.md` below the header, `companion/`, `logs/`,
-`state/`, `run/`, `archive/`, `tasks.json`, `orders/`, and every work item except your own
-`-working` file. Hooks refuse these writes and tell you why. `hx` commands that belong to the
-Partner refuse you from `HARNESS_ID`.
+`config/` other than the part of your own `AGENTS.md` below the header; `companion/`; `logs/`,
+`state/`, `run/` and `archive/`; `tasks.json`; and every work item except your own `-working`
+file.
 
-You run, for yourself: `hx task`, `hx complete`. That is the list.
+**Nothing stops you.** There is no permission prompt and no guard hook: you run with bypass
+permissions, and the only thing between you and another agent's files is this paragraph. That
+is deliberate — a prompt nobody is there to answer is a hung agent — and it means the rule is
+yours to keep rather than the harness's to enforce. Writing into `state/` or another id's work
+item corrupts a running agent's memory, silently, and nothing will tell either of you.
+
+Your own files are your `workdir`, your `-working` work item, and your `AGENTS.md` below the
+header. That is the whole list.
+
+You run, for yourself: `hx task`, `hx complete`. That is also the whole list.

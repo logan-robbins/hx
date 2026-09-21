@@ -1,8 +1,8 @@
 """`hx complete <outcome>` — the HarnessAgent's last action (spec 06, 08).
 
 Completion is machine-checked, never prose: `done` runs the order's `### Checks` block with
-`bash -e` in the worktree, requires a clean worktree, and requires no subagent stream to be
-open. A refusal prints `HX-CHECK-FAILED <id>` with the failing output, changes nothing, and
+`bash -e` in the workdir, requires a clean `git status` when that workdir is a git repository,
+and requires no subagent stream to be open. A refusal prints `HX-CHECK-FAILED <id>` with the failing output, changes nothing, and
 leaves the item `working` with its goal active, so the agent fixes it and runs it again.
 
 Only success prints `HX-COMPLETE <id> <outcome>` as the last line of stdout. That line is the
@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import flush as flush_mod, goal, store, streams, tasks as tasks_mod, timestamps, wake
+from . import flush as flush_mod, goal, streams, tasks as tasks_mod, timestamps, wake
 from .caller import require_agent_caller
 from .config_harness import load_harness, resolve_workdir
 from .errors import Refused
@@ -52,15 +52,16 @@ class CheckFailed(Refused):
 
 
 def workdir_for(root: Path, item_id: str) -> Path:
-    """The worktree checks run in; `HARNESS_ROOT` for the Partner, which has none (spec 06)."""
-    if item_id == PARTNER:
-        return root
+    """The directory checks run in: `harness.json.workdir`, whatever the Partner chose (17.2).
+
+    hx creates no repository and no worktree for it; it is simply a path.
+    """
     harness = root / "config" / item_id / "harness.json"
     if harness.is_file():
         config = load_harness(harness, check_cross_file=False)
         if config.workdir:
             return resolve_workdir(config.workdir, root)
-    return root / "wt" / item_id
+    return root
 
 
 def run_checks(checks: str, workdir: Path, env=None) -> subprocess.CompletedProcess:
@@ -79,7 +80,10 @@ def run_checks(checks: str, workdir: Path, env=None) -> subprocess.CompletedProc
     )
 
 
-def worktree_is_dirty(workdir: Path) -> tuple[bool, str]:
+def workdir_is_dirty(workdir: Path) -> tuple[bool, str]:
+    """`git status --porcelain` in the workdir. A non-repository is never dirty (17.2)."""
+    if not (workdir / ".git").exists():
+        return False, ""
     result = subprocess.run(
         ["git", "status", "--porcelain"], cwd=str(workdir), capture_output=True, text=True, check=False
     )
@@ -103,13 +107,12 @@ def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> None:
         return
 
     workdir = workdir_for(root, item_id)
-    if item_id != PARTNER:
-        dirty, listing = worktree_is_dirty(workdir)
-        if dirty:
-            raise CheckFailed(
-                f"{CHECK_FAILED} {item_id}\nthe worktree {workdir} is dirty:\n{listing}"
-                f"Commit your work, then run `hx complete done` again."
-            )
+    dirty, listing = workdir_is_dirty(workdir)
+    if dirty:
+        raise CheckFailed(
+            f"{CHECK_FAILED} {item_id}\nthe workdir {workdir} is a git repository and is dirty:\n"
+            f"{listing}Commit your work, then run `hx complete done` again."
+        )
 
     entry = tasks_mod.load_tasks(root).get(item_id) or {}
     order_text = entry.get("order")
@@ -195,6 +198,11 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
     if outcome not in OUTCOMES:
         raise Refused(f"refuse: `{outcome}` is not an outcome ({', '.join(OUTCOMES)}, spec 06)")
     item_id = item_id or require_agent_caller("complete", env)
+    if item_id == PARTNER:
+        raise Refused(
+            "refuse: the Partner has no work item and never completes; it reports in chat "
+            "(spec 12, spec 14 D25)"
+        )
 
     path = require_work_item(root, item_id)
     item = parse_work_item(path)
@@ -211,54 +219,24 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
     write_digest(path, final_digest(root, item_id, outcome, env=env))
     set_frontmatter(path, outcome=outcome)
 
-    promoted: list[str] = []
-    with store.locked(root):
-        entries = tasks_mod.load_tasks(root)
-        entry = entries.setdefault(item_id, tasks_mod.new_entry("", list(item.after), item.dispatched or ts))
-        entry["outcome"] = outcome
-        entry["completed"] = ts
-
-        if outcome == "done":
-            from .workitems import find_work_items
-
-            by_id, _ = find_work_items(root)
-            waiting = {}
-            for other_id, files in by_id.items():
-                if other_id == item_id or not files:
-                    continue
-                other = files[0]
-                if other.name.endswith("-queued.md"):
-                    waiting[other_id] = list((entries.get(other_id) or {}).get("after") or [])
-            promoted = tasks_mod.promotable(entries, waiting)
-        tasks_mod.write_tasks(root, entries)
+    entries = tasks_mod.load_tasks(root)
+    entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))
+    entry["outcome"] = outcome
+    entry["completed"] = ts
+    tasks_mod.write_tasks(root, entries)
 
     final = rename_state(path, "complete")
     goal.clear_marker(root, item_id)
 
-    promotions = []
-    for other_id in promoted:
-        promotions.append(promote(root, other_id, env=env))
-
-    woke = None
-    if item_id != PARTNER:
-        woke = wake.wake_partner_status(root, f"{item_id} complete: {outcome}; hx read {item_id}")
+    woke = wake.wake_partner_status(root, f"{item_id} complete: {outcome}; hx read {item_id}")
 
     return {
         "id": item_id,
         "outcome": outcome,
         "file": str(final.relative_to(root)),
         "completed": ts,
-        "promoted": promotions,
         "woke_partner": woke,
     }
-
-
-def promote(root: Path, item_id: str, *, env=None) -> dict:
-    """`queued → working` + the goal, inside `hx complete done` of the last dependency (spec 06)."""
-    path = require_work_item(root, item_id)
-    final = rename_state(path, "working")
-    sent = goal.send_goal(root, item_id, env=env)
-    return {"id": item_id, "file": str(final.relative_to(root)), "goal": sent}
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
@@ -283,8 +261,6 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             f"the completion is recorded and `hx heartbeat` will report it",
             file=sys.stderr,
         )
-    for promotion in result["promoted"]:
-        print(f"HX-PROMOTED {promotion['id']} working goal={promotion['goal']}")
     # Last line of stdout, always: the goal evaluator's proof (spec 06).
     print(f"{COMPLETE} {result['id']} {result['outcome']}")
     return 0

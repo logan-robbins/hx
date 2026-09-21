@@ -1,14 +1,14 @@
 """`hx-hook` — the hook entrypoint every agent home points at (spec 09).
 
 `adapters/claude/install.sh` writes `<hook_bin> --id <id> <event>` into
-`run/<id>/home/settings.json` for each of the nine hx events. This module is the plumbing they
-share: read the payload from stdin, resolve the root, dispatch, and — above all — never take a
-tool call down with it.
+`run/<id>/home/settings.json` for each hx event. This module is the plumbing they share: read
+the payload from stdin, resolve the root, dispatch, and — above all — never take a tool call
+down with it.
 
 **Failure policy.** A hook that crashes must not break the agent. A malformed payload, a
 missing file, an unexpected exception: logged to `logs/<id>/hook-errors.log` and **allowed**
-(exit 0). The one exception is `guard`, where an error means hx could not prove the call was
-safe, so it **denies** (exit 2). No timeouts, no network.
+(exit 0), with no exception. There is no `PreToolUse` guard and no hook that enforces
+anything (spec 09.1, spec 14 D25). No timeouts, no network.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import hook_context, hook_guard, hook_log, hook_stop, hook_subagent
+from . import hook_context, hook_log, hook_stop, hook_subagent
 from .errors import HxError
 from .ids import is_id
 from .root import resolve_root
@@ -29,21 +29,20 @@ from .root import resolve_root
 #: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
 EVENTS = {
     "context": 3,
-    "guard": 3,
     "log": 5,
     "subagent-start": 5,
     "subagent-stop": 5,
     "subagent-result": 5,
     "precompact": 5,
     "postcompact": 5,
-    # The turn marker and the `goal-pending` consumption ship with the M4 batch (spec 13).
+    # The turn marker ships with the M4 batch (spec 13).
     "stop": 5,
     # The Companion's own `Stop`, in its own home: it installs what the pass produced.
     "companion-stop": 6,
 }
 
 IMPLEMENTED = (
-    "context", "guard", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
+    "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
     "companion-stop",
 )
 
@@ -59,10 +58,6 @@ _HANDLERS = {
     "stop": hook_stop.handle,
     "companion-stop": hook_stop.companion_handle,
 }
-
-#: `guard` denies on error; every other event allows, because a broken hook must never be the
-#: reason an agent stops working (spec 09.1: "Deny = exit 2 ... Never exit 1").
-DENY_ON_ERROR = ("guard",)
 
 ERROR_LOG = "hook-errors.log"
 
@@ -99,8 +94,7 @@ def read_payload(stream=None) -> dict:
 def check_id(item_id: str, env) -> None:
     """The baked-in `--id` must match `HARNESS_ID` when the session sets one (goal item 4).
 
-    A mismatch means the settings file of one agent's home is being used by another, which is
-    exactly what rule 2 of the guard exists to prevent.
+    A mismatch means the settings file of one agent's home is being used by another.
     """
     env = os.environ if env is None else env
     running = env.get("HARNESS_ID")
@@ -119,7 +113,6 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
     args = parser.parse_args(argv)
 
     event, item_id = args.event, args.item_id
-    denies_on_error = event in DENY_ON_ERROR
     root = None
 
     try:
@@ -137,13 +130,6 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 print(line)
             return code
 
-        if event == "guard":
-            decision = hook_guard.decide(payload, item_id, root)
-            if decision.allow:
-                return 0
-            print(f"{decision.reason} (guard rule {decision.rule}, spec 09.2)", file=sys.stderr)
-            return 2
-
         print(
             f"hx-hook: {event}: not implemented (build-{EVENTS[event]}) for --id {item_id}",
             file=sys.stderr,
@@ -157,9 +143,6 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
         if root is not None:
             log_error(root, item_id, event, detail + "\n" + traceback.format_exc())
         print(f"hx-hook: {event}: {detail}", file=sys.stderr)
-        if denies_on_error:
-            # hx could not prove the call was safe, so it is not allowed (spec 09.2).
-            return 2
         return 0
 
 

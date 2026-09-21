@@ -3,7 +3,7 @@
 `config/claude.json` is `{"bin": "<abs path>", "version": "2.1.278"}`, the version bare — the
 output of `claude --version` with the ` (Claude Code)` suffix stripped (CONTRACTS.md). The
 package ships the list of versions its live suite has passed on, and neither `hx install` nor
-`hx upgrade` will pin a version that is not in it.
+`hx install` will pin a version that is not in it.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def require_tested(version: str) -> None:
         newest = versions[0] if versions else "(none)"
         raise HxError(
             f"claude {version} is not in this package's tested list ({', '.join(versions) or 'empty'}). "
-            f"Install {newest} and run this again, or upgrade hx to a package that has been "
+            f"Install {newest} and run this again, or move to an hx package that has been "
             f"tested on {version} (spec 17.2 step 1, 17.6)",
             exit_code=5,
         )

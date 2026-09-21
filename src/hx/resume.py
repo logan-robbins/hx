@@ -1,8 +1,10 @@
 """`hx resume <id> <addendum-file>` — continue a paused item with everything it had (spec 06).
 
-Only the order grows. `## Tasks`, step state, memory, worktree and logs are all kept: that is
+Only the order grows. `## Tasks`, step state, memory, workdir and logs are all kept: that is
 the whole difference between a resume and `hx bench` + `hx dispatch`, which is a fresh start.
-The item is `complete` while this runs, so the append never races the agent (spec 04).
+The item is `complete` while this runs, so the append never races the agent (spec 04). The
+addendum file is deleted once the resume succeeds: the text lives in `tasks.json` and the
+work item, and nowhere else (spec 06, spec 14 D25).
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from . import compose, goal, store, tasks as tasks_mod, timestamps
+from . import compose, goal, tasks as tasks_mod, timestamps
 from .caller import require_partner_caller
 from .errors import NotFound, Refused
 from .ids import PARTNER
@@ -32,6 +34,11 @@ RESUMABLE = ("blocked", "decision")
 
 def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> dict:
     require_partner_caller("resume", env)
+    if item_id == PARTNER:
+        raise Refused(
+            "refuse: the Partner has no work item and is never resumed; the human talks to "
+            "it in chat (spec 12, spec 14 D25)"
+        )
 
     addendum_path = Path(addendum_file)
     if not addendum_path.is_file():
@@ -56,21 +63,19 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
     append_to_section(path, SECTION_ORDER, f"{ADDENDUM_HEADING} {ts}\n\n{addendum}")
     set_frontmatter(path, outcome=None)
 
-    with store.locked(root):
-        entries = tasks_mod.load_tasks(root)
-        entry = entries.setdefault(
-            item_id, tasks_mod.new_entry("", list(item.after), item.dispatched or ts)
-        )
-        entry.setdefault("addenda", []).append({"ts": ts, "text": addendum})
-        entry["outcome"] = None
-        entry["completed"] = None
-        tasks_mod.write_tasks(root, entries)
+    entries = tasks_mod.load_tasks(root)
+    entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))
+    entry.setdefault("addenda", []).append({"ts": ts, "text": addendum})
+    entry["outcome"] = None
+    entry["completed"] = None
+    tasks_mod.write_tasks(root, entries)
 
     final = rename_state(path, "working")
     compose.compose(root, item_id, f"{item_id}-main", env=env)
-    # The Partner resumes itself from its own Bash tool, so its pointer lands in
-    # `run/partner/goal-pending` and its `stop` hook pastes it at the end of the turn.
     sent = goal.send_goal(root, item_id, env=env)
+
+    # Consumed, like the order file at dispatch (spec 06).
+    addendum_path.unlink(missing_ok=True)
 
     return {"id": item_id, "ts": ts, "file": str(final.relative_to(root)), "goal": sent}
 

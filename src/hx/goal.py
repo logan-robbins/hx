@@ -4,10 +4,12 @@ What is pasted never grows with the task: it names the work item and the proof l
 order itself is read from the file. Claude Code is always launched bare; nothing is ever a
 prompt argument.
 
-Delivery follows spec 08: at the idle prompt, paste now; mid-turn (the Partner dispatching or
-resuming itself from its own Bash tool), leave `run/<id>/goal-pending` and return — the `stop`
-hook pastes it at the end of that turn. `--now` skips the check and is used from the `context`
-hook on `clear` and from the `stop` hook.
+Workers only: the Partner has no work item and no goal, and is never a target (spec 12).
+
+Delivery follows spec 08: `hx goal` waits for the idle prompt and then pastes. `--now` skips
+the wait and is used only from the `context` hook on `clear` (E3), where the pane is by
+construction about to be ready. The v1 cut (spec 14 D25) removed `run/<id>/goal-pending` and
+its delivery from the `stop` hook: it existed only for the Partner dispatching itself.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import tempfile
 from pathlib import Path
 
 from . import timestamps, tmux
-from .errors import HxError, NotFound
+from .errors import HxError, NotFound, Refused
 from .ids import PARTNER
 from .workitems import require_work_item, state_of
 
@@ -58,7 +60,6 @@ _FAKE_PROMPT = re.compile(r"^\s*hx-fake-idle>\s*$")
 IDLE_PROMPTS = (_FAKE_PROMPT, _REAL_PROMPT)
 
 GOAL_MARKER = "goal"
-GOAL_PENDING_MARKER = "goal-pending"
 
 
 def run_dir(root: Path, item_id: str) -> Path:
@@ -69,12 +70,13 @@ def marker(root: Path, item_id: str) -> Path:
     return run_dir(root, item_id) / GOAL_MARKER
 
 
-def pending_marker(root: Path, item_id: str) -> Path:
-    return run_dir(root, item_id) / GOAL_PENDING_MARKER
-
-
 def pointer_text(root: Path, item_id: str) -> str:
     """The pointer for an id, naming the absolute path of its work item (spec 06)."""
+    if item_id == PARTNER:
+        raise Refused(
+            "refuse: the Partner is never sent a `/goal`; the human tells it what to do in "
+            "chat (spec 06, 12, spec 14 D25)"
+        )
     return POINTER.format(id=item_id, path=require_work_item(root, item_id).resolve())
 
 
@@ -150,37 +152,24 @@ def wait_for_prompt(item_id: str, env=None) -> None:
 
 
 def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False, env=None) -> str:
-    """Deliver the pointer. Returns `pasted` or `pending`.
+    """Deliver the pointer. Returns `pasted`.
 
-    `now` pastes without looking at the pane; `wait` blocks until the prompt appears and is
-    what `hx launch` and `hx restart` use once the pane is up.
+    It waits for the idle prompt first (no timeout, spec 08) unless `now` is set, which is
+    the `context` hook on `clear`, where the pane is by construction about to be ready.
     """
     text = pointer_text(root, item_id)
     run_dir(root, item_id).mkdir(parents=True, exist_ok=True)
 
     if not now:
-        if wait:
-            wait_for_prompt(item_id, env)
-        else:
-            pane = capture_pane(item_id, env)
-            if pane is None:
-                raise NotFound(
-                    f"{item_id}: no tmux pane {item_id}:main to paste the goal into; "
-                    f"`hx launch {item_id}` starts it"
-                )
-            if not pane_is_idle(pane):
-                # Mid-turn: the `stop` hook pastes it at the end of this turn (spec 08, 09).
-                # The marker is written in both cases, with the timestamp of the call, so the
-                # `working` invariant holds during the turn in which a busy pane is owed its
-                # goal; the stop hook rewrites it when it pastes (spec 08).
-                ts = timestamps.now()
-                pending_marker(root, item_id).write_text(ts + "\n")
-                marker(root, item_id).write_text(ts + "\n")
-                return "pending"
+        if capture_pane(item_id, env) is None:
+            raise NotFound(
+                f"{item_id}: no tmux pane {item_id}:main to paste the goal into; "
+                f"`hx launch {item_id}` starts it"
+            )
+        wait_for_prompt(item_id, env)
 
     paste(item_id, text, env)
     marker(root, item_id).write_text(timestamps.now() + "\n")
-    pending_marker(root, item_id).unlink(missing_ok=True)
     return "pasted"
 
 
@@ -191,8 +180,8 @@ def clear_marker(root: Path, item_id: str) -> None:
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx goal", add_help=True)
     parser.add_argument("id")
-    parser.add_argument("--now", action="store_true", help="paste without checking the pane (hooks only)")
-    parser.add_argument("--wait", action="store_true", help="wait for the idle prompt, then paste")
+    parser.add_argument("--now", action="store_true", help="paste without waiting (the `clear` hook)")
+    parser.add_argument("--wait", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 

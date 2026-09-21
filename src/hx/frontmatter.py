@@ -6,7 +6,6 @@ everything else by name rather than guessing. Supported:
     ---
     id: eng-001
     pod: engineers
-    after: [eng-000, eng-002]
     outcome:
     dispatched: 2026-09-20T12:00:00Z
     ---
@@ -128,23 +127,3 @@ def parse_frontmatter(text: str, path: str | Path) -> tuple[dict[str, object] | 
 
     body = "\n".join(lines[end + 1 :])
     return data, body
-
-
-def frontmatter_list(
-    data: dict[str, object], key: str, path: str | Path, *, default: list | None = None
-) -> list:
-    """Read `key` as a list of strings, accepting an absent key and an explicit null."""
-    if key not in data or data[key] is None:
-        return [] if default is None else list(default)
-    value = data[key]
-    if not isinstance(value, list):
-        raise ValidationError(
-            f"{path}: frontmatter `{key}` must be a list such as `[eng-001, eng-002]`, "
-            f"got {type(value).__name__} `{value}`"
-        )
-    for item in value:
-        if not isinstance(item, str) or item == "":
-            raise ValidationError(
-                f"{path}: frontmatter `{key}` entries must be non-empty strings, got `{item!r}`"
-            )
-    return list(value)

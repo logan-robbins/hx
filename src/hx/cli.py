@@ -27,23 +27,19 @@ from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
 from . import orders as orders_cmd
-from . import push as push_cmd
 from . import read as read_cmd
-from . import repo as repo_cmd
 from . import resume as resume_cmd
 from . import show as show_cmd
 from . import task as task_cmd
 from . import ui_cmd
-from . import upgrade as upgrade_cmd
 from . import wake as wake_cmd
 from .errors import HxError
 
-#: Every command of spec 08, plus `install`, `up`, `doctor`, `ui`, `show`, `repo`, `push`
-#: and `upgrade`. The value is the build-lane goal that delivers it (spec 13 milestone + 1).
-#: The build-lane goal that delivers each remaining command
-#: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
+#: Every command of spec 08, plus `install`, `up`, `doctor`, `ui` and `show`. The v1 cut
+#: (spec 14 D25) removed `repo`, `push` and `upgrade`: hx does not manage git or its own
+#: version. The value is the build-lane goal that delivers each remaining command.
 NOT_IMPLEMENTED = {
-    "seam": 7,
+    "seam": 8,
     "metrics": 8,
 }
 
@@ -64,16 +60,13 @@ IMPLEMENTED = {
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
     "orders": orders_cmd.main,
-    "push": push_cmd.main,
     "read": read_cmd.main,
-    "repo": repo_cmd.main,
     "restart": lifecycle.main_restart,
     "resume": resume_cmd.main,
     "show": show_cmd.main,
     "task": task_cmd.main,
     "ui": ui_cmd.main,
     "up": lifecycle.main_up,
-    "upgrade": upgrade_cmd.main,
     "wake": wake_cmd.main,
 }
 
@@ -86,8 +79,8 @@ selects the instance; it defaults to ~/hx and may never be inside the user's ~/.
 
 the control plane:
   launch ID                    idle work item, home, tmux session, goal if working
-  dispatch ID ORDER [ID ORDER] validate the orders, then working or queued
-  goal ID [--now]              paste the pointer, or leave it pending mid-turn
+  dispatch ID ORDER [ID ORDER] validate the orders, then working; the files are consumed
+  goal ID [--now]              paste the pointer into a worker's pane
   task                         print your own order and its addenda
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
@@ -95,17 +88,16 @@ the control plane:
   read ID [--full]             the Digest and the open decision
   companion ID [--once]        the Companion loop, one per agent
   flush ID                     wait for the Companion to reach the log head
-  restart ID / up / heartbeat  relaunch, boot, and the 15-minute cron
+  restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
 
 read-only views:
-  board [--json] [--require-done ID...]   the whole instance, and every invariant
+  board [--json]                          a plain listing of what is on disk
   show ID [--json]                        everything hx knows about one id
-  orders [--json] / archive [--json]      the order graph, and what has been archived
+  orders [--json] / archive [--json]      the task records, and what has been archived
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
-  install --root PATH [--claude B] [--repo R]   create the instance (spec 17.2)
-  repo add URL|PATH / push ID / upgrade         the mirror, the one push, the version pin
+  install --root PATH [--claude B]        create the instance (spec 17.2)
 
 every command of spec 08:
   {chr(10) + '  '}{'  '.join(COMMANDS)}

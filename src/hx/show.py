@@ -120,7 +120,6 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
                 "frontmatter": {
                     "id": parsed.id,
                     "pod": parsed.pod,
-                    "after": parsed.after,
                     "outcome": parsed.outcome,
                     "dispatched": parsed.dispatched,
                 },
@@ -143,7 +142,6 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
     if entry is not None:
         task = {
             "order": entry.get("order"),
-            "after": list(entry.get("after") or []),
             "addenda": list(entry.get("addenda") or []),
             "outcome": entry.get("outcome"),
             "dispatched": entry.get("dispatched"),
@@ -181,12 +179,29 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         "bench": archive.bench_entries(root, pod, item_id),
     }
     if item_id == PARTNER:
+        # The Partner has no work item, task, or step state (CONTRACTS.md, spec 14 D25).
         partner_md = root / "PARTNER.md"
-        document["partner_md"] = partner_md.read_text() if partner_md.is_file() else None
+        return {
+            "id": PARTNER,
+            "partner_md": partner_md.read_text() if partner_md.is_file() else None,
+            "pane": document["pane"],
+            "streams": document["streams"],
+        }
     return document
 
 
 def render_text(document: dict) -> str:
+    if document["id"] == PARTNER:
+        lines = [f"{PARTNER}  pane={'alive' if document['pane']['alive'] else 'dead'}"]
+        for stream in document["streams"]:
+            lines.append(
+                f"stream  {stream['handle']}  {'open' if stream['open'] else 'closed'}  "
+                f"{stream['records']} records"
+            )
+        if document["partner_md"]:
+            lines += ["", document["partner_md"].rstrip("\n")]
+        return "\n".join(lines)
+
     lines = [
         f"{document['id']}  {document['state'] or '-'}  pod={document['pod'] or '-'}  "
         f"role={document['role'] or '-'}",
@@ -195,7 +210,7 @@ def render_text(document: dict) -> str:
     task = document["task"]
     if task:
         lines.append(
-            f"task    after={','.join(task['after']) or '-'}  outcome={task['outcome'] or '-'}  "
+            f"task    outcome={task['outcome'] or '-'}  "
             f"dispatched={task['dispatched'] or '-'}  completed={task['completed'] or '-'}  "
             f"addenda={len(task['addenda'])}"
         )

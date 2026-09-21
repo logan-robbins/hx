@@ -1,8 +1,9 @@
 """Validator and parser for `config/<id>/harness.json` (spec 05).
 
 Spec 05 names four cross-file rules: `id` equals the directory name; `model` exists in
-`models.json`; `role` has a `companion/roles/<role>.md`; `workdir` exists. The Partner has
-no `workdir` and no `branch`. Failure is exit 2.
+`models.json`; `role` has a `companion/roles/<role>.md`; `workdir` exists. The Partner has no
+`workdir`: it runs in HARNESS_ROOT. There is no `branch` — hx manages no git (spec 14 D25).
+Failure is exit 2.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from .ids import ID_RE, PARTNER
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
-_OPTIONAL = ("workdir", "branch", "harness", "companion")
+_OPTIONAL = ("workdir", "harness", "companion")
 
 _COMPANION_INT_FIELDS = (
     "batch_records",
@@ -39,9 +40,8 @@ COMPANION_PROVIDERS = ("claude-cli", "anthropic")
 def resolve_workdir(workdir: str, root: Path) -> Path:
     """A relative `workdir` is relative to HARNESS_ROOT (CONTRACTS.md); an absolute one stands.
 
-    The skeleton ships `"workdir": "wt/eng-001"`, because `hx install` copies it verbatim into
-    whatever root the user chose, so an absolute path baked into the package would be wrong
-    everywhere but the machine it was written on (handoff/gtm-to-build.md).
+    Spec 17.2: the workdir is whatever directory the Partner chose for that agent. hx neither
+    creates a repository there nor cares whether it is one.
     """
     path = Path(workdir)
     return path if path.is_absolute() else root / path
@@ -55,7 +55,6 @@ class HarnessConfig:
     model: str
     effort: str
     workdir: str | None = None
-    branch: str | None = None
     harness: dict = field(default_factory=dict)
     companion: dict = field(default_factory=dict)
 
@@ -122,16 +121,13 @@ def validate_harness(
             raise ValidationError(f'{path}: the Partner must have `"pod": "partner"` (spec 05), got `{pod}`')
         if role != PARTNER:
             raise ValidationError(f'{path}: the Partner must have `"role": "partner"` (spec 05), got `{role}`')
-        for forbidden in ("workdir", "branch"):
-            if data.get(forbidden) is not None:
-                raise ValidationError(
-                    f"{path}: the Partner has no `{forbidden}`: it runs in HARNESS_ROOT with no "
-                    f"worktree (spec 05, 17.4)"
-                )
-        workdir = branch = None
+        if data.get("workdir") is not None:
+            raise ValidationError(
+                f"{path}: the Partner has no `workdir`: it runs in HARNESS_ROOT (spec 05, 17.4)"
+            )
+        workdir = None
     else:
         workdir = _require_str(data, "workdir", path)
-        branch = _require_str(data, "branch", path)
 
     harness = data.get("harness") or {}
     if not isinstance(harness, dict):
@@ -207,7 +203,6 @@ def validate_harness(
         model=model,
         effort=effort,
         workdir=workdir,
-        branch=branch,
         harness=harness,
         companion=companion,
     )

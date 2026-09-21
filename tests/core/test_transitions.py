@@ -95,7 +95,7 @@ def test_launch_arms_the_pane_log(instance, launched):
 def test_launch_of_a_working_item_sends_the_goal(instance, hx, launched, orders):
     launched("eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     wait_for_goal(instance, "eng-001")
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
     assert hx("launch", "eng-001").returncode == 0
@@ -105,16 +105,18 @@ def test_launch_of_a_working_item_sends_the_goal(instance, hx, launched, orders)
 # --- dispatch -------------------------------------------------------------------------------
 
 
-def test_idle_to_working_when_after_is_empty(instance, hx, launched, orders):
+def test_idle_to_working(instance, hx, launched, orders):
     launched("eng-001")
-    orders("eng-001", order="Rewrite the importer.")
-    result = hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance)
+    order_file = orders("eng-001", order="Rewrite the importer.")
+    result = hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     assert item_state(instance, "eng-001") == "working"
 
     entry = tasks_of(instance)["eng-001"]
-    assert entry["after"] == [] and entry["outcome"] is None and entry["completed"] is None
+    assert set(entry) == {"order", "addenda", "outcome", "dispatched", "completed"}
+    assert entry["outcome"] is None and entry["completed"] is None
     assert "Rewrite the importer." in entry["order"]
+    assert not order_file.exists(), "the order file is consumed by the dispatch (spec 06)"
 
     body = (instance / "pods" / "engineers" / "eng-001-working.md").read_text()
     assert "Rewrite the importer." in body, "the order is copied verbatim (spec 06)"
@@ -125,18 +127,6 @@ def test_idle_to_working_when_after_is_empty(instance, hx, launched, orders):
     pointer = wait_for_goal(instance, "eng-001")
     assert str((instance / "pods" / "engineers" / "eng-001-working.md").resolve()) in pointer
     assert "HX-COMPLETE eng-001 <outcome>" in pointer
-
-
-def test_idle_to_queued_when_an_after_entry_is_unmet(instance, hx, launched, orders, agent):
-    agent("eng-002")
-    launched("eng-001", "eng-002")
-    orders("eng-001")
-    orders("eng-002", after=["eng-001"])
-    result = hx("dispatch", "eng-002", "orders/eng-002.md", cwd=instance)
-    assert result.returncode == 0, result.stderr
-    assert item_state(instance, "eng-002") == "queued"
-    assert not (instance / "run" / "eng-002" / "goal").exists(), "a queued item has no goal marker"
-    assert "/goal" not in pasted(instance, "eng-002")
 
 
 def test_dispatching_2_of_20_ids_changes_exactly_2(instance, hx, launched, orders, tmux_server):
@@ -150,7 +140,7 @@ def test_dispatching_2_of_20_ids_changes_exactly_2(instance, hx, launched, order
         (config / "harness.json").write_text(
             json.dumps({"id": item_id, "pod": "engineers", "role": "engineer",
                         "model": "claude-opus-5", "effort": "high",
-                        "workdir": f"wt/{item_id}", "branch": f"agent/{item_id}"})
+                        "workdir": f"wt/{item_id}"})
         )
         (config / "AGENTS.md").write_text("persona\n\n## UPDATES BELOW ONLY\n")
         (instance / "wt" / item_id).mkdir(parents=True, exist_ok=True)
@@ -166,7 +156,7 @@ def test_dispatching_2_of_20_ids_changes_exactly_2(instance, hx, launched, order
     orders("eng-007")
 
     before = control_manifest(instance)
-    result = hx("dispatch", "eng-003", "orders/eng-003.md", "eng-007", "orders/eng-007.md", cwd=instance)
+    result = hx("dispatch", "eng-003", "run/order-eng-003.md", "eng-007", "run/order-eng-007.md", cwd=instance)
     assert result.returncode == 0, result.stderr
 
     assert sorted(tasks_of(instance)) == ["eng-003", "eng-007"]
@@ -190,19 +180,19 @@ def test_dispatching_2_of_20_ids_changes_exactly_2(instance, hx, launched, order
 def test_dispatch_refuses_a_non_idle_item(instance, hx, launched, orders):
     launched("eng-001")
     orders("eng-001")
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance).returncode == 0
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
     orders("eng-001", order="A different order entirely.")
-    result = hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance)
+    result = hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance)
     assert result.returncode == 1
     assert "refuse" in result.stderr and "working" in result.stderr
 
 
 def test_dispatch_refuses_an_order_without_checks(instance, hx, launched):
     launched("eng-001")
-    path = instance / "orders" / "eng-001.md"
+    path = instance / "run" / "order-eng-001.md"
     path.parent.mkdir(exist_ok=True)
     path.write_text("## Order\n\nDo it.\n\n## Definition of done\n\n- [ ] done\n")
-    result = hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance)
+    result = hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance)
     assert result.returncode == 2
     assert "### Checks" in result.stderr
     assert not (instance / "tasks.json").exists(), "a refused dispatch writes nothing"
@@ -213,7 +203,7 @@ def test_dispatch_refuses_without_a_live_session(instance, hx, orders):
 
     ensure_work_item(instance, "eng-001")
     orders("eng-001")
-    result = hx("dispatch", "eng-001", "orders/eng-001.md", cwd=instance)
+    result = hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance)
     assert result.returncode == 1
     assert "no live tmux session" in result.stderr
 
@@ -244,8 +234,8 @@ def test_an_interrupted_dispatch_recovers_on_re_run(instance, hx, launched, orde
         with pytest.raises(KeyboardInterrupt):
             dispatch(
                 instance,
-                [("eng-001", str(instance / "orders/eng-001.md")),
-                 ("eng-002", str(instance / "orders/eng-002.md"))],
+                [("eng-001", str(instance / "run/order-eng-001.md")),
+                 ("eng-002", str(instance / "run/order-eng-002.md"))],
                 env={**env, "HX_TMUX": " ".join(tmux_server)},
             )
     finally:
@@ -254,7 +244,9 @@ def test_an_interrupted_dispatch_recovers_on_re_run(instance, hx, launched, orde
     assert item_state(instance, "eng-001") == "working"
     assert item_state(instance, "eng-002") == "idle", "the second id never got applied"
 
-    result = hx("dispatch", "eng-001", "orders/eng-001.md", "eng-002", "orders/eng-002.md", cwd=instance)
+    # eng-001's order file was consumed by the half-run; hx re-renders it from tasks.json.
+    assert not (instance / "run" / "order-eng-001.md").exists()
+    result = hx("dispatch", "eng-001", "run/order-eng-001.md", "eng-002", "run/order-eng-002.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     assert item_state(instance, "eng-001") == "working"
     assert item_state(instance, "eng-002") == "working"
@@ -265,7 +257,7 @@ def test_an_interrupted_dispatch_recovers_on_re_run(instance, hx, launched, orde
 
 def dispatch_working(instance, hx, orders, item_id="eng-001", **order_kwargs):
     orders(item_id, **order_kwargs)
-    result = hx("dispatch", item_id, f"orders/{item_id}.md", cwd=instance)
+    result = hx("dispatch", item_id, f"run/order-{item_id}.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     wait_for_goal(instance, item_id)
     return instance
@@ -403,68 +395,11 @@ def test_complete_wakes_the_partner(instance, hx, launched, orders, tmp_path):
     }
 
 
-# --- queued → working, inside `hx complete done` of the last dependency ------------------------
-
-
-def test_a_queued_item_is_promoted_by_its_last_dependency(instance, hx, launched, orders, agent):
-    agent("eng-002")
-    launched("eng-001", "eng-002")
-    orders("eng-001")
-    orders("eng-002", after=["eng-001"])
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", "eng-002", "orders/eng-002.md",
-              cwd=instance).returncode == 0
-    assert item_state(instance, "eng-001") == "working"
-    assert item_state(instance, "eng-002") == "queued"
-    wait_for_goal(instance, "eng-001")
-
-    result = hx("complete", "done", harness_id="eng-001")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "HX-PROMOTED eng-002 working" in result.stdout
-    assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE eng-001 done"
-
-    assert item_state(instance, "eng-002") == "working"
-    assert (instance / "run" / "eng-002" / "goal").is_file()
-    assert "/goal The order for eng-002" in wait_for_goal(instance, "eng-002")
-
-
-def test_a_queued_item_with_two_dependencies_waits_for_both(instance, hx, launched, orders, agent):
-    agent("eng-002", git=True)
-    agent("eng-003")
-    launched("eng-001", "eng-002", "eng-003")
-    orders("eng-001")
-    orders("eng-002")
-    orders("eng-003", after=["eng-001", "eng-002"])
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", "eng-002", "orders/eng-002.md",
-              "eng-003", "orders/eng-003.md", cwd=instance).returncode == 0
-    assert item_state(instance, "eng-003") == "queued"
-
-    assert hx("complete", "done", harness_id="eng-001").returncode == 0
-    assert item_state(instance, "eng-003") == "queued", "one dependency is still open"
-
-    result = hx("complete", "done", harness_id="eng-002")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "HX-PROMOTED eng-003 working" in result.stdout
-    assert item_state(instance, "eng-003") == "working"
-
-
-def test_a_blocked_dependency_does_not_promote(instance, hx, launched, orders, agent):
-    agent("eng-002")
-    launched("eng-001", "eng-002")
-    orders("eng-001")
-    orders("eng-002", after=["eng-001"])
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", "eng-002", "orders/eng-002.md",
-              cwd=instance).returncode == 0
-    result = hx("complete", "blocked", harness_id="eng-001")
-    assert result.returncode == 0
-    assert "HX-PROMOTED" not in result.stdout
-    assert item_state(instance, "eng-002") == "queued"
-
-
 # --- resume ----------------------------------------------------------------------------------
 
 
 def write_addendum(instance, item_id, text="Use a flat list, not a map."):
-    path = instance / "orders" / f"{item_id}.addendum.md"
+    path = instance / "run" / f"addendum-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text + "\n")
     return path
@@ -491,7 +426,7 @@ def test_resume_keeps_logs_state_and_tasks_and_appends_the_addendum(instance, hx
     write_addendum(instance, "eng-001")
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
 
-    result = hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance)
+    result = hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     assert item_state(instance, "eng-001") == "working"
 
@@ -521,7 +456,7 @@ def test_the_addendum_lands_beneath_the_order_not_at_the_end(instance, hx, launc
     dispatch_working(instance, hx, orders)
     assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
     write_addendum(instance, "eng-001")
-    assert hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance).returncode == 0
+    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
 
     body = (instance / "pods" / "engineers" / "eng-001-working.md").read_text()
     addendum_at = body.index("### Order addendum")
@@ -535,7 +470,7 @@ def test_resume_refuses_an_outcome_that_is_not_paused(instance, hx, launched, or
     dispatch_working(instance, hx, orders)
     assert hx("complete", outcome, harness_id="eng-001").returncode == 0
     write_addendum(instance, "eng-001")
-    result = hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance)
+    result = hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance)
     assert result.returncode == 1
     assert "refuse" in result.stderr and outcome in result.stderr
 
@@ -544,7 +479,7 @@ def test_resume_refuses_a_working_item(instance, hx, launched, orders):
     launched("eng-001")
     dispatch_working(instance, hx, orders)
     write_addendum(instance, "eng-001")
-    result = hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance)
+    result = hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance)
     assert result.returncode == 1 and "not `complete`" in result.stderr
 
 
@@ -589,7 +524,7 @@ def test_a_benched_id_shows_as_idle_with_its_last_outcome(
     item = {i["id"]: i for i in board["items"]}["eng-001"]
     assert item["state"] == "idle"
     assert item["outcome"] == "done"
-    assert [e for e in board["errors"] if "eng-001" in e] == []
+    assert "errors" not in board
 
 
 def test_bench_refuses_an_item_that_is_not_complete(instance, hx, launched, orders):
@@ -609,69 +544,41 @@ def test_a_benched_id_can_be_dispatched_again(instance, hx, launched, orders):
     assert "The next order." in tasks_of(instance)["eng-001"]["order"]
 
 
-# --- the Partner ------------------------------------------------------------------------------
+# --- the Partner is never a work item (spec 12, spec 14 D25) --------------------------------
 
 
-def test_partner_dispatch_archives_nothing_and_leaves_goal_pending(
-    instance, hx, launched, orders, tmux_server
-):
-    """spec 06, 08: the Partner's session is continuous and its own pane is mid-turn."""
+def test_dispatch_refuses_the_partner(instance, hx, launched, orders):
     launched("partner")
-    logs = instance / "logs" / "partner"
-    logs.mkdir(parents=True, exist_ok=True)
-    (logs / "partner-main.jsonl").write_text('{"seq": 1}\n')
-    orders("partner", order="Decompose what the human asked for.",
-           checks="hx board --require-done eng-001")
-
-    # The Partner dispatches itself from its own Bash tool, so its pane is mid-turn.
-    hold_pane(tmux_server, "partner")
-
-    result = hx("dispatch", "partner", "orders/partner.md", cwd=instance)
-    assert result.returncode == 0, result.stderr
-    assert item_state(instance, "partner") == "working"
-    assert (instance / "run" / "partner" / "goal-pending").is_file()
-    assert (instance / "run" / "partner" / "goal").is_file(), (
-        "the marker is written in both cases, so the `working` invariant holds mid-turn (spec 08)"
-    )
-    assert not (instance / "archive" / "partner").exists(), "no archive for the Partner"
-    assert (instance / "logs" / "partner").is_dir()
-    assert (logs / "partner-main.jsonl").read_text() == '{"seq": 1}\n', "no wipe for the Partner"
+    orders("partner")
+    result = hx("dispatch", "partner", "run/order-partner.md", cwd=instance)
+    assert result.returncode == 1
+    assert "the Partner has no work item and is never dispatched" in result.stderr
 
 
-def test_partner_resume_archives_nothing_and_leaves_goal_pending(
-    instance, hx, launched, orders, tmux_server
-):
+def test_resume_refuses_the_partner(instance, hx, launched):
     launched("partner")
-    orders("partner", checks="true")
-    assert hx("dispatch", "partner", "orders/partner.md", cwd=instance).returncode == 0
-    wait_for_goal(instance, "partner")
-    assert hx("complete", "decision", harness_id="partner").returncode == 0
-
     write_addendum(instance, "partner", "The human chose the flat list.")
-    hold_pane(tmux_server, "partner")
-    result = hx("resume", "partner", "orders/partner.addendum.md", cwd=instance)
-    assert result.returncode == 0, result.stderr
-    assert item_state(instance, "partner") == "working"
-    assert (instance / "run" / "partner" / "goal-pending").is_file()
-    assert not (instance / "archive" / "partner").exists()
+    result = hx("resume", "partner", "run/addendum-partner.md", cwd=instance)
+    assert result.returncode == 1
+    assert "never resumed" in result.stderr
 
 
-def test_the_partner_is_not_woken_by_its_own_completion(instance, hx, launched, orders):
+def test_complete_refuses_the_partner(instance, hx, launched):
     launched("partner")
-    orders("partner", checks="true")
-    assert hx("dispatch", "partner", "orders/partner.md", cwd=instance).returncode == 0
-    wait_for_goal(instance, "partner")
     result = hx("complete", "done", harness_id="partner")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE partner done"
+    assert result.returncode == 1
+    assert "never completes" in result.stderr
 
 
-def test_partner_checks_run_in_harness_root(instance, hx, launched, orders):
-    """spec 06: the Partner has no worktree, so its checks run in HARNESS_ROOT."""
+def test_launch_partner_creates_no_work_item(instance, hx, launched):
     launched("partner")
-    orders("partner", checks="test -f config/models.json")
-    assert hx("dispatch", "partner", "orders/partner.md", cwd=instance).returncode == 0
-    wait_for_goal(instance, "partner")
-    assert hx("complete", "done", harness_id="partner").returncode == 0
+    assert item_state(instance, "partner") is None
+    assert list((instance / "pods").glob("partner/*.md")) == []
+    assert not (instance / "run" / "partner" / "goal").exists()
 
 
+def test_goal_refuses_the_partner(instance, hx, launched):
+    launched("partner")
+    result = hx("goal", "partner")
+    assert result.returncode == 1
+    assert "never sent a `/goal`" in result.stderr

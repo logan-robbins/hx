@@ -12,17 +12,16 @@ SHOW_KEYS = {
     "id", "pod", "role", "state", "file", "work_item", "task", "persona_path", "step_state",
     "context_file", "streams", "subagents", "metrics", "pane", "archive", "bench",
 }
-ORDERS_KEYS = {"root_abs", "ts", "orders", "graph", "errors"}
+ORDERS_KEYS = {"root_abs", "ts", "orders"}
 ORDER_ENTRY_KEYS = {
-    "id", "pod", "path", "after", "order", "addenda", "record", "state", "ready",
-    "waiting_on", "file_matches_record",
+    "id", "pod", "state", "outcome", "order", "addenda", "dispatched", "completed",
 }
-ARCHIVE_KEYS = {"root_abs", "ts", "items", "errors"}
+ARCHIVE_KEYS = {"root_abs", "ts", "items"}
 
 
 def dispatched(instance, hx, orders, item_id="eng-001", **kwargs):
     orders(item_id, **kwargs)
-    result = hx("dispatch", item_id, f"orders/{item_id}.md", cwd=instance)
+    result = hx("dispatch", item_id, f"run/order-{item_id}.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     wait_for(
         lambda: "/goal" in (instance / "run" / item_id / "fake-input.log").read_text(),
@@ -50,7 +49,10 @@ def test_show_json_matches_contracts_on_a_dispatched_item(instance, hx, launched
     assert document["work_item"]["frontmatter"]["id"] == "eng-001"
     assert "Stream the importer." in document["work_item"]["body"]
     assert "Stream the importer." in document["task"]["order"]
-    assert document["task"]["after"] == [] and document["task"]["addenda"] == []
+    assert document["task"]["addenda"] == []
+    assert set(document["task"]) == {
+        "order", "addenda", "outcome", "dispatched", "completed"
+    }
     assert document["task"]["outcome"] is None and document["task"]["completed"] is None
     assert document["task"]["dispatched"]
     assert document["persona_path"] == "run/eng-001/persona.md"
@@ -132,11 +134,12 @@ def test_show_falls_back_to_the_pane_log_for_a_dead_session(instance, hx, launch
 
 
 def test_orders_json_matches_contracts(instance, hx, launched, orders, agent):
+    """CONTRACTS.md `hx orders --json`: one entry per id in tasks.json, no graph, no files."""
     agent("eng-002")
     launched("eng-001", "eng-002")
     orders("eng-001")
-    orders("eng-002", after=["eng-001"])
-    assert hx("dispatch", "eng-001", "orders/eng-001.md", "eng-002", "orders/eng-002.md",
+    orders("eng-002")
+    assert hx("dispatch", "eng-001", "run/order-eng-001.md", "eng-002", "run/order-eng-002.md",
               cwd=instance).returncode == 0
 
     result = hx("orders", "--json")
@@ -144,61 +147,44 @@ def test_orders_json_matches_contracts(instance, hx, launched, orders, agent):
     view = json.loads(result.stdout)
     assert set(view) == ORDERS_KEYS
     assert view["root_abs"] == str(instance) and view["ts"].endswith("Z")
-    assert view["errors"] == []
 
     by_id = {entry["id"]: entry for entry in view["orders"]}
     assert set(by_id) == {"eng-001", "eng-002"}
     for entry in view["orders"]:
         assert set(entry) == ORDER_ENTRY_KEYS, set(entry) ^ ORDER_ENTRY_KEYS
 
-    assert by_id["eng-001"]["state"] == "working"
-    assert by_id["eng-001"]["ready"] is True and by_id["eng-001"]["waiting_on"] == []
-    assert by_id["eng-002"]["state"] == "queued"
-    assert by_id["eng-002"]["ready"] is False
-    assert by_id["eng-002"]["waiting_on"] == ["eng-001"]
-    assert by_id["eng-002"]["after"] == ["eng-001"]
-    assert by_id["eng-002"]["record"]["outcome"] is None
-    assert set(by_id["eng-002"]["record"]) == {
-        "order", "after", "addenda", "outcome", "dispatched", "completed"
-    }
-
-    assert view["graph"]["edges"] == [{"from": "eng-001", "to": "eng-002", "met": False}]
-    nodes = {node["id"]: node for node in view["graph"]["nodes"]}
-    assert nodes["eng-002"]["state"] == "queued" and nodes["eng-002"]["ready"] is False
+    assert by_id["eng-001"]["state"] == "working" and by_id["eng-001"]["pod"] == "engineers"
+    assert by_id["eng-001"]["outcome"] is None and by_id["eng-001"]["completed"] is None
+    assert by_id["eng-001"]["dispatched"].endswith("Z")
+    assert "## Order" in by_id["eng-002"]["order"]
 
 
-def test_orders_flags_a_file_edited_after_dispatch(instance, hx, launched, orders):
+def test_orders_reads_tasks_json_only(instance, hx, launched, orders):
+    """The order file is consumed at dispatch, so there is nothing to compare it against."""
     launched("eng-001")
     dispatched(instance, hx, orders, order="The original order.")
+    assert not (instance / "run" / "order-eng-001.md").exists()
     view = json.loads(hx("orders", "--json").stdout)
-    assert view["orders"][0]["file_matches_record"] is True
+    assert [e["id"] for e in view["orders"]] == ["eng-001"]
+    assert "The original order." in view["orders"][0]["order"]
 
-    orders("eng-001", order="Edited after dispatch.")
-    view = json.loads(hx("orders", "--json").stdout)
-    assert view["orders"][0]["file_matches_record"] is False
-
-
-def test_an_order_never_dispatched_has_a_null_record(instance, hx, launched, orders):
-    launched("eng-001")
-    orders("eng-001")
-    view = json.loads(hx("orders", "--json").stdout)
-    entry = view["orders"][0]
-    assert entry["record"] is None
-    assert entry["state"] is None and entry["file_matches_record"] is None
+    # An order file written but never dispatched is not an entry: hx knows no orders/ (D25).
+    orders("eng-002")
+    assert [e["id"] for e in json.loads(hx("orders", "--json").stdout)["orders"]] == ["eng-001"]
 
 
 def test_orders_carries_the_addendum(instance, hx, launched, orders):
     launched("eng-001")
     dispatched(instance, hx, orders)
     assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
-    (instance / "orders" / "eng-001.addendum.md").write_text("Do it the other way.\n")
-    assert hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance).returncode == 0
+    (instance / "run" / "addendum-eng-001.md").write_text("Do it the other way.\n")
+    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
 
+    assert not (instance / "run" / "addendum-eng-001.md").exists(), "the addendum is consumed"
     entry = json.loads(hx("orders", "--json").stdout)["orders"][0]
     assert len(entry["addenda"]) == 1
-    assert entry["addenda"][0]["path"] == "orders/eng-001.addendum.md"
-    assert "Do it the other way." in entry["addenda"][0]["text"]
-    assert entry["record"]["addenda"][0]["text"] == "Do it the other way."
+    assert entry["addenda"][0]["text"] == "Do it the other way."
+    assert entry["addenda"][0]["ts"].endswith("Z")
 
 
 # --- hx archive ---------------------------------------------------------------------------------
@@ -293,8 +279,8 @@ def test_task_prints_the_order_and_its_addenda(instance, hx, launched, orders):
     assert "The dispatched order." in result.stdout and "### Checks" in result.stdout
 
     assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
-    (instance / "orders" / "eng-001.addendum.md").write_text("And also this.\n")
-    assert hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance).returncode == 0
+    (instance / "run" / "addendum-eng-001.md").write_text("And also this.\n")
+    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
 
     result = hx("task", harness_id="eng-001")
     assert "The dispatched order." in result.stdout

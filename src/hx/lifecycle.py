@@ -1,9 +1,9 @@
 """`hx launch`, `hx restart`, `hx up`, `hx heartbeat` — keeping the fleet alive (spec 08, 12).
 
-`hx launch` is idempotent, because `hx up` runs it for every id at every boot and the Partner
-runs it for an id that may already be running. `hx restart` is the fallback seam: relaunch
-bare and send the pointer once the pane is ready. `hx heartbeat` is a system cron, the only
-thing outside Claude Code that watches the fleet.
+`hx launch` is idempotent, because `hx up` runs it for every id and the Partner runs it for
+an id that may already be running. `hx restart` is the fallback seam: relaunch bare and send
+the pointer once the pane is ready. `hx heartbeat` is the human's own cron, if they want one,
+and is the only thing outside Claude Code that watches the fleet (17.2: hx ships no units).
 """
 
 from __future__ import annotations
@@ -46,8 +46,11 @@ def config_ids(root: Path) -> list[str]:
     )
 
 
-def ensure_work_item(root: Path, item_id: str) -> Path:
-    """`hx launch` creates the `-idle` work item when there is none (spec 08)."""
+def ensure_work_item(root: Path, item_id: str) -> Path | None:
+    """`hx launch` creates the `-idle` work item when there is none — not for the Partner,
+    which has none at all (spec 08, spec 14 D25)."""
+    if item_id == PARTNER:
+        return None
     existing = find_work_item(root, item_id)
     if existing is not None:
         return existing
@@ -57,30 +60,23 @@ def ensure_work_item(root: Path, item_id: str) -> Path:
     pod = load_harness(harness, check_cross_file=False).pod
     path = work_item_path(root, pod, item_id, "idle")
     store.atomic_write_text(
-        path, render(load_template(root), item_id=item_id, pod=pod, after=[], dispatched="", order="")
+        path, render(load_template(root), item_id=item_id, pod=pod, dispatched="", order="")
     )
     return path
 
 
 def ensure_workdir(root: Path, item_id: str) -> Path | None:
-    """The worktree `start.sh` runs in. The Partner has none (spec 05, 17.4).
+    """The directory `start.sh` runs in: `harness.json.workdir`, whatever the Partner chose.
 
-    With a mirror, this is a sparse worktree cut from it on the agent's own branch, without
-    the product's `.claude/` (spec 17.3). Without one — an instance whose human has not run
-    `hx repo add` yet — the directory is created bare so a launch is still possible.
+    hx creates no repository and no branch for it (17.2); it creates the directory if it is
+    not there, so a launch is possible, and nothing else. The Partner runs in HARNESS_ROOT.
     """
-    from . import repo as repo_mod
-
     if item_id == PARTNER:
         return None
-    harness = root / "config" / item_id / "harness.json"
-    config = load_harness(harness, check_cross_file=False)
-    workdir = resolve_workdir(config.workdir, root) if config.workdir else root / "wt" / item_id
-
-    if workdir.is_dir() and any(workdir.iterdir()):
-        return workdir
-    if repo_mod.load_repo(root) is not None:
-        return repo_mod.create_worktree(root, item_id, workdir, env=None)
+    config = load_harness(root / "config" / item_id / "harness.json", check_cross_file=False)
+    if not config.workdir:
+        return None
+    workdir = resolve_workdir(config.workdir, root)
     workdir.mkdir(parents=True, exist_ok=True)
     return workdir
 
@@ -138,7 +134,7 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     if not already and companion:
         start_companion(root, item_id, env=env)
 
-    if path.name.endswith("-working.md"):
+    if path is not None and path.name.endswith("-working.md"):
         result["goal"] = goal.send_goal(root, item_id, wait=True, env=env)
     return result
 
@@ -188,7 +184,7 @@ def up(root: Path, *, env=None) -> list[dict]:
 
 
 def heartbeat(root: Path, *, env=None) -> dict:
-    """System cron, every 15 minutes (spec 08, 12 step 4)."""
+    """The human's own cron, if they want one (spec 08, 12 step 4, 17.2)."""
     view = board.collect(root, env=env)
     text = board.render_text(view)
 
@@ -205,7 +201,7 @@ def heartbeat(root: Path, *, env=None) -> dict:
     previous = previous_path.read_text() if previous_path.is_file() else None
     store.atomic_write_text(previous_path, text + "\n")
 
-    active = any(item["state"] in ("working", "queued") for item in after["items"])
+    active = any(item["state"] == "working" for item in after["items"])
     changed = previous is not None and previous.strip() != text.strip()
     woke = None
     if active and changed:

@@ -48,7 +48,7 @@ def test_the_instance_gitignore_keeps_runtime_state_out_of_git(tmp_path):
     root = tmp_path / "instance"
     install_skeleton(root)
     ignored = (root / ".gitignore").read_text()
-    for entry in ("pods/", "logs/", "state/", "run/", "orders/", "tasks.json"):
+    for entry in ("pods/", "logs/", "state/", "run/", "tasks.json"):
         assert entry in ignored
 
 

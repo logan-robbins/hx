@@ -1,10 +1,11 @@
 """`tasks.json`: the control-plane record per id (spec 08).
 
-    {"eng-002": {"order": "…", "after": ["eng-001"], "addenda": [{"ts","text"}],
+    {"eng-002": {"order": "…", "addenda": [{"ts","text"}],
                  "outcome": null, "dispatched": "…", "completed": null}}
 
-Written only by hx under `run/tasks.lock` (spec 04). M0 only reads it; the writers arrive
-with `hx dispatch`, `hx complete` and `hx resume`.
+Written only by hx (spec 04), with an ordinary write: the v1 cut (spec 14 D25) removed the
+lock and the atomic-rename ceremony. Together with the work item this is the only place task
+text lives.
 """
 
 from __future__ import annotations
@@ -12,12 +13,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import store
 from .errors import ValidationError
 from .ids import ID_RE, OUTCOMES
 
 FILENAME = "tasks.json"
-_FIELDS = ("order", "after", "addenda", "outcome", "dispatched", "completed")
+_FIELDS = ("order", "addenda", "outcome", "dispatched", "completed")
 
 
 def path_for(root: Path) -> Path:
@@ -52,9 +52,6 @@ def load_tasks(root: Path) -> dict[str, dict]:
                 f"{FILENAME}: `{key}`: `outcome` must be one of {', '.join(OUTCOMES)} or null, "
                 f"got `{outcome!r}` (spec 08)"
             )
-        after = entry.get("after")
-        if after is not None and not (isinstance(after, list) and all(isinstance(a, str) for a in after)):
-            raise ValidationError(f"{FILENAME}: `{key}`: `after` must be a list of ids")
     return data
 
 
@@ -63,16 +60,10 @@ def outcome_of(tasks: dict[str, dict], item_id: str) -> str | None:
     return entry.get("outcome") if isinstance(entry, dict) else None
 
 
-def is_ready(tasks: dict[str, dict], after: list[str]) -> bool:
-    """Spec 08: readiness of an `after` entry is `tasks.json[<dep>].outcome == "done"`."""
-    return all(outcome_of(tasks, dep) == "done" for dep in after)
-
-
-def new_entry(order: str, after: list[str], dispatched: str) -> dict:
+def new_entry(order: str, dispatched: str) -> dict:
     """A fresh `tasks.json` record for a dispatch (spec 08)."""
     return {
         "order": order,
-        "after": list(after),
         "addenda": [],
         "outcome": None,
         "dispatched": dispatched,
@@ -81,15 +72,9 @@ def new_entry(order: str, after: list[str], dispatched: str) -> dict:
 
 
 def write_tasks(root: Path, tasks: dict[str, dict]) -> None:
-    """Write `tasks.json` atomically. The caller holds `run/tasks.lock` (spec 04)."""
-    store.atomic_write_json(path_for(root), tasks)
-
-
-def unmet(tasks: dict[str, dict], after: list[str]) -> list[str]:
-    """The `after` entries whose outcome is not `done` — CONTRACTS.md `waiting_on`."""
-    return [dep for dep in after if outcome_of(tasks, dep) != "done"]
-
-
-def promotable(tasks: dict[str, dict], queued: dict[str, list[str]]) -> list[str]:
-    """Ids among `queued` (id → after) whose every dependency is now `done` (spec 06)."""
-    return sorted(item_id for item_id, after in queued.items() if is_ready(tasks, after))
+    """Write `tasks.json`. An ordinary write, no lock (spec 08, spec 14 D25)."""
+    path = path_for(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as handle:
+        json.dump(tasks, handle, indent=2, sort_keys=True)
+        handle.write("\n")

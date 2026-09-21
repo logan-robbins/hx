@@ -2,10 +2,11 @@
 # adapters/claude/install.sh <id> — write the per-agent Claude Code home (spec 11, 17.3).
 #
 # Writes $HARNESS_ROOT/run/<id>/home/settings.json with:
-#   - the nine hx hooks of spec 09.1, each carrying `--id <id>`, pointed at the hook binary
-#     recorded in config/hx.json (CONTRACTS.md), falling back to $HARNESS_ROOT/bin/hx-hook
+#   - the hx hooks of spec 09.1, each carrying `--id <id>`, pointed at the hook binary
+#     recorded in config/hx.json (CONTRACTS.md), falling back to $HARNESS_ROOT/bin/hx-hook.
+#     There is no `guard` PreToolUse hook: no hook enforces anything (spec 09.1, 14 D25)
 #   - instruction-files mode `claude-md`, so no AGENTS.md is ever discovered
-#   - claudeMdExcludes for the product repo's CLAUDE.md / AGENTS.md under wt/ and repos/
+#   - claudeMdExcludes for the agent's own workdir
 #   - the bypass-permissions acceptance, so no launch is ever interactive
 #   - crossSessionInbound: accept, for the Partner only (spec 05, 11, 17.3)
 # Agent homes hold no credentials at all. Auth is one long-lived OAuth token per instance,
@@ -51,8 +52,20 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 home=$root/run/$id/home
 mkdir -p "$home"
 
-# The directory this agent will run in, which start.sh also uses (spec 17.4).
-if [ "$id" = partner ]; then cwd=$root; else cwd=$root/wt/$id; fi
+# The directory this agent will run in, which start.sh also uses (spec 17.4): the `workdir`
+# the Partner chose in config/<id>/harness.json, HARNESS_ROOT for the Partner itself. A
+# relative workdir resolves against HARNESS_ROOT (CONTRACTS.md).
+if [ "$id" = partner ]; then
+  cwd=$root
+else
+  cwd=$("$python" - "$root/config/$id/harness.json" "$root" <<'CWDEOF'
+import json, os, sys
+workdir = (json.load(open(sys.argv[1])).get("workdir") or "").strip()
+print(workdir if os.path.isabs(workdir) else os.path.join(sys.argv[2], workdir) if workdir
+      else sys.argv[2])
+CWDEOF
+)
+fi
 
 # Hook and hx binary paths: config/hx.json when hx install recorded it, else bin/ (spec 17.1).
 hook_bin=$root/bin/hx-hook
@@ -73,6 +86,7 @@ import shlex
 
 item_id = os.environ["HX_ID"]
 root = os.environ["HX_ROOT"]
+cwd = os.environ["HX_CWD"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 target = os.environ["HX_SETTINGS"]
 is_partner = item_id == "partner"
@@ -93,7 +107,6 @@ def entry(event, matcher=None):
 # that hx tracks as streams.
 hooks = {
     "SessionStart": [entry("context", "startup|resume|clear|compact")],
-    "PreToolUse": [entry("guard", "*")],
     "PostToolUse": [entry("log", "*")],
     "Stop": [entry("stop")],
     "PreCompact": [entry("precompact", "*")],
@@ -109,15 +122,13 @@ settings = {
     # Only config/CLAUDE.md loads; the product repo's instruction files never do (spec 03).
     "pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}},
     "claudeMdExcludes": [
-        f"{root}/wt/**/CLAUDE.md",
-        f"{root}/wt/**/CLAUDE.local.md",
-        f"{root}/wt/**/.claude/CLAUDE.md",
-        f"{root}/wt/**/AGENTS.md",
-        f"{root}/wt/**/.claude/AGENTS.md",
-        f"{root}/repos/**/CLAUDE.md",
-        f"{root}/repos/**/AGENTS.md",
+        f"{cwd}/**/CLAUDE.md",
+        f"{cwd}/**/CLAUDE.local.md",
+        f"{cwd}/**/.claude/CLAUDE.md",
+        f"{cwd}/**/AGENTS.md",
+        f"{cwd}/**/.claude/AGENTS.md",
     ],
-    # Bypass permissions, always: the guard hook is the only enforcement (spec 05, 09.2).
+    # Bypass permissions, always. Nothing enforces anything (spec 05, 09.1, 14 D25).
     "skipDangerousModePermissionPrompt": True,
 }
 if is_partner:
@@ -174,23 +185,35 @@ if [ -f "$root/config/CLAUDE.md" ]; then
   cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
 fi
 
-# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5).
+# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5). The Partner
+# gets hx-partner and hx-fleet, a worker gets hx-worker, a Companion gets hx-companion
+# (handoff/orchestrator-to-build.md, 2026-09-20).
 skills_src=${HX_SKILLS_DIR:-}
-if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
-  mkdir -p "$home/skills"
-  if [ "$id" = partner ]; then want=hx-partner; else want=hx-worker; fi
-  if [ -d "$skills_src/$want" ]; then
-    rm -rf "$home/skills/$want"
-    cp -R "$skills_src/$want" "$home/skills/$want"
-  fi
+copy_skills() {
+  local target=$1; shift
+  [ -n "$skills_src" ] && [ -d "$skills_src" ] || return 0
+  mkdir -p "$target"
+  local want
+  for want in "$@"; do
+    [ -d "$skills_src/$want" ] || continue
+    rm -rf "$target/$want"
+    cp -R "$skills_src/$want" "$target/$want"
+  done
+}
+
+if [ "$id" = partner ]; then
+  copy_skills "$home/skills" hx-partner hx-fleet
+else
+  copy_skills "$home/skills" hx-worker
 fi
 
-# The Companion's own config dir (spec 05 `provider: claude-cli`, 10). It gets no hooks, no
-# skills and no CLAUDE.md: the Companion interprets a stream and returns JSON, and anything
-# that could make it act or load project context is a liability, not a feature. Onboarding and
-# trust are pre-seeded here too, for the same reason as the agent's home.
+# The Companion's own config dir (spec 10). It gets one hook, the `hx-companion` skill, and no
+# CLAUDE.md: the Companion interprets a stream and returns JSON, and anything else that could
+# make it act or load project context is a liability, not a feature. Onboarding and trust are
+# pre-seeded here too, for the same reason as the agent's home.
 companion_home=$root/run/$id/companion-home
 mkdir -p "$companion_home"
+copy_skills "$companion_home/skills" hx-companion
 HX_COMPANION_HOME=$companion_home HX_CWD=$root HX_HOOK_BIN=$hook_bin HX_ID=$id \
 "$python" - <<'COMPANIONEOF'
 import json
@@ -207,12 +230,11 @@ def companion_hook(event):
             "command": f"{shlex.quote(hook)} --id {shlex.quote(item_id)} {event}"}
 
 
-# The Companion gets two hooks and no others: the same guard (it must not reach into the
-# instance either) and its own `stop`, which validates what it wrote and installs it. No
-# product skills, no CLAUDE.md: it reads the files each pass names and nothing else (spec 10).
+# The Companion gets one hook and no others: its own `stop`, which validates what it wrote
+# and installs it. There is no guard hook anywhere (spec 09.1, 14 D25). No product skills and
+# no CLAUDE.md: it reads the files each pass names and nothing else (spec 10).
 settings = {
     "hooks": {
-        "PreToolUse": [{"matcher": "*", "hooks": [companion_hook("guard")]}],
         "Stop": [{"hooks": [companion_hook("companion-stop")]}],
     },
     "pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}},
@@ -251,5 +273,5 @@ with open(config_json, "w") as handle:
 COMPANIONEOF
 
 printf 'install.sh: wrote %s\n' "$home/settings.json"
-printf 'install.sh: wrote %s (no hooks, no skills, no CLAUDE.md)\n' "$companion_home/settings.json"
+printf 'install.sh: wrote %s (stop hook + hx-companion, no CLAUDE.md)\n' "$companion_home/settings.json"
 printf 'install.sh: auth is %s, exported by start.sh as CLAUDE_CODE_OAUTH_TOKEN\n' "$token_file"

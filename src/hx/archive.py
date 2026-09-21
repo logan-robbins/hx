@@ -92,10 +92,7 @@ def archive_entries(root: Path, item_id: str) -> list[dict]:
 
 def collect(root: Path) -> dict:
     """`hx archive --json` (CONTRACTS.md): benched bodies and archived dispatches per id."""
-    errors: list[str] = []
-    by_id, name_errors = find_work_items(root)
-    errors.extend(name_errors)
-
+    by_id = find_work_items(root)
     ids = set(by_id)
     for base in ("archive", "pods"):
         directory = root / base
@@ -126,8 +123,8 @@ def collect(root: Path) -> dict:
             if harness.is_file():
                 try:
                     pod = load_harness(harness, check_cross_file=False).pod
-                except ValidationError as exc:
-                    errors.append(str(exc))
+                except ValidationError:
+                    pod = None
         items.append(
             {
                 "id": item_id,
@@ -137,7 +134,7 @@ def collect(root: Path) -> dict:
             }
         )
 
-    return {"root_abs": str(root), "ts": timestamps.now(), "items": items, "errors": errors}
+    return {"root_abs": str(root), "ts": timestamps.now(), "items": items}
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
@@ -155,6 +152,4 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
                 print(f"bench    {item['id']}  {entry['ts']}  {entry['path']}")
             for entry in item["archive"]:
                 print(f"dispatch {item['id']}  {entry['ts']}  {entry['path']}")
-        for error in view["errors"]:
-            print(error)
-    return 1 if view["errors"] else 0
+    return 0

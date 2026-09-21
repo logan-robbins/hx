@@ -295,30 +295,7 @@ def test_stop_writes_the_turn_marker(working):
     assert marker["ts"].endswith("Z") and marker["session_id"] == "s1"
 
 
-def test_stop_pastes_a_goal_the_pane_was_owed(instance, hx, launched, orders, tmux_server):
-    """spec 02, 08, 09.1: this is what delivers the Partner's self-dispatch pointer."""
-    from .test_transitions import hold_pane, pasted
-
-    launched("partner")
-    orders("partner", checks="true")
-    hold_pane(tmux_server, "partner")
-    assert hx("dispatch", "partner", "orders/partner.md", cwd=instance).returncode == 0
-    assert (instance / "run" / "partner" / "goal-pending").is_file()
-    assert "/goal The order for" not in pasted(instance, "partner")
-
-    # The turn ends: the stop hook runs, and the queued pointer goes in.
-    result = run_hook(instance, "partner", "stop",
-                      {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
-    assert result.returncode == 0, result.stderr
-    assert not (instance / "run" / "partner" / "goal-pending").exists()
-    wait_for(
-        lambda: "/goal The order for partner" in pasted(instance, "partner"),
-        what="the pointer the stop hook pasted",
-    )
-    assert (instance / "run" / "partner" / "goal").is_file()
-
-
-def test_stop_leaves_a_pending_seam_for_build_7(working):
+def test_stop_leaves_a_pending_seam_for_build_8(working):
     from hx.hook_log import seam_marker
 
     marker = seam_marker(working, "eng-001")
@@ -327,24 +304,7 @@ def test_stop_leaves_a_pending_seam_for_build_7(working):
     result = run_hook(working, "eng-001", "stop", {"hook_event_name": "Stop", "background_tasks": []})
     assert result.returncode == 0
     assert marker.is_file(), "the marker stays, so the next boundary tries again (spec 09.3)"
-    assert "build-7" in (working / "logs" / "eng-001" / "hook-errors.log").read_text()
-
-
-def test_stop_prefers_the_pending_goal_over_the_seam(instance, hx, launched, orders, tmux_server):
-    """spec 09.1: `goal-pending` first, `else if` the seam marker."""
-    from hx.hook_log import seam_marker
-    from .test_transitions import hold_pane
-
-    launched("partner")
-    orders("partner", checks="true")
-    hold_pane(tmux_server, "partner")
-    assert hx("dispatch", "partner", "orders/partner.md", cwd=instance).returncode == 0
-    seam_marker(instance, "partner").touch()
-
-    run_hook(instance, "partner", "stop",
-             {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
-    assert not (instance / "run" / "partner" / "goal-pending").exists()
-    assert seam_marker(instance, "partner").is_file(), "the seam is still owed"
+    assert "build-8" in (working / "logs" / "eng-001" / "hook-errors.log").read_text()
 
 
 def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(working):

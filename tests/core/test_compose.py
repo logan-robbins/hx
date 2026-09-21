@@ -101,7 +101,7 @@ def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launch
     dispatch_working(instance, hx, orders, order="The original order.")
     assert hx("complete", "decision", harness_id="eng-001").returncode == 0
     write_addendum(instance, "eng-001", "And also handle the empty case.")
-    assert hx("resume", "eng-001", "orders/eng-001.addendum.md", cwd=instance).returncode == 0
+    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
 
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
@@ -208,7 +208,8 @@ def test_the_partner_file_holds_partner_md_and_the_board(instance, hx, launched,
     text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
     assert "Two workers idle." in text
     assert "## Board" in text
-    assert "pods/partner/partner-idle.md" in text
+    assert "eng-001" in text, "the board is a listing of the workers (spec 14 D25)"
+    assert "partner" not in text.split("## Board", 1)[1], "the Partner is not an item"
 
 
 def test_compose_of_an_unknown_id_is_not_found(instance, hx):

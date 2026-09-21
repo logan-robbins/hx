@@ -5,7 +5,10 @@ It is put on PATH, or pinned in `config/claude.json`, in place of the real binar
 
   1. records its argv, its environment and its cwd to
      `$HARNESS_ROOT/run/<id>/fake-argv.json`, so a test can assert the exact launch argv of
-     spec 17.4;
+     spec 17.4. A Companion launch (`HX_ROLE=companion`) writes
+     `fake-argv-companion.json` instead: it shares `run/<id>/` with the main session and
+     starts at the same moment, so one name for both was a write-write race that left the
+     file with two half-objects in it. The write is atomic for the same reason;
   2. stays alive reading stdin on a real tmux pane, appending every pasted line to
      `$HARNESS_ROOT/run/<id>/fake-input.log`, so a test can assert what `hx goal` pasted;
   3. emits scripted hook payloads, so a test can drive `hx-hook` the way a real session
@@ -155,20 +158,26 @@ def main() -> int:
         return 0
 
     directory = run_dir()
-    (directory / "fake-argv.json").write_text(
-        json.dumps(
-            {
-                "ts": now(),
-                "argv": sys.argv[1:],
-                "argv0": sys.argv[0],
-                "cwd": os.getcwd(),
-                "pid": os.getpid(),
-                "env": recorded_env(),
-            },
-            indent=2,
-        )
-        + "\n"
-    )
+    # One file per role: `hx launch` starts the main session and its Companion into the same
+    # `run/<id>/`, within milliseconds of each other. Sharing one name truncated one record
+    # mid-write and left invalid JSON behind. The temp-and-rename keeps a reader from ever
+    # seeing a partial file either.
+    name = ("fake-argv-companion.json" if os.environ.get("HX_ROLE") == "companion"
+            else "fake-argv.json")
+    record = json.dumps(
+        {
+            "ts": now(),
+            "argv": sys.argv[1:],
+            "argv0": sys.argv[0],
+            "cwd": os.getcwd(),
+            "pid": os.getpid(),
+            "env": recorded_env(),
+        },
+        indent=2,
+    ) + "\n"
+    tmp = directory / f".{name}.{os.getpid()}"
+    tmp.write_text(record)
+    os.replace(tmp, directory / name)
 
     script = load_script()
     hooks_log = directory / "fake-hooks.log"
@@ -199,7 +208,7 @@ def main() -> int:
             break
         # `/fake-hold` leaves the pane mid-turn, with no idle prompt, the way a real session
         # looks while it is working; `/fake-release` ends the turn. This is how a test drives
-        # `hx goal`'s two paths (paste now versus `run/<id>/goal-pending`).
+        # `hx goal`'s readiness wait, which blocks until the idle prompt is back (spec 08).
         if line.strip() == "/fake-hold":
             holding = True
             continue

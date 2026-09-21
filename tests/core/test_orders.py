@@ -10,10 +10,7 @@ import pytest
 from hx.errors import ValidationError
 from hx.orders import parse_order, parse_order_text
 
-GOOD = """---
-after: [eng-000, eng-002]
----
-## Order
+GOOD = """## Order
 
 Rewrite the importer so it streams instead of buffering.
 
@@ -30,7 +27,7 @@ test -s docs/importer.md
 ```
 """
 
-NO_FRONTMATTER = GOOD.split("---\n", 2)[2]
+WITH_FRONTMATTER = "---\nafter: [eng-000]\n---\n" + GOOD
 
 
 def malformed():
@@ -48,36 +45,38 @@ def malformed():
         "empty ## Order": GOOD.replace("Rewrite the importer so it streams instead of buffering.", ""),
         "two ## Order sections": GOOD + "\n## Order\n\nAnd another thing.\n",
         "two ### Checks": GOOD + "\n### Checks\n\n```bash\ntrue\n```\n",
-        "after entry is not an id": GOOD.replace("eng-000", "Engineering-1"),
-        "after is not a list": GOOD.replace("after: [eng-000, eng-002]", "after: eng-000"),
-        "unknown frontmatter key": GOOD.replace("after: [eng-000, eng-002]", "priority: high"),
-        "unclosed frontmatter": GOOD.replace("---\n## Order", "## Order"),
-        "indented frontmatter": GOOD.replace("after: [eng-000, eng-002]", "  after: [eng-000]"),
+        # The v1 cut (spec 14 D25) left an order with no frontmatter at all: no `after`, no
+        # dependency fields, nothing.
+        "frontmatter `after`": WITH_FRONTMATTER,
+        "any other frontmatter key": "---\npriority: high\n---\n" + GOOD,
     }
 
 
 def test_good_order():
-    order = parse_order_text(GOOD, "orders/eng-001.md")
-    assert order.after == ["eng-000", "eng-002"]
+    order = parse_order_text(GOOD, "order.md")
     assert order.order.startswith("Rewrite the importer")
     assert "pytest -q tests/importer" in order.checks
     assert "the suite passes" in order.definition_of_done
 
 
-def test_frontmatter_is_optional():
-    order = parse_order_text(NO_FRONTMATTER, "orders/eng-001.md")
-    assert order.after == []
+def test_an_order_has_no_frontmatter(tmp_path):
+    """spec 14 D25: `after` is gone, and with it every order frontmatter key."""
+    path = tmp_path / "eng-001.md"
+    path.write_text(WITH_FRONTMATTER)
+    with pytest.raises(ValidationError) as exc:
+        parse_order(path)
+    assert "an order has no frontmatter" in str(exc.value)
+    assert not hasattr(parse_order_text(GOOD, "order.md"), "after")
 
 
 def test_the_order_text_is_kept_verbatim_for_the_work_item():
-    order = parse_order_text(GOOD, "orders/eng-001.md")
+    order = parse_order_text(GOOD, "order.md")
     assert "## Order" in order.body and "### Checks" in order.body
-    assert "after: [eng-000" not in order.body
 
 
 def test_checks_survive_indentation_and_tildes():
-    text = NO_FRONTMATTER.replace("```bash", "~~~bash").replace("```", "~~~")
-    assert "pytest" in parse_order_text(text, "orders/eng-001.md").checks
+    text = GOOD.replace("```bash", "~~~bash").replace("```", "~~~")
+    assert "pytest" in parse_order_text(text, "order.md").checks
 
 
 @pytest.mark.parametrize("name", sorted(malformed()))
@@ -97,6 +96,7 @@ def test_every_malformed_order_is_rejected_by_name(name, tmp_path):
 @pytest.mark.parametrize(
     "name",
     [
+        "frontmatter `after`",
         "no ## Order",
         "no ## Definition of done",
         "no ### Checks heading",
@@ -119,10 +119,10 @@ def test_a_missing_order_file_is_rejected(tmp_path):
 
 
 def test_a_heading_inside_a_fence_is_not_a_section(tmp_path):
-    text = NO_FRONTMATTER.replace(
+    text = GOOD.replace(
         "pytest -q tests/importer", "grep -q '## Order' docs/importer.md"
     )
-    order = parse_order_text(text, "orders/eng-001.md")
+    order = parse_order_text(text, "order.md")
     assert "## Order" in order.checks
 
 

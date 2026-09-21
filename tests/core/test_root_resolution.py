@@ -81,7 +81,7 @@ def test_every_command_refuses_before_doing_anything(run_hx, tmp_path):
     """Implemented and not-yet-implemented commands alike (spec 08, goal build-1 item 1)."""
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
-    for command in ("doctor", "board", "install", "dispatch", "complete", "seam", "ui", "upgrade"):
+    for command in ("doctor", "board", "install", "dispatch", "complete", "seam", "ui", "orders"):
         result = run_hx(
             command,
             env_extra={"HOME": str(home), "HARNESS_ROOT": str(home / ".claude" / "instance")},

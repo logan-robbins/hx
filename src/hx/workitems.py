@@ -1,11 +1,12 @@
 """Work-item filenames and work-item frontmatter (spec 06).
 
-The filename carries the identity and the state:
+The filename carries the identity and the state — `pods/<pod>/<id>-<state>.md` — and the
+frontmatter carries the control-plane fields `hx dispatch` renders from the template. The
+body below it belongs to the HarnessAgent (spec 04) and is not validated here.
 
-    ^(?<id>partner|[a-z]+-[0-9]{3})-(?<state>idle|queued|working|complete)\\.md$
-
-and the frontmatter carries the control-plane fields `hx dispatch` renders from the template.
-The body below it belongs to the HarnessAgent (spec 04) and is not validated here.
+The v1 cut (spec 14 D25) removed the filename regex as a validation gate and the transition
+table with it: the suffix is read, never policed. hx itself writes only the three states of
+`ids.STATES`, and the HarnessAgent may rename its own item to whatever it likes.
 """
 
 from __future__ import annotations
@@ -16,14 +17,10 @@ from pathlib import Path
 
 from . import store
 from .errors import NotFound, ValidationError
-from .frontmatter import frontmatter_list, parse_frontmatter
-from .ids import ID_PATTERN, ID_RE, OUTCOMES, STATES
+from .frontmatter import parse_frontmatter
+from .ids import ID_RE, OUTCOMES
 
-WORK_ITEM_RE = re.compile(
-    rf"^(?P<id>{ID_PATTERN})-(?P<state>{'|'.join(STATES)})\.md$"
-)
-
-_FRONTMATTER_KEYS = ("id", "pod", "after", "outcome", "dispatched")
+_FRONTMATTER_KEYS = ("id", "pod", "outcome", "dispatched")
 
 
 @dataclass(frozen=True)
@@ -39,22 +36,29 @@ class WorkItem:
     id: str
     state: str
     pod: str
-    after: list[str]
     outcome: str | None
     dispatched: str | None
     body: str
 
 
 def parse_work_item_filename(name: str, *, path: str | Path | None = None) -> WorkItemName:
-    """Parse `<id>-<state>.md`. Raises naming the file and the regex it failed."""
+    """Split `<id>-<state>.md` on its last `-`. Neither half is checked against a vocabulary.
+
+    The only thing that can fail here is a name that is not of that shape at all, which is
+    not a work item (spec 06, spec 14 D25).
+    """
     subject = str(path) if path is not None else name
-    match = WORK_ITEM_RE.match(name)
-    if not match:
+    stem = name.removesuffix(".md")
+    if not name.endswith(".md") or "-" not in stem:
         raise ValidationError(
-            f"{subject}: work item filename does not match "
-            f"`^({ID_PATTERN})-({'|'.join(STATES)})\\.md$` (spec 06)"
+            f"{subject}: not a work item; `pods/<pod>/` holds `<id>-<state>.md` (spec 06)"
         )
-    return WorkItemName(id=match.group("id"), state=match.group("state"), filename=name)
+    item_id, _, state = stem.rpartition("-")
+    if not item_id or not state:
+        raise ValidationError(
+            f"{subject}: not a work item; `pods/<pod>/` holds `<id>-<state>.md` (spec 06)"
+        )
+    return WorkItemName(id=item_id, state=state, filename=name)
 
 
 def parse_work_item_text(text: str, path: str | Path, *, name: WorkItemName | None = None) -> WorkItem:
@@ -101,13 +105,6 @@ def parse_work_item_text(text: str, path: str | Path, *, name: WorkItemName | No
             f"`pods/{path.parent.name}/` (spec 03)"
         )
 
-    after = frontmatter_list(data, "after", path_str)
-    for dep in after:
-        if not ID_RE.match(dep):
-            raise ValidationError(
-                f"{path_str}: frontmatter `after` entry `{dep}` is not an id (spec 06)"
-            )
-
     outcome = data.get("outcome")
     if outcome is not None:
         if not isinstance(outcome, str) or outcome not in OUTCOMES:
@@ -115,11 +112,6 @@ def parse_work_item_text(text: str, path: str | Path, *, name: WorkItemName | No
                 f"{path_str}: frontmatter `outcome` must be one of {', '.join(OUTCOMES)} or "
                 f"empty, got `{outcome!r}` (spec 06)"
             )
-    if outcome is not None and name.state != "complete":
-        raise ValidationError(
-            f"{path_str}: frontmatter `outcome` is `{outcome}` but the state suffix is "
-            f"`{name.state}`; only a `complete` item carries an outcome (spec 06)"
-        )
 
     dispatched = data.get("dispatched")
     if dispatched is not None and (not isinstance(dispatched, str) or dispatched.strip() == ""):
@@ -133,7 +125,6 @@ def parse_work_item_text(text: str, path: str | Path, *, name: WorkItemName | No
         id=item_id,
         state=name.state,
         pod=pod,
-        after=after,
         outcome=outcome,
         dispatched=dispatched,
         body=body,
@@ -147,39 +138,33 @@ def parse_work_item(path: str | Path) -> WorkItem:
     return parse_work_item_text(path.read_text(), path)
 
 
-def find_work_items(root: Path) -> tuple[dict[str, list[Path]], list[str]]:
-    """Every work item under `pods/`, grouped by id, plus one error per stray filename.
+def find_work_items(root: Path) -> dict[str, list[Path]]:
+    """Every work item under `pods/`, grouped by id. Reading the directory is reading the fleet.
 
-    `pods/<pod>/archive/` holds benched bodies (spec 03) and is not scanned.
+    `pods/<pod>/archive/` holds benched bodies (spec 03) and is not scanned. Anything that is
+    not `<id>-<state>.md` is skipped in silence: nothing here judges (spec 14 D25).
     """
     by_id: dict[str, list[Path]] = {}
-    errors: list[str] = []
     pods = root / "pods"
     if not pods.is_dir():
-        return by_id, errors
+        return by_id
     for pod_dir in sorted(p for p in pods.iterdir() if p.is_dir()):
         for entry in sorted(pod_dir.iterdir()):
-            if entry.is_dir():
-                continue
-            if entry.name.startswith("."):
-                continue
-            rel = entry.relative_to(root)
-            if not entry.name.endswith(".md"):
-                errors.append(f"{rel}: not a work item; `pods/<pod>/` holds only `<id>-<state>.md` (spec 03)")
+            if entry.is_dir() or entry.name.startswith("."):
                 continue
             try:
-                name = parse_work_item_filename(entry.name, path=rel)
-            except ValidationError as exc:
-                errors.append(str(exc))
+                name = parse_work_item_filename(entry.name, path=entry.relative_to(root))
+            except ValidationError:
                 continue
             by_id.setdefault(name.id, []).append(entry)
-    return by_id, errors
+    return by_id
 
 
-# --- transitions (spec 06) -------------------------------------------------------------------
+# --- renames (spec 06) -----------------------------------------------------------------------
 #
 # hx owns the state suffix and the `## Order` addenda; the body between them is the
-# HarnessAgent's (spec 04). Renames are same-directory renames (spec 08).
+# HarnessAgent's (spec 04). Renames are same-directory renames (spec 08). There is no
+# transition table: a rename is a rename (spec 14 D25).
 
 SECTION_ORDER = "## Order"
 SECTION_TASKS = "## Tasks"
@@ -188,7 +173,7 @@ SECTION_OPEN_DECISION = "## Open decision"
 
 #: `templates/work-item.md` placeholders, rendered by literal replacement, never `str.format`
 #: (CONTRACTS.md "`templates/work-item.md` placeholders", handoff/gtm-to-build.md).
-TEMPLATE_TOKENS = ("{{id}}", "{{pod}}", "{{after}}", "{{dispatched}}", "{{order}}")
+TEMPLATE_TOKENS = ("{{id}}", "{{pod}}", "{{dispatched}}", "{{order}}")
 
 
 def pods_dir(root: Path, pod: str) -> Path:
@@ -201,8 +186,7 @@ def work_item_path(root: Path, pod: str, item_id: str, state: str) -> Path:
 
 def find_work_item(root: Path, item_id: str) -> Path | None:
     """The one work item for an id, or None. Raises when there is more than one (spec 06)."""
-    by_id, _ = find_work_items(root)
-    found = by_id.get(item_id, [])
+    found = find_work_items(root).get(item_id, [])
     if len(found) > 1:
         listed = ", ".join(str(p.relative_to(root)) for p in found)
         raise ValidationError(f"{item_id}: {len(found)} work items ({listed}); one work item per id (spec 06)")
@@ -222,8 +206,6 @@ def state_of(path: Path) -> str:
 
 def rename_state(path: Path, state: str) -> Path:
     """Move a work item to a new state. Same-directory rename, so it is atomic (spec 08)."""
-    if state not in STATES:
-        raise ValidationError(f"{path}: `{state}` is not a work item state ({', '.join(STATES)})")
     name = parse_work_item_filename(path.name, path=path)
     target = path.with_name(f"{name.id}-{state}.md")
     if target != path:
@@ -231,17 +213,12 @@ def rename_state(path: Path, state: str) -> Path:
     return target
 
 
-def render(template: str, *, item_id: str, pod: str, after: list[str], dispatched: str, order: str) -> str:
-    """Render `templates/work-item.md`. Literal replacement of the five tokens, nothing else.
-
-    `{{after}}` renders *inside* the `[...]` the template already has, so `after: [{{after}}]`
-    becomes `after: [eng-000, eng-002]` and `after: []` when empty.
-    """
+def render(template: str, *, item_id: str, pod: str, dispatched: str, order: str) -> str:
+    """Render `templates/work-item.md`. Literal replacement of the four tokens, nothing else."""
     rendered = template
     for token, value in (
         ("{{id}}", item_id),
         ("{{pod}}", pod),
-        ("{{after}}", ", ".join(after)),
         ("{{dispatched}}", dispatched),
         ("{{order}}", order),
     ):

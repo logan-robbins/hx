@@ -16,7 +16,6 @@ WORKER = {
     "model": "claude-opus-5",
     "effort": "xhigh",
     "workdir": "/work/wt/eng-001",
-    "branch": "agent/eng-001",
     "harness": {"args": []},
     "companion": {
         "provider": "anthropic",
@@ -50,7 +49,7 @@ def malformed():
         "unknown effort": {**WORKER, "effort": "ludicrous"},
         "empty pod": {**WORKER, "pod": ""},
         "worker without workdir": {k: v for k, v in WORKER.items() if k != "workdir"},
-        "worker without branch": {k: v for k, v in WORKER.items() if k != "branch"},
+        "`branch` is not a field": {**WORKER, "branch": "agent/eng-001"},
         "unknown field": {**WORKER, "provider": "anthropic"},
         "harness args not strings": {**WORKER, "harness": {"args": [1]}},
         "companion budget not an integer": {**WORKER, "companion": {"state_budget_tokens": "big"}},
@@ -67,7 +66,8 @@ def test_good_worker():
 
 def test_good_partner():
     config = validate_harness(PARTNER, "config/partner/harness.json", dir_name="partner")
-    assert config.is_partner and config.workdir is None and config.branch is None
+    assert config.is_partner and config.workdir is None
+    assert not hasattr(config, "branch"), "hx manages no git (spec 14 D25)"
 
 
 @pytest.mark.parametrize("name", sorted(malformed()))
@@ -80,14 +80,13 @@ def test_every_malformed_fixture_is_rejected_by_name(name, tmp_path):
     assert str(path) in str(exc.value)
 
 
-@pytest.mark.parametrize("field", ["workdir", "branch"])
-def test_the_partner_has_no_worktree(field, tmp_path):
+def test_the_partner_has_no_workdir(tmp_path):
     path = tmp_path / "partner" / "harness.json"
     path.parent.mkdir()
-    path.write_text(json.dumps({**PARTNER, field: "/work/wt/partner"}))
+    path.write_text(json.dumps({**PARTNER, "workdir": "/work/partner"}))
     with pytest.raises(ValidationError) as exc:
         load_harness(path, check_cross_file=False)
-    assert field in str(exc.value)
+    assert "workdir" in str(exc.value)
 
 
 @pytest.mark.parametrize("field,value", [("pod", "engineers"), ("role", "engineer")])
