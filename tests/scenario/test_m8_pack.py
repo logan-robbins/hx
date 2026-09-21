@@ -54,46 +54,34 @@ FIXED_TS = packlib.FIXED_TS
 
 #: (expected filename stem, {id: (state, outcome, after, goal marker?)}) for each observation
 #: point in README.md. `goal` is the `run/<id>/goal` marker, which `hx complete` removes.
-STEPS: list[tuple[str, dict[str, tuple[str, str | None, list[str], bool]]]] = [
-    ("01-partner-working", {
-        "partner": ("working", None, [], True),
-        "eng-001": ("idle", None, [], False),
-        "eng-002": ("idle", None, [], False),
+STEPS: list[tuple[str, dict[str, packlib.State]]] = [
+    ("01-eng-001-working", {
+        "eng-001": ("working", None, True),
+        "eng-002": ("idle", None, False),
     }),
-    ("02-plan-dispatched", {
-        "partner": ("working", None, [], True),
-        "eng-001": ("working", None, [], True),
-        "eng-002": ("queued", None, ["eng-001"], False),
+    ("02-eng-001-done", {
+        "eng-001": ("complete", "done", False),
+        "eng-002": ("idle", None, False),
     }),
-    ("03-eng-001-done", {
-        "partner": ("working", None, [], True),
-        "eng-001": ("complete", "done", [], False),
-        "eng-002": ("working", None, ["eng-001"], True),
+    ("03-eng-002-working", {
+        "eng-001": ("complete", "done", False),
+        "eng-002": ("working", None, True),
     }),
     ("04-eng-002-decision", {
-        "partner": ("working", None, [], True),
-        "eng-001": ("complete", "done", [], False),
-        "eng-002": ("complete", "decision", ["eng-001"], False),
+        "eng-001": ("complete", "done", False),
+        "eng-002": ("complete", "decision", False),
     }),
     ("05-eng-002-resumed", {
-        "partner": ("working", None, [], True),
-        "eng-001": ("complete", "done", [], False),
-        "eng-002": ("working", None, ["eng-001"], True),
+        "eng-001": ("complete", "done", False),
+        "eng-002": ("working", None, True),
     }),
     ("06-all-done", {
-        "partner": ("working", None, [], True),
-        "eng-001": ("complete", "done", [], False),
-        "eng-002": ("complete", "done", ["eng-001"], False),
+        "eng-001": ("complete", "done", False),
+        "eng-002": ("complete", "done", False),
     }),
-    ("07-partner-done", {
-        "partner": ("complete", "done", [], False),
-        "eng-001": ("complete", "done", [], False),
-        "eng-002": ("complete", "done", ["eng-001"], False),
-    }),
-    ("08-benched", {
-        "partner": ("complete", "done", [], False),
-        "eng-001": ("idle", "done", [], False),
-        "eng-002": ("idle", "done", ["eng-001"], False),
+    ("07-benched", {
+        "eng-001": ("idle", "done", False),
+        "eng-002": ("idle", "done", False),
     }),
 ]
 
@@ -118,8 +106,8 @@ def test_the_pack_has_every_file_gtm_3_names():
     assert (PACK / "README.md").is_file()
     assert (PACK / "chat.md").is_file()
     assert sorted(p.name for p in ORDERS.iterdir()) == [
-        "eng-001.md", "eng-002.addendum.md", "eng-002.md", "partner.md",
-    ]
+        "eng-001.md", "eng-002.addendum.md", "eng-002.md",
+    ], "the Partner has no order file of its own (spec 12, D25)"
     assert sorted(p.name for p in CONFIG.iterdir()) == list(WORKERS)
     assert FIXTURE_REPO.is_dir(), "the orders' checks run against tests/scenario/m8/repo/"
 
@@ -148,48 +136,6 @@ def test_order_checks_are_runnable_commands(path):
     assert commands, f"{path}: `### Checks` has no commands"
     for line in commands:
         assert not line.startswith(" "), f"{path}: indented check line {line!r}"
-
-
-def test_the_after_graph_is_acyclic_and_names_real_ids():
-    from hx import orders
-
-    graph = {p.stem: list(orders.parse_order(p).after) for p in order_files()}
-    known = set(graph) | {"partner"}
-    for item_id, after in graph.items():
-        for dep in after:
-            assert dep in known, f"{item_id}: `after` names {dep!r}, which the pack does not ship"
-            assert dep != item_id, f"{item_id}: depends on itself"
-
-    # Depth-first cycle detection, so a longer chain added later is still caught.
-    WHITE, GREY, BLACK = 0, 1, 2
-    colour = dict.fromkeys(graph, WHITE)
-
-    def visit(node: str, trail: list[str]) -> None:
-        if colour.get(node) == GREY:
-            raise AssertionError(f"cycle in `after`: {' -> '.join(trail + [node])}")
-        if colour.get(node, BLACK) == BLACK:
-            return
-        colour[node] = GREY
-        for nxt in graph.get(node, []):
-            visit(nxt, trail + [node])
-        colour[node] = BLACK
-
-    for node in graph:
-        visit(node, [])
-
-
-def test_eng_002_waits_on_eng_001_which_is_what_makes_the_queued_state_real():
-    from hx import orders
-
-    assert orders.parse_order(ORDERS / "eng-002.md").after == ["eng-001"]
-    assert orders.parse_order(ORDERS / "eng-001.md").after == []
-
-
-def test_the_partner_checks_are_the_require_done_form_spec_12_names():
-    from hx import orders
-
-    checks = orders.parse_order(ORDERS / "partner.md").checks
-    assert "hx board --require-done eng-001 eng-002" in checks, checks
 
 
 def test_the_addendum_is_prose_that_lands_under_the_order_heading():
@@ -315,39 +261,9 @@ def test_every_step_names_its_hx_command_and_its_spec_06_transition():
     text = (PACK / "README.md").read_text()
     for stem, _ in STEPS:
         assert f"`expected/{stem}.txt`" in text, stem
-    for transition in ("idle → working", "idle → queued", "queued → working",
-                       "working → complete", "complete → working", "complete → idle"):
+    for transition in ("idle → working", "working → complete",
+                       "complete → working", "complete → idle"):
         assert transition in text, f"the README does not show the {transition} transition"
-
-
-@pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
-def test_expected_board_is_well_formed_and_matches_the_step(stem, states):
-    """Each line is `<file>  <after>  <outcome>  <open subagents>  <goal ts>` (spec 08), and
-    the columns agree with the state this step is in."""
-    lines = (EXPECTED / f"{stem}.txt").read_text().strip().splitlines()
-    assert len(lines) == len(states), f"{stem}: {len(lines)} lines for {len(states)} ids"
-    # partner first, then by id (CONTRACTS.md).
-    order = ["partner", *sorted(WORKERS)]
-    for line, item_id in zip(lines, order):
-        file_col, after_col, outcome_col, subagents_col, goal_col = line.split("  ")
-        state, outcome, after, has_goal = states[item_id]
-        pod = "partner" if item_id == "partner" else POD
-        assert file_col == f"pods/{pod}/{item_id}-{state}.md", f"{stem}: {line}"
-        assert after_col == (",".join(after) or "-"), f"{stem}: {line}"
-        assert outcome_col == (outcome or "-"), f"{stem}: {line}"
-        assert subagents_col == "0", f"{stem}: {line}"
-        assert goal_col == ("<ts>" if has_goal else "-"), f"{stem}: {line}"
-
-
-def test_a_queued_item_never_carries_a_goal_marker():
-    """Spec 06 invariant: a `queued` item has no goal marker, and a `working` item has one."""
-    for stem, states in STEPS:
-        for item_id, (state, _, after, has_goal) in states.items():
-            if state == "queued":
-                assert not has_goal, f"{stem}/{item_id}: queued with a goal marker"
-                assert after, f"{stem}/{item_id}: queued with an empty `after`"
-            if state == "working":
-                assert has_goal, f"{stem}/{item_id}: working with no goal marker"
 
 
 # ------------------------------------------------- the live check against `hx board`
@@ -373,3 +289,21 @@ def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path)
         + "\nexpected/ holds\n  " + "\n  ".join(expected)
         + f"\n\nstderr:\n{stderr}"
     )
+
+
+@pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
+def test_expected_board_agrees_with_the_step(stem, states):
+    packlib.assert_expected_board(EXPECTED, stem, states, worker_pod=POD)
+
+
+def test_no_cut_feature_survives_in_the_steps():
+    packlib.assert_no_cut_features(STEPS)
+
+
+def test_the_orders_declare_no_dependency():
+    """Spec 14 D25 cut `after`. `eng-002` still depends on `eng-001`'s work — that is what the
+    scenario is about — but the *Partner* sequences it by waiting, not a field hx reads."""
+    for path in order_files():
+        text = path.read_text()
+        assert not text.startswith("---"), f"{path.name} still opens with frontmatter"
+        assert "after:" not in text, f"{path.name} still declares `after`"

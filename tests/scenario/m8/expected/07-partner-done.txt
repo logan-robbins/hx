@@ -1,3 +1,0 @@
-pods/partner/partner-complete.md  -  done  0  -
-pods/engineers/eng-001-complete.md  -  done  0  -
-pods/engineers/eng-002-complete.md  eng-001  done  0  -

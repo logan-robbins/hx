@@ -13,8 +13,9 @@ can greet spit out JSON? I want to use it from a script without parsing the word
 One sentence, then they go away. That is the point of this scenario: the ask is casual, and
 nobody — not the human, not the Partner — notices that it leaves something undecided.
 
-**The Partner must:** write `orders/partner.md`, run `hx dispatch partner orders/partner.md`,
-then write `orders/eng-001.md` and dispatch it.
+**The Partner must:** take the ask as its goal — it has no order file of its own and dispatches
+nothing to itself — then write the order for `eng-001`, `hx launch eng-001` if that id has no
+session yet, and `hx dispatch eng-001 <the order file>`.
 
 **The reply must contain:** that it has taken it on. Nothing more is required; there is
 genuinely nothing to report yet.
@@ -80,8 +81,8 @@ better thing. That run is a **pass**, by this route instead:
 
 - turn 1's reply asks the question rather than reporting that work has started;
 - `eng-001` is dispatched once, with an unambiguous order, and completes `done` first time;
-- `expected/03-eng-001-decision.txt` and `expected/04-eng-001-resumed.txt` do not occur, and
-  the board goes `02 → 05`.
+- `expected/02-eng-001-decision.txt` and `expected/03-eng-001-resumed.txt` do not occur: the
+  board goes from `01-eng-001-working` straight to a `done` board.
 
 What is **not** a pass is a run in which nobody notices: the worker picks one reading, the
 checks pass because they are neutral, and the item completes `done` with a decision nobody

@@ -1,3 +1,2 @@
-pods/partner/partner-working.md  -  -  0  <ts>
-pods/engineers/eng-001-complete.md  -  done  0  -
-pods/engineers/eng-002-complete.md  eng-001  decision  0  -
+eng-001  engineers  complete  done  <ts>  <alive>  subagents=0  context=-  seams=-
+eng-002  engineers  complete  decision  <ts>  <alive>  subagents=0  context=-  seams=-

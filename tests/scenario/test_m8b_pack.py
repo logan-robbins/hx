@@ -37,33 +37,13 @@ POD = "engineers"
 
 #: The six observation points of README.md's table.
 STEPS: list[tuple[str, dict[str, packlib.State]]] = [
-    ("01-partner-working", {
-        "partner": ("working", None, [], True),
-        WORKER: ("idle", None, [], False),
-    }),
-    ("02-eng-001-working", {
-        "partner": ("working", None, [], True),
-        WORKER: ("working", None, [], True),
-    }),
-    ("03-eng-001-decision", {
-        "partner": ("working", None, [], True),
-        WORKER: ("complete", "decision", [], False),
-    }),
-    ("04-eng-001-resumed", {
-        "partner": ("working", None, [], True),
-        WORKER: ("working", None, [], True),
-    }),
-    ("05-eng-001-done", {
-        "partner": ("working", None, [], True),
-        WORKER: ("complete", "done", [], False),
-    }),
-    ("06-partner-done", {
-        "partner": ("complete", "done", [], False),
-        WORKER: ("complete", "done", [], False),
-    }),
+    ("01-eng-001-working", {WORKER: ("working", None, True)}),
+    ("02-eng-001-decision", {WORKER: ("complete", "decision", False)}),
+    ("03-eng-001-resumed", {WORKER: ("working", None, True)}),
+    ("04-eng-001-done", {WORKER: ("complete", "done", False)}),
 ]
 
-ORDER_FILES = [ORDERS / "partner.md", ORDERS / f"{WORKER}.md"]
+ORDER_FILES = [ORDERS / f"{WORKER}.md"]
 
 
 def _ids(paths):
@@ -77,8 +57,8 @@ def test_the_pack_ships_what_the_readme_names():
     assert (PACK / "README.md").is_file()
     assert (PACK / "chat.md").is_file()
     assert sorted(p.name for p in ORDERS.iterdir()) == [
-        "eng-001.addendum.md", "eng-001.md", "partner.md",
-    ]
+        "eng-001.addendum.md", "eng-001.md",
+    ], "the Partner has no order file of its own (spec 12, D25)"
     assert sorted(p.name for p in CONFIG.iterdir()) == [WORKER]
 
 
@@ -106,20 +86,6 @@ def test_order_parses_with_the_function_dispatch_uses(path):
 
     order = orders.parse_order(path)
     assert packlib.checks_commands(order.checks), f"{path}: no commands under `### Checks`"
-
-
-def test_no_after_chain_here():
-    from hx import orders
-
-    graph = {p.stem: list(orders.parse_order(p).after) for p in ORDER_FILES}
-    packlib.assert_acyclic(graph, set(graph) | {"partner"})
-    assert graph[WORKER] == [], "m8b is one worker with no dependency; m8 covers `after`"
-
-
-def test_the_partner_checks_are_the_require_done_form():
-    from hx import orders
-
-    assert "hx board --require-done eng-001" in orders.parse_order(ORDERS / "partner.md").checks
 
 
 def test_addendum_is_prose():
@@ -216,15 +182,6 @@ def test_the_readme_documents_the_two_ways_to_pass_and_the_one_way_to_fail():
 
 
 @pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
-def test_expected_board_matches_the_step(stem, states):
-    packlib.assert_expected_board(EXPECTED, stem, states, worker_pod=POD)
-
-
-def test_spec_06_invariants_hold_at_every_step():
-    packlib.assert_spec_06_invariants(STEPS)
-
-
-@pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
 def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path):
     if shutil.which("tmux") is None:
         pytest.skip("tmux is not on PATH; `hx board` cannot tell which sessions are live")
@@ -238,3 +195,12 @@ def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path)
         + "\nexpected/ holds\n  " + "\n  ".join(expected)
         + f"\n\nstderr:\n{stderr}"
     )
+
+
+@pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
+def test_expected_board_agrees_with_the_step(stem, states):
+    packlib.assert_expected_board(EXPECTED, stem, states, worker_pod=POD)
+
+
+def test_no_cut_feature_survives_in_the_steps():
+    packlib.assert_no_cut_features(STEPS)

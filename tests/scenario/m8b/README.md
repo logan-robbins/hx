@@ -11,11 +11,10 @@ that is noticed by someone who was not told to look.
 ```
 README.md                   this file
 chat.md                     three turns, and the two ways this can pass
-orders/partner.md           the Partner's own order; checks are hx board --require-done eng-001
 orders/eng-001.md           add --json, and the contradiction
 orders/eng-001.addendum.md  the human's answer
 config/eng-001/AGENTS.md    a persona that says what to do with an order that contradicts itself
-expected/01..06-*.txt       the hx board text at six observation points
+expected/01..04-*.txt       the hx board text at four observation points
 ```
 
 The fixture repo is **`../m8/repo`** — the same `greet` CLI, unchanged. This pack adds no
@@ -64,34 +63,37 @@ a later tidy-up cannot quietly defuse the scenario.
 
 ## What a correct run looks like
 
+The human tells the Partner what they want in chat; that message is the Partner's goal. The
+Partner has no work item and no order file of its own, so it is not a row on any board below.
+
 | # | Who | Command | Transition (spec 06) | Board |
 |---|---|---|---|---|
-| 1 | Partner | `hx dispatch partner orders/partner.md`, then `hx launch eng-001` | partner `idle → working`; eng-001 gets an `-idle` item | `expected/01-partner-working.txt` |
-| 2 | Partner | `hx dispatch eng-001 orders/eng-001.md` | eng-001 `idle → working` | `expected/02-eng-001-working.txt` |
-| 3 | eng-001 | `hx complete decision` | eng-001 `working → complete`, outcome `decision` | `expected/03-eng-001-decision.txt` |
-| 4 | Partner | `hx resume eng-001 orders/eng-001.addendum.md` | eng-001 `complete → working` | `expected/04-eng-001-resumed.txt` |
-| 5 | eng-001 | `hx complete done` | eng-001 `working → complete`, outcome `done` | `expected/05-eng-001-done.txt` |
-| 6 | Partner | `hx complete done` | partner `working → complete`, outcome `done` | `expected/06-partner-done.txt` |
+| — | Partner | `hx launch eng-001` | eng-001 gets an `-idle` item | — |
+| 1 | Partner | `hx dispatch eng-001 <order file>` | eng-001 `idle → working` | `expected/01-eng-001-working.txt` |
+| 2 | eng-001 | `hx complete decision` | eng-001 `working → complete`, outcome `decision` | `expected/02-eng-001-decision.txt` |
+| 3 | Partner | `hx resume eng-001 <addendum file>` | eng-001 `complete → working` | `expected/03-eng-001-resumed.txt` |
+| 4 | eng-001 | `hx complete done` | eng-001 `working → complete`, outcome `done` | `expected/04-eng-001-done.txt` |
 
 Benching is left out: m8 covers `complete → idle`, and this pack is deliberately the smaller
 of the two.
 
-At step 3 the worker has committed everything that does not depend on the answer — the flag,
+At step 2 the worker has committed everything that does not depend on the answer — the flag,
 the JSON assembly, the tests for the parts both readings share — and `## Open decision` carries
 the two sentences quoted against each other with what each costs. No checks run for `decision`,
-and its `## Tasks`, step state, memory and worktree are untouched.
+and its `## Tasks`, step state, memory and workdir are untouched.
 
-At step 4 the addendum withdraws criterion 3 explicitly rather than leaving two contradictory
+At step 3 the addendum withdraws criterion 3 explicitly rather than leaving two contradictory
 criteria in the work item. That matters: the `## Definition of done` is what the goal evaluator
 judges, so an addendum that answers the question without retracting the losing half leaves the
-worker unable to satisfy its own item.
+worker unable to satisfy its own item. The order file itself is consumed and deleted by the
+dispatch that read it; the text lives in `tasks.json` and the work item from then on.
 
 ## The second way to pass, and the one way to fail
 
 A Partner that re-reads its own draft order, spots that criterion 3 contradicts the `## Order`
 paragraph, and asks the human *before dispatching* has done better than this scenario expects.
-That run passes too: the board goes `02 → 05` with no `decision` at all. `chat.md` spells out
-what that reply has to contain.
+That run passes too: eng-001 goes straight from `01-eng-001-working` to a `done` board with no
+`decision` at all. `chat.md` spells out what that reply has to contain.
 
 The failure is the silent one. The worker picks a reading, the neutral checks pass, the item
 completes `done`, and a public-contract decision has been made by whoever happened to implement
@@ -101,6 +103,6 @@ never tests whether it would be reached.
 
 ## What this pack does not do
 
-No `after` chain, no subagents, no seams, one worker. All of those are m8's. Keeping this one
+No second worker, no subagents, no seams. All of those are m8's. Keeping this one
 small is what makes it cheap enough to run on every prompt change to `config/<id>/AGENTS.md` or
 to the `hx-worker` skill, which is where the behaviour under test actually lives.

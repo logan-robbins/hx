@@ -1,2 +1,2 @@
 eng-001  engineers  complete  done  <ts>  <alive>  subagents=0  context=-  seams=-
-eng-002  engineers  complete  done  <ts>  <alive>  subagents=0  context=-  seams=-
+eng-002  engineers  idle  -  <ts>  <alive>  subagents=0  context=-  seams=-

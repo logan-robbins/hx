@@ -19,12 +19,9 @@ The language one builds on the uppercasing, so don't have two agents in that fil
 the same time.
 ```
 
-**The Partner must, before replying:**
-
-- write `orders/partner.md` capturing this as `## Order` with a `## Definition of done` whose
-  `### Checks` are `hx board --require-done eng-001 eng-002`;
-- run `hx dispatch partner orders/partner.md`, which lands the pointer in
-  `run/partner/goal-pending` because its own pane is mid-turn.
+**The Partner takes no hx action before replying.** This message *is* its goal — there is no
+order file for the Partner, no dispatch of itself, no `/goal`. It reads the ask, decides what
+it is going to do, records it in `PARTNER.md`, and answers.
 
 **The reply must contain:**
 
@@ -41,16 +38,20 @@ the same time.
 
 ## Turn 2 — (no human input)
 
-The Partner is now under its own `/goal`. It decomposes, writes `orders/eng-001.md` and
-`orders/eng-002.md`, runs `hx launch eng-001` and `hx launch eng-002` for ids that have no
-session yet, and dispatches the whole plan in **one** call:
+The Partner decomposes the ask, writes both order files, runs `hx launch eng-001` and
+`hx launch eng-002` for ids that have no session yet, and dispatches **only the first**:
 
 ```
-hx dispatch eng-001 orders/eng-001.md eng-002 orders/eng-002.md
+hx dispatch eng-001 <the eng-001 order file>
 ```
 
-No human turn here. It is listed because M8 asserts the single dispatch call and the `queued`
-state it produces, and because the human seeing nothing at this point is correct behaviour.
+`eng-002` waits, and it waits in the Partner's head — not in hx. There is no `after` field and
+no `queued` state; the Partner dispatches it when `eng-001`'s completion wakes it. Dispatching
+both here is the failure M8 is looking for: `eng-002` would read a `greet.py` with no `--upper`
+in it.
+
+No human turn here. It is listed because M8 asserts that the second dispatch happens *after*
+the first completion, and because the human seeing nothing at this point is correct behaviour.
 
 ---
 
@@ -60,7 +61,7 @@ state it produces, and because the human seeing nothing at this point is correct
 how's it going?
 ```
 
-Sent while `eng-001` is `working` and `eng-002` is `queued`.
+Sent while `eng-001` is `working` and `eng-002` is still `idle`, waiting for it.
 
 **The reply must contain:**
 
@@ -76,9 +77,9 @@ Sent while `eng-001` is `working` and `eng-002` is `queued`.
 
 ## Turn 4 — the decision comes back
 
-`eng-001` completes `done`; hx promotes `eng-002` from `queued` to `working` without waking the
-Partner. `eng-002` then completes `decision`, and `hx complete` wakes the Partner with
-`eng-002 complete: decision; hx read eng-002`.
+`eng-001` completes `done` and wakes the Partner, which reads the digest and dispatches
+`eng-002`. `eng-002` then completes `decision`, and `hx complete` wakes the Partner a second
+time with `eng-002 complete: decision; hx read eng-002`.
 
 The Partner runs `hx read eng-002`, updates `PARTNER.md`, and **asks the human in chat**:
 
@@ -103,7 +104,7 @@ Exit 0 either way — I don't want a stale locale breaking someone's script.
 
 **The Partner must then:** write `orders/eng-002.addendum.md` with that answer and run
 `hx resume eng-002 orders/eng-002.addendum.md`. Not `hx bench` and a new order — the worker
-keeps its `## Tasks`, its step state, its memory, and its worktree, and only the order grows.
+keeps its `## Tasks`, its step state, its memory, and its workdir, and only the order grows.
 
 ---
 
@@ -113,8 +114,9 @@ keeps its `## Tasks`, its step state, its memory, and its worktree, and only the
 are we good?
 ```
 
-Sent after `eng-002` has completed `done` a second time and the Partner has run its own
-`hx complete done`.
+Sent after `eng-002` has completed `done` a second time and the Partner has benched both ids.
+The Partner has no `hx complete` of its own to run: it answers the human, and that is the end
+of the ask.
 
 **The reply must contain:**
 
@@ -126,8 +128,8 @@ Sent after `eng-002` has completed `done` a second time and the Partner has run 
 **It must not contain:**
 
 - ids, work-item filenames, or state names as the substance of the answer;
-- hedging about whether it is finished. `hx complete done` ran the `### Checks` and printed
-  `HX-COMPLETE partner done`, so the Partner knows.
+- hedging about whether it is finished. Each worker's `hx complete done` ran that item's
+  `### Checks` and printed `HX-COMPLETE <id> done`, so the Partner knows.
 
 ---
 

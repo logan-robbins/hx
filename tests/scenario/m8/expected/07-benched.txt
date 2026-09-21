@@ -1,0 +1,2 @@
+eng-001  engineers  idle  done  <ts>  <alive>  subagents=0  context=-  seams=-
+eng-002  engineers  idle  done  <ts>  <alive>  subagents=0  context=-  seams=-
