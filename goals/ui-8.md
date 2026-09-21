@@ -21,6 +21,13 @@ in the in-app browser and keep it open while you work. Observed there, and the h
 | GM chat | Partner chat: `POST /api/partner/wake`; replies from the Partner's pane capture; the note that full control is `tmux attach -t partner` |
 | Demo banner, speed controls | none |
 
+The graph page (`#pillar/frontend/graph` in the demo) is the primary view of a pod and the one the
+spec author cares about most: the Partner node at the root, this pod's HarnessAgents below it as
+cards (avatar, name, role, current line, state pill), each with its Companion drawn as a small
+attached node, edges from the Partner to every agent it has dispatched (from `tasks.json`) and
+from each agent to its Companion; zoom and fit controls as in the demo; live state via SSE. Keep
+the demo's card style and spacing exactly.
+
 ## Do
 
 1. Copy autodev's `index.html`, `app.js`, `style.css` into `src/hx/ui/static/`, replacing the
@@ -62,6 +69,13 @@ in the in-app browser and keep it open while you work. Observed there, and the h
 | Harness Agents table: agent, status, current work, counts | Agent table: agent, pod, role, state and outcome, current work (open step's next action), session alive, seams; drawer opens the full Agent page (work item, step state, streams, pane) |
 | GM chat | Partner chat: `POST /api/partner/wake`; replies from the Partner's pane capture; the note that full control is `tmux attach -t partner` |
 | Demo banner, speed controls | none |
+
+The graph page (`#pillar/frontend/graph` in the demo) is the primary view of a pod and the one the
+spec author cares about most: the Partner node at the root, this pod's HarnessAgents below it as
+cards (avatar, name, role, current line, state pill), each with its Companion drawn as a small
+attached node, edges from the Partner to every agent it has dispatched (from `tasks.json`) and
+from each agent to its Companion; zoom and fit controls as in the demo; live state via SSE. Keep
+the demo's card style and spacing exactly.
 
 ## Done when
 
