@@ -511,3 +511,32 @@ def test_doctor_warns_rather_than_failing_while_start_sh_has_not_execd(instance)
         assert FAIL not in statuses and WARN in statuses
     finally:
         doctor_mod.pane_command = original
+
+
+def test_the_partner_is_never_seamed(instance):
+    """spec 12: nothing the harness does to a worker is done to the Partner — seams included.
+
+    Seen live 2026-09-21: the Partner's Companion set the marker at 133k context, and every
+    `stop` afterwards tracebacked in `hx seam`'s "no work item" refusal.
+    """
+    from hx import hook_stop
+    from hx.companion import config_for, seam_is_due
+    from hx.hook_log import seam_marker
+
+    harness = instance / "config" / "partner" / "harness.json"
+    config = json.loads(harness.read_text())
+    config["companion"] = {"seam_min_context_tokens": 1, "seam_min_interval_s": 0}
+    harness.write_text(json.dumps(config))
+    from hx.streams import append_record
+
+    append_record(instance, "partner", "partner-main",
+                  {"event": "post_tool", "tool": "Bash", "context_tokens": 200000})
+    closed = {"closed_steps": [{"id": "st1", "outcome": "done"}], "subagents_open": []}
+    assert not seam_is_due(instance, config_for(instance, "partner"), closed)
+
+    marker = seam_marker(instance, "partner")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    code, line = hook_stop.handle({"session_id": "s"}, "partner", instance, env=None)
+    assert (code, line) == (0, "")
+    assert not marker.exists(), "a stale Partner marker is dropped, not acted on"

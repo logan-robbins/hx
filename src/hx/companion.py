@@ -397,8 +397,50 @@ def last_seam_ts(root: Path, item_id: str) -> float | None:
     return newest
 
 
+def activity(root: Path, item_id: str) -> dict:
+    """What hx can see of this agent's Companion right now (`hx board`/`hx show`, CONTRACTS.md).
+
+    A pass file under `run/<id>/companion/` means a pass is in flight: hx wrote it and the
+    Companion has not yet produced the state that makes hx delete it. `last_state_ts` is the
+    newest `ts` hx stamped on any of this agent's step states.
+    """
+    root = Path(root)
+    passes = []
+    pass_dir = root / "run" / item_id / "companion"
+    if pass_dir.is_dir():
+        passes = sorted(pass_dir.glob("*.pass.md"))
+    in_flight = passes[0] if passes else None
+    last_ts = None
+    streams_seen = 0
+    state_dir = root / "state" / item_id
+    if state_dir.is_dir():
+        for path in state_dir.glob("*.json"):
+            streams_seen += 1
+            try:
+                ts = json.loads(path.read_text()).get("ts")
+            except (OSError, json.JSONDecodeError, AttributeError):
+                continue
+            if isinstance(ts, str) and (last_ts is None or ts > last_ts):
+                last_ts = ts
+    return {
+        "pass_in_flight": in_flight is not None,
+        "pass_stream": in_flight.name[: -len(".pass.md")] if in_flight else None,
+        "pass_since": timestamps.from_mtime(in_flight) if in_flight else None,
+        "last_state_ts": last_ts,
+        "streams": streams_seen,
+    }
+
+
 def seam_is_due(root: Path, config: HarnessConfig, state: dict) -> bool:
-    """Spec 10's seam policy, all four conditions, on the main stream only."""
+    """Spec 10's seam policy, all four conditions, on the main stream only.
+
+    Never for the Partner: spec 12 says nothing the harness does to a worker — dispatch, goal,
+    seams, restart, completion — is done to the Partner, and `hx seam` refuses an id with no
+    work item. A marker here would only make its `stop` hook traceback every turn (seen live
+    2026-09-21, eighteen times); its context is bounded by the autocompact window instead.
+    """
+    if config.is_partner:
+        return False
     companion = config.companion or {}
     if not state.get("closed_steps") or state.get("subagents_open"):
         return False

@@ -14,7 +14,7 @@ import argparse
 import json
 from pathlib import Path
 
-from . import streams, timestamps, tmux
+from . import companion as companion_mod, memory as memory_mod, streams, timestamps, tmux
 from .config_harness import load_harness
 from .errors import HxError, ValidationError
 from .ids import ID_RE, PARTNER, sort_key
@@ -91,6 +91,7 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
             outcome = work_item.outcome
         dispatched = task.get("dispatched") or (work_item.dispatched if work_item else None)
 
+        activity = companion_mod.activity(root, item_id)
         items.append(
             {
                 "id": item_id,
@@ -107,10 +108,19 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
                 "context_tokens": streams.last_context_tokens(root, item_id),
                 "seams": streams.count_seams(root, item_id, dispatched),
                 "turn_ts": _marker_ts(root / "run" / item_id / "turn"),
+                # The Companion's visible activity (CONTRACTS.md): a pass in flight, and when
+                # it last wrote a state. The UI's "something is happening" for a complete id.
+                "companion_pass": activity["pass_in_flight"],
+                "companion_ts": activity["last_state_ts"],
             }
         )
 
-    return {"root_abs": str(root), "ts": timestamps.now(), "items": items}
+    return {
+        "root_abs": str(root),
+        "ts": timestamps.now(),
+        "items": items,
+        "memory": memory_mod.summary(root),
+    }
 
 
 def render_text(board: dict) -> str:

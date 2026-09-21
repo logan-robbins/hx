@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 from . import store, timestamps
+from .ids import PARTNER
 
 TURN_MARKER = "turn"
 
@@ -49,7 +50,13 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
 
     from .hook_log import seam_marker
 
-    if seam_marker(root, item_id).exists():
+    marker = seam_marker(root, item_id)
+    if marker.exists():
+        if item_id == PARTNER:
+            # Nothing seams the Partner (spec 12); a marker left by an older Companion or
+            # `log` hook is stale, and `hx seam` would only refuse it with a traceback.
+            marker.unlink(missing_ok=True)
+            return 0, ""
         # The `/clear` this queues runs after this hook returns — live-verified, spec 09.2
         # step 3. A seam that cannot be taken yet leaves its marker for the next boundary.
         from . import seam as seam_mod

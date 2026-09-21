@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from . import archive, compose, streams, timestamps, tmux
+from . import archive, companion as companion_mod, compose, streams, timestamps, tmux
 from .config_harness import load_harness
 from .errors import NotFound, ValidationError
 from .ids import PARTNER
@@ -197,6 +197,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         "metrics": None,
         "pane": _pane(root, item_id, env),
         "turn": _turn(root, item_id),
+        "companion": companion_mod.activity(root, item_id),
         "archive": archive.archive_entries(root, item_id),
         "bench": archive.bench_entries(root, pod, item_id),
     }
@@ -208,6 +209,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
             "partner_md": partner_md.read_text() if partner_md.is_file() else None,
             "pane": document["pane"],
             "streams": document["streams"],
+            "companion": document["companion"],
         }
     return document
 

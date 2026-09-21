@@ -196,6 +196,19 @@ def _fingerprint_path(root: Path, item_id: str, stream: str) -> Path:
     return last_dir(root) / f"{item_id}-{stream}.sha256"
 
 
+def _unix(ts: str) -> float:
+    """Unix seconds for an hx timestamp (`2026-09-21T06:45:00Z`); now when it does not parse."""
+    try:
+        from datetime import datetime, timezone
+
+        parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return time.time()
+
+
 def enqueue(
     root: Path,
     item_id: str,
@@ -246,9 +259,15 @@ def enqueue(
     except (TypeError, ValueError):
         seq = 0
 
+    # The episode's time is the state's own ingest stamp when it has one (a backfilled or
+    # re-indexed state keeps its real age); a text episode is stamped now.
+    ts = str(meta.pop("ts", None) or state.get("ts") or timestamps.now())
+    t = meta.pop("t", None)
+    if t is None:
+        t = _unix(ts)
     metadata = {
-        "ts": str(meta.pop("ts", None) or timestamps.now()),
-        "t": float(meta.pop("t", None) or time.time()),
+        "ts": ts,
+        "t": float(t),
         "id": item_id,
         "pod": str(meta.pop("pod", None) or config.get("pod") or ""),
         "role": str(meta.pop("role", None) or config.get("role") or ""),
@@ -397,13 +416,39 @@ def _index_locked(root: Path, collection) -> int:
     return len(ids)
 
 
+def stats_path(root: Path) -> Path:
+    """`state/memory/stats.json`: the collection size as of the last index, for `hx board`."""
+    return memory_dir(root) / "stats.json"
+
+
 def index(root: Path) -> tuple[int, int]:
     """Drain the queue into chroma. Returns (indexed, total in the collection)."""
     root = Path(root)
     with locked(root):
         collection = _collection(root)
         indexed = _index_locked(root, collection)
-        return indexed, collection.count()
+        total = collection.count()
+        store.atomic_write_json(stats_path(root), {"episodes": total, "ts": timestamps.now()})
+        return indexed, total
+
+
+def summary(root: Path) -> dict:
+    """The board's `memory` block, without opening chroma: `{episodes, queued, indexed_ts}`.
+
+    `episodes` is the count as of the last index (`stats.json`), null before the first one;
+    `queued` is what the next index will add.
+    """
+    root = Path(root)
+    episodes = None
+    indexed_ts = None
+    try:
+        data = json.loads(stats_path(root).read_text())
+        if isinstance(data, dict):
+            episodes = data.get("episodes")
+            indexed_ts = data.get("ts")
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {"episodes": episodes, "queued": len(queued(root)), "indexed_ts": indexed_ts}
 
 
 # --- search --------------------------------------------------------------------------------------

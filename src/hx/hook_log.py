@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .ids import PARTNER
 from . import streams, transcripts
 from .config_harness import load_harness
 from .config_models import load_models
@@ -76,8 +77,9 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
 
     companion_mod.wake_due(root, item_id, env=env)
 
-    # The hard trigger: it does not wait for a step to close (spec 05, 02 Seams).
-    if is_main and tokens is not None:
+    # The hard trigger: it does not wait for a step to close (spec 05, 02 Seams). Not for the
+    # Partner, which is never seamed (spec 12) — its autocompact window is its bound.
+    if is_main and tokens is not None and item_id != PARTNER:
         threshold = threshold_for(root, item_id)
         if threshold is not None and tokens >= threshold:
             marker = seam_marker(root, item_id)

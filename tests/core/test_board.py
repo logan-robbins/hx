@@ -14,6 +14,7 @@ from hx.board import collect, render_text
 CONTRACT_ITEM_KEYS = {
     "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
     "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
+    "companion_pass", "companion_ts",
 }
 
 
@@ -33,7 +34,7 @@ def goal_marker(root, item_id, ts="2026-09-20T12:00:03Z"):
 def test_json_shape_matches_contracts(instance, work_item):
     work_item("eng-001", "idle")
     board = collect(instance)
-    assert set(board) == {"root_abs", "ts", "items"}
+    assert set(board) == {"root_abs", "ts", "items", "memory"}
     assert board["root_abs"] == str(instance)
     assert board["ts"].endswith("Z")
     for item in board["items"]:
@@ -190,3 +191,35 @@ def test_the_pane_log_is_not_a_stream(instance, work_item):
     item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
     assert item["open_subagents"] == 1
     assert item["context_tokens"] is None and item["seams"] is None
+
+
+def test_companion_activity_is_on_the_row(instance, work_item):
+    """CONTRACTS.md: `companion_pass` is a pass file in flight, `companion_ts` the last state."""
+    from hx.companion import activity
+
+    row = collect(instance)["items"][0]
+    assert row["companion_pass"] is False and row["companion_ts"] is None
+
+    state = instance / "state" / "eng-001" / "eng-001-main.json"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps({"seq": 3, "ts": "2026-09-21T15:24:22Z"}))
+    pass_file = instance / "run" / "eng-001" / "companion" / "eng-001-main.pass.md"
+    pass_file.parent.mkdir(parents=True, exist_ok=True)
+    pass_file.write_text("# Companion pass\n")
+
+    row = collect(instance)["items"][0]
+    assert row["companion_pass"] is True
+    assert row["companion_ts"] == "2026-09-21T15:24:22Z"
+    detail = activity(instance, "eng-001")
+    assert detail["pass_stream"] == "eng-001-main" and detail["streams"] == 1
+    assert detail["pass_since"] is not None
+
+
+def test_the_board_carries_the_memory_summary_without_opening_chroma(instance, work_item):
+    """`memory` is `{episodes, queued, indexed_ts}` from stats.json and the queue (docs/memory.md)."""
+    from hx import memory
+
+    board = collect(instance)
+    assert board["memory"] == {"episodes": None, "queued": 0, "indexed_ts": None}
+    memory.enqueue(instance, "eng-001", "eng-001-main", "pass", {"goal": "stream the importer"})
+    assert collect(instance)["memory"]["queued"] == 1

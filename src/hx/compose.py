@@ -241,15 +241,20 @@ def render_step_state(state: dict) -> str:
         lines.append(f"block: {_line(item)}")
 
     known = {
-        "seq", "prompt_version", "goal", "constraints", "decisions", "open_steps",
+        "seq", "prompt_version", "ts", "goal", "constraints", "decisions", "open_steps",
         "closed_steps", "dead_ends", "working_set", "blockers", "subagents_open",
     }
     extra = {key: value for key, value in state.items() if key not in known and value}
     if extra:
         lines.append(f"other: {json.dumps(extra, separators=(',', ':'))}")
 
-    if state.get("seq") is not None:
-        lines.append(f"seq {state['seq']}")
+    # `ts` is hx's ingest stamp (companion.ingest), so the reader knows how fresh this is.
+    tail = f"seq {state['seq']}" if state.get("seq") is not None else ""
+    if state.get("ts"):
+        tail = f"{tail} ts {state['ts']}".strip()
+    if tail:
+        lines.append(tail)
+
     return "\n".join(lines).strip("\n")
 
 

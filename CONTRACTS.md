@@ -28,11 +28,20 @@ One entry per worker id, by id.
       "session_alive": true,
       "context_tokens": 48211,
       "seams": 2,
-      "turn_ts": "2026-09-20T13:09:40Z"
+      "turn_ts": "2026-09-20T13:09:40Z",
+      "companion_pass": false,
+      "companion_ts": "2026-09-20T13:09:35Z"
     }
-  ]
+  ],
+  "memory": {"episodes": 12, "queued": 1, "indexed_ts": "2026-09-20T13:05:00Z"}
 }
 ```
+
+`companion_pass` is true while a pass file sits in `run/<id>/companion/` (hx wrote it, the
+Companion has not yet answered); `companion_ts` is the newest `ts` on any of the id's step states,
+`null` before the first. `memory` is the episode store's summary (`docs/memory.md`): `episodes`
+as of the last `hx memory index` (`state/memory/stats.json`, `null` before the first), `queued`
+episodes waiting to be indexed, and when the last index ran. It never opens the store.
 
 Exit 0 always (v1 cut: no invariants, no `errors`). `partner` is not an item; the Partner has no
 work item. `state` is one of `idle|working|complete`, read from the work item's filename suffix
@@ -90,8 +99,19 @@ by the agent itself; nothing validates or polices it).
 ```
 
 `tail` holds the last 50 records of the stream as parsed JSON objects. `hx show partner --json`
-returns only `{"id": "partner", "partner_md": "…", "pane": {…}, "streams": […]}`: the Partner has
-no work item, task, or step-state contract beyond its Companion's main stream.
+returns only `{"id": "partner", "partner_md": "…", "pane": {…}, "streams": […], "companion": {…}}`:
+the Partner has no work item, task, or step-state contract beyond its Companion's main stream.
+
+Every `hx show` document carries its Companion's visible activity:
+
+```json
+"companion": {"pass_in_flight": true, "pass_stream": "eng-001-main",
+              "pass_since": "2026-09-20T13:09:41Z", "last_state_ts": "2026-09-20T13:09:35Z",
+              "streams": 2}
+```
+
+`pass_in_flight` and `pass_stream` come from the pass file in `run/<id>/companion/`, `pass_since`
+is its mtime, `last_state_ts` the newest step state's `ts`, `streams` how many streams have one.
 
 ## `hx wake partner "<text>"`
 
@@ -155,7 +175,7 @@ Partner to copy into `config/<id>/` when it creates an agent; `hx board` lists n
 
 ## SSE `changed` scopes
 
-`/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except the reserved scope `tasks`, emitted when `tasks.json` changed. The browser treats `tasks` as "re-fetch the board and the orders view".
+`/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except two reserved scopes: `tasks`, emitted when `tasks.json` changed, and `memory`, emitted when anything under `state/memory/` moved (an episode queued or indexed). The browser treats `tasks` as "re-fetch the board and the orders view"; every scope re-reads the board, which is where `memory` and `companion_pass` land. An id also moves when a pass file appears or disappears under `run/<id>/companion/`.
 
 ## `hx metrics <id> [--json]`
 
