@@ -152,3 +152,34 @@ Wire: `config/partner/AGENTS.md` in the skeleton becomes a copy of `personas/par
 `## UPDATES BELOW ONLY`, the three role files exist for the three roles, and the getting-started
 commands match `hx install`'s real output. Keep `roles/engineer.md` and `reviewer.md` if
 anything still references them, else delete.
+
+## 2026-09-20 — add to gtm-9: the `hx-fleet` skill (Partner-only), spec author's ask
+
+`src/hx/skills/hx-fleet/SKILL.md`, installed into the Partner's home only. It is the Partner's
+manual for creating, changing, and retiring HarnessAgents, and it must be exact about paths:
+
+1. **Creating a worker from a default persona.** Ids `<pod>-NNN`; pods and roles that ship:
+   `backend-engineer`, `frontend-engineer`, `release-engineer` (`personas/<role>/AGENTS.md`,
+   `companion/roles/<role>.md`). Steps, verbatim commands: copy `templates/worker/` to
+   `config/<id>/`, substitute `{{id}}`/`{{pod}}`, set `role`, set `workdir` to an absolute
+   directory (create it or use the checkout the human named), copy the persona over
+   `config/<id>/AGENTS.md`, keep `SUBAGENTS.md`, then `hx launch <id>`.
+2. **What `hx launch` does for it, so the Partner knows it is wired**: `install.sh` writes
+   `run/<id>/home/settings.json` with every hx hook carrying `--id <id>`, the pre-seeded state
+   file, the bypass acceptance, the `hx-worker` skill; `start.sh` derives `persona.md` from the
+   persona above the header and launches with `--dangerously-skip-permissions`, `IS_SANDBOX=1`,
+   the token, and the Companion session. Verify with `hx doctor` and `hx show <id>` (home
+   settings present, hooks listed). Nothing about this is optional and nothing is done by hand.
+3. **Creating a new role.** Write `personas/<role>/AGENTS.md` (persona above exactly one
+   `## UPDATES BELOW ONLY`, in the shape of the three shipped ones: identity, how work arrives,
+   how it works, allowed files, how it finishes) and `companion/roles/<role>.md` (retention
+   rules in the shape of the shipped ones); `hx launch` refuses a `role` with no role file, so
+   the pair is enforced. Then create workers from it as in 1.
+4. **Updating a persona.** Edit above the header only, on the human's instruction; effective at
+   that worker's next `hx restart`; never touch below the header.
+5. **Retiring a worker.** `hx bench <id>` when complete; kill its sessions with `hx down <id>`
+   if the build lane ships it, else the tmux command; leave `config/<id>/` (its memory).
+6. **Never**: edit a worker's `workdir`, paste into its pane, or copy another worker's memory.
+
+`tests/packaging`: frontmatter valid, every path it names exists in the skeleton, the three
+role names match `personas/` and `companion/roles/`.

@@ -281,3 +281,11 @@ Between `tmux new-session` and `start.sh`'s `exec`, the pane's process is the la
 the current goal: when the pane's command is `start.sh` (or bash running it), report
 `warn <id> starting`, never `fail`; `fail` only when the exec'd `claude` process is present and
 its argv lacks the flag or its env lacks `IS_SANDBOX=1`. Test both windows.
+
+## 2026-09-20 — for build-7/8: `hx-fleet` skill into the Partner home; personas ship
+
+`install.sh` copies `hx-partner` and `hx-fleet` into the Partner's home skills, `hx-worker` into
+workers', `hx-companion` into Companion homes. `hx install` copies `src/hx/skeleton/personas/`
+into the instance (`EXPECTED_SKELETON_FILES`). `hx launch <id>` refuses when
+`companion/roles/<role>.md` is missing (already) and when `config/<id>/AGENTS.md` lacks the
+header (already in start.sh; fine).
