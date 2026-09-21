@@ -236,8 +236,17 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
     ts = timestamps.now()
     # The Companion has to be at the head of the stream before its final pass (spec 08).
     flush_mod.flush(root, item_id, env=env)
-    write_digest(path, final_digest(root, item_id, outcome, env=env))
+    digest = final_digest(root, item_id, outcome, env=env)
+    write_digest(path, digest)
     set_frontmatter(path, outcome=outcome)
+
+    # The Digest is this work item's whole story in one chunk, and the outcome is the metadata
+    # a later search filters on ("how did the last three releases go"). docs/memory.md.
+    from . import memory as memory_mod
+
+    memory_mod.enqueue_quietly(
+        root, item_id, f"{item_id}-main", "complete", digest, outcome=outcome, ts=ts
+    )
 
     entries = tasks_mod.load_tasks(root)
     entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))

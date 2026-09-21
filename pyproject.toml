@@ -7,7 +7,12 @@ name = "hx-harness"
 version = "0.1.0"
 description = "HarnessAgent Runtime: Claude Code fleet control plane (spec/HARNESS_SPEC.md)"
 requires-python = ">=3.14"
-dependencies = []
+# Episode memory (docs/memory.md): the local embedding store `hx memory` indexes into.
+# Its default embedding function is an ONNX all-MiniLM-L6-v2 cached under ~/.cache/chroma;
+# nothing here talks to a network at runtime and nothing here is a model call (spec 02).
+dependencies = [
+    "chromadb>=1.5.9",
+]
 
 [project.scripts]
 hx = "hx.cli:main"

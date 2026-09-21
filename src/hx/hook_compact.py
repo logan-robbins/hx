@@ -60,9 +60,23 @@ def post(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str
     """Record what Claude Code kept, so the Companion can see the fallback path's summary."""
     stream, _ = stream_for(payload, item_id, root)
     summary = payload.get("compact_summary") or payload.get("summary")
-    streams.append_record(root, item_id, stream, {
+    seq = streams.append_record(root, item_id, stream, {
         "event": COMPACT,
         "trigger": payload.get("trigger"),
         "compact_summary": streams.excerpt(summary) if summary else None,
     })
+
+    # Native compaction is the fallback path, and what it kept is the only record of the part
+    # of the conversation it threw away. It goes into episode memory next to the Companion's
+    # own chunks, marked `compact` so a search can tell them apart (docs/memory.md).
+    if summary:
+        from . import memory as memory_mod
+        from .companion import state_path
+        from .stepstate import load as load_state
+
+        state = load_state(state_path(root, item_id, stream)) or {}
+        memory_mod.enqueue_quietly(
+            root, item_id, stream, "compact", state,
+            seq=seq, text=streams.excerpt(summary),
+        )
     return 0, ""

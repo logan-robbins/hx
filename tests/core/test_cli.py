@@ -13,6 +13,8 @@ SPEC_08_COMMANDS = {
     "dispatch", "goal", "task", "compose", "seam", "restart", "complete", "resume",
     "read", "bench", "board", "flush", "companion", "wake", "heartbeat", "metrics",
     "orders", "archive",
+    # Episode memory (docs/memory.md), not in spec 08's own table.
+    "memory",
 }
 
 

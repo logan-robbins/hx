@@ -20,6 +20,8 @@ SECTION_ORDER = [
     "## Task",
     "## Tasks",
     "## Step state",
+    # Episode memory (docs/memory.md), between the agent's own state and its open handles.
+    "## Memory episodes",
     "## Open subagent handles",
 ]
 
@@ -145,18 +147,14 @@ def test_step_state_is_rendered_not_dumped(instance, hx, launched, orders):
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
     rendered = text[section_index(text, "## Step state"):section_index(text, "## Open subagent handles")]
-    # One tagged line per fact: the section is read by a model at every boundary and every
-    # heading, bullet and blank line in it is paid for again (tests/core/test_density.py).
-    assert "goal: stream the importer" in rendered
-    assert "dec: use a generator <- memory [401]" in rendered
-    assert "open st7: rewrite read_all [398]" in rendered
-    assert "next st7: delete the buffer" in rendered
-    assert "done st6 verified abc1234: read the importer" in rendered
-    assert "dead: mmap: the file is a stream" in rendered
-    assert "file src/importer.py: read_all buffers" in rendered
-    assert "commit abc1234: read the importer" in rendered
-    assert "seq 412" in rendered
-    assert '"open_steps"' not in rendered, "rendered as lines, not dumped as JSON"
+    assert "**Goal:** stream the importer" in rendered
+    assert "use a generator — memory" in rendered
+    assert "`st7` rewrite read_all" in rendered and "next: delete the buffer" in rendered
+    assert "`st6` read the importer (verified) `abc1234`" in rendered
+    assert "mmap: the file is a stream" in rendered
+    assert "`src/importer.py` — read_all buffers" in rendered
+    assert "_step state at seq 412_" in rendered
+    assert '"open_steps"' not in rendered, "rendered as markdown, not dumped as JSON"
 
 
 def test_step_state_says_none_yet_before_the_companion_lands(instance, hx, launched, orders):
@@ -392,3 +390,27 @@ def test_every_spec_09_event_is_implemented(instance, hx, launched):
     result = run_hook(instance, "eng-001", "precompact", {})
     assert result.returncode == 0
     assert "not implemented" not in result.stderr
+
+
+# --- the Memory episodes section (docs/memory.md) --------------------------------------------
+
+
+def test_the_memory_episodes_section_is_there_before_a_single_episode_exists(
+    instance, hx, launched, orders
+):
+    """It is composed on an instance with no chroma store at all, and says so like any other
+    empty section — the agent must never have to wonder whether hx failed to compose it."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, orders, order="Stream the importer.")
+    assert hx("compose", "eng-001").returncode == 0
+
+    text = context_file(instance, "eng-001").read_text()
+    section = text[section_index(text, "## Memory episodes"):
+                   section_index(text, "## Open subagent handles")]
+    assert "_source: `state/memory/chroma`_" in section
+    assert "_none yet_" in section
+    assert not (instance / "state" / "memory" / "chroma").exists(), (
+        "an empty store costs no chroma open at all"
+    )

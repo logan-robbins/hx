@@ -26,6 +26,7 @@ from . import flush as flush_cmd
 from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
+from . import memory as memory_cmd
 from . import orders as orders_cmd
 from . import read as read_cmd
 from . import resume as resume_cmd
@@ -59,6 +60,7 @@ IMPLEMENTED = {
     "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
+    "memory": memory_cmd.main,
     "orders": orders_cmd.main,
     "read": read_cmd.main,
     "restart": lifecycle.main_restart,
@@ -92,6 +94,7 @@ the control plane:
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
+  memory search QUERY          what other agents already learned; see `hx memory --help`
 
 read-only views:
   board [--json]                          a plain listing of what is on disk

@@ -341,6 +341,15 @@ def ingest(root: Path, item_id: str, stream: str, *, env=None) -> dict | None:
     out.unlink(missing_ok=True)
     _clear_pass(root, item_id, stream)
 
+    # Each installed state is one episode chunk. `enqueue_quietly` only writes a small JSON
+    # file to the memory queue — no chromadb, no lock — and swallows anything that goes wrong
+    # (docs/memory.md): a memory failure must never cost the agent a pass.
+    from . import memory as memory_mod
+
+    memory_mod.enqueue_quietly(
+        root, item_id, stream, "pass", candidate, role=config.role, pod=config.pod
+    )
+
     if stream == f"{item_id}-main" and seam_is_due(root, config, candidate):
         from .hook_log import seam_marker
 

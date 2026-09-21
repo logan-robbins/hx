@@ -110,7 +110,9 @@ Pre-release, built against the spec in [`spec/`](spec/) —
 beside it are authoritative. Milestones and their acceptance tests are in
 [`spec/13-build-order.md`](spec/13-build-order.md).
 
-- Python 3.14, standard library only. No runtime dependencies.
+- Python 3.14, standard library only but for one runtime dependency: `chromadb`, the local
+  embedding store behind `hx memory` ([`docs/memory.md`](docs/memory.md)). Nothing else in hx
+  imports it, and nothing in hx fails when it is missing.
 - Requires `tmux`, `git`, and a `claude` binary at a version in
   [`src/hx/packaging/tested-claude-versions.json`](src/hx/packaging/tested-claude-versions.json).
 - A Claude subscription. No API key: the Companion runs on the same token as the agents.

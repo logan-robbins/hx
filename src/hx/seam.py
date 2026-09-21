@@ -88,6 +88,15 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
 
     goal_mod.paste(item_id, "/clear", env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
+
+    # A seam is the one boundary where the whole conversation ends, so the state at that point
+    # is the most complete episode this agent will produce before the next one (docs/memory.md).
+    from . import memory as memory_mod
+
+    memory_mod.enqueue_quietly(
+        root, item_id, f"{item_id}-main", "seam", step_state(root, item_id), seq=seq
+    )
+
     marker.unlink(missing_ok=True)
     return {"id": item_id, "outcome": TAKEN, "seq": seq, "background_tasks": []}
 

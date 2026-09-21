@@ -275,3 +275,65 @@ Companion's own `stop` hook when busy). The Companion's `stop` hook validates `o
 against the 07.2 schema, moves it to `state/<id>/<stream>.json` with `prompt_version`, `seq`,
 `ts`, and removes the pass file; on failure it rewrites the pass with `retry_reason` and re-wakes
 once. `tests/guard/test_no_headless.py` fails the build if `src/` invokes `claude` with `-p`.
+
+## `hx memory` (episode memory)
+
+Design and operating notes: `docs/memory.md`. Store `state/memory/chroma`, collection
+`episodes`, global to the instance; queue `state/memory/queue/<uuid>.json`; lock
+`state/memory/index.lock` (an exclusive `flock` around every chroma open, reads included).
+
+Queue file — what the four write points (`companion.ingest` `pass`, `seam.seam` `seam`,
+`hook_compact.post` `compact`, `complete.complete` `complete`) write, and what `index` consumes:
+
+```json
+{
+  "episode_id": "eng-001/eng-001-main/seam/41",
+  "document": "goal: …\ndecision: … why=…\nclosed st1: … (verified) a1b2c3d\ndead end: …",
+  "metadata": {
+    "ts": "2026-09-21T12:05:05Z", "t": 1789992305.116019,
+    "id": "eng-001", "pod": "engineers", "role": "backend-engineer",
+    "stream": "eng-001-main", "kind": "seam", "seq": 41,
+    "outcome": "", "prompt_version": "a1b2c3d4/e5f6a7b8"
+  }
+}
+```
+
+Exactly those ten metadata keys, all flat scalars (chroma stores nothing else); `kind` is one of
+`pass`, `seam`, `compact`, `complete`; `outcome` is non-empty only for `complete`;
+`prompt_version` is `{base}/{role}` from the step state's `prompt_version` object. The
+`episode_id` is `<id>/<stream>/<kind>/<seq>` and indexing upserts, so re-indexing is idempotent.
+
+```
+hx memory search QUERY [--role R] [--pod P] [--id ID] [--kind K] [--k N=5]
+                       [--all-roles] [--half-life-h H=24] [--json]
+hx memory index
+hx memory list [--id ID] [--role R] [--kind K] [--limit N=20] [--json]
+hx memory stats [--json]
+```
+
+`search` defaults the role filter to the caller's own persona (`HX_ROLE`, else the `role` of
+`HARNESS_ID`, else no filter); `--all-roles` drops it. Ranking is
+`score = (1 - cosine_distance) * (0.5 + 0.5 * 0.5 ** (age_hours / half_life_hours))`.
+
+Text output, one block per hit:
+
+```
+## 2026-09-21T12:05:05Z eng-001 backend-engineer seam seq=41 score=0.68
+goal: make the CSV importer stream instead of loading the whole file
+…
+```
+
+`--json` is a list of `{id, ts, t, role, pod, item, stream, kind, seq, outcome, score,
+similarity, document}` — `id` is the episode id, `item` is the agent. No match prints
+`HX-MEMORY no episodes matched` and exits 0. `index` prints `HX-MEMORY indexed=<n> total=<count>`.
+`stats` prints `HX-MEMORY total=<n> queued=<n> path=<abs>` then indented `role|kind|id <name>: <n>`
+lines. `list` prints `<ts> <id> <role> <kind> seq=<n> <stream>[ <outcome>]`, newest first.
+chromadb missing or unopenable: one `hx: memory: <reason>` line on stderr, exit 2.
+
+`hx compose` adds section **Memory episodes** after **Step state**, source
+`state/memory/chroma`, body `Search more: \`hx memory search "<query>" --all-roles\`` then one
+`- <ts> <id>/<kind> s=<0.xx>: <document>` line per hit, truncated to
+`companion.memory_episode_chars`. Any failure is the single line
+`_memory unavailable: <reason>_`. `companion.memory_inject_k: 0` removes the section entirely;
+the other two fields are `memory_episode_chars` (default 700) and `memory_half_life_h`
+(default 24).
