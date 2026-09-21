@@ -39,7 +39,7 @@ or read while writing it. Key by key, that file holds:
 
 Your hooks never run in a harness session and hx's hooks never run in yours. They are
 different files in different directories, and the harness file is regenerated from the package
-at every `hx launch` and every `hx upgrade`, so nothing accumulates in it either.
+at every `hx launch`, so nothing accumulates in it either.
 
 ## Skills
 
@@ -54,22 +54,24 @@ visible to an agent.
 Yours load normally. In a harness session there is exactly one CLAUDE.md —
 `$HARNESS_ROOT/config/CLAUDE.md`, copied into each home — and the product repo's own
 `CLAUDE.md` and `AGENTS.md` are excluded by `claudeMdExcludes` plus instruction-files mode
-`claude-md`, so nothing inside the worktree is discovered. The per-agent identity files
-(`config/<id>/AGENTS.md`) live outside any worktree for the same reason: Claude Code's own
-`AGENTS.md` discovery cannot see them, and they reach the agent only by the paths hx chooses.
+`claude-md`, so nothing inside a worker's `workdir` is discovered. The per-agent identity
+files (`config/<id>/AGENTS.md`) live in the instance rather than in any workdir for the same
+reason: Claude Code's own `AGENTS.md` discovery cannot see them, and they reach the agent only
+by the paths hx chooses.
 
 ## The Companion's session
 
-Each agent is paired with a small **Companion** model, and it is a Claude Code session too —
-`claude -p`, one shot per batch of records, on the same pinned binary and the same instance
-token. It gets a config home of its own at `run/<id>/companion-home`, and that home is
-deliberately bare: **no hooks, no skills, no CLAUDE.md.** It is not an agent and must not
-behave like one.
+Each agent is paired with a small **Companion**, and it is a Claude Code session too — in the
+same tmux session's `companion` window, on the same pinned binary and the same instance token.
+It gets a config home of its own at `run/<id>/companion-home`, and that home is deliberately
+bare: **no product skills, no CLAUDE.md**, only the `hx-companion` skill. It is not an agent
+and must not behave like one.
 
-It has **no tools**. Its whole input is the composed system prompt plus the state and new
-records on stdin, and its whole output is one JSON object. So it cannot read a file, run a
-command, or touch your machine even by accident — the thing that watches every agent is the
-one participant here with no ability to act.
+It has **two tools, Read and Write**, and no others. hx wakes it by pasting `/clear` and one
+line pointing at a pass file; it reads the files that pass names and writes one JSON object to
+the path the pass gives it. It cannot run a command, reach the network, or touch your machine
+in any other way — the thing that watches every agent is the one participant here that cannot
+act.
 
 Its model is `companion.model` in `config/<id>/harness.json`, separate from the agent's, and
 `provider: claude-cli` means it goes through the pinned binary rather than an API key. An
@@ -84,8 +86,8 @@ siblings of those and survive. There is no credentials file in an agent home to 
 wipe — auth is the instance token, exported into the session env at launch.
 
 Claude Code's auto memory is keyed by git repo. Without a config directory per agent, every
-worktree of the same product repo would share one memory pool — including yours. The per-agent
-home is what prevents that.
+agent working in the same directory would share one memory pool — including yours. The
+per-agent home is what prevents that.
 
 ## Credentials
 
@@ -125,26 +127,28 @@ Your own sessions are unaffected by any of it.
 
 ## Working directory
 
-Yours is your checkout. A harness agent works in `$HARNESS_ROOT/wt/<id>`, a worktree cut from
-a **bare mirror** at `$HARNESS_ROOT/repos/<name>.git`, on branch `agent/<id>`. The mirror is
-fetched from your upstream; your own clone is never opened, never written, and never has a
-worktree added to it.
+Yours is your checkout. A harness agent works in whatever absolute directory
+`config/<id>/harness.json` names as its `workdir` — a directory the Partner created, or a
+checkout you told it to use.
 
-The worktree is sparse: `git sparse-checkout set --no-cone '/*' '!/.claude/'`, so the repo's
-own `.claude/` is not even present on disk in a harness worktree. Those project settings belong
-to your interactive work, and they could add hooks or permission rules that fight hx. Set
-`keep_claude_dir: true` in `config/repo.json` to opt a project back in when its `.claude/`
-carries skills the agents actually need.
+**hx does not manage source control.** It creates no repository, no branch and no worktree; it
+adds nothing to your repo and pushes nothing anywhere. The only git command it ever runs is
+`git status --porcelain`, inside `hx complete done`, and only when the workdir happens to be a
+git repository — a worker cannot call its task done while its directory is dirty.
 
-`start.sh` refuses to launch a worker whose worktree does not exist, rather than falling back
-to some other directory.
+That means the isolation here is *yours to arrange*, not hx's to guarantee. If you point two
+workers at the same directory they will collide, and if you point one at a checkout you are
+also editing, you are sharing a working tree with an agent. A directory per worker is the
+sane default; branches, if you want them, are something you or the Partner set up with
+ordinary git, in the ordinary way.
+
+`start.sh` refuses to launch a worker whose `workdir` does not exist, rather than falling back
+to somewhere else.
 
 ## Your remote
 
-Agent branches exist only in the bare mirror. Nothing reaches your remote until you tell the
-Partner to push a specific id, and `hx push <id>` — `git push upstream agent/<id>`, from the
-mirror — is the only command in hx that touches it. There is no automatic push, no automatic
-PR, and no background sync.
+hx never contacts it. There is no push command, no automatic PR, and no background sync. Work
+reaches your remote when you or the Partner run git yourself, in a directory you chose.
 
 ## System prompt
 
@@ -242,16 +246,13 @@ present tense about something unbuilt.
 | launch argv is exactly spec 17.4, no prompt argument, no `--resume` | `start.sh` |
 | `DISABLE_AUTOUPDATER=1` and the pinned `bin` from `config/claude.json` | `start.sh` |
 | the dispatch home wipe is exactly `projects/`, `file-history/`, `history.jsonl` | `dispatch.py` `HOME_WIPE` |
-| the worktree is sparse with `'/*' '!/.claude/'`, and `.claude/` is never written at all | `repo.py` `SPARSE_RULES`, and `--no-checkout` before the sparse rules |
-| `keep_claude_dir: true` opts a project back in | `repo.py`, `if not config.get("keep_claude_dir")` |
-| `hx push` sends one explicit refspec to `upstream` and nothing else | `push.py`, `refs/heads/<branch>:refs/heads/<branch>` |
-| `hx upgrade` refuses an untested version before writing anything | `upgrade.py`, `require_tested` before `write_pin` |
+| hx runs no git but `git status --porcelain` in `hx complete done` | spec 17.2; there is no `repo.py` any more |
 | one raw record per tool call, on the stream of the thread that made it | the `log` hook; the `agent_id` lookup in `subagents.py` |
 | `context_tokens` is input plus cache reads, not output | `transcripts.py` |
 | the seam marker is touched only on the main stream | the `log` hook — a subagent's window is its own |
 | subagent handles are assigned under a lock | `subagents.py` |
 | a subagent's result reaches its parent only as a digest | `subagent-result`, `PostToolUse(Agent)` |
-| the Companion has no tools, no hooks, no skills and no CLAUDE.md | its home is `run/<id>/companion-home`; `claude -p` with a system prompt and stdin |
+| the Companion has Read and Write and nothing else, in a home with no product skills | its home is `run/<id>/companion-home`; `CONTRACTS.md`, "The Companion is a tmux session" |
 
 ## How this is verified, not just asserted## How this is verified, not just asserted
 

@@ -98,14 +98,12 @@ def test_order_example_has_only_the_two_top_level_sections(path):
     assert headings == ["Order", "Definition of done"], f"{path}: {headings}"
 
 
-def test_order_example_frontmatter_after_is_a_list_of_ids():
+def test_order_example_has_no_frontmatter():
+    """Spec 14 D25 cut `after` and with it the only reason an order file had frontmatter. An
+    example that still carried some would teach the Partner to write a field nothing reads."""
     text = (SKELETON / "templates" / "order.md").read_text()
-    assert text.startswith("---\n"), "the example is meant to show the optional frontmatter"
-    front = text.split("---\n", 2)[1]
-    m = re.search(r"^after:\s*\[(.*)\]\s*$", front, re.MULTILINE)
-    assert m, f"no `after:` list in the frontmatter: {front!r}"
-    for entry in (e.strip() for e in m.group(1).split(",") if e.strip()):
-        assert re.fullmatch(r"partner|[a-z]+-[0-9]{3}", entry), f"bad id in `after`: {entry!r}"
+    assert not text.startswith("---"), "templates/order.md still opens with frontmatter"
+    assert "after:" not in text, "templates/order.md still names `after`"
 
 
 def test_addendum_example_is_prose_that_lands_under_the_order_heading():
@@ -126,7 +124,8 @@ def test_work_item_template_frontmatter_keys():
     text = (SKELETON / "templates" / "work-item.md").read_text()
     assert text.startswith("---\n"), "the template must open with frontmatter"
     front = text.split("---\n", 2)[1]
-    for key in ("id:", "pod:", "after:", "outcome:", "dispatched:"):
+    assert "after:" not in front, "the work item still carries `after` (cut, spec 14 D25)"
+    for key in ("id:", "pod:", "outcome:", "dispatched:"):
         assert re.search(rf"^{re.escape(key)}", front, re.MULTILINE), (
             f"work-item.md frontmatter is missing `{key}`"
         )
@@ -164,7 +163,7 @@ def test_work_item_template_standing_instructions_are_the_spec_text():
 def test_work_item_template_placeholders_are_rendered_by_dispatch():
     text = (SKELETON / "templates" / "work-item.md").read_text()
     found = set(re.findall(r"\{\{(\w+)\}\}", text))
-    assert found == {"id", "pod", "after", "dispatched", "order"}, found
+    assert found == {"id", "pod", "dispatched", "order"}, found
 
 
 # ----------------------------------------------------------------------- AGENTS.md
@@ -192,9 +191,38 @@ def test_agents_file_has_exactly_one_mutable_header(path):
 def test_agents_file_has_a_persona_above_and_room_below(path):
     """Above the header is the persona `start.sh` copies to run/<id>/persona.md (spec 11);
     below it is the agent's own memory, which travels in the context file (spec 03)."""
-    above, _, below = path.read_text().partition(MUTABLE_HEADER)
+    text = path.read_text()
+    above, header, _ = text.partition(MUTABLE_HEADER)
+    assert header, f"{path}: no `{MUTABLE_HEADER}` line"
     assert above.strip(), f"{path}: nothing above the header, so persona.md would be empty"
-    assert below.strip(), f"{path}: nothing below the header to tell the agent it is theirs"
+    # Below the header may be empty: it is the agent's own memory, and a freshly installed
+    # persona has none yet. What matters is that the header is there to divide the two.
+
+
+def test_every_shipped_persona_has_exactly_one_mutable_header():
+    """`personas/<role>/AGENTS.md` are the texts the Partner copies over `config/<id>/AGENTS.md`
+    when it creates a worker. `start.sh` refuses an AGENTS.md with no header, so a persona
+    missing one would be a worker that cannot launch."""
+    personas = sorted((SKELETON / "personas").iterdir())
+    assert [p.name for p in personas] == [
+        "backend-engineer", "frontend-engineer", "partner", "release-engineer",
+    ], [p.name for p in personas]
+    for directory in personas:
+        path = directory / "AGENTS.md"
+        assert path.is_file(), f"{directory.name} has no AGENTS.md"
+        lines = path.read_text().splitlines()
+        hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
+        assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected 1"
+
+
+def test_the_installed_partner_persona_is_the_shipped_one():
+    """`config/partner/AGENTS.md` is what the Partner actually launches with; it must not drift
+    from `personas/partner/AGENTS.md`, which is the text under review."""
+    installed = (SKELETON / "config" / "partner" / "AGENTS.md").read_text()
+    source = (SKELETON / "personas" / "partner" / "AGENTS.md").read_text()
+    assert installed == source, (
+        "config/partner/AGENTS.md differs from personas/partner/AGENTS.md; copy the persona"
+    )
 
 
 def test_a_fresh_instance_installs_only_the_partner():
@@ -230,10 +258,10 @@ def test_worker_template_is_templated_on_id_and_pod():
         assert "{{id}}" in text, f"templates/worker/{name}: nothing templated on the id"
     cfg = json.loads((worker / "harness.json").read_text())
     assert cfg["id"] == "{{id}}" and cfg["pod"] == "{{pod}}", cfg
-    # Relative, because hx install copies the skeleton verbatim into any HARNESS_ROOT.
-    assert cfg["workdir"] == "wt/{{id}}", cfg["workdir"]
-    assert cfg["branch"] == "agent/{{id}}", cfg["branch"]
-    assert not pathlib.PurePosixPath(cfg["workdir"]).is_absolute()
+    # Spec 14 D25: hx manages no git, so there is no branch, and the workdir is an absolute
+    # path the Partner chooses — a placeholder here, so an unedited copy fails loudly.
+    assert "branch" not in cfg, "hx creates no branch; the template must not name one"
+    assert cfg["workdir"] == "{{workdir}}", cfg["workdir"]
     role_file = SKELETON / "companion" / "roles" / f"{cfg['role']}.md"
     assert role_file.is_file(), f"templates/worker: no role file for {cfg['role']}"
 
@@ -329,13 +357,48 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
     )
 
 
-def test_the_skills_that_ship_are_the_ones_spec_17_5_and_10_name():
+def test_the_skills_that_ship_are_the_ones_the_spec_names():
     assert sorted(p.name for p in SKILLS.iterdir()) == [
-        "hx-companion", "hx-partner", "hx-worker",
+        "hx-companion", "hx-fleet", "hx-partner", "hx-worker",
     ], (
-        "spec 17.5 ships hx-partner and hx-worker into agent homes; spec 10 adds hx-companion "
-        "for the Companion's own home. autodev's operator and GM skills are dropped"
+        "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
+        "spec 10 adds hx-companion for the Companion's home; hx-fleet is the Partner's manual "
+        "for making and retiring agents, and is the Partner's alone"
     )
+
+
+FLEET_SKILL = SKILLS / "hx-fleet" / "SKILL.md"
+
+
+def test_the_fleet_skill_names_only_paths_that_exist():
+    """It is the Partner's manual for creating agents, so every path in it is one the Partner
+    will actually copy. A path that does not exist is a worker that cannot be made."""
+    text = FLEET_SKILL.read_text()
+    for relative in (
+        "templates/worker", "personas/backend-engineer/AGENTS.md",
+        "personas/frontend-engineer/AGENTS.md", "personas/release-engineer/AGENTS.md",
+        "companion/roles/backend-engineer.md", "config/CLAUDE.md",
+    ):
+        assert relative in text, f"hx-fleet does not mention {relative}"
+        assert (SKELETON / relative).exists(), f"hx-fleet names {relative}, which does not ship"
+
+
+def test_the_fleet_skill_roles_match_the_personas_and_the_role_files():
+    text = FLEET_SKILL.read_text()
+    roles = sorted(p.name for p in (SKELETON / "personas").iterdir() if p.name != "partner")
+    for role in roles:
+        assert role in text, f"hx-fleet does not name the {role} role"
+        assert (SKELETON / "companion" / "roles" / f"{role}.md").is_file()
+
+
+def test_the_fleet_skill_protects_the_agents_own_memory():
+    """Below the header is the worker's memory. Editing it, or copying one worker's into
+    another, writes false memories into a running agent — the one irreversible mistake
+    available here."""
+    text = FLEET_SKILL.read_text()
+    assert "## UPDATES BELOW ONLY" in text
+    assert "below the header" in text
+    assert "memory" in text
 
 
 # --------------------------------------------------------------- the Companion skill
@@ -426,7 +489,11 @@ def test_companion_prompts_exist_for_every_role_that_ships():
     base = SKELETON / "companion" / "BASE.md"
     assert base.is_file() and base.read_text().strip(), "companion/BASE.md is missing or empty"
     roles = sorted(p.stem for p in (SKELETON / "companion" / "roles").glob("*.md"))
-    assert roles == ["engineer", "partner", "reviewer"], roles
+    personas = sorted(p.name for p in (SKELETON / "personas").iterdir())
+    assert roles == personas, (
+        f"every shipped persona needs a companion role file of the same name: "
+        f"roles {roles}, personas {personas}"
+    )
 
 
 def test_companion_base_carries_the_step_state_schema_keys():

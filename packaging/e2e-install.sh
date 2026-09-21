@@ -102,9 +102,14 @@ REQUIRED_IN_WHEEL="
 hx/skeleton/PARTNER.md
 hx/skeleton/config/CLAUDE.md
 hx/skeleton/companion/BASE.md
-hx/skeleton/companion/roles/engineer.md
 hx/skeleton/companion/roles/partner.md
-hx/skeleton/companion/roles/reviewer.md
+hx/skeleton/companion/roles/backend-engineer.md
+hx/skeleton/companion/roles/frontend-engineer.md
+hx/skeleton/companion/roles/release-engineer.md
+hx/skeleton/personas/partner/AGENTS.md
+hx/skeleton/personas/backend-engineer/AGENTS.md
+hx/skeleton/personas/frontend-engineer/AGENTS.md
+hx/skeleton/personas/release-engineer/AGENTS.md
 hx/skeleton/templates/work-item.md
 hx/skeleton/templates/order.md
 hx/skeleton/templates/addendum.md
@@ -115,13 +120,10 @@ hx/skeleton/config/partner/AGENTS.md
 hx/skeleton/config/partner/SUBAGENTS.md
 hx/skeleton/config/partner/harness.json
 hx/skills/hx-partner/SKILL.md
+hx/skills/hx-fleet/SKILL.md
 hx/skills/hx-worker/SKILL.md
+hx/skills/hx-companion/SKILL.md
 hx/packaging/tested-claude-versions.json
-hx/packaging/launchd/com.hx.up.plist
-hx/packaging/launchd/com.hx.heartbeat.plist
-hx/packaging/systemd/hx-up.service
-hx/packaging/systemd/hx-heartbeat.service
-hx/packaging/systemd/hx-heartbeat.timer
 hx/ui/static/index.html
 hx/ui/static/app.js
 hx/ui/static/style.css
@@ -137,7 +139,7 @@ if [ -n "$missing" ]; then
   printf '   wheel is missing:\n' >&2
   for m in $missing; do printf '     %s\n' "$m" >&2; done
   case "$missing" in
-    *hx/packaging/*) printf '\n   hx/packaging/** needs "packaging/**/*" in [tool.setuptools.package-data]\n   of pyproject.toml (build lane; see handoff/gtm-to-build.md, gtm-2 entry 0).\n' >&2 ;;
+    *hx/packaging/*|*hx/skeleton/personas/*) printf '\n   package data missing from the wheel. hx/packaging/** needs "packaging/**/*" and\n   hx/skeleton/** needs "skeleton/**/*" in [tool.setuptools.package-data] of\n   pyproject.toml (build lane; see handoff/gtm-to-build.md).\n' >&2 ;;
   esac
   case "$missing" in
     *hx/ui/static/*) printf '\n   hx/ui/static/** is what `hx ui` serves; it needs "ui/static/**/*" in\n   [tool.setuptools.package-data]. If a file was renamed, update this list\n   (gtm lane; see handoff/gtm-to-ui.md).\n' >&2 ;;
