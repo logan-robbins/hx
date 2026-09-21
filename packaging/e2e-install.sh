@@ -116,6 +116,13 @@ hx/skeleton/templates/addendum.md
 hx/skeleton/templates/worker/AGENTS.md
 hx/skeleton/templates/worker/SUBAGENTS.md
 hx/skeleton/templates/worker/harness.json
+hx/skeleton/adapters/claude/install.sh
+hx/skeleton/adapters/claude/start.sh
+hx/skeleton/adapters/claude/seam-command
+hx/skeleton/adapters/pi/install.sh
+hx/skeleton/adapters/pi/start.sh
+hx/skeleton/adapters/pi/seam-command
+hx/skeleton/adapters/pi/extension/index.ts
 hx/skeleton/config/partner/AGENTS.md
 hx/skeleton/config/partner/SUBAGENTS.md
 hx/skeleton/config/partner/harness.json

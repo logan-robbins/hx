@@ -224,6 +224,11 @@ ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/
 ok    skeleton         PARTNER.md
 ok    skeleton         adapters/claude/install.sh
 ok    skeleton         adapters/claude/start.sh
+ok    skeleton         adapters/claude/seam-command
+ok    skeleton         adapters/pi/install.sh
+ok    skeleton         adapters/pi/start.sh
+ok    skeleton         adapters/pi/seam-command
+ok    skeleton         adapters/pi/extension/index.ts
 ok    skeleton         companion/BASE.md
 ok    skeleton         companion/roles/partner.md
 ok    skeleton         config/CLAUDE.md
