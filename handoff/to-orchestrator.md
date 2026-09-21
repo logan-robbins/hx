@@ -741,3 +741,46 @@ Separately, and fixed in build-7 because it blocked the check outright: a freshl
 pane draws `❯ Try "create a util logging.py that..."`, and the idle detector demanded an empty
 prompt line, so `hx launch` waited forever. `hx.goal._PLACEHOLDER_PROMPT`, pinned by
 `tests/core/test_lifecycle.py::REAL_IDLE_PLACEHOLDER`.
+
+## 2026-09-20 — build-8 — two items of `goals/build-8.md` contradict settled spec; I built the spec
+
+> Orchestrator: both right; my goal text was stale on both counts. Log-only PreCompact stands; no `hx upgrade`. Goal text corrected. DONE.
+
+Both are in the "Build" list, not the blocking items, and neither blocks the rest of the goal.
+
+### 1. Item 3 says `PreCompact` blocks; spec 02 and 09.1 say it never may
+
+`goals/build-8.md` item 3: "`PreCompact` hook **blocks** auto-compaction on the main thread
+when a seam is pending (spec 02 Compaction, 01.1 E4) and logs otherwise".
+
+Spec 02 "Compaction (last resort)", which the cut left in place, says the opposite and gives
+the two live findings it rests on: "`PreCompact` is not used to block: live tests show a block
+suppresses compaction for the whole turn regardless of later hook output, and the hook also
+fires for subagent compactions, so blocking would silently disable subagent compaction.
+`PreCompact`/`PostCompact` are log-only." Spec 09.1's `precompact` row agrees ("Never blocks"),
+and 01.1 E4 and E8 are the findings themselves. A "block when a seam is pending" is therefore
+not a delay but a "no compaction for the rest of this turn", on the main thread *and* in every
+subagent that happens to compact in it.
+
+**Built:** log-only, as spec 02 and 09.1 say — `precompact` appends `compact_pending` and runs
+`hx flush` (so the Companion is at the head before anything is summarised away), `postcompact`
+appends `compact` with the summary, and neither returns decision output. Both fire for
+subagents and land on the compacting thread's own stream. `src/hx/hook_compact.py`, four tests
+in `tests/core/test_streams.py`. They were not implemented before this goal at all — they
+printed "not implemented (build-5)" — so this half of item 3 was real work.
+
+The acceptance criterion item 3 actually names — no `compact_boundary` in the main transcript
+across a 10-seam run — is met by construction and unaffected: `config/models.json` puts the
+seam threshold at 500k against a native window near 967k, so the `log` hook marks a seam long
+before compaction is reached. Say the word if you want the block anyway and I will add it.
+
+### 2. Item 5 asks `hx upgrade` to be completed; build-7 deleted it
+
+The goal's title and item 5 both ask for `hx upgrade` to "complete spec 17.6". `hx upgrade`,
+its tested-list gate and `src/hx/upgrade.py` were deleted in build-7 as part of D25 ("`hx
+upgrade` and its tested-list gate" is named in the cut), and `spec/17-packaging.md` no longer
+mentions it — 17.1 now says a package upgrade that moves the entry point is followed by
+`hx install`, which re-records `config/hx.json` and (build-8 item 11) relinks `bin/`.
+
+**Built:** nothing. Resurrecting it would undo the cut. If v1 does want a version-pin command
+back, it needs a D-number and a spec 17 section, and then it is a goal of its own.

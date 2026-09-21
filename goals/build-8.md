@@ -1,4 +1,4 @@
-# build-8: Milestone M6 (spec 13): seams for real, `hx seam`, the live suite, `hx upgrade` complete
+# build-8: Milestone M6 (spec 13): seams for real, `hx seam`, the live suite
 
 Read `goals/build-7.done.md` (yours), `handoff/orchestrator-to-build.md`, any other
 `handoff/*-to-build.md`, spec 02 (Seams, Compaction), 06 (pointer), 07.4, 09.2–9.3 (the
@@ -31,17 +31,15 @@ handshake), 10 (seam policy), 11 (Compaction rows), 13 M6, 17.6.
    hook's threshold marker (build-5) both land in `run/<id>/seam`; `stop` consumes it via `hx
    seam`. Never for subagent streams. Write a `seam` record (07.4) with `prompt_version`,
    `context_tokens` before, and the context file size.
-3. Compaction is disabled by construction: `PreCompact` hook blocks auto-compaction on the main
-   thread when a seam is pending (spec 02 Compaction, 01.1 E4) and logs otherwise; verify that
-   no `compact_boundary` appears in the main transcript across a 10-seam live run.
+3. Compaction never happens on the main thread by construction: the seam threshold sits far
+   below the model's window, so the `log` hook marks a seam first. `precompact`/`postcompact`
+   are log-only (spec 02, 09.1; `precompact` runs `hx flush` first). Verify no `compact_boundary`
+   appears in the main transcript across a 10-seam live run.
 4. `hx restart <id>` and `hx launch <id>` of a `working` item deliver the goal after the idle
    prompt appears (readiness detector from build-3); a `goal-pending` left by a mid-turn
    `hx dispatch partner` is pasted by `stop` and runs as the next input (live, on the Partner).
 5. **The live suite** (`tests/live/`, marked and skipped unless `HX_LIVE=1` and `seed/token`
    exist): the M6 criteria above against the real pinned binary, reaping everything it launches.
-   `hx upgrade` completes spec 17.6: re-render every home's settings and skills from the package,
-   run the live suite against the candidate binary, and pin only on green; record the result in
-   `config/claude.json` (`tested_at`, `suite_sha`).
 6. Tests offline for the policy and the handshake with the fake; live for the transcript order,
    the 10-seam run, restart and launch delivery, and `goal-pending` on the Partner. Paste the
    transcript excerpts. Kill everything you launched.
