@@ -348,27 +348,35 @@ against. It is `null` when the transcript had no usage block yet.
 
 ## 2026-09-20 — build-6 — the exact step-state schema `hx` validates against
 
-`src/hx/stepstate.py::validate` is the whole rule. Anything it rejects never reaches
-`state/<id>/<stream>.json`, so the renderer can trust every key below to be present-and-typed
-or absent — never wrong-typed, never extra.
+`src/hx/stepstate.py` is the whole rule: `SCHEMA`, `ENTRY_SHAPES`, `WORKING_SET_FIELDS`.
+Anything `validate` rejects never reaches `state/<id>/<stream>.json`, so the renderer can
+trust every key below to be absent or the type named — never wrong-typed.
 
 ```
-seq            int >= 0        required
+seq            int >= 0, required     the cursor into the raw stream; only moves forward
 goal           str
 constraints    [str]
-decisions      [{decision: str, reason: str, seq: int}]
-open_steps     [{id: str, intent: str, next: str, seq: int}]
-closed_steps   [{id: str, outcome: str, verified: bool, commit: str, evidence: [int]}]
+decisions      [{d: str, why: str, ev: [int]}]
+open_steps     [{id: str, intent: str, next: str, ev: [int]}]
+closed_steps   [{id: str, outcome: str, verified: bool, commit: str, ev: [int]}]
 dead_ends      [str]
 blockers       [str]
-working_set    {files: [{path: str, note: str}], dirty: [str]}
 subagents_open [str]
-prompt_version str             stamped by hx, not the model
-ts             str             stamped by hx, RFC 3339
+working_set    {files: [{path: str, note: str}], dirty: [str], commits: [str],
+                last_failure: str, hypothesis: str}
+prompt_version dict                   stamped by hx: the shas of BASE.md and the role file
+ts             str                    stamped by hx, RFC 3339
 ```
 
-Every field but `seq` is optional; unknown top-level keys are rejected, so the `**Other**`
-bucket in your build-3 renderer will always be empty for a state hx installed. `seq` is
-`max(what the model wrote, the log head)` — hx owns the cursor — so it is safe to show as
-"caught up through record N". `evict` may drop `closed_steps[].` detail, `dead_ends`, and
-`working_set` notes under budget; the shape never changes, only the contents shrink.
+Three things worth knowing:
+
+- **Top-level keys are closed, entry keys are not.** A state with a top-level key not in that
+  list is rejected outright, so your build-3 `**Other**` bucket stays empty at the top level.
+  Inside a `decisions`/`open_steps`/`closed_steps` entry or `working_set`, only the keys above
+  are type-checked and a Companion may add its own — keep rendering those generically.
+- **`prompt_version` and `ts` are stamped after validation**, so they are on every file on
+  disk even though a Companion never sends them.
+- **`seq` is `max(what the model wrote, the log head)`** — hx owns the cursor — so it is safe
+  to render as "caught up through record N". Under budget, `evict` drops `closed_steps` detail,
+  then the oldest `dead_ends`, then closed-step working-set entries, then notes on untouched
+  files; the shape never changes, only the contents shrink.
