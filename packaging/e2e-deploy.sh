@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# The M10 deploy proof for one machine (spec 17.2–17.4, 11).
+# The deploy proof for one machine (spec 17.2).
 #
 #   packaging/e2e-deploy.sh <scratch-dir>
 #
-# `e2e-install.sh` proves the wheel builds, installs, and can create an instance skeleton. This
-# goes the rest of the way: the *full* `hx install`, a real repo mirror, a sparse worktree with
-# the product's own `.claude/` excluded, an agent launched into tmux, and the boot units
-# rendered into the machine's own launchd/systemd directories — all inside a HOME that did not
-# exist a moment ago, and with the real `~/.claude` proved untouched at the end.
+# `e2e-install.sh` proves the wheel builds, installs, and can create an instance skeleton.
+# This goes the rest of the way: the *full* `hx install` — its four steps, including the exit-4
+# stop for the seed token — and a worker launched into tmux, inside a HOME that did not exist a
+# moment ago, ending with the real `~/.claude` proved untouched.
+#
+# That is the whole of deployment. hx ships no launchd plist and no systemd unit, creates no
+# repository, cuts no worktree, and pushes nothing (spec 14 D25): `hx up` and `hx heartbeat`
+# are ordinary commands a human puts in their own cron if they want them.
 #
 # Auth is one long-lived token per instance at `seed/token` (spec 11 Auth, CONTRACTS.md). hx
 # reads nothing from any user Claude home, on any platform, so this script plants a fake
@@ -118,24 +121,7 @@ FAKE_BEFORE="$SCRATCH/fake-user.before"
 "$REPO/tools/claude-home-hash.sh" "$FAKE_USER" > "$FAKE_BEFORE"
 ok "$FAKE_USER with credentials, a deny-everything hook, a banner CLAUDE.md and a skill"
 
-step "5. a bare product repo with its own .claude/"
-SRC="$SCRATCH/product-src"
-cp -R "$REPO/tests/scenario/m8/repo" "$SRC"
-mkdir -p "$SRC/.claude"
-cat > "$SRC/.claude/settings.json" <<'JSON'
-{"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "echo REPO-CLAUDE-DIR-LEAKED >&2; exit 2"}]}]}}
-JSON
-echo "REPO-CLAUDE-DIR-LEAKED" > "$SRC/.claude/notes.md"
-git -C "$SRC" init -q -b main
-git -C "$SRC" -c user.email=deploy@example.invalid -c user.name=deploy add -A
-git -C "$SRC" -c user.email=deploy@example.invalid -c user.name=deploy commit -qm "product"
-PRODUCT="$SCRATCH/product.git"
-git clone -q --bare "$SRC" "$PRODUCT"
-ok "$PRODUCT (bare), with .claude/settings.json and .claude/notes.md committed"
-
-# --------------------------------------------------------------------------- hx install
-
-step "6. hx install stops for the seed token, and says how to make one"
+step "5. hx install stops for the seed token, and says how to make one"
 ROOT="$SCRATCH/hx"
 set +e
 "$HX" install --root "$ROOT" > "$SCRATCH/install-1.log" 2>&1
@@ -149,17 +135,17 @@ grep -q "reads nothing from your own" "$SCRATCH/install-1.log" \
 ok "exit 4, naming the setup-token command and the path to paste into"
 [ ! -s "$ROOT/seed/token" ] || die "a token appeared without the human pasting one"
 
-step "7. paste a token, and install again"
+step "6. paste a token, and install again"
 mkdir -p "$ROOT/seed"
 printf 'deploy-proof-token-not-a-real-credential\n' > "$ROOT/seed/token"
 chmod 600 "$ROOT/seed/token"
-"$HX" install --root "$ROOT" --repo "$PRODUCT" \
+"$HX" install --root "$ROOT" \
   > "$SCRATCH/install-2.log" 2>&1 \
   || { tail -30 "$SCRATCH/install-2.log" >&2; die "hx install failed with a token present"; }
 sed 's/^/   | /' "$SCRATCH/install-2.log" | tail -12
 ok "instance at $ROOT"
 
-step "8. the token is 0600 and no credentials file was created anywhere"
+step "7. the token is 0600 and no credentials file was created anywhere"
 token_mode=$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$ROOT/seed/token")
 [ "$token_mode" = "0o600" ] || die "seed/token is $token_mode, expected 0o600"
 ok "seed/token mode $token_mode"
@@ -167,7 +153,7 @@ creds=$(find "$ROOT" -name '.credentials.json' 2>/dev/null | head -5)
 [ -z "$creds" ] || die "a credentials file exists in the instance: $creds"
 ok "no .credentials.json anywhere under the instance"
 
-step "9. nothing of the user's Claude home reached the instance"
+step "8. nothing of the user's Claude home reached the instance"
 for planted in USER-CREDENTIALS-LEAKED USER-HOOK-LEAKED USER-CLAUDE-MD-LEAKED USER-SKILL-LEAKED; do
   if grep -rq "$planted" "$ROOT" 2>/dev/null; then
     grep -rl "$planted" "$ROOT" 2>/dev/null | sed 's/^/     /' >&2
@@ -180,7 +166,7 @@ diff -u "$FAKE_BEFORE" "$SCRATCH/fake-user.after" > "$SCRATCH/fake-user.diff" \
   || { sed 's/^/   | /' "$SCRATCH/fake-user.diff" >&2; die "hx wrote to the user's Claude home"; }
 ok "$FAKE_USER is byte-identical before and after"
 
-step "10. config/claude.json records a bare version from the tested list"
+step "9. config/claude.json records a bare version from the tested list"
 CLAUDE_JSON="$ROOT/config/claude.json"
 [ -f "$CLAUDE_JSON" ] || die "no $CLAUDE_JSON (spec 17.2 step 1)"
 python3 - "$CLAUDE_JSON" "$REPO/src/hx/packaging/tested-claude-versions.json" <<'PY' || die "config/claude.json is wrong"
@@ -197,51 +183,51 @@ PY
 
 # --------------------------------------------------------------------------- the mirror
 
-step "11. the product was mirrored by the install"
-REPO_JSON="$ROOT/config/repo.json"
-[ -f "$REPO_JSON" ] || die "no $REPO_JSON (spec 17.2 step 4)"
-NAME=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$REPO_JSON")
-MIRROR="$ROOT/repos/$NAME.git"
-[ -d "$MIRROR" ] || die "no bare mirror at $MIRROR"
-[ "$(git -C "$MIRROR" rev-parse --is-bare-repository)" = true ] || die "$MIRROR is not bare"
-git -C "$MIRROR" remote get-url upstream >/dev/null 2>&1 || die "$MIRROR has no upstream remote"
-ok "config/repo.json name=$NAME"
-ok "$MIRROR is a bare mirror of $(git -C "$MIRROR" remote get-url upstream)"
-# The user's own clone is never opened: the mirror was fetched from the bare repo it was given.
-[ ! -d "$SRC/.git/worktrees" ] || die "a worktree was added to the source checkout"
-ok "no worktree was added to the source checkout"
+step "10. hx creates no repository, no worktree, and no unit files"
+# Spec 14 D25: working directories are not hx's business and hx ships no unit files. An
+# instance that grew any of these would mean the cut did not take.
+for stray in repos wt; do
+  [ ! -e "$ROOT/$stray" ] || die "$ROOT/$stray exists; hx manages no git (spec 17.2)"
+done
+[ ! -e "$ROOT/config/repo.json" ] || die "config/repo.json exists; hx mirrors nothing"
+for unit_dir in "$HOME/Library/LaunchAgents" "$HOME/.config/systemd/user"; do
+  if [ -d "$unit_dir" ] && [ -n "$(ls -A "$unit_dir" 2>/dev/null)" ]; then
+    ls -A "$unit_dir" >&2
+    die "$unit_dir is not empty; hx ships no launchd plist and no systemd unit"
+  fi
+done
+ok "no repos/, no wt/, no config/repo.json, no unit files written anywhere"
 
-# ------------------------------------------------------------- launch, and the sparse worktree
-
-step "12. hx launch eng-001 with the fake claude and a private tmux server"
-# From here on, act like the boot units do: HARNESS_ROOT selects the instance. `hx launch`
-# has no --root, by design — an agent-side command identifies its instance from the env.
+step "11. hx launch eng-001 into the workdir its harness.json names"
+# From here on, act the way the Partner does: HARNESS_ROOT selects the instance, and the
+# worker's workdir is a directory somebody chose — not one hx created (spec 17.2).
 export HARNESS_ROOT="$ROOT"
+WORKDIR="$SCRATCH/work/eng-001"
+mkdir -p "$WORKDIR"
 mkdir -p "$ROOT/config/eng-001"
 for f in AGENTS.md SUBAGENTS.md harness.json; do
   sed -e 's/{{id}}/eng-001/g' -e 's/{{pod}}/engineers/g' \
     "$ROOT/templates/worker/$f" > "$ROOT/config/eng-001/$f"
 done
+python3 - "$ROOT/config/eng-001/harness.json" "$WORKDIR" <<'PY'
+import json, sys
+path, workdir = sys.argv[1], sys.argv[2]
+cfg = json.load(open(path))
+cfg["workdir"] = workdir
+cfg.pop("branch", None)
+with open(path, "w") as handle:
+    json.dump(cfg, handle, indent=2)
+    handle.write("\n")
+PY
 "$HX" launch eng-001 > "$SCRATCH/launch.log" 2>&1 \
   || { tail -30 "$SCRATCH/launch.log" >&2; die "hx launch eng-001 failed"; }
 sed 's/^/   | /' "$SCRATCH/launch.log" | tail -8
 $HX_TMUX has-session -t "=eng-001" 2>/dev/null || die "no tmux session eng-001 on the private server"
 ok "tmux session eng-001 is live on the private server"
+[ -f "$ROOT/pods/engineers/eng-001-idle.md" ] || die "no idle work item at pods/engineers/eng-001-idle.md"
+ok "work item pods/engineers/eng-001-idle.md, workdir $WORKDIR"
 
-step "13. wt/eng-001 is a worktree without the product's .claude/"
-WT="$ROOT/wt/eng-001"
-[ -d "$WT" ] || die "no worktree at $WT"
-[ -f "$WT/greet.py" ] || die "$WT does not hold the product"
-[ ! -e "$WT/.claude" ] || die "$WT/.claude exists; the sparse checkout must exclude it (spec 17.3)"
-if grep -rq "REPO-CLAUDE-DIR-LEAKED" "$WT" 2>/dev/null; then
-  die "the product's .claude/ content is present in $WT"
-fi
-ok "$WT holds the product and no .claude/"
-BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD)
-[ "$BRANCH" = "agent/eng-001" ] || die "worktree is on branch $BRANCH, expected agent/eng-001"
-ok "on branch agent/eng-001, cut from the mirror"
-
-step "14. the agent home was written from the package, and holds no credential"
+step "12. the agent home was written from the package, and holds no credential"
 AGENT_HOME="$ROOT/run/eng-001/home"
 [ -f "$AGENT_HOME/settings.json" ] || die "no $AGENT_HOME/settings.json"
 # Auth is the instance token exported at launch, so an agent home holds no credential at all.
@@ -249,9 +235,10 @@ AGENT_HOME="$ROOT/run/eng-001/home"
   "$AGENT_HOME/.credentials.json exists; auth is seed/token exported as CLAUDE_CODE_OAUTH_TOKEN
   and agent homes hold no credentials file (spec 11 Auth)"
 # The token must reach the agent as CLAUDE_CODE_OAUTH_TOKEN in its environment and nowhere
-# else. `fake-argv.json` is the fake claude recording its own argv and env for tests to
-# assert on — a real binary writes no such file — so it is excluded from the "nowhere else"
-# scan and used for the positive half instead.
+# else. `fake-argv*.json` is the fake claude recording its own argv and env for tests to
+# assert on — a real binary writes no such file — so they are excluded from the "nowhere else"
+# scan and the main-session one is used for the positive half instead. The Companion writes
+# its own name; both records carry the token env, so both are excluded.
 ARGV_JSON="$ROOT/run/partner/fake-argv.json"
 if [ -f "$ARGV_JSON" ]; then
   python3 - "$ARGV_JSON" <<'PY' || die "the launch environment is not what spec 11 Auth requires"
@@ -267,7 +254,7 @@ print("   ok  the token reached the session as CLAUDE_CODE_OAUTH_TOKEN, and is n
 PY
 fi
 leaked=$(grep -rl "deploy-proof-token-not-a-real-credential" "$ROOT/run" 2>/dev/null \
-  | grep -v 'fake-argv\.json' || true)
+  | grep -v 'fake-argv' || true)
 if [ -n "$leaked" ]; then
   printf '%s\n' "$leaked" | sed 's/^/     /' >&2
   die "the instance token was written under run/; it belongs only in seed/token"
@@ -298,95 +285,7 @@ ok "skills/hx-worker only"
 
 # --------------------------------------------------------------------------- the units
 
-step "15. the boot and heartbeat units were rendered into this HOME"
-case "$(uname -s)" in
-  Darwin) UNIT_DIR="$HOME/Library/LaunchAgents"; UNITS="com.hx.up.plist com.hx.heartbeat.plist" ;;
-  *)      UNIT_DIR="$HOME/.config/systemd/user"; UNITS="hx-up.service hx-heartbeat.service hx-heartbeat.timer" ;;
-esac
-[ -d "$UNIT_DIR" ] || die "no $UNIT_DIR; hx install writes the units there (spec 17.2 step 5)"
-HX_BIN_RECORDED=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["hx_bin"])' \
-  "$ROOT/config/hx.json")
-ok "config/hx.json hx_bin = $HX_BIN_RECORDED"
-for unit in $UNITS; do
-  path="$UNIT_DIR/$unit"
-  [ -f "$path" ] || die "no $path"
-  if grep -q '{HARNESS_ROOT}' "$path"; then die "$path still holds an unsubstituted {HARNESS_ROOT}"; fi
-  if grep -q '{HX_BIN}' "$path"; then die "$path still holds an unsubstituted {HX_BIN}"; fi
-  grep -qF "$ROOT" "$path" || die "$path does not name this instance root"
-  # CONTRACTS.md: units and hook commands reference `hx_bin` from config/hx.json — the
-  # resolved binary, not the uv symlink that happened to be invoked, so replacing the
-  # symlink does not silently break a booted fleet.
-  grep -qF "$HX_BIN_RECORDED" "$path" \
-    || die "$path does not name config/hx.json hx_bin ($HX_BIN_RECORDED)"
-  ok "$unit rendered with HARNESS_ROOT and HX_BIN substituted"
-done
-
-# --------------------------------------------------------------- upgrade, and push
-
-step "16. hx upgrade refuses a version the suite has not passed on"
-# Two one-line fakes: one reporting a version that is in the package's tested list, one that
-# is not. The refusal is the whole point of the command (spec 17.6), so it is asserted first
-# and the pin is checked to have survived it.
-TESTED=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["versions"][0])' \
-  "$REPO/src/hx/packaging/tested-claude-versions.json")
-printf '#!/bin/sh\necho "9.9.9 (Claude Code)"\n' > "$FAKE_BIN_DIR/claude-untested"
-printf '#!/bin/sh\necho "%s (Claude Code)"\n' "$TESTED" > "$FAKE_BIN_DIR/claude-tested"
-chmod +x "$FAKE_BIN_DIR/claude-untested" "$FAKE_BIN_DIR/claude-tested"
-
-PIN_BEFORE=$(cat "$ROOT/config/claude.json")
-set +e
-"$HX" upgrade --claude "$FAKE_BIN_DIR/claude-untested" > "$SCRATCH/upgrade-bad.log" 2>&1
-BAD_STATUS=$?
-set -e
-[ "$BAD_STATUS" -ne 0 ] || die "hx upgrade accepted 9.9.9, which is not in the tested list"
-grep -q "not in this package's tested list" "$SCRATCH/upgrade-bad.log" \
-  || { cat "$SCRATCH/upgrade-bad.log" >&2; die "the refusal does not say why"; }
-grep -qF "$TESTED" "$SCRATCH/upgrade-bad.log" \
-  || die "the refusal does not name a version that would be accepted"
-ok "refused 9.9.9 (exit $BAD_STATUS), naming $TESTED as the way out"
-[ "$(cat "$ROOT/config/claude.json")" = "$PIN_BEFORE" ] \
-  || die "a refused upgrade changed config/claude.json; the old pin must survive (spec 17.6)"
-ok "config/claude.json unchanged by the refusal"
-
-step "17. hx upgrade accepts a version that is in the list"
-"$HX" upgrade --claude "$FAKE_BIN_DIR/claude-tested" > "$SCRATCH/upgrade-ok.log" 2>&1 \
-  || { cat "$SCRATCH/upgrade-ok.log" >&2; die "hx upgrade refused $TESTED, which is tested"; }
-sed 's/^/   | /' "$SCRATCH/upgrade-ok.log"
-python3 - "$ROOT/config/claude.json" "$FAKE_BIN_DIR/claude-tested" "$TESTED" <<'PY' || die "the pin was not moved"
-import json, sys
-pin = json.load(open(sys.argv[1]))
-assert pin["bin"] == sys.argv[2], pin
-assert pin["version"] == sys.argv[3], pin
-print(f"   ok  pinned {pin['version']} at {pin['bin']}")
-PY
-
-step "18. hx push lands one branch upstream and moves no other ref"
-UPSTREAM="$SCRATCH/upstream.git"
-git init -q --bare "$UPSTREAM"
-git -C "$MIRROR" remote set-url upstream "$UPSTREAM"
-# The branch hx will push is whatever config/<id>/harness.json says, defaulting to hx/<id>.
-BRANCH=$(python3 -c '
-import json, sys
-cfg = json.load(open(sys.argv[1]))
-print(cfg.get("branch") or "hx/" + cfg["id"])' "$ROOT/config/eng-001/harness.json")
-git -C "$WT" -c user.email=deploy@example.invalid -c user.name=deploy \
-  commit -q --allow-empty -m "work from eng-001"
-BEFORE_REFS=$(git -C "$UPSTREAM" for-each-ref --format='%(refname) %(objectname)' | sort)
-[ -z "$BEFORE_REFS" ] || die "the fresh upstream already has refs"
-
-"$HX" push eng-001 > "$SCRATCH/push.log" 2>&1 \
-  || { cat "$SCRATCH/push.log" >&2; die "hx push eng-001 failed"; }
-sed 's/^/   | /' "$SCRATCH/push.log"
-AFTER_REFS=$(git -C "$UPSTREAM" for-each-ref --format='%(refname)' | sort)
-[ "$AFTER_REFS" = "refs/heads/$BRANCH" ] \
-  || die "upstream refs are [$AFTER_REFS], expected exactly refs/heads/$BRANCH"
-ok "exactly one ref upstream: refs/heads/$BRANCH"
-[ "$(git -C "$UPSTREAM" rev-parse "$BRANCH")" = "$(git -C "$MIRROR" rev-parse "$BRANCH")" ] \
-  || die "the pushed branch does not match the mirror"
-ok "it matches the mirror, and the source checkout was never contacted"
-[ ! -d "$SRC/.git/refs/remotes/upstream" ] || die "the source checkout gained a remote ref"
-
-step "19. the real ~/.claude is unchanged"
+step "13. the real ~/.claude is unchanged"
 AFTER="$SCRATCH/claude-home.after"
 if [ -d "$REAL_CLAUDE_HOME" ]; then
   "$REPO/tools/claude-home-hash.sh" "$REAL_CLAUDE_HOME" > "$AFTER" || die "could not re-hash"
@@ -397,7 +296,6 @@ diff -u "$BEFORE" "$AFTER" > "$SCRATCH/claude-home.diff" \
   || { sed 's/^/   | /' "$SCRATCH/claude-home.diff" >&2; die "$REAL_CLAUDE_HOME changed during the run"; }
 ok "$REAL_CLAUDE_HOME manifest identical before and after"
 
-printf '\n== PASS  full install, mirror, sparse worktree, launch, units — no Claude home touched\n'
+printf '\n== PASS  install with a seeded token, a launched worker — no Claude home touched\n'
 printf '   instance %s\n' "$ROOT"
-printf '   worktree %s (no .claude/)\n' "$WT"
-printf '   units    %s\n' "$UNIT_DIR"
+printf '   workdir  %s (chosen, not created by hx)\n' "$WORKDIR"
