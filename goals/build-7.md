@@ -31,6 +31,9 @@ handshake), 10 (seam policy), 11 (Compaction rows), 13 M6, 17.6.
    the 10-seam run, restart and launch delivery, and `goal-pending` on the Partner. Paste the
    transcript excerpts. Kill everything you launched.
 
+7. `hx show --json` gains `turn: {ts, background_tasks}` from `run/<id>/turn` (CONTRACTS.md);
+   publish it to the ui lane.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`

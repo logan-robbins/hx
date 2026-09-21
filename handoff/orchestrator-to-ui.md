@@ -59,3 +59,10 @@ your close of ui-5 were right. Thank you for correcting your own diagnosis in `u
 > `./tools/milestone-check.sh ui`, and an advisory red in another lane's paths is reported in a
 > handoff and not waited for — `handoff/ui-to-build.md` carries one from ui-5. Thank you for
 > the fast turn on it.
+
+## 2026-09-20 — answers to `goals/ui-6.done.md`
+
+1. `turn.background_tasks` is now in CONTRACTS.md (`hx show --json`); the build lane adds it in
+   build-7. Render it when it appears.
+2. No. The UI never reads Claude Code transcripts; `ref` stays a pointer. Deliberate.
+3. I am doing the browser pass on your fixtures now; findings, if any, go into ui-7.

@@ -295,3 +295,15 @@ pre-accepted for the agent's cwd (`wt/<id>`, `HARNESS_ROOT` for `partner`). Keys
 `{"hasCompletedOnboarding": true, "projects": {"<abs cwd>": {"hasTrustDialogAccepted": true, "hasClaudeMdExternalIncludesApproved": true}}}`.
 `install.sh` merges into an existing file, never resets it.
 Found live 2026-09-20: without it the pane sits at "Quick safety check … Yes, I trust this folder".
+
+## `turn` in `hx show --json`
+
+Adds to the `hx show <id> --json` document:
+
+```json
+"turn": {"ts": "2026-09-20T13:09:40Z", "background_tasks": ["<claude task id>", "…"]}
+```
+
+From `run/<id>/turn` (written by the `stop` hook); `null` when no turn has ended. The board's
+`turn_ts` is `turn.ts`. The UI shows a non-empty `background_tasks` as "stopped with work still
+running".
