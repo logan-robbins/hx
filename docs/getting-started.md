@@ -50,8 +50,8 @@ Then run the install again:
 hx install --root ~/hx
 ```
 
-It records your Claude binary and version, lays out the instance, and launches the Partner in
-tmux session `partner`. Nothing under your own `~/.claude` is read or written; every agent runs
+It records your Claude binary and version, lays out the instance, launches the Partner in tmux
+session `partner`, and starts the UI in tmux session `ui` at `http://127.0.0.1:8765/`. Nothing under your own `~/.claude` is read or written; every agent runs
 in its own home under `~/hx/run/<id>/home` with the token in its environment.
 
 ## 3. Talk to the Partner
@@ -79,8 +79,13 @@ instead.
 ## 4. Watching
 
 - `tmux attach -t partner` is the only control surface. Detach with `Ctrl-b d`.
-- `hx ui` (run by the Partner on request, or by you once) serves a read-only board at
-  `http://127.0.0.1:8765/` with every worker's work item, step state, streams, and pane.
+- The UI is already running: `hx install` started it in tmux session `ui`. Open
+  `http://127.0.0.1:8765/`. It is read-only: the Board (every worker, its state and outcome,
+  whether its session is alive, its context size and seams), an Agent page per worker (the work
+  item with the order, checks, and live `## Tasks`; the Companion's step state; stream tails;
+  the pane), Orders and Archive, and a Partner page with `PARTNER.md`, the board, the Partner's
+  pane, and a chat box that sends a message to the Partner exactly as `hx wake partner` does.
+  Full control (slash commands, interrupts) stays in `tmux attach -t partner`.
 - `~/hx/PARTNER.md` is the Partner's memory: the fleet, open questions, decisions.
 
 ## 5. Personas

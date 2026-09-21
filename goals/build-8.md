@@ -37,6 +37,9 @@ handshake), 10 (seam policy), 11 (Compaction rows), 13 M6, 17.6.
 Keep the done file short (ORCHESTRATION.md step 4, revised): the tests and transcript excerpts
 are the evidence; do not narrate.
 
+8. `hx install`'s last step and `hx up` start `hx ui` in tmux session `ui` (idempotent) and print
+   the URL (spec 16.1, 17.2). `hx heartbeat` restarts it when dead.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `HX_LIVE=1 .venv/bin/python -m pytest tests/live`
