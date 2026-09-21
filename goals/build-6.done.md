@@ -17,7 +17,7 @@ The Companion is a Claude Code session in `<id>:companion`, not a headless call.
 - `hx flush <id>` signals and blocks until every stream's `seq` equals its log head.
 - `hx complete`'s final pass writes `## Digest` once, blocker or question first.
 - FIFO truncation never drops at or ahead of `state.seq`; `stepstate.evict` is spec 10's
-  order, as a backstop to the prompt.
+  order, a backstop to the prompt.
 
 ## One delivery mechanism
 
@@ -36,8 +36,6 @@ conditions, a 500-record replay, a replayed `hx resume`, and both digests.
 
 ## Open
 
-- Live: build-3/4/5 live checks ran against the real binary; the two-pass Companion live
-  check did not. It needs a seed token and a killed-after run — do it in build-7.
-- The step-state schema is published for ui in `handoff/build-to-ui.md`.
-- Scope cut D25 lands next in build-7 (delete pass), so nothing here was built to survive
-  it beyond what M5 needs.
+- The two-pass Companion live check against the real binary did not run. It needs a seed
+  token and a killed-after run — do it in build-7.
+- Step-state schema published for ui in `handoff/build-to-ui.md`.
