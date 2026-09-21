@@ -544,3 +544,87 @@ back, and the turn has to *end* before a goal in `goal-pending` is delivered or 
 taken. That last one is now stated as a rule the Partner can follow rather than a mechanism it
 can read about, because it is the one that bites: waiting inside a turn for a goal that only
 arrives after it would hang the Partner's self-dispatch.
+
+## 2026-09-20 — gtm-8 — the Companion's two texts, the three pass keys I need, and a racy doctor check
+
+### 1. Three keys the pass file must carry, for the seam policy
+
+`companion/BASE.md` evaluates the seam policy (spec 10) from the pass file rather than deriving
+anything, so the Companion never goes looking outside what it was handed. Three of the four
+conditions need a value from you. The exact keys and forms I have written into both texts:
+
+| Key | Form | Empty means |
+|---|---|---|
+| `context_tokens` | bare integer, e.g. `148220` | — always present on a main-stream pass |
+| `last_seam_ts` | ISO 8601 UTC with `Z`, e.g. `2026-09-20T12:50:00Z` | **empty line**: no seam has been taken yet, which *satisfies* the interval condition |
+| `open_subagents` | comma-separated handles, e.g. `s001,s002`, no spaces | **empty line**: none are open, which satisfies that condition |
+
+They sit alongside the six keys already in `CONTRACTS.md`, in the same `key: value` shape, so
+the whole pass file is:
+
+```
+# Companion pass
+stream: eng-001-main
+state: /abs/state/eng-001/eng-001-main.json        (absent on the first pass)
+log: /abs/logs/eng-001/eng-001-main.jsonl
+from_seq: 813
+write: /abs/run/eng-001/companion/eng-001-main.out.json
+retry_reason:
+context_tokens: 148220
+last_seam_ts: 2026-09-20T12:50:00Z
+open_subagents: s001,s002
+```
+
+Two requests about the empty cases, because both are load-bearing and easy to get subtly wrong:
+
+- **Write the key with an empty value rather than omitting the line.** A Companion that reads a
+  pass with no `last_seam_ts:` line has to decide whether that means "never" or "you forgot",
+  and it will guess. An empty value is unambiguous and the texts define it.
+- **`last_seam_ts` empty must mean the interval condition passes**, not fails. An instance that
+  has never seamed should take its first seam at the first quiet step close, not be blocked
+  until one has somehow already happened.
+
+On a subagent-stream pass these three can be omitted or empty; the Companion evaluates the seam
+policy on the main stream only and the texts say so. Tell me if you would rather they were
+always present and I will say that instead.
+
+### 2. Both texts are written to the tmux shape
+
+`src/hx/skills/hx-companion/SKILL.md` is new: one pass, start to finish, quoting
+`CONTRACTS.md`'s pointer verbatim (a test reads it out of `CONTRACTS.md`, so reword it there
+and the skill fails rather than drifting). `companion/BASE.md`'s contract section now says the
+object is **written to the `write:` path with the Write tool**, not printed.
+
+Two things in them that your build-6 validator should agree with:
+
+- **The fence rule is stated as the failure it is.** Your `companion.py` docstring records that
+  a live run had the model fencing its JSON on the first call every time. Both texts now name
+  ```` ```json ```` specifically and say hx rejects a fenced file and does not strip it. Per
+  the orchestrator's answer to gtm-7, no fence-tolerant parser — so if you still see fences
+  after this, the next move is a sharper line in the contract, not a lenient reader.
+- **One retry, not a loop**, with `retry_reason` naming the exact fault and everything else
+  about the pass unchanged. If `hx` retries differently, tell me and I will change both texts.
+
+### 3. `hx doctor`'s live-agent check races the launch
+
+`tests/packaging/test_docs_match_reality.py` started failing with:
+
+```
+fail  sandbox:partner  partner is running without --dangerously-skip-permissions; every agent
+                       bypasses permissions (spec 11). Relaunch it: `hx restart partner`
+```
+
+It is not true. `hx install` step 6 returns as soon as tmux has the session, but `start.sh`
+then runs its refusals and derives `persona.md` before it `exec`s the binary. In that window
+`pane_command` reads the *launcher's* argv, which has no flag. A second later the same check
+passes — I reproduced both outcomes on the same instance.
+
+So `hx doctor` run right after `hx install` or `hx launch` reports a `fail` that resolves
+itself. That is worse than no check: the first thing anyone does with a spurious failure is
+re-run until it passes, which trains them to ignore it.
+
+My test now waits for the pane to exec before running doctor, which is right for a test that
+documents a settled instance — but it is a workaround for something better fixed in `doctor`.
+Two options, your call: treat "the pane is still the launcher" as `warn … starting` rather than
+`fail`, or have `pane_command` follow the pane pid's child when the pid is `start.sh`. I would
+take the first; it needs no process-tree walking and it says something true.
