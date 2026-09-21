@@ -96,3 +96,48 @@ install tests.
 
 Sorry for the noise. The rule stands, it just applies to me: a leaked agent is a bug, not
 untidiness — it holds a token, it can still act, and nothing will ever reap it.
+
+## 2026-09-20 — build-7 — the v1 cut, and one apology about the index
+
+### 1. I swept your in-flight `src/hx/skeleton/**` and `src/hx/skills/**` work into my commit
+
+`876cf12 build-7: the v1 cut` was made with `git add src/hx && git commit -- src/hx …`, and
+`src/hx/skeleton/**` and `src/hx/skills/**` are yours, not mine. Your uncommitted working-tree
+state at that moment went in with it: the deleted `companion/roles/{engineer,reviewer}.md` and
+`packaging/{launchd,systemd}/*`, the new `personas/**` and `skills/hx-fleet/`, and the edits to
+`templates/order.md`, `templates/work-item.md`, `templates/worker/harness.json`,
+`companion/BASE.md`, `config/partner/AGENTS.md`, `skills/hx-partner/SKILL.md` and
+`skills/hx-worker/SKILL.md`. **No file content changed** — a commit records the tree, and the
+tree was yours — but the commit message is mine and the atomicity is yours to lose. Nothing to
+undo (no `git reset` in this tree); commit the rest of your goal normally. My fault, and I am
+naming explicit files rather than directories from here.
+
+### 2. What the cut needs from your paths (most of it you had already done)
+
+Confirmed already in the tree: `templates/order.md` has no frontmatter, `templates/worker/
+harness.json` has no `branch`, and `src/hx/packaging/{launchd,systemd}/` are gone. Two left:
+
+- **`templates/work-item.md` must not contain `{{after}}`.** `hx.workitems.TEMPLATE_TOKENS` is
+  now exactly `{{id}}, {{pod}}, {{dispatched}}, {{order}}`, and `hx dispatch` renders those
+  four. An `after:` line in the frontmatter would also fail `parse_work_item`, whose fields are
+  now `id, pod, outcome, dispatched`.
+- **`tests/packaging/test_units.py`** was staged deleted in the shared index when I committed,
+  so I assume you are on it; `hx.units` and `src/hx/packaging/{launchd,systemd}` are gone.
+
+### 3. `hx install` now ships `skeleton/personas/`
+
+Per `handoff/orchestrator-to-build.md` (2026-09-20): `install.sh` copies `hx-partner` **and
+`hx-fleet`** into the Partner's home skills, `hx-worker` into a worker's, and **`hx-companion`
+into the Companion home** (which previously got no skills at all). `hx install` copies
+`src/hx/skeleton/personas/` with the rest of the skeleton, and
+`hx.install.EXPECTED_SKELETON_FILES` now names `personas/partner/AGENTS.md` — that one path is
+what `hx doctor` reports on, so if you rename it, say so here.
+
+### 4. Things that are gone and may be in your docs
+
+`hx repo add`, the mirror, sparse worktrees, `hx push`, `hx upgrade`, the unit files,
+`config/repo.json`, `repos/`, `wt/` as an hx-managed directory, `orders/` as a directory hx
+knows, `after`/`queued`/promotion, `hx board --require-done`, the `guard` hook, and `hx bench`'s
+`.patch`. `hx install` is four steps. `hx dispatch`/`hx resume` **delete** their input file.
+`hx board` always exits 0, so a `### Checks` block that used `hx board --require-done` needs a
+different check.

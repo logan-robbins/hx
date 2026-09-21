@@ -330,13 +330,23 @@ def test_a_failed_wake_is_a_warning_not_a_failure(instance, hx, launched, orders
 
 # --- readiness detection, against the real TUI's chrome ------------------------------------------
 #
-# These four strings are the live pane chrome of Claude Code 2.1.278, captured on 2026-09-20
-# from a logged-in session (goal build-3 item 8). They are the record of what the real TUI
-# draws; `hx.goal.pane_is_idle` is judged against them.
+# These strings are the live pane chrome of Claude Code 2.1.278, captured on 2026-09-20 from
+# a logged-in session (goal build-3 item 8, and `REAL_IDLE_PLACEHOLDER` from build-7's
+# Companion live check). They are the record of what the real TUI draws; `hx.goal.pane_is_idle`
+# is judged against them.
 
 REAL_IDLE = "\n".join([
     "❯ ",
     "─" * 100,
+    "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+    "",
+])
+#: A freshly launched pane with an empty input: the prompt carries a placeholder hint, so the
+#: prompt line is not blank. This hung `hx launch` forever until build-7 (live, 2.1.278).
+REAL_IDLE_PLACEHOLDER = "\n".join([
+    "─" * 80,
+    '❯ Try "create a util logging.py that..."',
+    "─" * 80,
     "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
     "",
 ])
@@ -361,6 +371,13 @@ def test_the_real_tui_idle_pane_reads_as_idle():
     assert pane_is_idle(REAL_IDLE) is True
 
 
+def test_a_prompt_with_the_empty_input_placeholder_reads_as_idle():
+    """Live, build-7: a fresh Companion pane draws `❯ Try "…"`, and it is idle."""
+    from hx.goal import pane_is_idle
+
+    assert pane_is_idle(REAL_IDLE_PLACEHOLDER) is True
+
+
 def test_the_real_tui_busy_pane_reads_as_busy():
     """The input box is drawn mid-turn, so the prompt alone says nothing (build-3 item 8)."""
     from hx.goal import pane_is_idle
@@ -376,6 +393,15 @@ def test_the_prompt_glyph_is_the_one_the_tui_draws():
     assert _REAL_PROMPT.match("❯ ")
     assert _REAL_PROMPT.match("❯")
     assert not _REAL_PROMPT.match("❯ something typed")
+
+
+def test_only_the_prompt_glyph_carries_a_placeholder():
+    """`> text` is ordinary output; `❯ text` is the input box with its hint (build-7)."""
+    from hx.goal import _PLACEHOLDER_PROMPT, pane_is_idle
+
+    assert _PLACEHOLDER_PROMPT.match('❯ Try "create a util logging.py that..."')
+    assert not _PLACEHOLDER_PROMPT.match("> quoted output from a tool")
+    assert pane_is_idle("> quoted output from a tool\n") is False
 
 
 def test_a_pane_that_has_not_drawn_yet_is_not_idle(instance):

@@ -410,3 +410,55 @@ Three things worth knowing:
 > Closed-stream digests now render as markdown in place of `_pending companion_`, and a test
 > asserts the placeholder is gone — so if the Companion ever stops writing one, the view says
 > "not yet" rather than showing a stale string.
+
+## 2026-09-20 — build-7 — the v1 cut (spec 14 D25): the shapes that changed
+
+Everything below is a removal. `tools/milestone-check.sh build` passes on it; the fixtures in
+`tests/ui/fixtures/` that carry the removed keys need regenerating.
+
+### `hx board --json`
+
+- `errors` is **gone** from the document; `items[]` lost `after`, `ready` and `goal_pending`.
+  The remaining item keys are exactly CONTRACTS.md: `id, pod, role, state, file, outcome,
+  dispatched, completed, open_subagents, goal_ts, session_alive, context_tokens, seams,
+  turn_ts`.
+- **`hx board` always exits 0** and lists what is on disk. There are no invariants left, so
+  there is nothing for the UI to render as a violation.
+- **`partner` is not an item.** The Partner has no work item; a fresh root lists nothing.
+- `state` is whatever the filename suffix says — hx writes only `idle|working|complete`, but
+  nothing validates it, and the HarnessAgent may rename its own item. Render the string.
+
+### `hx orders --json`
+
+Now one entry per id in `tasks.json` and nothing else — no graph, no file comparison:
+
+```json
+{"root_abs": "…", "ts": "…", "orders": [
+  {"id", "pod", "state", "outcome", "order", "addenda": [{"ts", "text"}], "dispatched", "completed"}
+]}
+```
+
+`graph`, `errors`, and the entry keys `path`, `after`, `record`, `ready`, `waiting_on`,
+`file_matches_record` are gone. `hx dispatch` and `hx resume` **delete** their input file, so
+there is no file left to compare against and `addenda[]` entries no longer carry a `path`.
+
+### `hx archive --json`
+
+`errors` is gone; `{"root_abs", "ts", "items"}` otherwise unchanged. Exits 0.
+
+### `hx show <id> --json`
+
+- `task.after` and `work_item.frontmatter.after` are gone.
+- **`hx show partner --json` is now the reduced document CONTRACTS.md specifies**:
+  `{"id", "partner_md", "pane", "streams"}` only. It no longer carries `work_item`, `task`,
+  `step_state`, `context_file`, `metrics`, `archive` or `bench`.
+
+### Commands and files that no longer exist
+
+`hx repo`, `hx push`, `hx upgrade`, `hx board --require-done`; the `queued` state; the
+`guard` hook; `config/repo.json`, `repos/`, `wt/` as an hx-managed directory, `orders/` as a
+directory hx knows, `run/<id>/goal-pending`, `run/tasks.lock`. A worker's directory is
+`harness.json.workdir`, whatever the Partner chose.
+
+`--queued` as a CSS token is fine; the `after` graph rendering in `src/hx/ui/data.py` and the
+edge styling are the two places that will have no data to read.

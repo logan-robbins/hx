@@ -43,19 +43,27 @@ POINTER = (
 #     ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents            <- idle
 #     ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · …    <- busy
 #
-# Two things follow, and both matter:
+# Three things follow, and all three matter:
 #
 #   1. The prompt glyph is `❯` (U+276F), not `>`.
 #   2. **The input box is drawn while the session is working**, so the presence of a prompt
 #      says nothing about whether the pane is ready. The status bar is the signal: it carries
 #      `esc to interrupt` exactly while a turn is in flight.
+#   3. **The empty input carries a placeholder**, so the prompt line is often
+#      `❯ Try "create a util logging.py that..."` rather than a bare `❯` (live, 2.1.278,
+#      build-7). A regex that demanded an empty prompt line hung `hx launch` forever on a
+#      freshly launched Companion, whose pane is idle and drawing exactly that.
 #
 # So a pane is busy when the status bar offers to interrupt it, and idle when the TUI is up
 # and it does not. Matching on the prompt alone — which is what this did before the live
 # check — would have read every real pane as busy forever, and `hx launch`'s wait has no
 # timeout.
 _BUSY_MARKERS = ("esc to interrupt",)
+#: A bare prompt, with or without the box borders around it.
 _REAL_PROMPT = re.compile(r"^\s*(?:[│|]\s*)?[❯>]\s*(?:[│|]\s*)?$")
+#: The same prompt with the empty-input placeholder after it. The `❯` glyph is required here:
+#: a plain `>` followed by text is ordinary output, not a prompt.
+_PLACEHOLDER_PROMPT = re.compile(r"^\s*(?:[│|]\s*)?❯\s+\S")
 _FAKE_PROMPT = re.compile(r"^\s*hx-fake-idle>\s*$")
 IDLE_PROMPTS = (_FAKE_PROMPT, _REAL_PROMPT)
 
@@ -91,7 +99,7 @@ def pane_is_idle(pane_text: str) -> bool:
     # The real TUI: the status bar offers to interrupt exactly while a turn is in flight.
     if any(marker in line for line in lines for marker in _BUSY_MARKERS):
         return False
-    if any(_REAL_PROMPT.match(line) for line in lines):
+    if any(_REAL_PROMPT.match(line) or _PLACEHOLDER_PROMPT.match(line) for line in lines):
         return True
 
     # The fake, and anything else: the last non-empty line is the prompt, or it is not.
