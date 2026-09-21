@@ -628,3 +628,74 @@ documents a settled instance — but it is a workaround for something better fix
 Two options, your call: treat "the pane is still the launcher" as `warn … starting` rather than
 `fail`, or have `pane_command` follow the pane pid's child when the pid is `start.sh`. I would
 take the first; it needs no process-tree walking and it says something true.
+
+## 2026-09-20 — gtm-9 — `EXPECTED_SKELETON_FILES` names one persona and one role file out of four
+
+`hx install` copies the whole skeleton, so all four personas and all four Companion role files
+land in a fresh instance — I checked, and `docs/deploy.md` now quotes the real listing. The
+gap is in what is *verified* afterwards:
+
+```python
+EXPECTED_SKELETON_FILES = (
+    ...
+    "companion/roles/partner.md",
+    "personas/partner/AGENTS.md",
+    ...
+)
+```
+
+Only `partner`. `hx doctor`'s skeleton check imports that tuple, so an instance whose
+`personas/backend-engineer/AGENTS.md` or `companion/roles/backend-engineer.md` has been deleted
+or was never copied reports a healthy skeleton — and then `hx launch be-001` fails, because a
+role is a pair and `hx launch` refuses a `role` with no role file.
+
+The three worker roles are the ones a Partner actually uses; `partner` is the one that cannot
+go missing without the instance being obviously broken anyway. Suggest adding the six:
+
+```python
+    "companion/roles/backend-engineer.md",
+    "companion/roles/frontend-engineer.md",
+    "companion/roles/release-engineer.md",
+    "personas/backend-engineer/AGENTS.md",
+    "personas/frontend-engineer/AGENTS.md",
+    "personas/release-engineer/AGENTS.md",
+```
+
+That adds six rows to `hx doctor`, which will fail `tests/packaging/test_docs_match_reality.py`
+against `docs/deploy.md`'s block — say the word and I will regenerate it in the same goal, or
+just tell me after you land it. `tests/packaging/test_docs_match_reality.py` already asserts
+the pairing holds in the *package*; this is about the instance.
+
+## 2026-09-20 — gtm-9 — fixed in your tree: the fake claude raced itself on `fake-argv.json`
+
+Your file, my fix, because it was failing step 12 of the deploy proof and I could not land
+gtm-9 around it. `tests/fakeclaude/claude` wrote `run/<id>/fake-argv.json` from both the main
+session and its Companion — `hx launch` starts them into the same `run/<id>/` milliseconds
+apart — and the interleaved truncating writes left a file with two half-objects in it:
+
+```
+json.decoder.JSONDecodeError: Extra data: line 41 column 1 (char 2903)
+```
+
+Two changes: a Companion launch (`HX_ROLE=companion`, already exported by `start.sh`) writes
+`fake-argv-companion.json` instead, and both write through a temp file and `os.replace`. Every
+existing reader wants the main session's argv, so they now get it deterministically instead of
+whichever process finished last — `tests/core/test_lifecycle.py`, `test_transitions.py`,
+`test_adapter_start_sh.py` and `test_fakeclaude.py` were all reading a file that another
+process could be mid-write on. All 400 of `tests/core` + `tests/guard` pass after it.
+
+Nothing needed from you unless you would rather it were shaped differently; if you want the
+Companion's record under a different name, change it and I will follow.
+
+## 2026-09-20 — gtm-9 — `docs/getting-started.md` says `hx install` starts the UI; it does not
+
+Spec 16 says `hx install` (last step) and `hx up` start the UI in tmux session `ui`. The
+orchestrator wrote `docs/getting-started.md` to that, and the page tells a first-time user the
+install "starts the UI in tmux session `ui` at `http://127.0.0.1:8765/`".
+
+`hx install` prints four steps and ends at `4. partner started`. There is no `ui` session and
+no UI step in `install.py`. That is the UI lane's milestone (M9) rather than a defect in yours,
+so I have not asserted it in `tests/packaging` — a test that fails on unbuilt work would block
+the lane for no gain — and I have not rewritten the orchestrator's text, since it matches the
+spec. Flagging it so whoever lands the UI knows the page is already written for it, and so
+nobody reads the gap as a doc error.
