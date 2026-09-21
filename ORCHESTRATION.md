@@ -51,6 +51,9 @@ handoff entry. Never create a remote or push.
   (`claude --version` in your session is the pinned reference); consult
   `code.claude.com/docs` when behaviour matters, and record what you verified.
 - Nothing hx does may touch the user's `~/.claude`, the user's checkouts, or any remote.
+- Every model call is a Claude Code session in tmux operated by pasting file paths. No
+  `claude -p`, no headless mode, no API client. Every agent and Companion runs with
+  `--dangerously-skip-permissions` and `IS_SANDBOX=1`; no dialog is ever shown to an agent.
 - The human never runs hx after setup and only talks to the Partner.
 
 ## Two rules enforced at every milestone

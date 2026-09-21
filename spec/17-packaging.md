@@ -35,6 +35,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Permissions | Whatever the user chose | Bypass, always |
 | Working dir | The user's checkout | `wt/<id>`, a sparse worktree from the mirror, without the repo's `.claude/` |
 | System prompt | Default | Default + `run/<id>/persona.md` |
+| Companion | Not applicable | A second Claude Code session per agent, window `<id>:companion`, same binary, same flags, own home; woken by pasting, never `claude -p` |
 | Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` in the session env; changed only by `hx upgrade` |
 | Goal | None | The `/goal` pointer |
 | Visibility | Their terminal | Only through `tmux attach` or `hx ui` |

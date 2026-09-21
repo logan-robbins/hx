@@ -1,12 +1,12 @@
 ## 10. Companion
 
-**Process:** `hx companion <id>` runs in tmux window `<id>:companion`, one per HarnessAgent including the Partner, serving all of that agent's streams. It reads streams and writes step state, digests, and the seam marker. It never writes the agent's files, with one exception: the `## Digest` section of the work item, once, inside `hx complete`.
+**Process:** the Companion is a Claude Code session, like every other agent in hx: `start.sh <id> --companion` launches it in tmux window `<id>:companion`, one per HarnessAgent including the Partner, with its own home `run/<id>/companion-home` (no hooks except `guard`, no product skills, the `hx-companion` skill), `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model companion.model`, and its system prompt via `--append-system-prompt-file run/<id>/companion-system.md` (BASE.md + role + harness facts, composed at launch). There is no headless `claude -p` anywhere in hx; every model call is a tmux session hx operates by pasting. The Companion reads streams and writes step state, digests, and the seam marker with its own tools; hx validates what it wrote. It never writes the agent's files, with one exception: the `## Digest` section of the work item, once, inside `hx complete`.
 
 **System prompt** is composed once at start (05-configuration.md): `companion/BASE.md`, `companion/roles/<role>.md`, and the facts from `config/<id>/harness.json`. The Companion reads no config at runtime.
 
-**Loop:**
-1. Wake on: `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or `hx flush`.
-2. Per stream with new records, make one stateless call (provider `claude-cli`: `claude -p --output-format json` with the seed token; the layered prompt below is the identical prefix the binary caches):
+**Loop** (hx drives it; the Companion's skill tells it what to do with each pass):
+1. hx wakes the Companion on: `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or `hx flush`. A wake is `hx wake companion <id> <stream>`: paste `/clear`, then paste the fixed pointer `Companion pass: read <abs run/<id>/companion/<stream>.pass.md> and do what it says.` The pass file, written by hx, names the state file, the log file, the first new `seq`, and the output path. `/clear` makes every pass stateless; the system prompt is the cached prefix.
+2. Per pass the Companion reads exactly those files and writes the new step state to the output path with its Write tool. Nothing is passed as prompt text but the pointer. The layers it sees:
 
 ```
 [companion/BASE.md]                       cache breakpoint (shared by all companions on this model)
@@ -15,10 +15,10 @@
 [task: order + addenda]                   cache breakpoint, cache_ttl
 [current step state]
 [raw records with seq > state.seq]
-→ new step state
+→ new step state, written by the Companion to run/<id>/companion/<stream>.out.json
 ```
 
-3. Validate and write `state/<id>/<stream>.json`, stamping `prompt_version` with the shas of `BASE.md` and the role file.
+3. hx (in the Companion's `stop` hook) validates the output against the 07.2 schema and moves it to `state/<id>/<stream>.json`, stamping `prompt_version` with the shas of `BASE.md` and the role file. Invalid or missing output keeps the prior state; hx re-wakes once with the failure named in the pass file, then logs and waits for the next wake.
 4. Evaluate the seam policy on the main stream; when it fires, write `run/<id>/seam`. The stop hook does the rest (09-hooks.md 9.3).
 
 **Seam policy:** a step closed on the main stream AND `context_tokens ≥ seam_min_context_tokens` AND time since the last `seam` record `≥ seam_min_interval_s` AND `subagents_open` is empty.

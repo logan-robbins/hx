@@ -86,6 +86,7 @@ Each file is one section. Edit one file per change; cross-references use file na
 | Completion | `hx complete done` is machine-checked: the `### Checks` block of the definition of done runs in the worktree, the worktree must be clean, and no subagent stream may be open. Failure prints `HX-CHECK-FAILED <id>` with the output, the item stays `working`, and the goal stays active, so the agent fixes and retries. Only success prints `HX-COMPLETE <id> done`. The evaluator judges a machine result, not prose. `blocked`, `decision`, and `exhausted` run no checks. |
 | Dependencies | `after: [<id>…]` in the order's frontmatter and in `tasks.json`. An item with an unmet dependency is dispatched as `queued` (body rendered, no goal). `hx complete done` of the last unmet dependency promotes it to `working` and sends its goal. The Partner dispatches a whole plan in one call; hx sequences it without a Partner wake in between. |
 | Resume | `hx resume <id> orders/<id>.addendum.md` continues a `complete` item with outcome `blocked` or `decision` with everything it had: `## Tasks`, step state, memory, worktree, logs. Only the order grows, by the addendum. `hx bench` + `hx dispatch` is a fresh start and is used only when the task itself changes or moves to another id. |
+| Model calls | Every model call in hx is a Claude Code session in tmux that hx operates by pasting files' paths: HarnessAgents, subagents (Claude Code's own), and Companions alike. No `claude -p`, no API client. One mechanism for launch, auth, permissions, persona, and observation | Spec author, 2026-09-20 |
 <!-- END 02-decisions.md -->
 
 <!-- BEGIN 03-layout.md -->
@@ -123,6 +124,10 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
   run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)
   run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), auto memory, transcripts; auth comes from seed/token via env
+  run/<id>/companion-home/                 # CLAUDE_CONFIG_DIR for this agent's Companion session (guard hook only, hx-companion skill)
+  run/<id>/companion-system.md             # the Companion's composed system prompt (BASE.md + role + harness facts)
+  run/<id>/companion/<stream>.pass.md      # one pass: which state, which log, from which seq, where to write
+  run/<id>/companion/<stream>.out.json     # the Companion's output, validated and moved to state/ by hx
   run/<id>/subagents.json                  # {"<harness agent_id>": "sNNN"}
   run/<id>/turn                            # turn-end marker with last background_tasks
   run/<id>/goal                            # goal-sent marker with ts
@@ -203,7 +208,6 @@ Model id strings are placeholders until implementation; they are validated again
   "branch": "agent/eng-001",
   "harness": { "args": ["…"] },
   "companion": {
-    "provider": "claude-cli",
     "model": "claude-haiku-4-5-20251001",
     "batch_records": 20,
     "cache_ttl": "1h",
@@ -222,7 +226,7 @@ Model id strings are placeholders until implementation; they are validated again
 - `adapters/claude/install.sh` derives the per-agent home settings from this file: hooks with the id baked in, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` for the product repo, the bypass acceptance entry; for the Partner, `crossSessionInbound: accept` (messaging itself is on by default). It then writes the bypass acceptance entry directly; auth is the token in `seed/token`, exported into the agent's environment by `start.sh`, so no credentials are copied from anywhere; both stay in `run/<id>/home/` across dispatches. Nothing about launch is interactive. Effort, model, and the persona file are launch flags (`11-adapters.md`); no compaction env vars are set.
 - Validate: `id` equals directory name; `model` exists in `models.json`; `role` has `companion/roles/<role>.md`; `workdir` exists (Partner: no `workdir`, no `branch`). On failure, exit 2.
 - Partner: `"pod": "partner"`, `"role": "partner"`. Validated the same way.
-- `companion.provider` is `claude-cli` (default and the only one built first): the Companion's calls go through the pinned `claude -p` binary with the same `seed/token`, a Companion-only home (`run/<id>/companion-home`: no hooks, no skills, no CLAUDE.md), `--model companion.model`, and the composed system prompt via `--append-system-prompt-file`; the state and new records go in on stdin, never as an argument. Prompt caching is the binary's own on the identical prefix; `usage.cache_read_input_tokens` from the JSON result is what `hx metrics` reports. `anthropic` (Messages API with explicit cache breakpoints and an API key) is a later option for instances that have one; it is not required for a subscription-only deployment.
+- The Companion is a Claude Code session in window `<id>:companion` (10-companion.md), launched by `start.sh <id> --companion` with `companion.model`, its own home `run/<id>/companion-home`, `--dangerously-skip-permissions`, `IS_SANDBOX=1`, and the composed system prompt via `--append-system-prompt-file`. hx has no API client and no headless calls; there is no `provider` field.
 <!-- END 05-configuration.md -->
 
 <!-- BEGIN 06-work-items.md -->
@@ -428,8 +432,9 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 | `hx read <id>` | Partner | Print Digest of a `complete` work item; `--full` prints the whole body |
 | `hx bench <id>` | Partner | Archive the completed body to `pods/<pod>/archive/<id>-<ts>.md`; if `wt/<id>` is dirty, save `git diff` (tracked and untracked) to `pods/<pod>/archive/<id>-<ts>.patch` and then reset the worktree to `base_branch`; reset the body from template; rename `complete → idle`. Does not touch `tasks.json`: the board shows the benched id as `idle` with its last outcome until the next dispatch, by design (the outcome is history, the state is the board) |
 | `hx board [--json] [--require-done <id>…]` | Partner, checks, UI | One line per id: `<work-item-file>  <after>  <outcome>  <open subagents>  <goal ts>`, then invariant errors; exit 1 on any error. With `--require-done`, exit 0 iff every listed item is `complete` with outcome `done` (the Partner's own `### Checks`) |
-| `hx flush <id>` | Hooks, `hx complete`, `hx seam` | Signal companion; wait until every stream's state `seq` equals its log head |
-| `hx companion <id>` | `hx launch` | Companion loop (10-companion.md) |
+| `hx flush <id>` | `hx complete`, `hx seam` | For every stream with records past `state.seq`: `hx wake companion <id> <stream>` and wait (no timeout) until `state.seq` is at the log head |
+| `hx companion <id>` | `hx launch` | Launch the Companion session in window `<id>:companion` via `start.sh <id> --companion` (idempotent); write `run/<id>/companion-system.md` first |
+| `hx wake companion <id> <stream>` | `stop` hook, `hx flush`, `subagent-stop` | Write `run/<id>/companion/<stream>.pass.md`; paste `/clear` then the fixed pointer into `<id>:companion` when its pane is idle; else queue the pass and paste it from the Companion's own `stop` hook |
 | `hx wake partner "<text>"` | `hx complete`, `hx heartbeat` | Connect to the unix socket in `run/partner/socket.json`; write `{"type":"auth","token":"<token>"}` then `{"type":"user","message":{"role":"user","content":"<text>"}}`, newline-terminated; the socket answers nothing. An idle Partner starts a turn; a busy one takes it as steering in the current turn. The text is a fixed short form composed by hx, never an order |
 | `hx heartbeat` | System cron, every 15 min | `hx board`; `hx restart <id>` for every `working` item whose session is dead, `partner` included; then, if any item is `working` or `queued` and the board output differs from the last heartbeat's, `hx wake partner "check on each HarnessAgent: <board diff>"` |
 | `hx metrics <id>` | Partner | Per seam: tool calls in the next 10 turns (Reads of `working_set` files vs. other), context-file Reads, `prompt_version`, context tokens before |
@@ -536,13 +541,13 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 <!-- BEGIN 10-companion.md -->
 ## 10. Companion
 
-**Process:** `hx companion <id>` runs in tmux window `<id>:companion`, one per HarnessAgent including the Partner, serving all of that agent's streams. It reads streams and writes step state, digests, and the seam marker. It never writes the agent's files, with one exception: the `## Digest` section of the work item, once, inside `hx complete`.
+**Process:** the Companion is a Claude Code session, like every other agent in hx: `start.sh <id> --companion` launches it in tmux window `<id>:companion`, one per HarnessAgent including the Partner, with its own home `run/<id>/companion-home` (no hooks except `guard`, no product skills, the `hx-companion` skill), `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model companion.model`, and its system prompt via `--append-system-prompt-file run/<id>/companion-system.md` (BASE.md + role + harness facts, composed at launch). There is no headless `claude -p` anywhere in hx; every model call is a tmux session hx operates by pasting. The Companion reads streams and writes step state, digests, and the seam marker with its own tools; hx validates what it wrote. It never writes the agent's files, with one exception: the `## Digest` section of the work item, once, inside `hx complete`.
 
 **System prompt** is composed once at start (05-configuration.md): `companion/BASE.md`, `companion/roles/<role>.md`, and the facts from `config/<id>/harness.json`. The Companion reads no config at runtime.
 
-**Loop:**
-1. Wake on: `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or `hx flush`.
-2. Per stream with new records, make one stateless call (provider `claude-cli`: `claude -p --output-format json` with the seed token; the layered prompt below is the identical prefix the binary caches):
+**Loop** (hx drives it; the Companion's skill tells it what to do with each pass):
+1. hx wakes the Companion on: `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or `hx flush`. A wake is `hx wake companion <id> <stream>`: paste `/clear`, then paste the fixed pointer `Companion pass: read <abs run/<id>/companion/<stream>.pass.md> and do what it says.` The pass file, written by hx, names the state file, the log file, the first new `seq`, and the output path. `/clear` makes every pass stateless; the system prompt is the cached prefix.
+2. Per pass the Companion reads exactly those files and writes the new step state to the output path with its Write tool. Nothing is passed as prompt text but the pointer. The layers it sees:
 
 ```
 [companion/BASE.md]                       cache breakpoint (shared by all companions on this model)
@@ -551,10 +556,10 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 [task: order + addenda]                   cache breakpoint, cache_ttl
 [current step state]
 [raw records with seq > state.seq]
-→ new step state
+→ new step state, written by the Companion to run/<id>/companion/<stream>.out.json
 ```
 
-3. Validate and write `state/<id>/<stream>.json`, stamping `prompt_version` with the shas of `BASE.md` and the role file.
+3. hx (in the Companion's `stop` hook) validates the output against the 07.2 schema and moves it to `state/<id>/<stream>.json`, stamping `prompt_version` with the shas of `BASE.md` and the role file. Invalid or missing output keeps the prior state; hx re-wakes once with the failure named in the pass file, then logs and waits for the next wake.
 4. Evaluate the seam policy on the main stream; when it fires, write `run/<id>/seam`. The stop hook does the rest (09-hooks.md 9.3).
 
 **Seam policy:** a step closed on the main stream AND `context_tokens ≥ seam_min_context_tokens` AND time since the last `seam` record `≥ seam_min_interval_s` AND `subagents_open` is empty.
@@ -869,6 +874,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Permissions | Whatever the user chose | Bypass, always |
 | Working dir | The user's checkout | `wt/<id>`, a sparse worktree from the mirror, without the repo's `.claude/` |
 | System prompt | Default | Default + `run/<id>/persona.md` |
+| Companion | Not applicable | A second Claude Code session per agent, window `<id>:companion`, same binary, same flags, own home; woken by pasting, never `claude -p` |
 | Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` in the session env; changed only by `hx upgrade` |
 | Goal | None | The `/goal` pointer |
 | Visibility | Their terminal | Only through `tmux attach` or `hx ui` |

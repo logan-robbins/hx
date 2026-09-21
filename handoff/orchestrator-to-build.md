@@ -264,3 +264,12 @@ records it and a test asserts both. Keep the `.claude.json` pre-seed as well: ve
 whether `IS_SANDBOX=1` alone removes the workspace-trust and bypass-acceptance dialogs, record
 the answer in 01.1 terms, and keep both mechanisms regardless. Spec 11, 17.4, CONTRACTS.md
 updated.
+
+## 2026-09-20 — directive from the spec author: no `claude -p`; the Companion is a tmux session
+
+Supersedes my earlier `claude-cli` note. Remove the headless runner. Build the Companion as a
+Claude Code session per the rewritten `goals/build-6.md` decision block, spec 10, and
+CONTRACTS.md "The Companion is a tmux session". `tests/guard/test_no_headless.py` now fails on
+any `claude -p`/`--print`/`--output-format`/API client in `src/`. The gtm lane is writing the
+`hx-companion` skill and the pass-file keys now (gtm-8); build against the CONTRACTS.md pass
+file and pick up their key proposal from `handoff/gtm-to-build.md` when it lands.

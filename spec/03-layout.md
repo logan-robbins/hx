@@ -32,6 +32,10 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
   run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)
   run/<id>/home/                           # CLAUDE_CONFIG_DIR for this agent: its settings (hooks), auto memory, transcripts; auth comes from seed/token via env
+  run/<id>/companion-home/                 # CLAUDE_CONFIG_DIR for this agent's Companion session (guard hook only, hx-companion skill)
+  run/<id>/companion-system.md             # the Companion's composed system prompt (BASE.md + role + harness facts)
+  run/<id>/companion/<stream>.pass.md      # one pass: which state, which log, from which seq, where to write
+  run/<id>/companion/<stream>.out.json     # the Companion's output, validated and moved to state/ by hx
   run/<id>/subagents.json                  # {"<harness agent_id>": "sNNN"}
   run/<id>/turn                            # turn-end marker with last background_tasks
   run/<id>/goal                            # goal-sent marker with ts

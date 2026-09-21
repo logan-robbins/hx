@@ -5,30 +5,29 @@ Read `goals/build-5.done.md` (yours), `handoff/orchestrator-to-build.md`, any ot
 paragraph), 07.2 (step-state schema), 07.4, 08 (`hx companion`, `hx flush`, `hx complete`'s
 final pass), 13 M5, `src/hx/skeleton/companion/BASE.md` and `roles/*.md` (gtm's prompts).
 
-## Decision already made: model access
+## Decision (spec author, supersedes the earlier `claude -p` note): the Companion is a tmux session
 
-There is no Anthropic API key in a subscription-only deployment. The Companion calls the pinned
-`claude -p` with the same `seed/token` (`CLAUDE_CODE_OAUTH_TOKEN`), `--model companion.model`
-(full id), a Companion-only `CLAUDE_CONFIG_DIR=run/<id>/companion-home` written by `install.sh`
-(no hooks, no skills, no CLAUDE.md, onboarding and trust pre-seeded, bypass acceptance),
-`--append-system-prompt-file run/<id>/companion-system.md` (BASE.md + role + harness facts,
-composed once at start), `--output-format json`, and the current state plus new records on
-**stdin**. Verify against `code.claude.com/docs/en/cli-reference` and `docs/en/headless` (or the
-current name of that page) which flags exist for: JSON output, a JSON schema for the output
-(`--json-schema` or equivalent), disabling session persistence, and no tools (the Companion
-must not be able to call tools; if a flag exists to disallow all tools, use it, else
-`--disallowedTools` with every tool name). Record URLs and the exact argv in the done file.
-`prompt_version` = shas of BASE.md and the role file. Cache: the identical prefix is cached by
-the binary; report `cache_read_input_tokens` from the result's `usage`.
+No `claude -p`, no headless call, no API client anywhere in hx (spec 02 "Model calls";
+`tests/guard/test_no_headless.py` enforces it). The Companion is a Claude Code session in window
+`<id>:companion`, launched by `start.sh <id> --companion` with its own home
+`run/<id>/companion-home` (guard hook plus a Companion `stop` hook; the `hx-companion` skill the
+gtm lane is writing now; no product skills), `--dangerously-skip-permissions`, `IS_SANDBOX=1`,
+`--model companion.model`, `--append-system-prompt-file run/<id>/companion-system.md`. hx
+drives the loop by `hx wake companion <id> <stream>`: write the pass file, paste `/clear`, paste
+the fixed pointer (CONTRACTS.md "The Companion is a tmux session"). The Companion reads the
+pass, state and log with its Read tool and writes `out.json` with Write; its `stop` hook
+validates, stamps, and moves it to `state/`. Retry once with `retry_reason`, then keep prior
+state. Whatever `claude -p` code exists in your tree is removed, not kept as a fallback.
 
 ## Build
 
-1. `hx companion <id>`: the loop of spec 10 in window `<id>:companion` (`hx launch` starts it):
-   wake on `batch_records` new records in any stream, `run/<id>/turn` touched, subagent stop, or
-   `hx flush`; one call per stream with new records; validate the returned step state against
-   the 07.2 schema (invalid output keeps the prior state and logs to `hook-errors.log`); write
-   `state/<id>/<stream>.json` with `seq`, `prompt_version`, `ts`; seam policy on the main
-   stream → `run/<id>/seam`; closed-stream digest → `state/<id>/<stream>.digest.md`.
+1. `hx companion <id>` launches the Companion session (idempotent) after composing
+   `run/<id>/companion-system.md`; `hx wake companion <id> <stream>` per CONTRACTS.md; the wake
+   triggers of spec 10 fire from the agent's `stop`, `subagent-stop` and `log` hooks and from
+   `hx flush`; the Companion's own `stop` hook validates `out.json` against the 07.2 schema,
+   stamps `seq`, `prompt_version`, `ts`, moves it to `state/<id>/<stream>.json`, evaluates the
+   seam policy on the main stream → `run/<id>/seam`, and writes the closed-stream digest →
+   `state/<id>/<stream>.digest.md` when the pass was for a closed stream.
 2. `hx flush <id>`: signal the Companion and block (no timeout) until `state.seq` equals the
    log head for every stream.
 3. `hx complete`'s final pass: the Digest from the main state and every closed-stream digest,
@@ -36,14 +35,13 @@ the binary; report `cache_read_input_tokens` from the result's `usage`.
 4. FIFO retention and truncation: stream files never drop records at or ahead of `state.seq`;
    the budget (`state_budget_tokens`, estimated at 4 chars per token) is enforced by the prompt
    first and by a deterministic eviction (spec 10 order) if the model overshoots.
-5. Tests, offline: a fake Companion model (a script standing in for `claude -p` that returns
-   scripted step states) for the loop, validator, budget, FIFO, flush, and a 500-record replay
+5. Tests, offline: the fake `claude` playing the Companion (it reads the pass file it is pointed
+   at and writes a scripted `out.json`, then fires the Companion `stop` hook) for the loop, validator, budget, FIFO, flush, and a 500-record replay
    from a recorded log (record one from a build-5 live run if you have it; otherwise synthesise
    and say so); `prompt_version` stamped on every write; after a replayed `hx resume` the state
    keeps closed steps and absorbs the addendum.
-6. Live: one real Companion call against the real binary with the seed token on a small recorded
-   stream; paste the returned state and the `usage` block (cache reads non-zero on the second
-   call). Kill everything you launched.
+6. Live: a real Companion session against the real binary with the seed token; two passes on a
+   small recorded stream; paste the written state and the pane's two turns. Kill everything you launched.
 
 7. From build-5's open questions: prove live that the parent receives `subagent-result`'s
    `additionalContext` (a real digest); `hx bench` prints that its patch preserves content, not

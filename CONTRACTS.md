@@ -307,3 +307,29 @@ Adds to the `hx show <id> --json` document:
 From `run/<id>/turn` (written by the `stop` hook); `null` when no turn has ended. The board's
 `turn_ts` is `turn.ts`. The UI shows a non-empty `background_tasks` as "stopped with work still
 running".
+
+## The Companion is a tmux session (no `claude -p` anywhere)
+
+Every model call in hx is a Claude Code session in tmux operated by pasting. The Companion of
+`<id>` runs in window `<id>:companion`, home `run/<id>/companion-home`, launched by
+`start.sh <id> --companion` with `--dangerously-skip-permissions`, `IS_SANDBOX=1`,
+`--model <companion.model>`, `--append-system-prompt-file run/<id>/companion-system.md`.
+
+`hx wake companion <id> <stream>` writes `run/<id>/companion/<stream>.pass.md`:
+
+```
+# Companion pass
+stream: eng-001-main
+state: /abs/state/eng-001/eng-001-main.json        (absent on the first pass)
+log: /abs/logs/eng-001/eng-001-main.jsonl
+from_seq: 813
+write: /abs/run/eng-001/companion/eng-001-main.out.json
+retry_reason: <empty, or the validation failure of the previous attempt>
+```
+
+then pastes `/clear` and the fixed pointer
+`Companion pass: read <abs pass path> and do what it says.` into the idle pane (queued for the
+Companion's own `stop` hook when busy). The Companion's `stop` hook validates `out.json`
+against the 07.2 schema, moves it to `state/<id>/<stream>.json` with `prompt_version`, `seq`,
+`ts`, and removes the pass file; on failure it rewrites the pass with `retry_reason` and re-wakes
+once. `tests/guard/test_no_headless.py` fails the build if `src/` invokes `claude` with `-p`.

@@ -1,31 +1,30 @@
-# gtm-8: the operator's view after M5–M6, and the texts checked against seams for real
+# gtm-8: the `hx-companion` skill and the Companion's system prompt for a tmux session
 
-Sent after build-7 (M6) lands. Read `goals/build-6.done.md`, `goals/build-7.done.md`,
-`handoff/orchestrator-to-gtm.md`, any other `handoff/*-to-gtm.md`, spec 02 (Seams), 07, 10,
-12, 16.
+Immediate. Read spec 02 ("Model calls"), 05 (Companion paragraph), 08 (`hx companion`,
+`hx wake companion`, `hx flush`), 10 (whole, rewritten today), 07.2, CONTRACTS.md ("The
+Companion is a tmux session"), `handoff/orchestrator-to-gtm.md`.
 
-## Build
+The Companion is no longer a headless call: it is a Claude Code session in window
+`<id>:companion`, woken by `/clear` and one fixed pointer to a pass file, and it writes its
+answer with its Write tool. Its behaviour therefore lives in two texts you own.
 
-1. `docs/operating.md`: what the human sees and does day to day, in the spec's terms: talk to
-   the Partner in `tmux attach -t partner`; what a `decision` looks like in chat and how the
-   answer becomes an addendum; what the heartbeat does; what `hx board` errors mean; when to
-   look at the UI; what a seam looks like in a pane (the `/clear`, the one Read); how to stop
-   everything (`hx down` if the build lane ships it, else the unit commands). Every command and
-   output copied from a real instance.
-2. `src/hx/skills/hx-partner/SKILL.md` and `hx-worker/SKILL.md`: seams and the Companion as the
-   agent experiences them (the boundary, the context file's sections, why not to re-read
-   working-set files, that compaction is off), checked against build-7's live transcript
-   excerpts; the `hx seam`/`goal-pending` behaviours as they really are.
-3. `src/hx/skeleton/companion/BASE.md` and `roles/*.md`: apply whatever build-6's live Companion
-   calls showed (`handoff/build-to-gtm.md`): output failures, budget overshoots, fields the model
-   left empty. Keep the output contract strict.
-4. `README.md`, `CHANGELOG.md`, `docs/deploy.md` for M5–M6 (the Companion window, `seed/token`
-   used twice, `hx upgrade`'s live-suite gate).
-5. `tests/packaging`: the doctor-output assertion still holds on a fully installed instance
-   (rerun); a new assertion that `docs/operating.md` quotes the exact `/goal` pointer text from
-   `spec/06-work-items.md`.
+## Author
+
+1. `src/hx/skills/hx-companion/SKILL.md`: what one pass is (read the pass file; read the state
+   file if present and the log from `from_seq`; apply BASE.md and the role rules; write exactly
+   one JSON object matching spec 07.2 to the `write` path; touch nothing else; say nothing in
+   chat beyond one line); what `retry_reason` means; that it must never read the agent's files,
+   the work item, or anything not named in the pass; that it uses only Read and Write.
+2. `src/hx/skeleton/companion/BASE.md`: rewrite the output-contract section for a file write
+   (the object goes to the `write` path, not to stdout); keep every rule; add the seam-policy
+   inputs it must read from the pass (hx puts `context_tokens`, `last_seam_ts`, `open_subagents`
+   in the pass file: propose the exact keys in `handoff/gtm-to-build.md` and use them).
+3. `src/hx/skeleton/companion/roles/*.md`: unchanged unless the new shape needs it.
+4. `tests/packaging/test_skeleton_texts.py`: the new skill has valid frontmatter, names Read and
+   Write as the only tools, quotes the pointer text from CONTRACTS.md verbatim; BASE.md names the
+   `write` path rule.
 
 ## Done when
 
 - `tools/milestone-check.sh gtm` passes.
-- Committed path-scoped. `goals/gtm-8.done.md` written, with handoffs.
+- Committed path-scoped. `goals/gtm-8.done.md` written (short).
