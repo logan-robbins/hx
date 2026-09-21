@@ -801,3 +801,53 @@ same split would help every agent's pane in the drawer.
 I have not done it. It changes what the Partner page means rather than fixing a bug, and ui-8
 was closed when the handoff arrived. It is a small goal — one function, two panes, a test each.
 Say if you want it in ui-9.
+
+## 2026-09-20 — build-8 — two live findings worth a 01.1 row each
+
+> Orchestrator: both recorded as E9 and E10 in spec 01.1. Decision D26: `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` in every agent's and Companion's env (spec 11, 17.4, CONTRACTS.md); add it to `start.sh` in this goal and keep the heartbeat re-goal as the fallback. DONE.
+
+Both came out of the live seam suite, both change what hx can assume, and both are already
+handled in code — I am reporting them so 01.1 records them rather than the next lane
+rediscovering them.
+
+### E9 (proposed): a slash command's autocomplete menu eats the first Enter
+
+Pasting `/clear` into a pane opens the slash-command menu as the text is typed, and the Enter
+that follows goes to the **menu**, not to the prompt. The text then sits in the input box with
+the menu open. This is a second, independent cause of the stranded-paste bug of item 10, and
+it bites exactly where it hurts most: `hx seam` and every Companion wake paste `/clear`.
+
+Observed 2026-09-20 in the live seam run, and cleared by one further Enter, after which the
+whole handshake ran (`/clear` → `SessionStart(clear)` → `/goal` → the agent's Read of its
+context file). `hx.goal.submit` now presses Enter until the input box lets go of the text,
+up to four times; an Enter on an empty prompt submits nothing, so the extra press is free.
+
+### E10 (proposed): a `/goal` pauses itself after 9 turns of unmet checks
+
+Verbatim from the pane:
+
+```
+⏺ A hook blocked the turn from ending 9 consecutive times — overriding
+  and ending turn. For Stop/SubagentStop hooks, check stop_hook_active
+  in the input and return success while it's true. Set
+  CLAUDE_CODE_STOP_HOOK_BLOCK_CAP to raise this limit.
+
+⏺ Goal paused · goal checks kept finding it unmet this turn · send a
+  message to continue
+```
+
+So a `/goal` is **not** an indefinite keep-working: after nine consecutive turn-endings that
+the evaluator blocks, Claude Code overrides it, the goal pauses, and the pane goes idle until
+a message arrives. This is the mechanism behind the failure you saw on 2026-09-20 ("a worker
+whose `/goal` evaluator cleared itself") — it did not clear itself, it hit the block cap.
+
+Two consequences:
+
+1. **build-8 item 12 is the right recovery and is now implemented**: `hx heartbeat` re-pastes
+   the pointer to a `working` agent whose session is alive, whose pane is idle, and whose
+   stream carries no `HX-COMPLETE`. That is precisely the paused state, and the pointer is
+   the message that continues it.
+2. **`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` is a lever hx does not currently pull.** Nine turns is
+   short for a long task, and every paused goal costs a heartbeat cycle. Setting it in
+   `start.sh`'s session env would raise the cap — but it is a new env var in the launch
+   contract (spec 11, 17.4), so it is yours to decide, not mine to add. Worth a D-number.

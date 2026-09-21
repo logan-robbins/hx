@@ -65,6 +65,8 @@ Each file is one section. Edit one file per change; cross-references use file na
 | On macOS Claude Code stores the login in the login Keychain (`Claude Code-credentials`), not in `.credentials.json`; a fresh `CLAUDE_CONFIG_DIR` is not logged in. Headless auth is `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | Keychain and fresh-dir behaviour confirmed by live probe 2026-09-20 (build lane); the env var and `setup-token` to be re-verified against `docs/en/` by build-3 | build-3 |
 | `SubagentStart` input is `{session_id, hook_event_name, agent_id, agent_type, cwd, permission_mode}`: no prompt, no `tool_input`, no `transcript_path`; the parent's prompt is the subagent's first message | Confirmed by docs and live run 2026-09-20 (build lane) | build-5 |
 | Project `.claude/settings.json` in the cwd applies to a session (its `PreToolUse` hooks ran and denied every tool for an hx worker); `--setting-sources user` restricts loading to the config dir's settings | Applying confirmed by live rehearsal 2026-09-20; the flag's exact name and behaviour to be re-verified against `docs/en/cli-reference` and the binary by build-8 | build-8 |
+| E9: pasting a slash command (`/clear`) opens the autocomplete menu and the first Enter goes to the menu, not the prompt; a further Enter submits. hx presses Enter until the input box is empty | Confirmed by live seam run 2026-09-20 (build lane) | build-8 |
+| E10: a `/goal` pauses after `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (default 9) consecutive blocked turn-endings ("Goal paused … send a message to continue"); the pane goes idle until a message arrives. hx raises the cap in every agent's env and the heartbeat re-pastes the pointer to a paused worker | Confirmed live 2026-09-20 (build lane); the worker stall in the orchestrator's rehearsal was this | build-8 |
 <!-- END 01-terminology.md -->
 
 <!-- BEGIN 02-decisions.md -->
@@ -568,7 +570,7 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 | Goal delivery | `hx goal`: the pointer pasted via tmux buffer into `<id>:main` for workers only; from outside a hook it waits for the idle prompt first; from the `context` hook on `clear` it pastes immediately (`--now`). The Partner gets no goal |
 | Fallback seam | `hx restart`: kill `<id>:main`, `start.sh <id>` bare, `hx goal <id>` once the pane is ready |
 | Messaging (Partner only) | `crossSessionInbound: accept` in `home/settings.json` (messaging is on by default, nothing to enable); the `context` hook records socket and token to `run/partner/socket.json` (`12-partner-loop.md`) |
-| Env in session | `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR`, `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` |
+| Env in session | `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR`, `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` |
 | Binary and version | `config/claude.json` `{bin, version}` recorded by `hx install`, which requires the bare version string to be in the package's tested list (`17-packaging.md`) |
 | Working directory | `harness.json.workdir`: any absolute directory the Partner chose for this worker, a fresh one it created or an existing checkout. hx does not manage git for it. `HARNESS_ROOT` for the Partner |
 | Pane log | `start.sh` runs `tmux pipe-pane -o -t <id> 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'` right after launch; the file is the UI's capture fallback when the session is dead and is archived with `logs/<id>/` at the next dispatch |
@@ -649,6 +651,7 @@ Nothing here is an option. Each row is a decision already written into the named
 | D24 | The UI observes only: SSE on file mtimes, `hx board --json` and `hx show --json` as the data layer, chat through `hx wake partner` with replies from pane capture | `16-ui.md` | M9 |
 | D18 | `hx resume` continues a `blocked`/`decision` item with its logs, step state, `## Tasks`, memory, and workdir; only the order grows | `06-work-items.md`, `08-hx-cli.md`, `10-companion.md` | M1, M5, M8 |
 | D25 | v1 scope cut, 2026-09-20. Cut: `after` dependency chains, the `queued` state, and promotion; the Partner as a work item (`pods/partner/`, its own order, self-dispatch, self-resume, self-completion, `goal-pending`, `hx board --require-done`); the `guard` `PreToolUse` hook and its rule list; the `run/tasks.lock` flock around `tasks.json`; the `orders/` directory as a permanent home for task text; git management by hx (`hx repo add`, `config/repo.json`, the bare mirror, sparse worktrees, `keep_claude_dir`, `base_branch`, `harness.json.branch`, `hx push`); `hx upgrade` and its tested-list gate; shipped launchd/systemd unit files; `hx bench` patch files and worktree resets; `hx dispatch` refusing or resetting a dirty workdir; and all enforcement machinery around work items — the filename regex as a validation gate, the transitions table, the nine `hx board` invariants and "invariant errors", and `hx doctor` policing work items. The spec author's rule: the human already runs one Partner managing three tmux sessions with nothing; hx adds only what that cannot do | everywhere | — |
+| D26 | A `/goal` must not pause on its own: every agent's env carries `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` (E10), and `hx heartbeat` re-pastes the pointer to a `working` agent that is alive, idle, and without `HX-COMPLETE` (the recovery if it pauses anyway). No timeouts, no caps that end work early | `11-adapters.md`, `08-hx-cli.md` | M6 |
 
 Content still to be authored, not decided: `companion/BASE.md` and `companion/roles/*.md` text (M7), each `AGENTS.md` persona above the header, `SUBAGENTS.md`, and `PARTNER.md` (M8), `config/CLAUDE.md` (M2), `skills/hx-partner/SKILL.md` and `skills/hx-worker/SKILL.md` (M10). These are prompts, tuned against the M7 metric.
 <!-- END 14-open-items.md -->
@@ -806,7 +809,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Working dir | The user's checkout | `harness.json.workdir`, the directory the Partner chose for that agent |
 | System prompt | Default | Default + `run/<id>/persona.md` |
 | Companion | Not applicable | A second Claude Code session per agent, window `<id>:companion`, same binary, same flags, own home; woken by pasting, never `claude -p` |
-| Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` in the session env |
+| Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` in the session env |
 | Goal | None | The `/goal` pointer (workers; the Partner has none) |
 | Visibility | Their terminal | Only through `tmux attach` or `hx ui` |
 
@@ -817,7 +820,7 @@ The guarantee is about the user's Claude, not their repo: hx never reads or writ
 `start.sh <id>` is the entire launch; nothing else ever starts a Claude Code process:
 
 ```
-env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 \
+env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000 \
   <config/claude.json bin> --dangerously-skip-permissions --effort <level> --model <full id> \
   --append-system-prompt-file <root>/run/<id>/persona.md --setting-sources user
 ```

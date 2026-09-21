@@ -36,7 +36,7 @@ The harness runs the same `claude` binary the user already has. Separation is by
 | Working dir | The user's checkout | `harness.json.workdir`, the directory the Partner chose for that agent |
 | System prompt | Default | Default + `run/<id>/persona.md` |
 | Companion | Not applicable | A second Claude Code session per agent, window `<id>:companion`, same binary, same flags, own home; woken by pasting, never `claude -p` |
-| Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` in the session env |
+| Version | Auto-updating | Pinned: `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` in the session env |
 | Goal | None | The `/goal` pointer (workers; the Partner has none) |
 | Visibility | Their terminal | Only through `tmux attach` or `hx ui` |
 
@@ -47,7 +47,7 @@ The guarantee is about the user's Claude, not their repo: hx never reads or writ
 `start.sh <id>` is the entire launch; nothing else ever starts a Claude Code process:
 
 ```
-env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 \
+env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000 \
   <config/claude.json bin> --dangerously-skip-permissions --effort <level> --model <full id> \
   --append-system-prompt-file <root>/run/<id>/persona.md --setting-sources user
 ```

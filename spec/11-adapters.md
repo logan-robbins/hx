@@ -18,7 +18,7 @@
 | Goal delivery | `hx goal`: the pointer pasted via tmux buffer into `<id>:main` for workers only; from outside a hook it waits for the idle prompt first; from the `context` hook on `clear` it pastes immediately (`--now`). The Partner gets no goal |
 | Fallback seam | `hx restart`: kill `<id>:main`, `start.sh <id>` bare, `hx goal <id>` once the pane is ready |
 | Messaging (Partner only) | `crossSessionInbound: accept` in `home/settings.json` (messaging is on by default, nothing to enable); the `context` hook records socket and token to `run/partner/socket.json` (`12-partner-loop.md`) |
-| Env in session | `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR`, `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1` |
+| Env in session | `HARNESS_ID`, `HARNESS_ROOT`, `CLAUDE_CONFIG_DIR`, `DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` |
 | Binary and version | `config/claude.json` `{bin, version}` recorded by `hx install`, which requires the bare version string to be in the package's tested list (`17-packaging.md`) |
 | Working directory | `harness.json.workdir`: any absolute directory the Partner chose for this worker, a fresh one it created or an existing checkout. hx does not manage git for it. `HARNESS_ROOT` for the Partner |
 | Pane log | `start.sh` runs `tmux pipe-pane -o -t <id> 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'` right after launch; the file is the UI's capture fallback when the session is dead and is archived with `logs/<id>/` at the next dispatch |
