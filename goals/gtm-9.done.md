@@ -45,18 +45,15 @@ and was racing for it.
 
 ## Tests
 
-`tests/packaging` and `tests/scenario` pass in full (120). `tests/core` and `tests/guard` pass
-(400) apart from one guard test, below.
+`tools/milestone-check.sh gtm` **passes**: `tests/guard`, `tests/packaging` and
+`tests/scenario`, 120 in the lane's own paths, plus both e2e scripts end to end.
 
-## Outstanding, not mine to fix
-
-`tools/milestone-check.sh gtm` **stops at guard**: `test_user_home_untouched.py` sees three
-files added to `~/.claude` since the orchestrator's 13:29 baseline —
-`remote-settings.json`, `policy-limits.json` and its `.stamp.json`, all written at 20:44, mode
-0600. They are the Claude Code client's own server-pushed account settings. Nothing in hx names
-them, and both e2e scripts still prove `~/.claude` byte-identical across a full install and
-launch. The test's docstring says to report rather than exclude, so I did, in
-`handoff/to-orchestrator.md`. Re-baselining is the orchestrator's act.
+It first stopped at `tests/guard/test_user_home_untouched.py` on three files the Claude Code
+client itself wrote into `~/.claude` at 20:44 — `remote-settings.json`, `policy-limits.json`
+and its stamp, all server-pushed account settings. Nothing in hx names them, and both e2e
+scripts still prove `~/.claude` byte-identical across a full install and launch. The test's
+docstring says to report rather than exclude, so I did; the orchestrator excluded them from the
+manifest and re-recorded the baseline.
 
 ## Handoffs
 
