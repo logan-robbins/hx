@@ -705,7 +705,129 @@ function seamFollowUp(seam) {
   );
 }
 
+/* The raw-record vocabulary the M4 hooks write (spec 07.1,
+ * handoff/build-to-ui.md build-5). Boundary and subagent records are markers —
+ * evidence that something happened to the thread, not work the thread did — so
+ * they read differently from a tool call. */
+const MARKERS = {
+  boundary: "decision",
+  seam: "decision",
+  spawned: "queued",
+  closed: "complete",
+  close: "complete",
+  open: "working",
+  subagent_result: "complete",
+};
+
+/** Just the file name, when a record carries an absolute path. */
+function baseName(path) {
+  if (!path) return null;
+  const parts = String(path).split("/");
+  return parts[parts.length - 1] || String(path);
+}
+
+/* `input` and `output` are head excerpts, capped and marked with a trailing
+ * ellipsis (build-5). Saying so matters: a reader must not take a truncated
+ * tool result for the whole of it. */
+function excerpt(value, extra) {
+  const text = String(value);
+  const cut = text.endsWith("…");
+  return el(
+    "div",
+    { class: "exc" },
+    el("pre", { class: "excerpt" + (extra ? " " + extra : ""), text }),
+    cut ? el("span", { class: "sub cut", text: "head excerpt — the rest is in the transcript" }) : null
+  );
+}
+
+/** `ref` points at the full payload in Claude Code's own transcript. */
+function recordRef(ref) {
+  if (!ref || (!ref.transcript && !ref.tool_use_id)) return null;
+  return el(
+    "div",
+    { class: "sub ref" },
+    ref.tool_use_id ? el("code", { text: ref.tool_use_id }) : null,
+    ref.transcript ? el("span", { text: " in " + baseName(ref.transcript) }) : null
+  );
+}
+
+function recordBody(record, metrics) {
+  switch (record.event) {
+    case "boundary":
+      return [
+        el("span", { class: "sub", text: "session start · " + (record.source || "—") }),
+        record.context_file
+          ? el("span", { class: "sub", text: "context file " + baseName(record.context_file) })
+          : null,
+      ];
+    case "seam":
+      return [
+        el("span", { class: "sub", text: "context file " + (record.context_file_bytes || 0) + " B" }),
+        seamFollowUp(seamMetrics(metrics, record.seq)),
+      ];
+    case "spawned":
+      return [
+        el("code", { text: record.handle }),
+        el("span", { class: "sub", text: "spawned · " + (record.agent_type || "subagent") }),
+        el("span", { class: "sub", text: record.agent_id || "" }),
+      ];
+    case "closed":
+      return [
+        el("code", { text: record.handle }),
+        el("span", { class: "sub", text: "stream closed" }),
+        record.digest ? el("span", { class: "sub", text: "digest " + baseName(record.digest) }) : null,
+      ];
+    case "subagent_result":
+      return [
+        el("code", { text: record.handle }),
+        el("span", {
+          class: "sub",
+          text: record.digest ? "result returned to the parent" : "returned with no digest",
+        }),
+      ];
+    case "open":
+      return [
+        el("span", { class: "sub", text: "stream opened · " + (record.agent_type || "subagent") }),
+        el("span", { class: "sub", text: record.agent_id || "" }),
+      ];
+    case "close":
+      return [el("span", { class: "sub", text: "stream closed" })];
+    default:
+      return [
+        record.tool ? el("code", { text: record.tool }) : null,
+        record.exit !== null && record.exit !== undefined
+          ? pill("exit " + record.exit, record.exit === 0 ? "done" : "bad")
+          : null,
+      ];
+  }
+}
+
+function recordCard(record, metrics) {
+  const marker = MARKERS[record.event];
+  return el(
+    "div",
+    { class: "rec" + (marker ? " marker " + record.event : "") },
+    el("span", { class: "seq", text: "#" + record.seq }),
+    el("span", { class: "sub", text: clock(record.ts) }),
+    pill(record.event, marker || "none"),
+    // A tool call hx saw from a subagent it never saw start lands on the main
+    // stream with `agent_id` set. That is the deliberate fallback (build-5), so
+    // the row says whose call it was rather than looking like the agent's own.
+    record.event === "post_tool" && record.agent_id
+      ? el("span", { class: "pill queued", text: "from " + record.agent_id })
+      : null,
+    recordBody(record, metrics),
+    record.input ? excerpt(record.input) : null,
+    record.output ? excerpt(record.output, "out") : null,
+    recordRef(record.ref),
+    record.context_tokens === null || record.context_tokens === undefined
+      ? null
+      : el("div", { class: "sub", text: "context " + record.context_tokens.toLocaleString() })
+  );
+}
+
 function streamCard(stream, metrics) {
+  const subagent = stream.handle && !stream.handle.endsWith("-main");
   return el(
     "article",
     { class: "card" },
@@ -716,37 +838,19 @@ function streamCard(stream, metrics) {
       pill(stream.open ? "open" : "closed", stream.open ? "working" : "complete"),
       el("span", { class: "sub", text: count(stream.records, "record") + "  ·  " + stream.path })
     ),
-    stream.digest ? el("p", {}, el("strong", { text: "digest: " }), stream.digest) : null,
-    el("h3", { text: "tail" }),
-    orNotYet(stream.tail, (tail) =>
-      el(
-        "div",
-        { class: "tail" },
-        tail.map((record) =>
-          el(
-            "div",
-            { class: "rec" + (record.event === "seam" ? " seam" : "") },
-            el("span", { class: "seq", text: "#" + record.seq }),
-            el("span", { class: "sub", text: clock(record.ts) }),
-            pill(record.event, record.event === "seam" ? "decision" : "none"),
-            record.tool ? el("code", { text: record.tool }) : null,
-            record.exit !== null && record.exit !== undefined
-              ? pill("exit " + record.exit, record.exit === 0 ? "done" : "bad")
-              : null,
-            record.event === "seam"
-              ? el("span", { class: "sub", text: "context file " + (record.context_file_bytes || 0) + " B" })
-              : null,
-            record.event === "seam" ? seamFollowUp(seamMetrics(metrics, record.seq)) : null,
-            record.input ? el("pre", { class: "excerpt", text: String(record.input) }) : null,
-            record.output ? el("pre", { class: "excerpt out", text: String(record.output) }) : null,
-            el("div", {
-              class: "sub",
-              text: "context " + (record.context_tokens === null || record.context_tokens === undefined
-                ? "—" : record.context_tokens.toLocaleString()),
-            })
+    subagent && !stream.open
+      ? el(
+          "div",
+          {},
+          el("h3", { text: "digest" }),
+          orNotYet(stream.digest, (digest) =>
+            el("div", { class: "digest" }, markdown(digest))
           )
         )
-      )
+      : null,
+    el("h3", { text: "tail" }),
+    orNotYet(stream.tail, (tail) =>
+      el("div", { class: "tail" }, tail.map((record) => recordCard(record, metrics)))
     )
   );
 }
@@ -782,6 +886,7 @@ function renderAgent(payload) {
 
   const body = (payload.work_item || {}).body || "";
   const pane = payload.pane || {};
+  const row = (payload.__board || []).find((item) => item.id === payload.id) || null;
   const subagents = payload.subagents || {};
   const digests = {};
   for (const stream of payload.streams || []) if (stream.digest) digests[stream.handle] = stream.digest;
@@ -797,7 +902,12 @@ function renderAgent(payload) {
       " / ",
       payload.role || "",
       "  ·  persona ",
-      payload.persona_path || "—"
+      payload.persona_path || "—",
+      // `run/<id>/turn` is the stop hook's marker (build-5). `hx show` does not
+      // carry it, but the board does as `turn_ts`, and the Agent view already
+      // has the board for its switcher — so no instance file is read here.
+      row ? "  ·  last turn " + clock(row.turn_ts) : "",
+      row && row.session_alive === false ? "  ·  session dead" : ""
     ),
 
     section(
@@ -886,19 +996,35 @@ function renderAgent(payload) {
           el(
             "table",
             { class: "kv" },
-            el("thead", {}, el("tr", {}, [el("th", { text: "claude agent_id" }), el("th", { text: "handle" }), el("th", { text: "digest" })])),
+            el("thead", {}, el("tr", {}, [
+              el("th", { text: "handle" }),
+              el("th", { text: "claude agent_id" }),
+              el("th", { text: "stream" }),
+              el("th", { text: "digest" }),
+            ])),
             el(
               "tbody",
               {},
-              Object.entries(subagents).map(([claudeId, handle]) =>
-                el(
+              Object.entries(subagents).map(([claudeId, handle]) => {
+                // `subagents.json` is {agent_id: sNNN}; the stream is the one
+                // whose handle ends in that sNNN, open or closed (build-5).
+                const stream = (payload.streams || []).find(
+                  (s) => s.handle === payload.id + "-" + handle
+                );
+                return el(
                   "tr",
                   {},
-                  el("td", {}, el("code", { text: claudeId })),
                   el("td", {}, el("code", { text: handle })),
-                  el("td", { text: digests[payload.id + "-" + handle] || "not yet" })
-                )
-              )
+                  el("td", {}, el("code", { text: claudeId })),
+                  el("td", {},
+                    stream ? pill(stream.open ? "open" : "closed", stream.open ? "working" : "complete") : null,
+                    el("span", { class: "sub", text: stream ? "  " + count(stream.records, "record") : "no stream" })
+                  ),
+                  el("td", {}, stream && stream.digest
+                    ? el("div", { class: "digest" }, markdown(stream.digest))
+                    : el("span", { class: "notyet", text: "not yet" }))
+                );
+              })
             )
           )
         )
@@ -1047,7 +1173,7 @@ const VIEWS = {
       const ids = (board.items || []).map((item) => item.id);
       if (!agentId) return { __picker: true, ids };
       const show = await api("/api/show/" + encodeURIComponent(agentId));
-      return Object.assign({}, show, { __ids: ids });
+      return Object.assign({}, show, { __ids: ids, __board: board.items || [] });
     },
     render: renderAgent,
   },

@@ -144,60 +144,131 @@
       "handle": "eng-001-main",
       "path": "logs/eng-001/eng-001-main.jsonl",
       "open": true,
-      "records": 812,
+      "records": 11,
       "tail": [
         {
-          "seq": 410,
-          "ts": "2026-09-20T13:09:31Z",
+          "seq": 1,
+          "ts": "2026-09-20T13:09:00Z",
+          "stream": "eng-001-main",
+          "event": "boundary",
+          "source": "startup",
+          "context_file": "/srv/hx/run/eng-001/eng-001-main.context.md",
+          "ref": {
+            "transcript": null
+          }
+        },
+        {
+          "seq": 2,
+          "ts": "2026-09-20T13:09:01Z",
+          "stream": "eng-001-main",
+          "event": "post_tool",
+          "tool": "Read",
+          "input": "{\"file_path\": \"spec/08-hx-cli.md\"}",
+          "output": "{\"content\": \"## 8. `hx` CLI\\nZero-dependency Python\\u2026\"}",
+          "context_tokens": 40000,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-001/t-early.jsonl",
+            "tool_use_id": "toolu_read_08"
+          }
+        },
+        {
+          "seq": 3,
+          "ts": "2026-09-20T13:09:02Z",
           "stream": "eng-001-main",
           "event": "post_tool",
           "tool": "Bash",
-          "input": "python -m pytest tests/test_board.py -q",
-          "output": "1 failed, 3 passed",
-          "exit": 1,
-          "agent_id": "a7c21f",
-          "context_tokens": 47880,
+          "input": "{\"command\": \"python3 -m unittest discover -s tests -q\"}",
+          "output": "{\"stdout\": \"....\\n\", \"stderr\": \"\", \"exit_code\": 0}",
+          "context_tokens": 40000,
           "ref": {
-            "transcript": "run/eng-001/home/projects/hx/a7c21f.jsonl",
-            "tool_use_id": "tu_410"
-          }
+            "transcript": "/srv/hx/run/eng-001/t-early.jsonl",
+            "tool_use_id": "toolu_bash_tests"
+          },
+          "exit": 0
         },
         {
-          "seq": 411,
-          "ts": "2026-09-20T13:09:38Z",
+          "seq": 4,
+          "ts": "2026-09-20T13:09:03Z",
           "stream": "eng-001-main",
           "event": "post_tool",
           "tool": "Edit",
-          "input": "src/hx/board.py",
-          "output": "ok",
-          "exit": 0,
-          "agent_id": "a7c21f",
-          "context_tokens": 48102,
+          "input": "{\"file_path\": \"greet.py\", \"old_string\": \"def greet\", \"new_string\": \"def greet\"}",
+          "output": "{\"stdout\": \"\", \"exit_code\": 1, \"stderr\": \"no match\"}",
+          "context_tokens": 61300,
           "ref": {
-            "transcript": "run/eng-001/home/projects/hx/a7c21f.jsonl",
-            "tool_use_id": "tu_411"
+            "transcript": "/srv/hx/run/eng-001/t-late.jsonl",
+            "tool_use_id": "toolu_edit_greet"
+          },
+          "exit": 1
+        },
+        {
+          "seq": 5,
+          "ts": "2026-09-20T13:09:04Z",
+          "stream": "eng-001-main",
+          "event": "spawned",
+          "handle": "s001",
+          "agent_id": "claude-agent-eng-001-00",
+          "agent_type": "general-purpose"
+        },
+        {
+          "seq": 6,
+          "ts": "2026-09-20T13:09:05Z",
+          "stream": "eng-001-main",
+          "event": "spawned",
+          "handle": "s002",
+          "agent_id": "claude-agent-eng-001-01",
+          "agent_type": "general-purpose"
+        },
+        {
+          "seq": 7,
+          "ts": "2026-09-20T13:09:06Z",
+          "stream": "eng-001-main",
+          "event": "closed",
+          "handle": "s002",
+          "agent_id": "claude-agent-eng-001-01",
+          "digest": "/srv/hx/state/eng-001/eng-001-s002.digest.md"
+        },
+        {
+          "seq": 8,
+          "ts": "2026-09-20T13:09:07Z",
+          "stream": "eng-001-main",
+          "event": "subagent_result",
+          "handle": "s002",
+          "agent_id": "claude-agent-eng-001-01",
+          "digest": "/srv/hx/state/eng-001/eng-001-s002.digest.md",
+          "ref": {
+            "tool_use_id": null
           }
         },
         {
-          "seq": 412,
-          "ts": "2026-09-20T13:09:40Z",
+          "seq": 9,
+          "ts": "2026-09-20T13:09:08Z",
           "stream": "eng-001-main",
-          "event": "seam",
-          "tool": null,
-          "input": null,
-          "output": null,
-          "exit": null,
-          "agent_id": "a7c21f",
-          "context_tokens": 48211,
+          "event": "spawned",
+          "handle": "s003",
+          "agent_id": "claude-agent-eng-001-02",
+          "agent_type": "general-purpose"
+        },
+        {
+          "seq": 10,
+          "ts": "2026-09-20T13:09:09Z",
+          "stream": "eng-001-main",
+          "event": "closed",
+          "handle": "s003",
+          "agent_id": "claude-agent-eng-001-02",
+          "digest": "/srv/hx/state/eng-001/eng-001-s003.digest.md"
+        },
+        {
+          "seq": 11,
+          "ts": "2026-09-20T13:09:10Z",
+          "stream": "eng-001-main",
+          "event": "subagent_result",
+          "handle": "s003",
+          "agent_id": "claude-agent-eng-001-02",
+          "digest": "/srv/hx/state/eng-001/eng-001-s003.digest.md",
           "ref": {
-            "transcript": "run/eng-001/home/projects/hx/a7c21f.jsonl",
             "tool_use_id": null
-          },
-          "prompt_version": {
-            "base": "9c1f2ab",
-            "role": "4d80e17"
-          },
-          "context_file_bytes": 2184
+          }
         }
       ]
     },
@@ -205,39 +276,136 @@
       "handle": "eng-001-s001",
       "path": "logs/eng-001/eng-001-s001-open.jsonl",
       "open": true,
-      "records": 40,
+      "records": 2,
       "tail": [
         {
-          "seq": 40,
-          "ts": "2026-09-20T13:08:02Z",
+          "seq": 1,
+          "ts": "2026-09-20T13:09:11Z",
+          "stream": "eng-001-s001",
+          "event": "open",
+          "agent_id": "claude-agent-eng-001-00",
+          "agent_type": "general-purpose",
+          "input": "survey the exit-code assertions for claude-agent-eng-001-00",
+          "ref": {
+            "transcript": null
+          }
+        },
+        {
+          "seq": 2,
+          "ts": "2026-09-20T13:09:12Z",
           "stream": "eng-001-s001",
           "event": "post_tool",
           "tool": "Grep",
-          "input": "returncode ==",
-          "output": "tests/test_board.py:41\ntests/test_complete.py:88",
-          "exit": 0,
-          "agent_id": "b0913e",
-          "context_tokens": 11204,
+          "input": "{\"pattern\": \"returncode ==\"}",
+          "output": "{\"stdout\": \"tests/test_board.py:41\\n\"}",
+          "context_tokens": 10300,
           "ref": {
-            "transcript": "run/eng-001/home/projects/hx/b0913e.jsonl",
-            "tool_use_id": "tu_s40"
+            "transcript": "/srv/hx/run/eng-001/t-claude-agent-eng-001-00.jsonl",
+            "tool_use_id": "toolu_grep_claude-agent-eng-001-00"
+          },
+          "agent_id": "claude-agent-eng-001-00"
+        }
+      ]
+    },
+    {
+      "handle": "eng-001-s002",
+      "path": "logs/eng-001/eng-001-s002-closed.jsonl",
+      "open": false,
+      "records": 3,
+      "tail": [
+        {
+          "seq": 1,
+          "ts": "2026-09-20T13:09:13Z",
+          "stream": "eng-001-s002",
+          "event": "open",
+          "agent_id": "claude-agent-eng-001-01",
+          "agent_type": "general-purpose",
+          "input": "survey the exit-code assertions for claude-agent-eng-001-01",
+          "ref": {
+            "transcript": null
+          }
+        },
+        {
+          "seq": 2,
+          "ts": "2026-09-20T13:09:14Z",
+          "stream": "eng-001-s002",
+          "event": "post_tool",
+          "tool": "Grep",
+          "input": "{\"pattern\": \"returncode ==\"}",
+          "output": "{\"stdout\": \"tests/test_board.py:41\\n\"}",
+          "context_tokens": 10300,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-001/t-claude-agent-eng-001-01.jsonl",
+            "tool_use_id": "toolu_grep_claude-agent-eng-001-01"
+          },
+          "agent_id": "claude-agent-eng-001-01"
+        },
+        {
+          "seq": 3,
+          "ts": "2026-09-20T13:09:15Z",
+          "stream": "eng-001-s002",
+          "event": "close",
+          "agent_id": "claude-agent-eng-001-01",
+          "output": "claude-agent-eng-001-01: found two exit-code assertions; both already cover the flag.",
+          "ref": {
+            "transcript": null
           }
         }
       ],
-      "digest": null
+      "digest": "_pending companion_\n"
     },
     {
-      "handle": "eng-001-s000",
-      "path": "logs/eng-001/eng-001-s000-closed.jsonl",
+      "handle": "eng-001-s003",
+      "path": "logs/eng-001/eng-001-s003-closed.jsonl",
       "open": false,
-      "records": 63,
-      "tail": [],
-      "digest": "Read spec 08 and 06 end to end. The exit rule for --require-done is in the 08 table row for `hx board`; nothing in 06 constrains it."
+      "records": 3,
+      "tail": [
+        {
+          "seq": 1,
+          "ts": "2026-09-20T13:09:16Z",
+          "stream": "eng-001-s003",
+          "event": "open",
+          "agent_id": "claude-agent-eng-001-02",
+          "agent_type": "general-purpose",
+          "input": "survey the exit-code assertions for claude-agent-eng-001-02",
+          "ref": {
+            "transcript": null
+          }
+        },
+        {
+          "seq": 2,
+          "ts": "2026-09-20T13:09:17Z",
+          "stream": "eng-001-s003",
+          "event": "post_tool",
+          "tool": "Grep",
+          "input": "{\"pattern\": \"returncode ==\"}",
+          "output": "{\"stdout\": \"tests/test_board.py:41\\n\"}",
+          "context_tokens": 10300,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-001/t-claude-agent-eng-001-02.jsonl",
+            "tool_use_id": "toolu_grep_claude-agent-eng-001-02"
+          },
+          "agent_id": "claude-agent-eng-001-02"
+        },
+        {
+          "seq": 3,
+          "ts": "2026-09-20T13:09:18Z",
+          "stream": "eng-001-s003",
+          "event": "close",
+          "agent_id": "claude-agent-eng-001-02",
+          "output": "claude-agent-eng-001-02: found two exit-code assertions; both already cover the flag.",
+          "ref": {
+            "transcript": null
+          }
+        }
+      ],
+      "digest": "_pending companion_\n"
     }
   ],
   "subagents": {
-    "b0913e": "s001",
-    "c41a77": "s000"
+    "claude-agent-eng-001-00": "s001",
+    "claude-agent-eng-001-01": "s002",
+    "claude-agent-eng-001-02": "s003"
   },
   "metrics": {
     "id": "eng-001",

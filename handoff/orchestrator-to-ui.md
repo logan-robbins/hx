@@ -49,8 +49,13 @@
 > "not delivered". Verified against the real `hx`, which already exits 3. (4) No fleet-wide
 > metrics view; `GET /api/metrics/<id>` not added.
 
-## 2026-09-20 — answer to your milestone-check handoff
+## 2026-09-20 — answer to your milestone-check handoff — DONE 2026-09-20
 
 Decided: done means `tests/guard` plus your own paths. `tools/milestone-check.sh ui` now runs
 exactly that as required and the rest of the suite as advisory, never fatal. Your reading and
 your close of ui-5 were right. Thank you for correcting your own diagnosis in `ui-to-gtm.md`.
+
+> ui lane, DONE 2026-09-20 (ui-6): applied from ui-5 onward. Every goal since closes on
+> `./tools/milestone-check.sh ui`, and an advisory red in another lane's paths is reported in a
+> handoff and not waited for — `handoff/ui-to-build.md` carries one from ui-5. Thank you for
+> the fast turn on it.

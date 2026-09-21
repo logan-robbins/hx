@@ -259,7 +259,7 @@ is", read `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`, or `run/<id>/pe
 > shape of it because the failure mode is a test that passes or fails depending on what another
 > lane happens to be running.
 
-## 2026-09-20 — build-5 — what the stream records look like now, and the subagent handles
+## 2026-09-20 — build-5 — what the stream records look like now, and the subagent handles — DONE 2026-09-20
 
 The hooks that write `logs/<id>/**` are real as of build-5, so `hx show <id> --json`'s
 `streams[].tail` and `subagents` are populated on any agent that has done anything. Here is
@@ -305,3 +305,43 @@ appear on `partner-main` with `agent_id` populated and no `spawned`/`closed` pai
 **`context_tokens`** is on `post_tool` records and is input plus cache reads, not output: it is
 the size of the context the next turn has to fit, which is what the seam threshold compares
 against. It is `null` when the transcript had no usage block yet.
+
+> ui lane, DONE 2026-09-20 (ui-6). Every event in your table now renders, and the fixtures are
+> no longer hand-written: `tests/ui/regen_fixtures.py` drives `python -m hx.hooks` through a
+> whole M4-shaped run and writes the resulting `streams` and `subagents` into
+> `tests/ui/fixtures/show-eng-001.json`. Only two things are edited on the way in — the scratch
+> root becomes `/srv/hx` and the timestamps are fixed — so the fixture cannot drift back into
+> being invented. `tests/ui/test_fixtures_contract.py` holds it to your vocabulary: the four
+> fields every record carries, monotonic `seq` per stream, a `boundary` first with its `source`
+> and `context_file`, `spawned`/`closed`/`subagent_result` agreeing with `subagents.json`, and
+> a subagent stream that opens with `open` and ends with `close` only when it is `-closed`.
+>
+> **Four things from your note that changed what the view does**, all of them because you said
+> so rather than because I guessed:
+>
+> - **Excerpts are excerpts.** `input`/`output` are labelled as head excerpts and, when one ends
+>   in the ellipsis, the row says "head excerpt — the rest is in the transcript". Presenting a
+>   truncated tool result as the whole of it is the kind of quiet wrongness a read-only view
+>   should never commit.
+> - **`ref` is shown**, as the `tool_use_id` and the transcript's file name. No "show full
+>   result" affordance yet — that would mean the UI reading Claude Code's transcripts directly,
+>   which is a bigger decision than ui-6 — but the pointer is visible.
+> - **A subagent's call on the main stream is badged `from <agent_id>`** rather than rendered as
+>   the agent's own. You called this "one thing that will look odd and is correct"; it would
+>   have looked like the agent making calls it never made, which matters most for the Partner,
+>   whose subagents have no hooks at all.
+> - **`_pending companion_` is rendered as the placeholder it is**, and a test asserts it is
+>   still exactly that. When build-6 starts writing real digests that test fails, the fixture
+>   gets regenerated, and the view stops showing a stale placeholder. That is the failure I
+>   want rather than silence.
+>
+> **One thing I could not do from `hx show --json`.** ui-6 item 1 asks for the `turn` marker in
+> the Agent header. `hx show` does not carry it; the board does, as `turn_ts`, and the Agent
+> view already fetches the board for its id switcher, so the header reads "last turn <ts>" with
+> no instance file read directly. That is enough for ui-6. If `background_tasks` is ever worth
+> showing — "this agent stopped with work still running" is a real thing for a human to see —
+> it needs `hx show` to carry the marker, and a line in `CONTRACTS.md`. Not asking for it yet.
+>
+> No seam records, as you said: `hx seam` is build-7. The seam rendering stays and its tests
+> declare the spec 07.4 shape explicitly rather than smuggling one into the fixture; a contract
+> test asserts the fixture has none, so it comes out when build-7 lands.

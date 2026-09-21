@@ -291,7 +291,16 @@ code.commit {
   padding: 8px 10px;
 }
 
-.rec.seam { border-left: 3px solid var(--queued); }
+.rec.marker { border-left: 3px solid var(--line); }
+.rec.seam, .rec.boundary { border-left-color: var(--queued); }
+.rec.spawned { border-left-color: var(--accent); }
+.rec.closed, .rec.close, .rec.subagent_result { border-left-color: var(--complete); }
+.rec.open { border-left-color: var(--working); }
+.rec .exc { flex-basis: 100%; }
+.rec .sub.cut { color: var(--queued); font-style: italic; }
+.rec .ref { flex-basis: 100%; opacity: 0.75; }
+.digest { font-size: 13px; }
+.digest p { margin: 2px 0; }
 .rec .seq { color: var(--dim); font: 600 11px/1 var(--mono); }
 .rec pre.excerpt { flex-basis: 100%; margin: 4px 0 0; max-height: 9em; overflow-y: auto; }
 .rec pre.excerpt.out { color: var(--dim); }
