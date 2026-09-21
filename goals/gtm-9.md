@@ -1,6 +1,13 @@
 # gtm-9: the operator's view after M5–M6, and the texts checked against seams for real
 
-Sent after build-7 (the v1 cut) lands; M6 is build-8. Read `goals/build-6.done.md`, `goals/build-7.done.md`,
+Sent now, in parallel with build-7 (the build lane is deleting the cut code). Write every text to
+the cut spec (`spec/HARNESS_SPEC.md`, 857 lines, D25 in spec 14), not to the code; where the
+code still has a cut feature, the spec wins and build-7 removes it. README.md first: it is the
+document a reader opens, and it must describe the system as the spec now defines it: the human
+talks to the Partner in tmux; the Partner writes order files and dispatches workers when it
+decides; each worker is a Claude Code session with its own home, persona, Companion, and work
+item `pods/<pod>/<id>-<state>.md`; seams replace compaction; `hx complete` runs the checks;
+deployment is `hx install`. No mention of anything in D25's cut list. Read `goals/build-6.done.md`, `goals/build-7.done.md`,
 `handoff/orchestrator-to-gtm.md`, any other `handoff/*-to-gtm.md`, spec 02 (Seams), 07, 10,
 12, 16.
 
