@@ -280,6 +280,24 @@ def test_working_to_complete_done(instance, hx, launched, orders):
     assert not (instance / "run" / "eng-001" / "goal").exists()
 
 
+def test_complete_without_companion_state_digests_the_agents_own_deliverables(instance, hx, launched, orders):
+    """No Companion step state at completion: the Digest is what the agent left in
+    `## Deliverables`, not `pending companion` forever (live rehearsal 2026-09-21)."""
+    launched("eng-001")
+    dispatch_working(instance, hx, orders, checks="test -f README.md")
+    path = instance / "pods" / "engineers" / "eng-001-working.md"
+    body = path.read_text()
+    body = body.replace("## Deliverables\n", "## Deliverables\n- `lib/x.py` — added `x()`; committed as `abc1234`\n", 1)
+    path.write_text(body)
+
+    result = hx("complete", "done", harness_id="eng-001")
+    assert result.returncode == 0, result.stdout + result.stderr
+    final = (instance / "pods" / "engineers" / "eng-001-complete.md").read_text()
+    assert "pending companion" not in final
+    assert "No Companion step state at completion" in final
+    assert "added `x()`" in final
+
+
 @pytest.mark.parametrize("outcome", ["blocked", "decision", "exhausted"])
 def test_the_other_outcomes_run_no_checks(instance, hx, launched, orders, outcome):
     """spec 02: `blocked`, `decision` and `exhausted` run no checks."""
