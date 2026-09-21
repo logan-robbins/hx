@@ -187,15 +187,23 @@ def test_every_view_renders_at_every_step(step_roots, pack, stem, states, worker
 
     rendered = render(overrides, tmp_path, open_ids=ids)
 
-    assert rendered["banner"] is None, f"{pack} {stem}: a view failed"
-    assert len(rendered["views"]["board"]["rows"]) == len(ids)
+    assert rendered["banner"] is None, f"{pack} {stem}: a screen failed"
+    # ui-8: the board is cards in state columns and the fleet is the graph; the
+    # Agent page of spec 16.2 is the drawer, opened from either.
+    assert sorted(card["agent"] for card in rendered["views"]["board"]["cards"]) == sorted(ids)
+    assert [node["agent"] for node in rendered["views"]["overview"]["graph"]["nodes"]] == [
+        "partner", *ids
+    ]
+    assert sorted(row["agent"] for row in rendered["views"]["agentTable"]["rows"]) == sorted(ids)
     for item_id in ids:
         agent = rendered["views"]["agents"][item_id]
-        assert agent["headings"][0] == f"{item_id} · work item"
-        assert agent["headings"][-1] == f"pane · {item_id}"
+        assert agent["headings"] == [item_id]
+        labels = [entry["label"] for entry in agent["labels"]]
+        assert "Work item" in labels
+        assert any(label.startswith(f"Pane · {item_id}") for label in labels)
     assert "PARTNER.md" in rendered["views"]["partner"]["headings"]
-    board_rows = [row for row in rendered["views"]["partner"]["rows"] if len(row["cells"]) == 10]
-    assert len(board_rows) == len(ids), "the whole board is on the Partner view"
+    fleet = [row for row in rendered["views"]["partner"]["rows"] if row["agent"]]
+    assert len(fleet) == len(ids), "the whole fleet is on the Partner page"
 
 
 # -- the M8 decision point, in detail ------------------------------------

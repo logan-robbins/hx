@@ -1,0 +1,56 @@
+{
+  "id": "eng-002",
+  "pod": "engineers",
+  "role": "engineer",
+  "state": "idle",
+  "file": "pods/engineers/eng-002-idle.md",
+  "work_item": {
+    "frontmatter": {
+      "id": "eng-002",
+      "pod": "engineers",
+      "outcome": null,
+      "dispatched": null
+    },
+    "body": "\n## Tasks\n_none yet_\n\n## Deliverables\n\n\n## Commands\n\n\n## Open decision\n\n\n## Digest\n\n"
+  },
+  "task": {
+    "order": "",
+    "addenda": [],
+    "outcome": null,
+    "dispatched": null,
+    "completed": null
+  },
+  "persona_path": "run/eng-002/persona.md",
+  "step_state": {},
+  "context_file": {
+    "path": "run/eng-002/eng-002-main.context.md",
+    "text": null,
+    "seam_ts": null
+  },
+  "streams": [],
+  "subagents": {},
+  "metrics": {
+    "id": "eng-002",
+    "stream": "eng-002-main",
+    "dispatched": null,
+    "seams": [],
+    "totals": {
+      "seams": 0,
+      "tool_calls": 0,
+      "reads_of_context_file": 0,
+      "reads_of_working_set": 0,
+      "other": 0
+    }
+  },
+  "pane": {
+    "session": "eng-002",
+    "alive": true,
+    "lines": [
+      "Waiting. No order dispatched."
+    ],
+    "source": "session"
+  },
+  "turn": null,
+  "archive": [],
+  "bench": []
+}

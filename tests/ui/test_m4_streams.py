@@ -234,16 +234,26 @@ def test_an_id_with_no_stream_reads_null_not_zero(m4_root):
     assert item["turn_ts"] is None
 
 
-def test_the_board_renders_those_columns(m4_root, tmp_path):
+def test_the_board_fields_are_rendered(m4_root, tmp_path):
+    """ui-8 replaced the board table with the graph, the cards and the drawer.
+
+    The contract's fields did not move away, they moved apart: the agent table
+    carries the state and the seams, and the agent's own page carries the
+    counts the table has no column for.
+    """
     source = isolated_source(m4_root)
-    board = source.board()
-    rendered = render({"/api/board": board}, tmp_path)["views"]["board"]
-    # v1 columns: id, pod/role, state, outcome, subagents, goal, session,
-    # context, seams, turn.
-    row = next(r for r in rendered["rows"] if r["cells"][0].startswith(ITEM))
-    assert row["cells"][4] == "1", "open subagents"
-    assert row["cells"][7] == "61,300", "context tokens"
-    assert row["cells"][8] == "0", "seams"
+    rendered = render({"/api/board": board_override(source)}, tmp_path, open_ids=[ITEM])
+    row = next(r for r in rendered["views"]["agentTable"]["rows"] if r["agent"] == ITEM)
+    assert row["cells"][6] == "0", "seams"
+    assert row["cells"][5] == "none", "session alive"
+
+    agent = rendered["views"]["agents"][ITEM]
+    assert "1 open subagent" in agent["text"]
+    assert "61,300" in agent["text"], "context tokens"
+
+
+def board_override(source):
+    return source.board()
 
 
 # -- served --------------------------------------------------------------

@@ -411,7 +411,7 @@ Three things worth knowing:
 > asserts the placeholder is gone — so if the Companion ever stops writing one, the view says
 > "not yet" rather than showing a stale string.
 
-## 2026-09-20 — build-7 — the v1 cut (spec 14 D25): the shapes that changed
+## 2026-09-20 — build-7 — the v1 cut (spec 14 D25): the shapes that changed — DONE 2026-09-20
 
 Everything below is a removal. `tools/milestone-check.sh build` passes on it; the fixtures in
 `tests/ui/fixtures/` that carry the removed keys need regenerating.
@@ -462,3 +462,21 @@ directory hx knows, `run/<id>/goal-pending`, `run/tasks.lock`. A worker's direct
 
 `--queued` as a CSS token is fine; the `after` graph rendering in `src/hx/ui/data.py` and the
 edge styling are the two places that will have no data to read.
+
+> ui lane, DONE 2026-09-20 (applied in ui-7, marked here in ui-8). Every removal is out of the
+> UI: no `errors` box anywhere, no `after`/`ready`/`goal_pending`, no `queued`, no orders graph
+> and no file-match badge, and `hx show partner --json` is read as the four-key document. The
+> Partner is drawn from nothing but `/api/show/partner` — in ui-8 it is the root node of the
+> fleet graph, which is where "the Partner is not a board item" now shows.
+>
+> Two things your last paragraph asked for, done in ui-8 rather than ui-7:
+>
+> 1. **"Render the string."** The task board's columns are the six known `state`/`outcome`
+>    combinations, plus one column per unknown `state` found in the document. A HarnessAgent
+>    that renames its own work item to `-reviewing` gets a `reviewing` column rather than
+>    having its card silently dropped. `tests/ui/test_views_js.py::test_an_unknown_state_gets_
+>    its_own_column`.
+> 2. **The after-graph rendering and the `--queued` token** are gone from
+>    `src/hx/ui/data.py`'s docstring and from the stylesheet; ui-8 replaced both files' contents
+>    wholesale, so there is nothing left reading a key you removed.
+

@@ -1,0 +1,202 @@
+{
+  "id": "eng-003",
+  "pod": "engineers",
+  "role": "engineer",
+  "state": "complete",
+  "file": "pods/engineers/eng-003-complete.md",
+  "work_item": {
+    "frontmatter": {
+      "id": "eng-003",
+      "pod": "engineers",
+      "outcome": "decision",
+      "dispatched": "2026-09-20T10:30:00Z"
+    },
+    "body": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n\n## Tasks\n- [x] Read spec 05 and spec 10 for where configuration lives.\n- [x] Write the recommendation and the cost of the option not taken.\n\n## Deliverables\n- The recommendation, in `## Open decision` below.\n\n## Commands\n\n\n## Open decision\n**Per model, in `config/models.json`.** The seam threshold is a share of the context window, and the window is a property of the model, not of the agent.\n\nCost of the option not taken: per agent in `config/<id>/harness.json` would let one agent seam earlier than its podmates, which is occasionally wanted \u2014 but it puts a number that has to track the model in a file nobody rewrites when the model changes.\n\n## Digest\nRecommended per model in `config/models.json`; the per-agent cost is written above.\n"
+  },
+  "task": {
+    "order": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
+    "addenda": [],
+    "outcome": "decision",
+    "dispatched": "2026-09-20T10:30:00Z",
+    "completed": "2026-09-20T12:47:31Z"
+  },
+  "persona_path": "run/eng-003/persona.md",
+  "step_state": {
+    "eng-003-main": {
+      "goal": "decide where the seam threshold lives and write the recommendation",
+      "constraints": [
+        "decide, do not implement"
+      ],
+      "decisions": [
+        {
+          "d": "per model in `config/models.json`",
+          "why": "the threshold is a property of the context window, which is the model's",
+          "ev": [
+            61,
+            77
+          ]
+        }
+      ],
+      "open_steps": [],
+      "closed_steps": [
+        {
+          "id": "st1",
+          "outcome": "read spec 05 and 10; both leave the location open",
+          "verified": true,
+          "commit": "",
+          "ev": [
+            44
+          ]
+        },
+        {
+          "id": "st2",
+          "outcome": "wrote the recommendation and the losing option's cost into ## Open decision",
+          "verified": true,
+          "commit": "",
+          "ev": [
+            77
+          ]
+        }
+      ],
+      "dead_ends": [
+        "tried to infer the threshold from the last seam's context_tokens; too few seams to be worth it"
+      ],
+      "blockers": [],
+      "subagents_open": [],
+      "working_set": {
+        "commits": [],
+        "dirty": [],
+        "files": [
+          {
+            "path": "spec/05-configuration.md",
+            "note": "models.json is per model, already read at launch"
+          },
+          {
+            "path": "spec/10-companion.md",
+            "note": "the budget is per agent; the threshold is not"
+          }
+        ],
+        "last_failure": "",
+        "hypothesis": ""
+      },
+      "seq": 77,
+      "prompt_version": {
+        "base": "9c1f2ab",
+        "role": "4d80e17"
+      },
+      "ts": "2026-09-20T13:09:41Z"
+    }
+  },
+  "context_file": {
+    "path": "run/eng-003/eng-003-main.context.md",
+    "text": "# Context\n\n_source: state/eng-003/eng-003-main.json_\n\n## Goal\ndecide where the seam threshold lives\n\n## Decisions\n- per model in `config/models.json` \u2014 the threshold is a share of the context window\n",
+    "seam_ts": "2026-09-20T12:46:02Z"
+  },
+  "streams": [
+    {
+      "handle": "eng-003-main",
+      "path": "logs/eng-003/eng-003-main.jsonl",
+      "open": false,
+      "records": 77,
+      "tail": [
+        {
+          "seq": 74,
+          "ts": "2026-09-20T12:44:10Z",
+          "stream": "eng-003-main",
+          "event": "post_tool",
+          "tool": "Read",
+          "input": "{\"file_path\": \"spec/10-companion.md\"}",
+          "output": "{\"content\": \"## 10. The Companion\\nThe budget is per agent\\u2026\"}",
+          "context_tokens": 71240,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-003/t.jsonl",
+            "tool_use_id": "toolu_read_10"
+          }
+        },
+        {
+          "seq": 75,
+          "ts": "2026-09-20T12:46:02Z",
+          "stream": "eng-003-main",
+          "event": "seam",
+          "source": "compact",
+          "context_file": "/srv/hx/run/eng-003/eng-003-main.context.md",
+          "context_file_bytes": 1980,
+          "ref": {
+            "transcript": null
+          }
+        },
+        {
+          "seq": 76,
+          "ts": "2026-09-20T12:47:20Z",
+          "stream": "eng-003-main",
+          "event": "post_tool",
+          "tool": "Edit",
+          "input": "{\"file_path\": \"pods/engineers/eng-003-working.md\"}",
+          "output": "{\"stdout\": \"\", \"exit_code\": 0}",
+          "exit": 0,
+          "context_tokens": 74902,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-003/t.jsonl",
+            "tool_use_id": "toolu_edit_wi"
+          }
+        },
+        {
+          "seq": 77,
+          "ts": "2026-09-20T12:47:31Z",
+          "stream": "eng-003-main",
+          "event": "close",
+          "ref": {
+            "transcript": null
+          }
+        }
+      ],
+      "digest": null
+    }
+  ],
+  "subagents": {},
+  "metrics": {
+    "id": "eng-003",
+    "stream": "eng-003-main",
+    "dispatched": "2026-09-20T10:30:00Z",
+    "seams": [
+      {
+        "seq": 75,
+        "ts": "2026-09-20T12:46:02Z",
+        "source": "compact",
+        "prompt_version": "base-3/engineer-2",
+        "context_tokens_before": 71240,
+        "context_file_bytes": 1980,
+        "working_set_size": 2,
+        "next_10_turns": {
+          "turns": 3,
+          "tool_calls": 4,
+          "reads_of_context_file": 1,
+          "reads_of_working_set": 2,
+          "other": 1
+        }
+      }
+    ],
+    "totals": {
+      "seams": 1,
+      "tool_calls": 4,
+      "reads_of_context_file": 1,
+      "reads_of_working_set": 2,
+      "other": 1
+    }
+  },
+  "pane": {
+    "session": "eng-003",
+    "alive": true,
+    "lines": [
+      "Wrote the recommendation into ## Open decision.",
+      "Complete: decision. The Partner has the call."
+    ],
+    "source": "session"
+  },
+  "turn": {
+    "ts": "2026-09-20T12:47:31Z",
+    "background_tasks": []
+  },
+  "archive": [],
+  "bench": []
+}

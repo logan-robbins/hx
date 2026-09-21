@@ -168,3 +168,29 @@ functions, and that rule is worth more than this bar being exact.
 If it is cheap, `hx show --json` carrying `state_budget_tokens` (or the whole resolved
 `companion` block) would make it real. Needs a `CONTRACTS.md` line, so it is the orchestrator's
 call as much as yours — not asking for it in this goal.
+
+## 2026-09-20 — ui-8 — `turn` is still not in `hx show --json`
+
+Reported in ui-7 and still true after build-7: `hx.show.collect` returns no `turn` key, so
+`turn.background_tasks` — the one thing that tells a human "this agent stopped but its work
+did not" — is unreachable from a live instance. The UI renders it from the CONTRACTS.md shape
+and its tests drive that shape; against a real root the Agent page falls back to the board's
+`turn_ts` and says "last turn HH:MM:SSZ" with no background-task line.
+
+Nothing to do on my side when it lands: `agentDrawer` already prefers `show.turn` over the
+board's `turn_ts`, and `tests/ui/test_views_js.py::test_background_tasks_say_the_agent_stopped_
+with_work_running` will start asserting against real data the moment the key appears.
+
+## 2026-09-20 — ui-8 — one `hx show` per agent is now the home page's read
+
+ui-8 made the whole instance one page, and every screen has to say what each HarnessAgent is
+doing in one line (the open step's next action). That line lives in the step state, which only
+`hx show <id>` carries — the board has no field for it. So the page reads `hx show` once per
+board id, caches it, and re-reads only the ids an SSE frame names. On the five-agent fixture
+that is five reads at load; on a sixty-agent fleet it is sixty, each including a
+`tmux capture-pane`.
+
+Not asking for a change yet, only flagging the cost and one cheap fix if it bites: a `next`
+field on the board item — the open step's next action, or the first unchecked `## Tasks` line
+— would make the home page a single read. That needs a `CONTRACTS.md` line, so it is the
+orchestrator's call as much as yours; I have not asked for it.

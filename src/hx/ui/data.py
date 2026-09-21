@@ -80,7 +80,11 @@ class Source:
         raise NotImplementedError
 
     def orders(self) -> dict[str, Any]:
-        """Every order with the tasks.json record it produced, plus the after graph."""
+        """One entry per id in `tasks.json`: the order, its addenda and its outcome.
+
+        v1 cut (build-7): no `after` graph and no comparison against an order
+        file — `hx dispatch` deletes the file it read.
+        """
         raise NotImplementedError
 
     def archive(self) -> dict[str, Any]:

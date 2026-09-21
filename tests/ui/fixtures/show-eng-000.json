@@ -1,0 +1,226 @@
+{
+  "id": "eng-000",
+  "pod": "engineers",
+  "role": "engineer",
+  "state": "complete",
+  "file": "pods/engineers/eng-000-complete.md",
+  "work_item": {
+    "frontmatter": {
+      "id": "eng-000",
+      "pod": "engineers",
+      "outcome": "done",
+      "dispatched": "2026-09-20T10:00:00Z"
+    },
+    "body": "## Order\nShip `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`\nnot among them.\n\n## Definition of done\n- `hx board --json` prints the contract document and exits 0.\n\n### Checks\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n\n## Tasks\n- [x] Read CONTRACTS.md for the board document.\n- [x] Write `collect()` in `src/hx/board.py`.\n- [x] Leave `partner` out of the items.\n- [x] Cover a fresh root, one item and five in `tests/core/test_board.py`.\n\n## Deliverables\n- `src/hx/board.py`\n- `tests/core/test_board.py`\n\n## Commands\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n\n## Open decision\n\n\n## Digest\n`hx board --json` ships the contract document. `partner` is not an item.\n"
+  },
+  "task": {
+    "order": "## Order\nShip `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`\nnot among them.\n\n## Definition of done\n- `hx board --json` prints the contract document and exits 0.\n\n### Checks\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n",
+    "addenda": [],
+    "outcome": "done",
+    "dispatched": "2026-09-20T10:00:00Z",
+    "completed": "2026-09-20T11:58:12Z"
+  },
+  "persona_path": "run/eng-000/persona.md",
+  "step_state": {
+    "eng-000-main": {
+      "goal": "ship `hx board --json` to the CONTRACTS.md shape",
+      "constraints": [
+        "stdlib only",
+        "exit 0 always in v1"
+      ],
+      "decisions": [
+        {
+          "d": "read the state from the filename suffix, not the frontmatter",
+          "why": "the v1 cut made the filename the state and nothing polices it",
+          "ev": [
+            120
+          ]
+        }
+      ],
+      "open_steps": [],
+      "closed_steps": [
+        {
+          "id": "st1",
+          "outcome": "collect() returns the contract document",
+          "verified": true,
+          "commit": "a41f0b2",
+          "ev": [
+            88
+          ]
+        },
+        {
+          "id": "st2",
+          "outcome": "`partner` is not an item; the Partner has no work item",
+          "verified": true,
+          "commit": "a41f0b2",
+          "ev": [
+            104
+          ]
+        },
+        {
+          "id": "st3",
+          "outcome": "tests cover a fresh root, one item and five",
+          "verified": true,
+          "commit": "c70d18e",
+          "ev": [
+            131
+          ]
+        }
+      ],
+      "dead_ends": [],
+      "blockers": [],
+      "subagents_open": [],
+      "working_set": {
+        "commits": [
+          "a41f0b2 board: the CONTRACTS.md document",
+          "c70d18e board: tests"
+        ],
+        "dirty": [],
+        "files": [
+          {
+            "path": "CONTRACTS.md",
+            "note": "the board document, field by field"
+          }
+        ],
+        "last_failure": "",
+        "hypothesis": ""
+      },
+      "seq": 131,
+      "prompt_version": {
+        "base": "9c1f2ab",
+        "role": "4d80e17"
+      },
+      "ts": "2026-09-20T13:09:41Z"
+    }
+  },
+  "context_file": {
+    "path": "run/eng-000/eng-000-main.context.md",
+    "text": "# Context\n\n_source: state/eng-000/eng-000-main.json_\n\n## Goal\nship `hx board --json` to the CONTRACTS.md shape\n\n## Closed\n- st1 collect() returns the contract document (a41f0b2)\n- st2 `partner` is not an item (a41f0b2)\n",
+    "seam_ts": "2026-09-20T11:58:10Z"
+  },
+  "streams": [
+    {
+      "handle": "eng-000-main",
+      "path": "logs/eng-000/eng-000-main.jsonl",
+      "open": false,
+      "records": 131,
+      "tail": [
+        {
+          "seq": 128,
+          "ts": "2026-09-20T11:57:40Z",
+          "stream": "eng-000-main",
+          "event": "post_tool",
+          "tool": "Bash",
+          "input": "{\"command\": \"python -m pytest tests/core/test_board.py -q\"}",
+          "output": "{\"stdout\": \"12 passed in 0.31s\\n\", \"exit_code\": 0}",
+          "exit": 0,
+          "context_tokens": 131002,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-000/t.jsonl",
+            "tool_use_id": "toolu_bash_pytest"
+          }
+        },
+        {
+          "seq": 129,
+          "ts": "2026-09-20T11:57:58Z",
+          "stream": "eng-000-main",
+          "event": "post_tool",
+          "tool": "Bash",
+          "input": "{\"command\": \"git commit -m 'board: tests' -- src/hx/board.py tests/core/test_board.py\"}",
+          "output": "{\"stdout\": \"[main c70d18e] board: tests\\n\", \"exit_code\": 0}",
+          "exit": 0,
+          "context_tokens": 131880,
+          "ref": {
+            "transcript": "/srv/hx/run/eng-000/t.jsonl",
+            "tool_use_id": "toolu_bash_commit"
+          }
+        },
+        {
+          "seq": 130,
+          "ts": "2026-09-20T11:58:10Z",
+          "stream": "eng-000-main",
+          "event": "seam",
+          "source": "clear",
+          "context_file": "/srv/hx/run/eng-000/eng-000-main.context.md",
+          "context_file_bytes": 2410,
+          "ref": {
+            "transcript": null
+          }
+        },
+        {
+          "seq": 131,
+          "ts": "2026-09-20T11:58:12Z",
+          "stream": "eng-000-main",
+          "event": "close",
+          "ref": {
+            "transcript": null
+          }
+        }
+      ],
+      "digest": null
+    }
+  ],
+  "subagents": {},
+  "metrics": {
+    "id": "eng-000",
+    "stream": "eng-000-main",
+    "dispatched": "2026-09-20T10:00:00Z",
+    "seams": [
+      {
+        "seq": 62,
+        "ts": "2026-09-20T10:44:02Z",
+        "source": "startup",
+        "prompt_version": "base-3/engineer-2",
+        "context_tokens_before": 0,
+        "context_file_bytes": 1710,
+        "working_set_size": 0,
+        "next_10_turns": {
+          "turns": 10,
+          "tool_calls": 11,
+          "reads_of_context_file": 1,
+          "reads_of_working_set": 0,
+          "other": 10
+        }
+      },
+      {
+        "seq": 130,
+        "ts": "2026-09-20T11:58:10Z",
+        "source": "clear",
+        "prompt_version": "base-3/engineer-2",
+        "context_tokens_before": 131880,
+        "context_file_bytes": 2410,
+        "working_set_size": 2,
+        "next_10_turns": {
+          "turns": 2,
+          "tool_calls": 2,
+          "reads_of_context_file": 1,
+          "reads_of_working_set": 0,
+          "other": 1
+        }
+      }
+    ],
+    "totals": {
+      "seams": 2,
+      "tool_calls": 13,
+      "reads_of_context_file": 2,
+      "reads_of_working_set": 0,
+      "other": 11
+    }
+  },
+  "pane": {
+    "session": "eng-000",
+    "alive": true,
+    "lines": [
+      "> python -m pytest tests/core/test_board.py -q",
+      "12 passed in 0.31s",
+      "Complete: done. Work item renamed to eng-000-complete.md."
+    ],
+    "source": "session"
+  },
+  "turn": {
+    "ts": "2026-09-20T11:58:12Z",
+    "background_tasks": []
+  },
+  "archive": [],
+  "bench": []
+}
