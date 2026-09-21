@@ -254,7 +254,7 @@ running".
 Every model call in hx is a Claude Code session in tmux operated by pasting. The Companion of
 `<id>` runs in window `<id>:companion`, home `run/<id>/companion-home`, launched by
 `start.sh <id> --companion` with `--dangerously-skip-permissions`, `IS_SANDBOX=1`,
-`--model <companion.model>`, `--append-system-prompt-file run/<id>/companion-system.md`.
+`--model <companion.model>`, `--append-system-prompt-file run/<id>/companion-system.md`, `--setting-sources user`.
 
 `hx companion <id> --wake <stream>` (the in-process `hx.companion.wake`) writes
 `run/<id>/companion/<stream>.pass.md`:

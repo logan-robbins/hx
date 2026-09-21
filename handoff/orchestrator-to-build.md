@@ -297,3 +297,13 @@ header (already in start.sh; fine).
 2. `hx` is not on the agents' `PATH`; the Partner found it via `config/hx.json` and used the
    absolute path. build-8 item 11: `$HARNESS_ROOT/bin/{hx,hx-hook}` symlinks written by install,
    `PATH` prepended by `start.sh`, doctor check.
+
+## 2026-09-20 21:30 — BLOCKING live finding for build-8 item 0
+
+A repo's own `.claude/settings.json` applies to hx agents: the worker in the live rehearsal loaded
+the m8 repo's tripwire and had every tool denied. Fix: `--setting-sources user` on every launch;
+verify the flag against the docs and the binary; prove live with the m8 repo. Item 12: heartbeat
+re-pastes the goal to an idle `working` agent with no `HX-COMPLETE`. Both in `goals/build-8.md`.
+The rehearsal instance is at
+`/private/tmp/claude-501/-Users-loganrobbins-workspace-keel/f9dfe031-7290-4925-ab3b-4c86401f7d6b/scratchpad/live-hx/hx`
+(sessions `partner` and `be-001` on the default tmux server; read-only for you, kill nothing).

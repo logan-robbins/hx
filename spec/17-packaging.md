@@ -49,7 +49,7 @@ The guarantee is about the user's Claude, not their repo: hx never reads or writ
 ```
 env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 \
   <config/claude.json bin> --dangerously-skip-permissions --effort <level> --model <full id> \
-  --append-system-prompt-file <root>/run/<id>/persona.md
+  --append-system-prompt-file <root>/run/<id>/persona.md --setting-sources user
 ```
 
 No prompt argument, no `--resume`, no compaction variables, cwd `harness.json.workdir` (`HARNESS_ROOT` for `partner`). `run/<id>/persona.md` is regenerated from `config/<id>/AGENTS.md` above the header immediately before exec. `hx up` runs `hx launch` for every id; `hx launch` runs `start.sh` in window `main` and `hx companion` in window `companion`, and sends the goal if the item is `working`. The human's manual commands, in total: `hx install` once, `tmux attach -t partner` whenever they want to talk.

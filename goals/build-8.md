@@ -4,6 +4,21 @@ Read `goals/build-7.done.md` (yours), `handoff/orchestrator-to-build.md`, any ot
 `handoff/*-to-build.md`, spec 02 (Seams, Compaction), 06 (pointer), 07.4, 09.2–9.3 (the
 handshake), 10 (seam policy), 11 (Compaction rows), 13 M6, 17.6.
 
+## Blocking, before items 10 and 11
+
+0. **A repo's own `.claude/settings.json` applies to agents.** Live rehearsal 2026-09-20 21:20: the
+   worker `be-001`, working in a copy of `tests/scenario/m8/repo`, loaded that repo's
+   `.claude/settings.json` tripwire (deny-all `PreToolUse`, `defaultMode: plan`), had every tool
+   denied, could never run `hx complete`, and its goal evaluator gave up. Fix: `start.sh` passes
+   `--setting-sources user` on every launch (agent and Companion) so only the home's settings
+   load. Verify the flag's exact name and semantics against `code.claude.com/docs/en/cli-reference`
+   and the pinned binary (`claude --help`), record the URL, then prove it live: launch a worker in
+   a copy of the m8 repo and show a Bash tool call succeed and the tripwire line never appear.
+   Never edit the checkout's `.claude/`. Spec 11 and 17.4, CONTRACTS.md updated.
+12. `hx heartbeat`: a `working` item whose session is alive, whose pane is idle, and whose stream
+    has no `HX-COMPLETE` gets its goal pointer pasted again (`hx goal <id>`); this is what
+    recovers a worker whose `/goal` evaluator cleared itself (seen live).
+
 ## Build
 
 1. `hx seam <id>`: refuse while `run/<id>/turn` shows non-empty `background_tasks` (leave the

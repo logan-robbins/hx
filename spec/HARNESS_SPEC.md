@@ -64,6 +64,7 @@ Each file is one section. Edit one file per change; cross-references use file na
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` governs subagent compaction; `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` alone does nothing on a model with no native autocompact buffer | Confirmed by live test | E8 |
 | On macOS Claude Code stores the login in the login Keychain (`Claude Code-credentials`), not in `.credentials.json`; a fresh `CLAUDE_CONFIG_DIR` is not logged in. Headless auth is `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | Keychain and fresh-dir behaviour confirmed by live probe 2026-09-20 (build lane); the env var and `setup-token` to be re-verified against `docs/en/` by build-3 | build-3 |
 | `SubagentStart` input is `{session_id, hook_event_name, agent_id, agent_type, cwd, permission_mode}`: no prompt, no `tool_input`, no `transcript_path`; the parent's prompt is the subagent's first message | Confirmed by docs and live run 2026-09-20 (build lane) | build-5 |
+| Project `.claude/settings.json` in the cwd applies to a session (its `PreToolUse` hooks ran and denied every tool for an hx worker); `--setting-sources user` restricts loading to the config dir's settings | Applying confirmed by live rehearsal 2026-09-20; the flag's exact name and behaviour to be re-verified against `docs/en/cli-reference` and the binary by build-8 | build-8 |
 <!-- END 01-terminology.md -->
 
 <!-- BEGIN 02-decisions.md -->
@@ -572,6 +573,7 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 | Working directory | `harness.json.workdir`: any absolute directory the Partner chose for this worker, a fresh one it created or an existing checkout. hx does not manage git for it. `HARNESS_ROOT` for the Partner |
 | Pane log | `start.sh` runs `tmux pipe-pane -o -t <id> 'cat >> $HARNESS_ROOT/logs/<id>/<id>-pane.log'` right after launch; the file is the UI's capture fallback when the session is dead and is archived with `logs/<id>/` at the next dispatch |
 | First-launch dialogs | `install.sh` pre-seeds `run/<id>/home/.claude.json` with onboarding complete and the workspace trust dialog accepted for the agent's cwd, so a fresh home never shows the theme, login, or "Quick safety check … trust this folder" prompts (seen live 2026-09-20). Keys per CONTRACTS.md. Nothing about launch is interactive |
+| Project settings | A product repo's own `.claude/settings.json` (hooks, `permissions.defaultMode`, everything) would apply to an agent working in that checkout: confirmed live 2026-09-20 when a worker loaded a repo's deny-all `PreToolUse` tripwire and could never run `hx complete`. Every launch (agent and Companion) therefore passes `--setting-sources user`, so only the agent's own home settings load; `claudeMdExcludes` already keeps the repo's `CLAUDE.md`/`AGENTS.md` out. hx never edits the checkout's `.claude/` |
 
 Verified 2026-09-20 against the CLI reference, permission-modes, model-config, and cross-session-messaging pages.
 <!-- END 11-adapters.md -->
@@ -817,7 +819,7 @@ The guarantee is about the user's Claude, not their repo: hx never reads or writ
 ```
 env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 IS_SANDBOX=1 \
   <config/claude.json bin> --dangerously-skip-permissions --effort <level> --model <full id> \
-  --append-system-prompt-file <root>/run/<id>/persona.md
+  --append-system-prompt-file <root>/run/<id>/persona.md --setting-sources user
 ```
 
 No prompt argument, no `--resume`, no compaction variables, cwd `harness.json.workdir` (`HARNESS_ROOT` for `partner`). `run/<id>/persona.md` is regenerated from `config/<id>/AGENTS.md` above the header immediately before exec. `hx up` runs `hx launch` for every id; `hx launch` runs `start.sh` in window `main` and `hx companion` in window `companion`, and sends the goal if the item is `working`. The human's manual commands, in total: `hx install` once, `tmux attach -t partner` whenever they want to talk.
