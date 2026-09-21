@@ -51,7 +51,7 @@ The raw stream exists for one reader: the Companion. The HarnessAgent never read
 
 - `hx` validates schema and size (`chars/4 ≤ state_budget_tokens`); an invalid write keeps the previous state.
 - `ev` entries are `seq` references into the raw stream. They are for the Companion's own use across its passes; the agent has no recall command.
-- **Structure as memory.** The task template instructs the agent to commit each finished sub-task immediately with a descriptive message rather than leaving the worktree open. Then `git log --oneline`, `git diff --stat`, and `ls` recover most of the working state in one Bash call each, and the Companion records the commit sha on the closed step instead of describing the change. `working_set.commits` and `working_set.dirty` are derived from those records. `working_set.files` is only for files the agent read but did not change, with a one-line `note` of the fact it needed from them, so it does not read them again.
+- **Structure as memory.** The task template instructs the agent to commit each finished sub-task immediately with a descriptive message rather than leaving the workdir dirty. Then `git log --oneline`, `git diff --stat`, and `ls` recover most of the working state in one Bash call each, and the Companion records the commit sha on the closed step instead of describing the change. `working_set.commits` and `working_set.dirty` are derived from those records. `working_set.files` is only for files the agent read but did not change, with a one-line `note` of the fact it needed from them, so it does not read them again.
 - Step state is kept across `hx resume`: an item paused on `blocked` or `decision` continues from the step state it paused with. Only `hx dispatch` archives it.
 
 ### 7.3 Context file (hx-composed)
@@ -59,7 +59,7 @@ The raw stream exists for one reader: the Companion. The HarnessAgent never read
 At every boundary (start, resume, clear, compaction, subagent start) hx composes `run/<id>/<stream>.context.md` and the hook hands the agent its path. The persona is not in this file: it is in the system prompt (`02-decisions.md` Identity). Sections in order:
 
 1. Memory: the part of `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream); `config/<id>/SUBAGENTS.md` whole (subagent streams)
-2. Task: the verbatim `## Order` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight
+2. Task: the verbatim `## Order` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight. The Partner has no work item and no order: its sections 2 and 3 are `PARTNER.md` and the current `hx board` output
 3. Work item `## Tasks` section (main stream only)
 4. Step state, rendered from `state/<id>/<stream>.json`
 5. Open subagent handles
@@ -76,8 +76,7 @@ The design question at every critical step: *if this stopped right now, is there
 
 | Step | What exists on disk at that instant | Guaranteed by |
 |---|---|---|
-| Dispatch | Work item with `## Order`, `## Definition of done` (checks), empty `## Tasks`; `tasks.json` entry; fresh logs/state; agent home wiped of prior transcripts and auto memory; persona + agent memory in `AGENTS.md` (for `partner`: nothing archived, session continuous) | `hx dispatch` |
-| Queued | The same, without a goal; the item waits on `after`; nothing runs | `hx dispatch` |
+| Dispatch | Work item with `## Order`, `## Definition of done` (checks), empty `## Tasks`; `tasks.json` entry; the order file consumed and deleted; fresh logs/state; agent home wiped of prior transcripts and auto memory; persona + agent memory in `AGENTS.md` | `hx dispatch` |
 | Session start | Persona in the system prompt; context file composed from memory, task, `## Tasks`, step state; the agent's first action is one Read | `start.sh`, `context` hook, `hx compose` |
 | Every tool call | One raw record with excerpt + ref appended before the next call; Companion within `batch_records` of head | `log` hook, Companion loop |
 | Every `## Tasks` edit | The agent's own plan is current in the work item; the Companion sees the edit as a record | Standing instructions, `log` hook |
@@ -88,7 +87,7 @@ The design question at every critical step: *if this stopped right now, is there
 | Seam | Companion at head; context file recomposed; `/clear` then `/goal` pointer; persona still in the system prompt; first action after is one Read | `hx seam`, `context` hook |
 | Threshold hit | `log` hook touches `run/<id>/seam`; the next `stop` with no background work takes the seam; native compaction is never reached on the planned path, and if it is, `SessionStart(compact)` still hands over the context file | `log`, `stop`, `context` hooks |
 | Crash / restart | Companion catches up to head; context file recomposed; goal restored by Claude Code on `resume`, or sent by `hx goal` after `hx restart` once the pane is ready | `context` hook, `hx restart` |
-| Complete | Zero open streams; checks passed and worktree clean (for `done`); Companion final pass; `## Digest` written; agent memory updated; outcome set in the work item and `tasks.json`; `HX-COMPLETE` line printed; queued dependents promoted | `hx complete`, standing instructions |
-| Resume | The item's logs, step state, `## Tasks`, memory, and worktree exactly as it paused; the addendum appended to `## Order`; context file recomposed; goal sent | `hx resume` |
-| Partner wake | Renamed work item and the wake message are the signal; Partner's context file includes board and `PARTNER.md` | `12-partner-loop.md` |
+| Complete | Zero open streams; checks passed and workdir clean (for `done`); Companion final pass; `## Digest` written; agent memory updated; outcome set in the work item and `tasks.json`; `HX-COMPLETE` line printed | `hx complete`, standing instructions |
+| Resume | The item's logs, step state, `## Tasks`, memory, and workdir exactly as it paused; the addendum appended to `## Order`; context file recomposed; goal sent | `hx resume` |
+| Partner wake | The worker's renamed work item and the wake message are the signal; the Partner's context file is `PARTNER.md` plus the board | `12-partner-loop.md` |
 | Bench | Body archived with timestamp; item reset; logs/state archived at next dispatch | `hx bench`, `hx dispatch` |

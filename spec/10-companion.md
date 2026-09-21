@@ -1,6 +1,6 @@
 ## 10. Companion
 
-**Process:** the Companion is a Claude Code session, like every other agent in hx: `start.sh <id> --companion` launches it in tmux window `<id>:companion`, one per HarnessAgent including the Partner, with its own home `run/<id>/companion-home` (no hooks except `guard`, no product skills, the `hx-companion` skill), `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model companion.model`, and its system prompt via `--append-system-prompt-file run/<id>/companion-system.md` (BASE.md + role + harness facts, composed at launch). There is no headless `claude -p` anywhere in hx; every model call is a tmux session hx operates by pasting. The Companion reads streams and writes step state, digests, and the seam marker with its own tools; hx validates what it wrote. It never writes the agent's files, with one exception: the `## Digest` section of the work item, once, inside `hx complete`.
+**Process:** the Companion is a Claude Code session, like every other agent in hx: `start.sh <id> --companion` launches it in tmux window `<id>:companion`, one per HarnessAgent including the Partner, with its own home `run/<id>/companion-home` (no hx hooks but its own `stop` hook, no product skills, the `hx-companion` skill), `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model companion.model`, and its system prompt via `--append-system-prompt-file run/<id>/companion-system.md` (BASE.md + role + harness facts, composed at launch). There is no headless `claude -p` anywhere in hx; every model call is a tmux session hx operates by pasting. The Companion reads streams and writes step state, digests, and the seam marker with its own tools; hx validates what it wrote. It never writes the agent's files, with one exception: the `## Digest` section of the work item, once, inside `hx complete`.
 
 **System prompt** is composed once at start (05-configuration.md): `companion/BASE.md`, `companion/roles/<role>.md`, and the facts from `config/<id>/harness.json`. The Companion reads no config at runtime.
 
@@ -19,7 +19,7 @@
 ```
 
 3. hx (in the Companion's `stop` hook) validates the output against the 07.2 schema and moves it to `state/<id>/<stream>.json`, stamping `prompt_version` with the shas of `BASE.md` and the role file. Invalid or missing output keeps the prior state; hx re-wakes once with the failure named in the pass file, then logs and waits for the next wake.
-4. Evaluate the seam policy on the main stream; when it fires, write `run/<id>/seam`. The stop hook does the rest (09-hooks.md 9.3).
+4. Evaluate the seam policy on the main stream; when it fires, write `run/<id>/seam`. The stop hook does the rest (09-hooks.md 9.2).
 
 **Seam policy:** a step closed on the main stream AND `context_tokens ≥ seam_min_context_tokens` AND time since the last `seam` record `≥ seam_min_interval_s` AND `subagents_open` is empty.
 
