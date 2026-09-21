@@ -105,10 +105,9 @@ $HARNESS_ROOT/
 
 ## Status
 
-Pre-release, built against the spec in [`spec/`](spec/) —
-[`spec/HARNESS_SPEC.md`](spec/HARNESS_SPEC.md) is the compiled read; the numbered section files
-beside it are authoritative. Milestones and their acceptance tests are in
-[`spec/13-build-order.md`](spec/13-build-order.md).
+Pre-release. The code is the contract: [`src/hx/`](src/hx/) plus the
+[`tests/`](tests/) suites that pin it. [`CONTRACTS.md`](CONTRACTS.md) records the
+machine-readable shapes; [`docs/`](docs/) is the operator read.
 
 - Python 3.14, standard library only but for one runtime dependency: `chromadb`, the local
   embedding store behind `hx memory` ([`docs/memory.md`](docs/memory.md)). Nothing else in hx

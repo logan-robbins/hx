@@ -79,7 +79,7 @@ COMMANDS = sorted(set(IMPLEMENTED) | set(NOT_IMPLEMENTED))
 
 USAGE = f"""usage: hx <command> [options]
 
-hx is the control plane for a HarnessAgent fleet (spec/HARNESS_SPEC.md). HARNESS_ROOT
+hx is the control plane for a HarnessAgent fleet. HARNESS_ROOT
 selects the instance; it defaults to ~/hx and may never be inside the user's ~/.claude.
 
 the control plane:

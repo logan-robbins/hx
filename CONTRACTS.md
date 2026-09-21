@@ -1,9 +1,8 @@
-# Contracts shared between lanes
+# Contracts
 
-Owned by the orchestrator. Propose changes in `handoff/to-orchestrator.md`. The build lane
-implements these; the ui lane renders them; fixtures in `tests/ui/fixtures/` must validate
-against them. Timestamps are ISO 8601 UTC with a `Z` suffix. Paths are relative to
-`HARNESS_ROOT` unless the key ends in `_abs`. Absent values are `null`, never omitted.
+Fixtures in `tests/ui/fixtures/` must validate against these. Timestamps are ISO 8601 UTC
+with a `Z` suffix. Paths are relative to `HARNESS_ROOT` unless the key ends in `_abs`.
+Absent values are `null`, never omitted.
 
 ## `hx board --json`
 

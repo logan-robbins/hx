@@ -257,17 +257,14 @@ def test_hx_manages_no_git_anywhere_in_the_docs_or_the_template():
 # --------------------------------------------------- docs/operating.md and the /goal pointer
 
 OPERATING_MD = REPO / "docs" / "operating.md"
-SPEC_06 = REPO / "spec" / "06-work-items.md"
+def code_goal_pointer() -> str:
+    """The one `/goal …` line hx pastes, taken from the code rather than retyped."""
+    from hx.goal import POINTER
+
+    return POINTER.format(id="<id>", path="<abs path to work item>")
 
 
-def spec_06_goal_pointer() -> str:
-    """The one `/goal …` line spec 06 fixes, taken from the spec rather than retyped."""
-    lines = [l for l in SPEC_06.read_text().splitlines() if l.startswith("/goal The goal for")]
-    assert len(lines) == 1, f"spec/06-work-items.md has {len(lines)} `/goal` lines, expected 1"
-    return lines[0]
-
-
-def test_operating_quotes_the_goal_pointer_exactly_as_spec_06_fixes_it():
+def test_operating_quotes_the_goal_pointer_exactly_as_the_code_pastes_it():
     """The pointer is a contract, not a paraphrase: hx pastes this text byte for byte at every
     conversation start of a working item, and the operator page is where a human meets it.
 
@@ -275,11 +272,11 @@ def test_operating_quotes_the_goal_pointer_exactly_as_spec_06_fixes_it():
     a reader who sees something *else* in a pane needs to know that is wrong. Retyped, it would
     drift from the spec the first time either side was reworded, and nothing would notice.
     """
-    pointer = spec_06_goal_pointer()
+    pointer = code_goal_pointer()
     text = OPERATING_MD.read_text()
     assert pointer in text, (
-        "docs/operating.md does not quote spec 06's `/goal` pointer verbatim.\n"
-        f"  spec 06: {pointer}\n"
+        "docs/operating.md does not quote the `/goal` pointer verbatim.\n"
+        f"  code: {pointer}\n"
         "  Quote that line exactly, inside a fenced block."
     )
     assert "pointer" in text, (
@@ -290,9 +287,9 @@ def test_operating_quotes_the_goal_pointer_exactly_as_spec_06_fixes_it():
 def test_the_goal_pointer_is_quoted_the_same_way_in_the_worker_skill():
     """Two places carry it — the operator page and the skill the worker reads. They are written
     for different readers, so they drift independently unless something holds them together."""
-    pointer = spec_06_goal_pointer()
+    pointer = code_goal_pointer()
     skill = (REPO / "src" / "hx" / "skills" / "hx-worker" / "SKILL.md").read_text()
-    assert pointer in skill, "hx-worker/SKILL.md no longer quotes spec 06's `/goal` pointer"
+    assert pointer in skill, "hx-worker/SKILL.md no longer quotes the `/goal` pointer"
 
 
 # ------------------------------------------------ docs/getting-started.md against the real CLI
