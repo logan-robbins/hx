@@ -15,6 +15,26 @@ as milestones are accepted.
 
 ### Added
 
+- Episode memory (`src/hx/memory.py`, `docs/memory.md`): every Companion compaction (`pass`),
+  seam, native compaction and Digest is kept as a time-stamped episode in an instance-global
+  ChromaDB store under `state/memory/`, written by hooks as a queued JSON file and indexed under
+  `state/memory/index.lock`. `hx memory search|index|list|stats` searches it recency-weighted,
+  filtered to the caller's role by default; `hx compose` adds a **Memory episodes** section after
+  **Step state** with the closest same-role episodes of other agents. New `companion` fields
+  `memory_inject_k`, `memory_episode_chars`, `memory_half_life_h`; new dependency `chromadb`.
+- `hx-memory` skill: read the context file's Memory episodes first, search your own role next,
+  widen with `--all-roles` only when that is empty or off-topic.
+- `models.json` rows accept `autocompact_window`; `start.sh` exports it as
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, validation requires `threshold < autocompact_window <=
+  window`, and `hx doctor` reports it. Shipped defaults: 1M window, 250k autocompact, 200k seam.
+
+### Changed
+
+- Companion output is written for a model, not a person: `companion/BASE.md` and the role files
+  ask for telegraphic strings (exact `path:line`, sha7, verbatim commands and error lines, no
+  filler) and carry a "pre-answer the master's next tool calls" table; `render_step_state` emits
+  one tagged line per fact. The step-state schema and every contract are unchanged.
+
 - Instance skeleton texts (`src/hx/skeleton/`):
   - `companion/BASE.md` and `companion/roles/{partner,backend-engineer,frontend-engineer,release-engineer}.md`
     — the Companion's step-state schema, retention rules, seam policy, digest rules, and

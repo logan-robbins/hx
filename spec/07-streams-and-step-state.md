@@ -61,10 +61,13 @@ At every boundary (start, resume, clear, compaction, subagent start) hx composes
 1. Memory: the part of `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream); `config/<id>/SUBAGENTS.md` whole (subagent streams)
 2. Task: the verbatim `## Order` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight. The Partner has no work item and no order: its sections 2 and 3 are `PARTNER.md` and the current `hx board` output
 3. Work item `## Tasks` section (main stream only)
-4. Step state, rendered from `state/<id>/<stream>.json`
-5. Open subagent handles
+4. Step state, rendered from `state/<id>/<stream>.json`, one tagged line per fact (`goal:`, `dec:`, `open/next`, `done`, `dead:`, `file`, `fail`, `hypo`, `block`)
+5. Memory episodes: the closest episodes other agents of the same role left behind, recency-weighted, queried from this stream's own step state (10-companion.md Episode memory; omitted when `companion.memory_inject_k` is 0)
+6. Open subagent handles
 
 Before composing at a planned seam, hx waits for the Companion to process to the head of the stream, so step state is current and no raw tail is needed. On crash or resume the Companion catches up first, then hx composes. The agent reads one file and nothing else.
+
+Every fact in sections 4 and 5 exists to make a tool call unnecessary: the agent that reads the exact `path:line`, the sha, the last failing command and its error line does not grep, log, or re-run for them. Density is the point, prose is not; the Companion writes for a model, not a person.
 
 ### 7.4 Seam records
 

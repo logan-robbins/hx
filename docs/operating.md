@@ -105,6 +105,17 @@ hx read be-001          # the Digest its Companion wrote, and any open decision
 hx doctor               # what is here, what is missing, what is broken
 ```
 
+```bash
+hx memory search "csv importer streaming" --all-roles   # what any agent worked out about it
+hx memory stats                                          # episodes by role and kind, queue length
+```
+
+Every Companion compaction is kept as a searchable **episode** with its time, agent, pod and
+role (`docs/memory.md`). Agents get the closest same-role episodes in their context file at every
+boundary without asking; from a shell you have no role, so `search` looks across all of them.
+Results are recency-weighted: yesterday's episode about the same file outranks last month's
+unless the older one matches much better.
+
 `hx doctor` on a healthy instance is all `ok` and exits 0. The lines worth reading are the
 `sandbox:` ones, because they check the *running* session rather than the configuration meant
 to produce it:

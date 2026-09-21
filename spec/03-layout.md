@@ -26,6 +26,9 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   logs/<id>/<id>-pane.log                  # raw pane text via tmux pipe-pane, started by start.sh; UI fallback when the session is dead; not a Companion stream
   state/<id>/<stream>.json                 # companion step state per stream
   state/<id>/<stream>.digest.md            # closed-stream digest (subagent streams), returned to the parent
+  state/memory/queue/<uuid>.json           # episode memory: one queued episode per boundary, written by hooks, drained by hx memory
+  state/memory/chroma/                     # episode memory: the instance-global ChromaDB store (collection `episodes`), read under state/memory/index.lock
+  state/memory/last/<id>-<stream>.sha256   # episode memory: fingerprint of the last `pass` episode per stream, so identical passes are not re-indexed
   archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
   run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
   run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)

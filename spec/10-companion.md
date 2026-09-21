@@ -29,6 +29,10 @@
 
 **Final pass** (inside `hx complete`, after the checks have passed for `done`): read the main step state and every closed-stream digest; write the `## Digest` section of the work item for the Partner. For `blocked` and `decision` the digest states the blocker or the question first, so the Partner's addendum can answer it.
 
+**Output style.** The step state is read by a model resuming after `/clear`, never by a person. BASE.md therefore asks for telegraphic strings: no articles or filler, exact `path:line`, sha7, verbatim commands and error lines, test names, numbers rather than adjectives, `verified` marked honestly, and a character cap per field. Its "pre-answer the master's next tool calls" table maps each tool call the agent would otherwise make (a grep for the file it was editing, a `git log`, re-running the failing test) to the field that makes it unnecessary; each role file adds the role-specific facts (`| It would run | Write instead |`). The schema and every contract above are unchanged; only the content of the strings is.
+
+**Episode memory.** Every state the Companion produces is a compaction of one slice of one agent's work, and hx keeps each as an **episode** instead of letting the next pass overwrite it: `pass` at ingest, `seam` at the cut, `compact` after a native compaction, `complete` with the Digest. The hook side only appends a JSON file to `state/memory/queue/` (no imports, no lock, never fails the pass); `hx memory` and `hx compose` drain the queue into an instance-global ChromaDB collection under `state/memory/chroma` and search it recency-weighted (`docs/memory.md`). The context file's **Memory episodes** section is the passive side of it: the closest episodes of other agents with the same role, so the agent continues instead of searching. `hx memory search` is the active side, filtered to the caller's role by default.
+
 **`companion/BASE.md` defines:**
 - **Keep until task completes:** goal, constraints, decisions with reason, open steps with intent and next action, working set, blockers.
 - **Collapse:** closed steps to one line with outcome, commit sha, and evidence seqs; repeated attempts to one line.

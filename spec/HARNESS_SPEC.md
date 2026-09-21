@@ -14,12 +14,12 @@ Each file is one section. Edit one file per change; cross-references use file na
 | `07-streams-and-step-state.md` | Raw stream (Companion-only), step state, context file, continuity checkpoints |
 | `08-hx-cli.md` | `hx` commands |
 | `09-hooks.md` | Hook events, seam handshake, Claude Code event mapping |
-| `10-companion.md` | Companion process, prompts, seam policy, digests |
+| `10-companion.md` | Companion process, prompts, output style, seam policy, digests, episode memory |
 | `11-adapters.md` | Claude Code adapter: config home, persona, threshold, launch |
 | `12-partner-loop.md` | Partner operating loop |
 | `13-build-order.md` | Milestones and acceptance tests |
 | `14-open-items.md` | Decisions pinned at implementation, with the milestone that verifies each |
-| `15-dataflow.md` | Data flow human → Partner → HarnessAgents → Subagents and back |
+| `15-dataflow.md` | Data flow human → Partner → HarnessAgents → Subagents and back, plus the episode-memory loop |
 | `16-ui.md` | Observing UI: board, agent, Partner chat, orders, archive |
 | `17-packaging.md` | Package vs instance, `hx install`, isolation from the user's Claude, launch, skills, build plan |
 <!-- END 00-index.md -->
@@ -121,6 +121,9 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   logs/<id>/<id>-pane.log                  # raw pane text via tmux pipe-pane, started by start.sh; UI fallback when the session is dead; not a Companion stream
   state/<id>/<stream>.json                 # companion step state per stream
   state/<id>/<stream>.digest.md            # closed-stream digest (subagent streams), returned to the parent
+  state/memory/queue/<uuid>.json           # episode memory: one queued episode per boundary, written by hooks, drained by hx memory
+  state/memory/chroma/                     # episode memory: the instance-global ChromaDB store (collection `episodes`), read under state/memory/index.lock
+  state/memory/last/<id>-<stream>.sha256   # episode memory: fingerprint of the last `pass` episode per stream, so identical passes are not re-indexed
   archive/<id>/<ts>/                       # logs and state from prior dispatches (not from resumes)
   run/<id>/persona.md                      # derived at each launch from AGENTS.md above the header; --append-system-prompt-file target
   run/<id>/<stream>.context.md             # the single file handed to the agent at each boundary (02 Single-file context)
@@ -184,16 +187,16 @@ Personas and per-agent config live in `config/<id>/`, outside every agent's work
 <!-- BEGIN 05-configuration.md -->
 ## 5. Configuration
 
-**`config/models.json`** — one row per model. `threshold` is hx's seam threshold: when the main stream's `context_tokens` reaches it, the `log` hook marks a seam. It is not passed to Claude Code; the harness autocompact stays native and only fires if one turn grows from `threshold` to `window` without ending. 1M-window models are capped at 500000.
+**`config/models.json`** — one row per model. `threshold` is hx's seam threshold: when the main stream's `context_tokens` reaches it, the `log` hook marks a seam. `autocompact_window` (optional) is the point at which Claude Code's own compaction fires; when present, `start.sh` exports it as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` on the agent's session and validation requires `threshold < autocompact_window <= window`, so the seam always lands before native compaction. Without it the autocompact stays native and only fires if one turn grows from `threshold` to `window` without ending. 1M-window models are capped at a threshold of 500000.
 
 ```json
 {
-  "claude-opus-5":   { "window": 1000000, "threshold": 500000 },
-  "claude-sonnet-5": { "window": 1000000, "threshold": 500000 }
+  "claude-opus-5":   { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
+  "claude-sonnet-5": { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 }
 }
 ```
 
-Model id strings are placeholders until implementation; they are validated against the Models API then, not here. 1M-window models are capped at 500000.
+The shipped defaults accept a 250k working context: the seam fires at 200k, compaction would fire at 250k, and the 1M window is headroom for the single runaway turn. Model id strings are placeholders until implementation; they are validated against the Models API then, not here.
 
 **`config/<id>/harness.json`**:
 
@@ -212,7 +215,10 @@ Model id strings are placeholders until implementation; they are validated again
     "cache_ttl": "1h",
     "state_budget_tokens": 10000,
     "seam_min_context_tokens": 60000,
-    "seam_min_interval_s": 600
+    "seam_min_interval_s": 600,
+    "memory_inject_k": 5,
+    "memory_episode_chars": 700,
+    "memory_half_life_h": 24
   }
 }
 ```
@@ -221,6 +227,7 @@ Model id strings are placeholders until implementation; they are validated again
 - `effort` is the HarnessAgent model's effort level, passed at launch.
 - `workdir` is any absolute directory the Partner chooses as this worker's working directory: it creates one, or points the agent at an existing checkout. hx does not manage git for it: it creates nothing, resets nothing, and pushes nothing. It only requires the directory to exist at launch, and `hx complete done` requires `git status --porcelain` to be empty there when the directory is a git repository.
 - `companion.state_budget_tokens` bounds the step state and therefore the context file. Target is roughly 10k tokens: the hypothesis under test is that one intelligently constructed file holding the complete useful memory of the task fits in context and yields maximum quality, so this number is a tuning knob, not a ceiling.
+- `companion.memory_*` govern episode memory in the context file (`docs/memory.md`): `memory_inject_k` is how many recency-weighted episodes from other agents `hx compose` puts in the **Memory episodes** section (0 removes the section), `memory_episode_chars` how much of each episode the line carries, `memory_half_life_h` the recency half-life. The store itself is instance-global and needs no configuration.
 - `companion.seam_*` are the seam policy: the Companion does not declare a seam before `seam_min_context_tokens` are in use, nor more often than `seam_min_interval_s`. Context size comes from the `usage` block of the latest assistant record in the transcript, which `hx-hook` has the path to. The `models.json` threshold is the hard trigger that does not wait for a step to close.
 - The Companion learns everything it needs about its HarnessAgent (id, role, pod, budgets, seam policy, persona) from a system prompt hx composes at Companion start from this file, `companion/BASE.md`, and `companion/roles/<role>.md`. It does not read config at runtime.
 - `adapters/claude/install.sh` derives the per-agent home settings from this file: hooks with the id baked in, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` for the product repo, the bypass acceptance entry; for the Partner, `crossSessionInbound: accept` (messaging itself is on by default). It then writes the bypass acceptance entry directly; auth is the token in `seed/token`, exported into the agent's environment by `start.sh`, so no credentials are copied from anywhere; both stay in `run/<id>/home/` across dispatches. Nothing about launch is interactive. Effort, model, and the persona file are launch flags (`11-adapters.md`); no compaction env vars are set.
@@ -359,10 +366,13 @@ At every boundary (start, resume, clear, compaction, subagent start) hx composes
 1. Memory: the part of `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream); `config/<id>/SUBAGENTS.md` whole (subagent streams)
 2. Task: the verbatim `## Order` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight. The Partner has no work item and no order: its sections 2 and 3 are `PARTNER.md` and the current `hx board` output
 3. Work item `## Tasks` section (main stream only)
-4. Step state, rendered from `state/<id>/<stream>.json`
-5. Open subagent handles
+4. Step state, rendered from `state/<id>/<stream>.json`, one tagged line per fact (`goal:`, `dec:`, `open/next`, `done`, `dead:`, `file`, `fail`, `hypo`, `block`)
+5. Memory episodes: the closest episodes other agents of the same role left behind, recency-weighted, queried from this stream's own step state (10-companion.md Episode memory; omitted when `companion.memory_inject_k` is 0)
+6. Open subagent handles
 
 Before composing at a planned seam, hx waits for the Companion to process to the head of the stream, so step state is current and no raw tail is needed. On crash or resume the Companion catches up first, then hx composes. The agent reads one file and nothing else.
+
+Every fact in sections 4 and 5 exists to make a tool call unnecessary: the agent that reads the exact `path:line`, the sha, the last failing command and its error line does not grep, log, or re-run for them. Density is the point, prose is not; the Companion writes for a model, not a person.
 
 ### 7.4 Seam records
 
@@ -422,6 +432,8 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 | `hx companion <id> --wake <stream>` | `stop` hook, `hx flush`, `subagent-stop` | Write `run/<id>/companion/<stream>.pass.md`; paste `/clear` then the fixed pointer into `<id>:companion` when its pane is idle; else queue the pass and paste it from the Companion's own `stop` hook |
 | `hx wake partner "<text>"` | `hx complete`, `hx heartbeat` | Connect to the unix socket in `run/partner/socket.json`; write `{"type":"auth","token":"<token>"}` then `{"type":"user","message":{"role":"user","content":"<text>"}}`, newline-terminated; the socket answers nothing. An idle Partner starts a turn; a busy one takes it as steering in the current turn. The text is a fixed short form composed by hx, never an order |
 | `hx heartbeat` | Human's own cron, if they want it | `hx board`; `hx restart <id>` for every `working` item whose session is dead; `hx launch partner` if the Partner's session is dead; then, if any item is `working` and the board output differs from the last heartbeat's, `hx wake partner "check on each HarnessAgent: <board diff>"` |
+| `hx memory search <query> [--role R] [--pod P] [--id ID] [--kind K] [--k N] [--all-roles] [--half-life-h H] [--json]` | HarnessAgent, Partner, human | Drain `state/memory/queue/` into the ChromaDB store, then a recency-weighted semantic search over every agent's episodes (`score = similarity × (0.5 + 0.5·2^(−age_h/half_life_h))`). The default filter is the caller's own role (`HX_ROLE` on the session); `--all-roles` widens. The `hx-memory` skill tells agents to read the context file's Memory episodes section first, search their own role next, and widen only when that is empty or off-topic |
+| `hx memory index` · `hx memory list [--id] [--role] [--kind] [--limit] [--json]` · `hx memory stats [--json]` | Human, cron, Partner | Drain the queue; list episode metadata newest first; counts by role and kind plus the queue length. Every store access, reads included, holds `state/memory/index.lock` |
 | `hx metrics <id>` | Partner | Per seam: tool calls in the next 10 turns (Reads of `working_set` files vs. other), context-file Reads, `prompt_version`, context tokens before |
 
 **`tasks.json`** (control-plane record per id, written only by hx, with an ordinary write):
@@ -536,6 +548,10 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 
 **Final pass** (inside `hx complete`, after the checks have passed for `done`): read the main step state and every closed-stream digest; write the `## Digest` section of the work item for the Partner. For `blocked` and `decision` the digest states the blocker or the question first, so the Partner's addendum can answer it.
 
+**Output style.** The step state is read by a model resuming after `/clear`, never by a person. BASE.md therefore asks for telegraphic strings: no articles or filler, exact `path:line`, sha7, verbatim commands and error lines, test names, numbers rather than adjectives, `verified` marked honestly, and a character cap per field. Its "pre-answer the master's next tool calls" table maps each tool call the agent would otherwise make (a grep for the file it was editing, a `git log`, re-running the failing test) to the field that makes it unnecessary; each role file adds the role-specific facts (`| It would run | Write instead |`). The schema and every contract above are unchanged; only the content of the strings is.
+
+**Episode memory.** Every state the Companion produces is a compaction of one slice of one agent's work, and hx keeps each as an **episode** instead of letting the next pass overwrite it: `pass` at ingest, `seam` at the cut, `compact` after a native compaction, `complete` with the Digest. The hook side only appends a JSON file to `state/memory/queue/` (no imports, no lock, never fails the pass); `hx memory` and `hx compose` drain the queue into an instance-global ChromaDB collection under `state/memory/chroma` and search it recency-weighted (`docs/memory.md`). The context file's **Memory episodes** section is the passive side of it: the closest episodes of other agents with the same role, so the agent continues instead of searching. `hx memory search` is the active side, filtered to the caller's role by default.
+
 **`companion/BASE.md` defines:**
 - **Keep until task completes:** goal, constraints, decisions with reason, open steps with intent and next action, working set, blockers.
 - **Collapse:** closed steps to one line with outcome, commit sha, and evidence seqs; repeated attempts to one line.
@@ -562,7 +578,7 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 | Persona | `--append-system-prompt-file /srv/hx/run/<id>/persona.md`. `start.sh` derives the file from `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY` at every launch. The persona is therefore in the system prompt of every turn, survives compaction and `/clear`, and costs no read. Interactive-mode flag; the subagent variant exists only under `-p`, so subagents keep the hook path to their context file |
 | Initial prompt | Never. Claude Code is launched bare; every instruction arrives as the `/goal` pointer pasted by `hx goal` or as a file path from a hook |
 | Effort, model | `--effort <level>` and `--model <full id>` at launch from `config/<id>/harness.json` (`low`…`max`) |
-| Compaction | Native, untouched: no `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, no `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_DISABLE_1M_CONTEXT` unset. The 1M window is default for Opus 5 and Sonnet 5 on the API and Max/Team/Enterprise plans. hx's seam threshold (`models.json`, 500k on 1M models) fires through the `log` hook well before the native window (~967k) |
+| Compaction | Native mechanism, hx-placed window: when the model's `models.json` row has `autocompact_window`, `start.sh` exports `CLAUDE_CODE_AUTO_COMPACT_WINDOW=<it>` on the session (shipped default 250000); `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and `CLAUDE_CODE_DISABLE_1M_CONTEXT` stay unset. The 1M window is default for Opus 5 and Sonnet 5 on the API and Max/Team/Enterprise plans. hx's seam threshold (`models.json`, shipped 200000) fires through the `log` hook before the autocompact window, and validation refuses a row where it would not |
 | Compaction summary | Never used on the planned path; seams replace it. If a single turn runs from the seam threshold to the native window, the harness compacts and `SessionStart(compact)` still hands over the context file; the persona is untouched because it is system prompt. `PreCompact`/`PostCompact` are log-only |
 | Subagents | Built-in; `agent_id`/`agent_type` on tool events inside subagents; `tool_response.agentId` on the parent's `PostToolUse(Agent)` |
 | `context_tokens` source | `usage` of the latest assistant record at `transcript_path` |
@@ -659,7 +675,7 @@ Content still to be authored, not decided: `companion/BASE.md` and `companion/ro
 <!-- BEGIN 15-dataflow.md -->
 ## 15. Data flow
 
-Human → Partner → HarnessAgents → Subagents → HarnessAgents → Partner → Human. Solid arrows are data the receiver reads; dashed arrows are wake signals. Every hand-off is a file path, never inline content. The human drives the Partner by talking to it; the Partner drives workers with the harness.
+Human → Partner → HarnessAgents → Subagents → HarnessAgents → Partner → Human, with one sideways loop: every Companion compaction also becomes an episode in the instance-global memory store, which flows back into every agent's context file. Solid arrows are data the receiver reads; dashed arrows are wake signals; dotted arrows into and out of the memory store are the episode path. Every hand-off is a file path, never inline content. The human drives the Partner by talking to it; the Partner drives workers with the harness.
 
 ```mermaid
 flowchart TB
@@ -693,6 +709,12 @@ flowchart TB
     SL["logs/&lt;id&gt;/&lt;id&gt;-sNNN-open|closed.jsonl"]
   end
 
+  subgraph M["Episode memory (instance-global, docs/memory.md)"]
+    MQ["state/memory/queue/*.json\n(one episode per boundary: pass · seam · compact · complete)"]
+    MC["state/memory/chroma\ncollection `episodes` · ts, role, pod, id, kind, seq"]
+    MS["hx memory search\n(own role first, recency-weighted)"]
+  end
+
   H -- "1 gives the Partner its goal in chat (tmux attach -t partner)" --> PG
   PG -- "2 writes an order file" --> OF
   OF -- "hx dispatch: verbatim, then deleted" --> T
@@ -724,9 +746,19 @@ flowchart TB
   PG -- "11 decides: next dispatch · hx resume (addendum) · hx bench" --> OF
   PG -- "12 reports in chat" --> H
   H -- "answers a decision in chat" --> PG
+  WC -. "E1 every ingested state (pass), seam, compact" .-> MQ
+  PC -. "E1 Partner passes too" .-> MQ
+  WI -. "E1 Digest at hx complete" .-> MQ
+  MQ -. "E2 drained under index.lock by hx memory / hx compose" .-> MC
+  MC -. "E3 top-k same-role episodes of other agents → ## Memory episodes" .-> CF
+  MC -. "E4 on demand" .-> MS
+  MS -. "answers, --all-roles to widen" .-> WA
+  MS -. "answers" .-> PG
 ```
 
 **Reading the numbers.** 1 is the human giving the Partner its goal, in conversation, every time; there is no order file and no dispatch for the Partner, and nothing else starts its work. 2–3 are dispatch: the order is a file hx consumes and deletes, so the text ends up in exactly two places, and the pointer is the only thing pasted. 4 is the only read an agent does to know what it is doing and where it left off; who it is came with the system prompt at launch; the read repeats after every seam and resume. 5 is continuous: every tool call becomes evidence the Companion turns into step state. 6–7 are the subagent round trip, with the parent receiving a Companion-written digest, not a transcript. 8 is the provable end of a task: checks first, then the line the evaluator reads. 9–11 close the loop through the Partner's memory, and the Partner decides for itself when the next order goes out. 12 is the Partner telling the human, in chat, what happened; a `decision` comes back down as an addendum, not a fresh start.
+
+**Reading the letters.** E1 is the write side of episode memory and costs a hook one small file: every state the Companion produces (a `pass`), every seam, every native compaction and every Digest is queued as an episode with its time, agent, pod, role and kind. E2 is the only place ChromaDB is opened, always under `state/memory/index.lock`, so many agents' processes share one store safely. E3 is the passive read: at every boundary `hx compose` queries the store with the stream's own step state and puts the closest recency-weighted episodes of other agents with the same role into the context file, so the agent continues instead of searching. E4 is the active read, `hx memory search`, filtered to the caller's role by default and widened with `--all-roles` only when the own-role result is empty or off-topic (the `hx-memory` skill). Nothing on the E arrows is a precondition: an empty, broken or uninstalled store changes the section's text and nothing else.
 
 **What never crosses an arrow.** Raw logs (Companion-only). Claude's own compaction summary (bypassed by seams). Task text on a command line (always a file, then a pointer).
 <!-- END 15-dataflow.md -->
