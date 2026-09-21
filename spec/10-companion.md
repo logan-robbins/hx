@@ -12,7 +12,7 @@
 [companion/BASE.md]                       cache breakpoint (shared by all companions on this model)
 [companion/roles/<role>.md]               cache breakpoint
 [config/<id>/AGENTS.md or SUBAGENTS.md]   cache breakpoint, cache_ttl
-[task: order + addenda]                   cache breakpoint, cache_ttl
+[goal: goal + addenda]                   cache breakpoint, cache_ttl
 [current step state]
 [raw records with seq > state.seq]
 → new step state, written by the Companion to run/<id>/companion/<stream>.out.json

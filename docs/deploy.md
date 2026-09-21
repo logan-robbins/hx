@@ -83,7 +83,7 @@ It refuses to run as root, checks `tmux`, `git` and Python, and pins the `claude
    created  personas/partner/AGENTS.md
    created  personas/release-engineer/AGENTS.md
    created  templates/addendum.md
-   created  templates/order.md
+   created  templates/goal.md
    created  templates/work-item.md
    created  templates/worker/AGENTS.md
    created  templates/worker/SUBAGENTS.md
@@ -158,8 +158,8 @@ Step 6 started the Partner and printed:
 tmux attach -t partner
 ```
 
-That is the interface. Tell it what you want built, in your own words. It writes its own order
-file from the conversation, dispatches itself, decomposes the work into order files for
+That is the interface. Tell it what you want built, in your own words. It writes its own goal
+file from the conversation, dispatches itself, decomposes the work into goal files for
 workers, launches and dispatches them, reads their digests as they finish, and reports back to
 you in chat.
 

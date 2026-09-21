@@ -50,7 +50,13 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     transcript = payload.get("transcript_path")
 
     stream, is_main = handle_for(root, item_id, agent_id)
-    tokens = transcripts.context_tokens(transcript)
+    # Pi's extension passes the count it already summed. Claude leaves it out and the
+    # transcript parse below is how that session's usage is read.
+    supplied = payload.get("context_tokens")
+    if isinstance(supplied, int) and not isinstance(supplied, bool):
+        tokens = supplied
+    else:
+        tokens = transcripts.context_tokens(transcript)
 
     record = {
         "event": "post_tool",

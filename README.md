@@ -20,7 +20,7 @@ Three problems stand between an agent and unattended work. hx is three answers.
 **An agent stops at the end of a turn.** So every worker runs under a `/goal`: a session-scoped
 evaluator that decides, after each turn, whether the task is met, not yet met, or impossible.
 The goal is never prose in a command line — it is a fixed pointer to a work item on disk, and
-the order it points at can be as long as it needs to be.
+the goal it points at can be as long as it needs to be.
 
 **An agent forgets when its context is cut.** So hx never lets Claude's compaction summarizer
 decide what survives. Each agent is paired one-to-one with a small **Companion** — another
@@ -28,7 +28,7 @@ Claude Code session in the next tmux window, with two tools and nothing else —
 agent's tool-call stream and keeps a bounded, structured *step state*: open steps with their
 next action, closed steps with their commit shas, decisions with reasons, dead ends, and the
 facts the agent had to read a file to learn. At a boundary, hx composes that plus the agent's
-memory, its order and its own task list into **one file**, and a hook hands over the path. The
+memory, its goal and its own task list into **one file**, and a hook hands over the path. The
 agent reads one file and continues. It does not search, and it does not re-read what it
 already knew.
 
@@ -36,7 +36,7 @@ The cut itself is a **seam**: `/clear` plus rehydration, taken at a quiet turn b
 when a step closes or when context crosses a threshold. It is planned, not survived.
 
 **An agent that says it is done may not be.** So `hx complete done` is machine-checked. The
-order carries a `### Checks` bash block; it runs in the agent's `workdir`, the directory must
+goal carries a `### Checks` bash block; it runs in the agent's `workdir`, the directory must
 be clean if it is a git repository, and no subagent stream may be open. Any failure prints
 `HX-CHECK-FAILED` with the output, changes nothing, and leaves the goal active — the agent
 fixes it and retries. Only success prints `HX-COMPLETE <id> done`, and that line, in the
@@ -47,12 +47,12 @@ transcript, is what the goal evaluator reads. Not a claim; a result.
 You talk to the **Partner**, in `tmux attach -t partner`. It is a Claude Code session with its
 own Companion and its own memory file, and it is the only one you talk to.
 
-1. You tell it what you want, in chat. That is its goal — there is no order file for the
+1. You tell it what you want, in chat. That is its goal — there is no goal file for the
    Partner, no dispatch, and no `/goal`. It asks back what is unclear and starts.
-2. It decomposes the work into one order file per item, each with a definition of done and
+2. It decomposes the work into one goal file per item, each with a definition of done and
    checks that can actually run, sized to finish inside one context window.
 3. It creates the workers it needs — a config directory, a persona, a `workdir` it picks —
-   and `hx dispatch be-001 <order-file>` starts one. Several id/file pairs in one call start
+   and `hx dispatch be-001 <goal-file>` starts one. Several id/file pairs in one call start
    several at once. **There is no dependency field and no queue:** if one item must wait for
    another, the Partner waits and then dispatches, the way you would.
 4. Workers work, spawn subagents, commit as they go, take seams, and finish with
@@ -91,7 +91,7 @@ $HARNESS_ROOT/
                               the agent's own memory below it → context file
   config/<id>/harness.json    model, effort, role, and the workdir it works in
   personas/<role>/AGENTS.md   the personas the Partner copies to make a worker
-  templates/                  work-item, order, addendum, worker
+  templates/                  work-item, goal, addendum, worker
   tasks.json                  the control-plane record, written only by hx
   pods/<pod>/<id>-<state>.md  the work item; the state is the filename suffix
   logs/<id>/<id>-main.jsonl   raw stream, one line per tool call, read by the Companion

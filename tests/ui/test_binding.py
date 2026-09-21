@@ -25,7 +25,7 @@ from .conftest import archive_is_broken
 HX = Path(sys.executable).parent / "hx"
 
 #: Every reader the UI binds, and whether the build lane has shipped it.
-READERS = ["board", "show", "orders", "archive", "wake"]
+READERS = ["board", "show", "goals", "archive", "wake"]
 
 
 # -- the binding ---------------------------------------------------------
@@ -67,7 +67,7 @@ def test_the_bound_readers_never_run_hx(instance_root, monkeypatch):
     monkeypatch.setattr(subprocess, "run", record)
     source = InstanceSource(instance_root)
     assert source.board()["items"]
-    assert source.orders()["orders"]
+    assert source.goals()["goals"]
     assert source.show("eng-001")["id"] == "eng-001"
     if not archive_is_broken(instance_root):
         assert source.archive()["items"]
@@ -91,7 +91,7 @@ def test_prefer_subprocess_really_uses_the_fallback(instance_root, monkeypatch):
     assert calls and calls[0][1:] == ["board", "--json"]
 
 
-@pytest.mark.parametrize("reader", ["board", "orders", "archive"])
+@pytest.mark.parametrize("reader", ["board", "goals", "archive"])
 def test_both_paths_return_the_same_document(instance_root, reader):
     """The fallback is not a different answer, only a different route to it."""
     if reader == "archive":
@@ -135,7 +135,7 @@ def test_a_broken_instance_is_502_not_404(instance_root, tmp_path):
     """Everything that is not NotFound is the instance being broken."""
     broken = tmp_path / "broken"
     broken.mkdir()
-    for name in ("config", "pods", "run", "orders"):
+    for name in ("config", "pods", "run", "goals"):
         (broken / name).mkdir()
     (broken / "tasks.json").write_text("{ this is not json", encoding="utf-8")
     (broken / "config" / "eng-001").mkdir()
@@ -157,13 +157,13 @@ def test_a_malformed_tasks_file_is_refused(instance_root, tmp_path):
     """v1 cut: there is no `errors` list left to put the breakage in."""
     root = tmp_path / "half-built"
     root.mkdir()
-    for name in ("config", "pods", "run", "orders", "logs", "state"):
+    for name in ("config", "pods", "run", "goals", "logs", "state"):
         (root / name).mkdir()
     (root / "tasks.json").write_text("{ not json", encoding="utf-8")
     # v1 cut: `hx board` has no `errors` and polices nothing, so a malformed
     # `tasks.json` is now a refusal from hx rather than a line in the document.
     with pytest.raises((CommandError, NotFound)):
-        InstanceSource(root).orders()
+        InstanceSource(root).goals()
 
 
 # -- `hx ui`, the build lane's subcommand --------------------------------

@@ -168,8 +168,8 @@ def scratch_ui(scratch_tree):
 
 HX = Path(sys.executable).parent / "hx"
 
-ORDER = """## Order
-Stand in for a dispatched order while the ui lane runs against a real instance.
+GOAL = """## Goal
+Stand in for a dispatched goal while the ui lane runs against a real instance.
 
 ## Definition of done
 - The board renders this item.
@@ -186,8 +186,8 @@ pod: {pod}
 outcome:
 dispatched: 2026-09-20T12:00:00Z
 ---
-## Order
-Stand in for a dispatched order while the ui lane runs against a real instance.
+## Goal
+Stand in for a dispatched goal while the ui lane runs against a real instance.
 
 ## Definition of done
 - The board renders this item.
@@ -243,14 +243,14 @@ def build_instance(root: Path) -> Path:
         (pod_dir / f"{agent_id}-working.md").write_text(
             WORK_ITEM.format(id=agent_id, pod=pod), encoding="utf-8"
         )
-    # Orders, and the tasks.json records they produced. `partner`'s file still
+    # Goals, and the tasks.json records they produced. `partner`'s file still
     # matches what was dispatched; `eng-001`'s was edited afterwards, so the
-    # Orders view has both `file_matches_record` cases against real data.
-    orders = root / "orders"
-    orders.mkdir(parents=True, exist_ok=True)
-    (orders / "partner.md").write_text(ORDER, encoding="utf-8")
-    (orders / "eng-001.md").write_text(
-        ORDER + "\n## Order addendum, typed into the file after dispatch\nRescope to the board only.\n",
+    # Goals view has both `file_matches_record` cases against real data.
+    goals = root / "goals"
+    goals.mkdir(parents=True, exist_ok=True)
+    (goals / "partner.md").write_text(GOAL, encoding="utf-8")
+    (goals / "eng-001.md").write_text(
+        GOAL + "\n## Goal addendum, typed into the file after dispatch\nRescope to the board only.\n",
         encoding="utf-8",
     )
     (root / "tasks.json").write_text(
@@ -259,7 +259,7 @@ def build_instance(root: Path) -> Path:
                 # v1 cut (CONTRACTS.md): `tasks.json` allows only these five
                 # keys — hx rejects an `after`, which no longer exists.
                 agent_id: {
-                    "order": ORDER,
+                    "goal": GOAL,
                     "addenda": [],
                     "outcome": None,
                     "dispatched": "2026-09-20T12:00:00Z",
@@ -287,14 +287,14 @@ def pack_instance_is_stale(root) -> str | None:
     """`tests/scenario/packlib` still writes the pre-cut `tasks.json` (ui-7).
 
     The v1 cut removed `after`, and hx now rejects a `tasks.json` that carries
-    it — so an instance the gtm lane's pack builds cannot be read by `hx orders`
+    it — so an instance the gtm lane's pack builds cannot be read by `hx goals`
     or `hx show`. Reported in `handoff/ui-to-gtm.md`, not fixed: the pack is
     theirs. Returns the message to skip with, or None when it reads.
     """
     from hx.ui.data import SourceError
 
     try:
-        isolated_source(root).orders()
+        isolated_source(root).goals()
     except (SourceError, AttributeError, TypeError, ValueError) as exc:
         return f"the scenario pack builds a pre-cut instance: {exc}"
     return None

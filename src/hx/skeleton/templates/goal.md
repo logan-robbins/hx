@@ -1,4 +1,4 @@
-## Order
+## Goal
 
 Add a `--json` flag to `hx doctor` so the UI can render the same checks the CLI prints.
 
@@ -9,7 +9,7 @@ Context you will need and should not have to hunt for:
 - `hx board --json` in `src/hx/board.py` is the shape to follow: a top-level object with a
   `ts` key, a list of results, and an `errors` list. Exit 0 when `errors` is empty, else 1.
 - The UI is not being changed in this task. A later item will consume the new output;
-  whoever writes that order reads this one for the shape, so keep the key names accurate.
+  whoever writes that goal reads this one for the shape, so keep the key names accurate.
 
 Keep the existing text output byte-identical. Nothing in this task touches `run/`, `logs/`,
 `state/`, or any instance data — `hx doctor` is read-only and stays that way.

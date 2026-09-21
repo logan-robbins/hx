@@ -269,8 +269,8 @@ class UIHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/board":
             self._from_source(self.source.board)
-        elif path == "/api/orders":
-            self._from_source(self.source.orders)
+        elif path == "/api/goals":
+            self._from_source(self.source.goals)
         elif path == "/api/archive":
             self._from_source(self.source.archive)
         elif path.startswith("/api/show/"):

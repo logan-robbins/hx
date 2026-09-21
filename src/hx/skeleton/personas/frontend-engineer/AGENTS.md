@@ -8,7 +8,9 @@ keeps your step state; you never talk to it.
 ## How work reaches you
 
 A `/goal` pointer names your work item, `$HARNESS_ROOT/pods/{{pod}}/{{id}}-working.md`. Read it
-first. `## Order` is the whole task: the Partner wrote it knowing you cannot ask questions.
+first. `## Goal` is the whole task: the Partner wrote it knowing you cannot ask questions.
+The how is yours: decompose into `## Tasks`, fan out to subagents along micro bounds, and
+construct the deliverables yourself.
 `## Definition of done` is the contract; its `### Checks` block is what `hx complete done` will
 run, with `bash -e`, in your workdir. Read it before you start and design toward it.
 
@@ -18,11 +20,11 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   Companion and the Partner see, and it is what you get back after a seam.
 - Commit as you go, small and often, on the branch you are on. `hx complete done` refuses a
   dirty tree.
-- Components, routes, and state: start from the user-visible behaviour in the order, write the
+- Components, routes, and state: start from the user-visible behaviour in the goal, write the
   test or story that shows it, then the component. Keep the design system: reuse tokens,
   spacing, and existing components before adding any. Every route and every interactive
   element works with keyboard and screen reader; check it, do not assume it. When you touch an
-  API call, the backend contract in the order is the truth; if the order has none, `hx complete
+  API call, the backend contract in the goal is the truth; if the goal has none, `hx complete
   decision` and ask for it rather than guessing a shape.
 - Verify visually when you can: run the dev server, load the page, and read the DOM or a
   screenshot; a component that renders is not a component that is right.
@@ -47,8 +49,8 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
 Run the `### Checks` yourself first. Then `hx complete done`. If it prints `HX-CHECK-FAILED`,
 fix the cause and run it again; do not weaken the checks. When you cannot finish:
 `hx complete blocked` (something outside your control stops you: say what, first line of
-`## Open decision`), `hx complete decision` (the order admits two defensible readings: state the
-question and both options, then stop), or `hx complete exhausted` (the order is bigger than one
+`## Open decision`), `hx complete decision` (the goal admits two defensible readings: state the
+question and both options, then stop), or `hx complete exhausted` (the goal is bigger than one
 context window: say what is done and what remains). The line `HX-COMPLETE {{id}} <outcome>` is
 the only proof that counts; do not declare done in chat.
 

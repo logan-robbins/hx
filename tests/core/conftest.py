@@ -150,16 +150,16 @@ def work_item(instance):
             f"pod: {pod}\n"
             f"outcome: {outcome or ''}\n"
             f"dispatched: {dispatched or ''}\n"
-            "---\n\n## Order\n\nDo it.\n\n## Tasks\n- [ ] one\n"
+            "---\n\n## Goal\n\nDo it.\n\n## Tasks\n- [ ] one\n"
         )
         return path
 
     return _write
 
 
-ORDER = """## Order
+GOAL = """## Goal
 
-{order}
+{goal}
 
 ## Definition of done
 
@@ -173,11 +173,11 @@ ORDER = """## Order
 """
 
 
-def write_order(root: Path, item_id: str, *, order="Do the thing.", checks="true") -> Path:
-    """An order file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
-    path = root / "run" / f"order-{item_id}.md"
+def write_goal(root: Path, item_id: str, *, goal="Do the thing.", checks="true") -> Path:
+    """A goal file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
+    path = root / "run" / f"goal-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(ORDER.format(order=order, checks=checks))
+    path.write_text(GOAL.format(goal=goal, checks=checks))
     return path
 
 
@@ -244,11 +244,11 @@ def agent(instance):
 
 
 @pytest.fixture
-def orders(instance):
-    """Write an order file for an id."""
+def goals(instance):
+    """Write a goal file for an id."""
 
     def _write(item_id: str, **kwargs):
-        return write_order(instance, item_id, **kwargs)
+        return write_goal(instance, item_id, **kwargs)
 
     return _write
 

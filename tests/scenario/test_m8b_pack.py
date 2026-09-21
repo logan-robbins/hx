@@ -1,12 +1,12 @@
 """The m8b scenario pack: a `decision` nobody scripted.
 
 m8 tells its worker to stop and ask, because a test pack needs one deterministic path through
-that outcome. m8b does not mention a decision anywhere. Its one order contradicts itself in a
+that outcome. m8b does not mention a decision anywhere. Its one goal contradicts itself in a
 single documented way, and its `### Checks` are deliberately neutral between the two readings,
 so there is no path that satisfies the checks while dodging the question.
 
 What this module can assert is that the pack stays *set up* that way: that the contradiction is
-still present in both halves of the order, that the checks still resolve neither side, that
+still present in both halves of the goal, that the checks still resolve neither side, that
 nothing in the pack names the `decision` outcome at the worker, and that the six expected
 boards are what `hx board` really prints. Whether the ambiguity is actually noticed is M8's to
 find out with a live agent — that is the experiment, and it cannot be unit-tested.
@@ -27,7 +27,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
 import packlib  # noqa: E402
 
 PACK = pathlib.Path(__file__).resolve().parent / "m8b"
-ORDERS = PACK / "orders"
+GOALS = PACK / "goals"
 EXPECTED = PACK / "expected"
 CONFIG = PACK / "config"
 FIXTURE_REPO = pathlib.Path(__file__).resolve().parent / "m8" / "repo"
@@ -43,7 +43,7 @@ STEPS: list[tuple[str, dict[str, packlib.State]]] = [
     ("04-eng-001-done", {WORKER: ("complete", "done", False)}),
 ]
 
-ORDER_FILES = [ORDERS / f"{WORKER}.md"]
+ORDER_FILES = [GOALS / f"{WORKER}.md"]
 
 
 def _ids(paths):
@@ -56,9 +56,9 @@ def _ids(paths):
 def test_the_pack_ships_what_the_readme_names():
     assert (PACK / "README.md").is_file()
     assert (PACK / "chat.md").is_file()
-    assert sorted(p.name for p in ORDERS.iterdir()) == [
+    assert sorted(p.name for p in GOALS.iterdir()) == [
         "eng-001.addendum.md", "eng-001.md",
-    ], "the Partner has no order file of its own (spec 12, D25)"
+    ], "the Partner has no goal file of its own (spec 12, D25)"
     assert sorted(p.name for p in CONFIG.iterdir()) == [WORKER]
 
 
@@ -66,7 +66,7 @@ def test_it_reuses_m8s_fixture_repo_rather_than_shipping_a_second_one():
     assert not (PACK / "repo").exists(), "m8b uses ../m8/repo; a second copy would drift"
     assert FIXTURE_REPO.is_dir()
     assert "--json" not in (FIXTURE_REPO / "greet.py").read_text(), (
-        "the fixture already has --json, so this order would pass on arrival"
+        "the fixture already has --json, so this goal would pass on arrival"
     )
 
 
@@ -77,19 +77,19 @@ def test_it_is_smaller_than_m8():
     assert len(list(CONFIG.iterdir())) == 1, "one worker, no `after` chain"
 
 
-# ---------------------------------------------------------------------- the orders
+# ---------------------------------------------------------------------- the goals
 
 
 @pytest.mark.parametrize("path", ORDER_FILES, ids=_ids(ORDER_FILES))
 def test_order_parses_with_the_function_dispatch_uses(path):
-    from hx import orders
+    from hx import goals
 
-    order = orders.parse_order(path)
-    assert packlib.checks_commands(order.checks), f"{path}: no commands under `### Checks`"
+    goal = goals.parse_goal(path)
+    assert packlib.checks_commands(goal.checks), f"{path}: no commands under `### Checks`"
 
 
 def test_addendum_is_prose():
-    packlib.assert_addendum_is_prose(ORDERS / f"{WORKER}.addendum.md")
+    packlib.assert_addendum_is_prose(GOALS / f"{WORKER}.addendum.md")
 
 
 # ------------------------------------------------------------------ the ambiguity
@@ -97,11 +97,11 @@ def test_addendum_is_prose():
 
 def test_both_halves_of_the_contradiction_are_still_there():
     """The whole scenario is this one pair of sentences. If a tidy-up removes either, m8b
-    silently becomes an ordinary order that anyone can finish."""
-    text = (ORDERS / f"{WORKER}.md").read_text()
+    silently becomes an ordinary goal that anyone can finish."""
+    text = (GOALS / f"{WORKER}.md").read_text()
     order_half, _, done_half = text.partition("## Definition of done")
     assert "and nothing else on stdout" in order_half, (
-        "`## Order` no longer demands JSON and nothing else"
+        "`## Goal` no longer demands JSON and nothing else"
     )
     assert "still prints the human-readable greeting line first" in done_half, (
         "`## Definition of done` no longer demands the greeting line first"
@@ -111,9 +111,9 @@ def test_both_halves_of_the_contradiction_are_still_there():
 def test_the_checks_do_not_resolve_the_ambiguity():
     """Neutral checks are what make the question unavoidable. A check asserting either shape
     would let a worker satisfy the block and finish without deciding anything."""
-    from hx import orders
+    from hx import goals
 
-    checks = orders.parse_order(ORDERS / f"{WORKER}.md").checks
+    checks = goals.parse_goal(GOALS / f"{WORKER}.md").checks
     # Would force JSON-only:
     assert "json.load(sys.stdin)" not in checks, checks
     assert "-qx" not in checks.split("--json")[-1], (
@@ -125,10 +125,10 @@ def test_the_checks_do_not_resolve_the_ambiguity():
 
 
 def test_nothing_in_the_pack_tells_the_worker_to_reach_decision():
-    """m8's order says `hx complete decision` in as many words. m8b must not, anywhere the
-    worker can see — not in the order, and not in its persona."""
+    """m8's goal says `hx complete decision` in as many words. m8b must not, anywhere the
+    worker can see — not in the goal, and not in its persona."""
     worker_visible = [
-        ORDERS / f"{WORKER}.md",
+        GOALS / f"{WORKER}.md",
         CONFIG / WORKER / "AGENTS.md",
     ]
     for path in worker_visible:
@@ -139,11 +139,11 @@ def test_nothing_in_the_pack_tells_the_worker_to_reach_decision():
 
 def test_the_persona_teaches_the_behaviour_without_naming_the_answer():
     """The behaviour under test lives in the persona and the hx-worker skill, so the persona
-    has to say what to do with a self-contradicting order — in general terms, not about this
-    order."""
+    has to say what to do with a self-contradicting goal — in general terms, not about this
+    goal."""
     text = (CONFIG / WORKER / "AGENTS.md").read_text()
     assert "## Open decision" in text
-    assert "--json" not in text, "the persona must not know about this particular order"
+    assert "--json" not in text, "the persona must not know about this particular goal"
     assert "greeting" not in text
 
 
@@ -151,7 +151,7 @@ def test_the_addendum_withdraws_the_losing_criterion():
     """The `## Definition of done` is what the goal evaluator judges. An addendum that answers
     the question without retracting the other half leaves the worker unable to satisfy its own
     item."""
-    text = (ORDERS / f"{WORKER}.addendum.md").read_text()
+    text = (GOALS / f"{WORKER}.addendum.md").read_text()
     assert "withdraw" in text.lower(), text
     assert "criterion 3" in text.lower()
     assert "JSON only" in text

@@ -77,11 +77,11 @@ Sent while `eng-001` is `working` and `eng-002` is still `idle`, waiting for it.
 
 ## Turn 4 — the decision comes back
 
-`eng-001` completes `done` and wakes the Partner, which reads the digest and dispatches
-`eng-002`. `eng-002` then completes `decision`, and `hx complete` wakes the Partner a second
-time with `eng-002 complete: decision; hx read eng-002`.
+`eng-001` completes `done` and wakes the Partner with `eng-001 done`, which trusts the
+persona and dispatches `eng-002`. `eng-002` then completes `decision`, and `hx complete`
+wakes the Partner a second time with `eng-002 decision`.
 
-The Partner runs `hx read eng-002`, updates `PARTNER.md`, and **asks the human in chat**:
+The Partner runs `hx read eng-002 --detail`, updates `PARTNER.md`, and **asks the human in chat**:
 
 **The Partner's message must contain:**
 

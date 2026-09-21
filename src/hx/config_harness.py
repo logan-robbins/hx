@@ -20,7 +20,10 @@ from .ids import ID_RE, PARTNER
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
-_OPTIONAL = ("workdir", "harness", "companion")
+_OPTIONAL = ("workdir", "harness", "companion", "flavor")
+
+#: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
+FLAVORS = ("claude", "pi")
 
 _COMPANION_INT_FIELDS = (
     "batch_records",
@@ -61,6 +64,7 @@ class HarnessConfig:
     model: str
     effort: str
     workdir: str | None = None
+    flavor: str = "claude"
     harness: dict = field(default_factory=dict)
     companion: dict = field(default_factory=dict)
 
@@ -134,6 +138,17 @@ def validate_harness(
         workdir = None
     else:
         workdir = _require_str(data, "workdir", path)
+
+    flavor = data.get("flavor", "claude")
+    if not isinstance(flavor, str) or flavor not in FLAVORS:
+        raise ValidationError(
+            f"{path}: `flavor` must be one of {', '.join(FLAVORS)}, got `{flavor!r}`"
+        )
+    if item_id == PARTNER and flavor != "claude":
+        raise ValidationError(
+            f"{path}: the Partner stays on claude; `hx wake` uses its messaging socket, "
+            f"got `flavor` `{flavor}`"
+        )
 
     harness = data.get("harness") or {}
     if not isinstance(harness, dict):
@@ -209,9 +224,25 @@ def validate_harness(
         model=model,
         effort=effort,
         workdir=workdir,
+        flavor=flavor,
         harness=harness,
         companion=companion,
     )
+
+
+def flavor_of(root: Path, item_id: str) -> str:
+    """The adapter directory name for an id. Unreadable config stays `claude`."""
+    path = root / "config" / item_id / "harness.json"
+    if not path.is_file():
+        return "claude"
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return "claude"
+    if not isinstance(data, dict):
+        return "claude"
+    flavor = data.get("flavor") or "claude"
+    return flavor if flavor in FLAVORS else "claude"
 
 
 def load_harness(

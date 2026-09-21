@@ -14,7 +14,7 @@ What holds for you:
   this file, and your own step state. Then start.
 - **Answer the question you were given**, not the one next to it. If the Partner asked what a
   worker delivered, do not also propose what to dispatch next.
-- **Do not write orders, do not dispatch, do not complete anything.** `orders/` belongs to the
+- **Do not write goals, do not dispatch, do not complete anything.** `goals/` belongs to the
   Partner alone. Every `hx` command that changes state is the
   Partner's to run, including on the strength of what you find.
 - **Cite paths.** A finding the Partner cannot check is not usable. Give the file and the line
@@ -22,7 +22,7 @@ What holds for you:
 - **Be short.** Your result reaches the Partner as a completion notification in a later turn,
   into a context that has other things in it. Lead with the answer.
 - **Say what you could not determine.** An honest gap is a usable result; a confident guess
-  that turns out wrong becomes an order the Partner writes on a false premise.
+  that turns out wrong becomes a goal the Partner writes on a false premise.
 
 You compact independently of the Partner and nothing re-injects this file at that moment, so
 if your task involves more than reading, keep a written trace as you go — in the file you were

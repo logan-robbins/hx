@@ -3,10 +3,10 @@
 | Term | Definition |
 |---|---|
 | HarnessAgent | One full Claude Code instance in a tmux session named by its id. Not a bare model loop: every task is given to it as a `/goal` so it runs with the harness's full capability (subagents, hooks, compaction, skills). Claude Code only for now. |
-| Partner | The supervising HarnessAgent, id `partner`. The human talks to it in its tmux session (`tmux attach -t partner`) and tells it what to do; it turns that into order files and dispatches workers, one or more at a time, when it decides to, as a human would. The Partner is not a work item and is never dispatched, resumed, or completed: its persistent state is `PARTNER.md`. It has its own Companion. |
+| Partner | The supervising HarnessAgent, id `partner`. The human talks to it in its tmux session (`tmux attach -t partner`) and tells it what to do; it turns that into goal files and dispatches workers, one or more at a time, when it decides to, as a human would. The Partner is not a work item and is never dispatched, resumed, or completed: its persistent state is `PARTNER.md`. It has its own Companion. |
 | Subagent | A child agent spawned inside a HarnessAgent, addressed by handle `<id>-sNNN` |
-| Order | A Partner-written markdown file holding `## Order` and `## Definition of done`. `hx dispatch` reads it, copies it verbatim into the work item and `tasks.json`, and deletes it; the order text then lives in exactly those two places. Never passed as command-line text |
-| Task | The control-plane record for one id in `tasks.json`: order text, addenda, outcome, dispatch and completion timestamps. Delivered to the HarnessAgent as a `/goal` pointer, never as prompt text |
+| Goal | A Partner-written markdown file holding `## Goal` and `## Definition of done`. `hx dispatch` reads it, copies it verbatim into the work item and `tasks.json`, and deletes it; the goal text then lives in exactly those two places. Never passed as command-line text |
+| Task | The control-plane record for one id in `tasks.json`: goal text, addenda, outcome, dispatch and completion timestamps. Delivered to the HarnessAgent as a `/goal` pointer, never as prompt text |
 | Work item | `pods/<pod>/<id>-<state>.md`, one per worker; the Partner has none. State ∈ `idle`, `working`, `complete` is the filename suffix. The body is the HarnessAgent's own running task list, which it updates frequently |
 | Stream | One append-only raw log: `<id>-main` or `<id>-sNNN` |
 | Companion | A small model paired one-to-one with a HarnessAgent (the Partner included); maintains coherency state for each of its streams. Companion prompts are tuned to the persona of the HarnessAgent they support. |

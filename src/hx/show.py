@@ -179,7 +179,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
     task = None
     if entry is not None:
         task = {
-            "order": entry.get("order"),
+            "goal": entry.get("goal"),
             "addenda": list(entry.get("addenda") or []),
             "outcome": entry.get("outcome"),
             "dispatched": entry.get("dispatched"),

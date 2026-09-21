@@ -70,7 +70,7 @@ def test_it_takes_pasted_input_on_a_real_tmux_pane(tmp_path, tmux_server):
     ready = root / "run" / "eng-001" / "fake-ready"
     wait_for(ready.is_file, what="the fake pane to come up")
 
-    pointer = "/goal The order for eng-001 is in pods/engineers/eng-001-working.md"
+    pointer = "/goal The goal for eng-001 is in pods/engineers/eng-001-working.md"
     subprocess.run([*tmux_server, "set-buffer", "-b", "hx", pointer], check=True, env=env)
     subprocess.run([*tmux_server, "paste-buffer", "-b", "hx", "-t", "=eng-001:main"], check=True, env=env)
     subprocess.run([*tmux_server, "send-keys", "-t", "=eng-001:main", "Enter"], check=True, env=env)

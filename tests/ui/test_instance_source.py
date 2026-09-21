@@ -54,8 +54,8 @@ def test_show_is_live_against_a_real_instance(instance_root):
         "context_file", "streams", "subagents", "metrics", "pane", "archive", "bench",
     ):
         assert key in show, key
-    assert set(show["task"]) == {"order", "addenda", "outcome", "dispatched", "completed"}
-    assert "## Order" in show["task"]["order"]
+    assert set(show["task"]) == {"goal", "addenda", "outcome", "dispatched", "completed"}
+    assert "## Goal" in show["task"]["goal"]
     assert show["work_item"]["frontmatter"]["id"] == "eng-001"
 
 
@@ -76,13 +76,13 @@ def test_show_overlays_the_live_pane_on_a_real_instance(instance_root):
 
 def test_orders_is_live_and_is_the_v1_shape(instance_root):
     """v1 cut: one entry per `tasks.json` id, no graph, no file comparison."""
-    orders = isolated_source(instance_root).orders()
-    assert set(orders) == {"root_abs", "ts", "orders"}
-    by_id = {entry["id"]: entry for entry in orders["orders"]}
+    goals = isolated_source(instance_root).goals()
+    assert set(goals) == {"root_abs", "ts", "goals"}
+    by_id = {entry["id"]: entry for entry in goals["goals"]}
     assert "eng-001" in by_id
-    for entry in orders["orders"]:
+    for entry in goals["goals"]:
         assert set(entry) == {
-            "id", "pod", "state", "outcome", "order", "addenda", "dispatched", "completed",
+            "id", "pod", "state", "outcome", "goal", "addenda", "dispatched", "completed",
         }
 
 
@@ -140,7 +140,7 @@ def test_wake_is_true_when_a_real_socket_accepts(instance_root):
         json.dumps({"socket": str(socket_path), "token": "test-token"}), encoding="utf-8"
     )
     try:
-        text = "eng-001 complete: done; hx read eng-001"
+        text = "eng-001 done"
         assert InstanceSource(instance_root).wake_partner(text) is True
         thread.join(timeout=5)
         payload = b"".join(received).decode()
@@ -212,8 +212,8 @@ if args[0] == "board":
     emit("board.json")
 elif args[0] == "show":
     emit("show-" + args[1] + ".json")
-elif args[0] == "orders":
-    emit("orders.json")
+elif args[0] == "goals":
+    emit("goals.json")
 elif args[0] == "archive":
     emit("archive.json")
 elif args[0] == "wake":
@@ -266,14 +266,14 @@ def test_show_overlays_a_live_pane_capture(stub_source):
 
 
 def test_orders_and_archive_parse(stub_source):
-    orders = stub_source.orders()
-    assert {order["id"] for order in orders["orders"]} >= {"eng-001"}
+    goals = stub_source.goals()
+    assert {entry["id"] for entry in goals["goals"]} >= {"eng-001"}
     archive = stub_source.archive()
     assert all(set(item) == {"id", "pod", "bench", "archive"} for item in archive["items"])
 
 
 def test_wake_partner_passes_the_text_as_one_argv_element(stub_source, tmp_path):
-    text = "eng-003 complete: decision; hx read eng-003"
+    text = "eng-003 decision"
     assert stub_source.wake_partner(text) is True
     logged = [json.loads(line) for line in (tmp_path / "wakes.jsonl").read_text().splitlines()]
     assert logged == [["wake", "partner", text]], "one argv element, verbatim"
@@ -325,7 +325,7 @@ def test_the_server_serves_every_view_of_a_real_instance(instance_root):
         assert status == 200
         assert board["root_abs"] == str(instance_root)
 
-        paths = ["/api/show/partner", "/api/show/eng-001", "/api/orders"]
+        paths = ["/api/show/partner", "/api/show/eng-001", "/api/goals"]
         if not archive_is_broken(instance_root):
             paths.append("/api/archive")
         for path in paths:
@@ -360,7 +360,7 @@ def test_the_server_serves_every_view_of_a_stubbed_instance(stub_source):
     server = _serve(stub_source)
     handle = next(server)
     try:
-        for path in ("/api/board", "/api/orders", "/api/archive", "/api/show/partner", "/api/show/eng-001"):
+        for path in ("/api/board", "/api/goals", "/api/archive", "/api/show/partner", "/api/show/eng-001"):
             status, payload = handle.client.json(path)
             assert status == 200, path
             assert payload

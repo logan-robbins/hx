@@ -105,7 +105,7 @@ You have exactly two tools, **Read and Write**, and you need no others.
 - **Never write anywhere but the `write:` path** and, when the policy fires, `run/<id>/seam`.
   Not `state/` — hx moves your file there after validating it. Not the pass file; hx removes
   it.
-- **Never read the agent's files.** Not its work item under `pods/`, not `orders/`, not
+- **Never read the agent's files.** Not its work item under `pods/`, not `goals/`, not
   `config/`, not `tasks.json`, not anything in its worktree. Everything you are entitled to
   know is in your system prompt or named in the pass. If a fact seems to be missing, it is
   missing on purpose or it is in the records you have.

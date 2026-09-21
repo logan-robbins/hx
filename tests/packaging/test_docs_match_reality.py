@@ -262,7 +262,7 @@ SPEC_06 = REPO / "spec" / "06-work-items.md"
 
 def spec_06_goal_pointer() -> str:
     """The one `/goal …` line spec 06 fixes, taken from the spec rather than retyped."""
-    lines = [l for l in SPEC_06.read_text().splitlines() if l.startswith("/goal The order for")]
+    lines = [l for l in SPEC_06.read_text().splitlines() if l.startswith("/goal The goal for")]
     assert len(lines) == 1, f"spec/06-work-items.md has {len(lines)} `/goal` lines, expected 1"
     return lines[0]
 

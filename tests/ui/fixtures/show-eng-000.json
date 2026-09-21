@@ -11,10 +11,10 @@
       "outcome": "done",
       "dispatched": "2026-09-20T10:00:00Z"
     },
-    "body": "## Order\nShip `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`\nnot among them.\n\n## Definition of done\n- `hx board --json` prints the contract document and exits 0.\n\n### Checks\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n\n## Tasks\n- [x] Read CONTRACTS.md for the board document.\n- [x] Write `collect()` in `src/hx/board.py`.\n- [x] Leave `partner` out of the items.\n- [x] Cover a fresh root, one item and five in `tests/core/test_board.py`.\n\n## Deliverables\n- `src/hx/board.py`\n- `tests/core/test_board.py`\n\n## Commands\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n\n## Open decision\n\n\n## Digest\n`hx board --json` ships the contract document. `partner` is not an item.\n"
+    "body": "## Goal\nShip `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`\nnot among them.\n\n## Definition of done\n- `hx board --json` prints the contract document and exits 0.\n\n### Checks\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n\n## Tasks\n- [x] Read CONTRACTS.md for the board document.\n- [x] Write `collect()` in `src/hx/board.py`.\n- [x] Leave `partner` out of the items.\n- [x] Cover a fresh root, one item and five in `tests/core/test_board.py`.\n\n## Deliverables\n- `src/hx/board.py`\n- `tests/core/test_board.py`\n\n## Commands\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n\n## Open decision\n\n\n## Digest\n`hx board --json` ships the contract document. `partner` is not an item.\n"
   },
   "task": {
-    "order": "## Order\nShip `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`\nnot among them.\n\n## Definition of done\n- `hx board --json` prints the contract document and exits 0.\n\n### Checks\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n",
+    "goal": "## Goal\nShip `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`\nnot among them.\n\n## Definition of done\n- `hx board --json` prints the contract document and exits 0.\n\n### Checks\n```bash\npython -m pytest tests/core/test_board.py -q\n```\n",
     "addenda": [],
     "outcome": "done",
     "dispatched": "2026-09-20T10:00:00Z",
@@ -221,8 +221,6 @@
     "ts": "2026-09-20T11:58:12Z",
     "background_tasks": []
   },
-  "archive": [],
-  "bench": [],
   "companion": {
     "pass_in_flight": false,
     "pass_stream": null,
@@ -230,6 +228,8 @@
     "last_state_ts": null,
     "streams": 1
   },
+  "archive": [],
+  "bench": [],
   "compactions": {
     "eng-000-main": {
       "path": "state/eng-000/eng-000-main.json",

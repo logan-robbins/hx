@@ -1,4 +1,4 @@
-"""`hx show`, `hx orders`, `hx archive`, `hx read`, `hx task` against CONTRACTS.md."""
+"""`hx show`, `hx goals`, `hx archive`, `hx read`, `hx task` against CONTRACTS.md."""
 
 from __future__ import annotations
 
@@ -13,16 +13,16 @@ SHOW_KEYS = {
     "context_file", "streams", "subagents", "metrics", "pane", "turn", "archive", "bench",
     "companion", "compactions",
 }
-ORDERS_KEYS = {"root_abs", "ts", "orders"}
-ORDER_ENTRY_KEYS = {
-    "id", "pod", "state", "outcome", "order", "addenda", "dispatched", "completed",
+GOALS_KEYS = {"root_abs", "ts", "goals"}
+GOAL_ENTRY_KEYS = {
+    "id", "pod", "state", "outcome", "goal", "addenda", "dispatched", "completed",
 }
 ARCHIVE_KEYS = {"root_abs", "ts", "items"}
 
 
-def dispatched(instance, hx, orders, item_id="eng-001", **kwargs):
-    orders(item_id, **kwargs)
-    result = hx("dispatch", item_id, f"run/order-{item_id}.md", cwd=instance)
+def dispatched(instance, hx, goals, item_id="eng-001", **kwargs):
+    goals(item_id, **kwargs)
+    result = hx("dispatch", item_id, f"run/goal-{item_id}.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     wait_for(
         lambda: "/goal" in (instance / "run" / item_id / "fake-input.log").read_text(),
@@ -34,9 +34,9 @@ def dispatched(instance, hx, orders, item_id="eng-001", **kwargs):
 # --- hx show ----------------------------------------------------------------------------------
 
 
-def test_show_json_matches_contracts_on_a_dispatched_item(instance, hx, launched, orders):
+def test_show_json_matches_contracts_on_a_dispatched_item(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders, order="Stream the importer.")
+    dispatched(instance, hx, goals, goal="Stream the importer.")
 
     result = hx("show", "eng-001", "--json")
     assert result.returncode == 0, result.stderr
@@ -49,10 +49,10 @@ def test_show_json_matches_contracts_on_a_dispatched_item(instance, hx, launched
     assert document["file"] == "pods/engineers/eng-001-working.md"
     assert document["work_item"]["frontmatter"]["id"] == "eng-001"
     assert "Stream the importer." in document["work_item"]["body"]
-    assert "Stream the importer." in document["task"]["order"]
+    assert "Stream the importer." in document["task"]["goal"]
     assert document["task"]["addenda"] == []
     assert set(document["task"]) == {
-        "order", "addenda", "outcome", "dispatched", "completed"
+        "goal", "addenda", "outcome", "dispatched", "completed"
     }
     assert document["task"]["outcome"] is None and document["task"]["completed"] is None
     assert document["task"]["dispatched"]
@@ -61,9 +61,9 @@ def test_show_json_matches_contracts_on_a_dispatched_item(instance, hx, launched
     assert document["pane"]["lines"]
 
 
-def test_show_nulls_what_later_milestones_produce(instance, hx, launched, orders):
+def test_show_nulls_what_later_milestones_produce(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     document = json.loads(hx("show", "eng-001", "--json").stdout)
     assert document["step_state"] == {}, "the Companion writes step state at M5"
     assert document["context_file"]["text"] is None, "hx compose lands at M2"
@@ -73,9 +73,9 @@ def test_show_nulls_what_later_milestones_produce(instance, hx, launched, orders
     assert document["archive"] and document["bench"] == []
 
 
-def test_show_reads_the_streams(instance, hx, launched, orders):
+def test_show_reads_the_streams(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     logs = instance / "logs" / "eng-001"
     logs.mkdir(parents=True, exist_ok=True)
     (logs / "eng-001-main.jsonl").write_text(
@@ -108,20 +108,20 @@ def test_show_of_an_unknown_id_is_not_found(instance, hx):
     assert "unknown id" in result.stderr
 
 
-def test_show_text_form(instance, hx, launched, orders):
+def test_show_text_form(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     result = hx("show", "eng-001")
     assert result.returncode == 0
     assert result.stdout.startswith("eng-001  working  pod=engineers  role=engineer")
     assert "## Tasks" in result.stdout
 
 
-def test_show_falls_back_to_the_pane_log_for_a_dead_session(instance, hx, launched, orders, tmux_server):
+def test_show_falls_back_to_the_pane_log_for_a_dead_session(instance, hx, launched, goals, tmux_server):
     import subprocess
 
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     log = instance / "logs" / "eng-001" / "eng-001-pane.log"
     wait_for(lambda: log.is_file() and log.stat().st_size > 0, what="the pane log to fill")
     subprocess.run([*tmux_server, "kill-session", "-t", "=eng-001"], check=True)
@@ -131,10 +131,10 @@ def test_show_falls_back_to_the_pane_log_for_a_dead_session(instance, hx, launch
     assert document["pane"]["lines"], "the pane log is the fallback for a dead session"
 
 
-def test_show_carries_the_turn_marker(instance, hx, launched, orders):
+def test_show_carries_the_turn_marker(instance, hx, launched, goals):
     """CONTRACTS.md `turn`: from `run/<id>/turn`, null before the first turn ends."""
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     assert json.loads(hx("show", "eng-001", "--json").stdout)["turn"] is None
 
     from hx.hook_stop import turn_marker
@@ -147,58 +147,58 @@ def test_show_carries_the_turn_marker(instance, hx, launched, orders):
     assert "session_id" not in turn, "only the two keys CONTRACTS.md names"
 
 
-# --- hx orders ---------------------------------------------------------------------------------
+# --- hx goals ---------------------------------------------------------------------------------
 
 
-def test_orders_json_matches_contracts(instance, hx, launched, orders, agent):
-    """CONTRACTS.md `hx orders --json`: one entry per id in tasks.json, no graph, no files."""
+def test_goals_json_matches_contracts(instance, hx, launched, goals, agent):
+    """CONTRACTS.md `hx goals --json`: one entry per id in tasks.json, no graph, no files."""
     agent("eng-002")
     launched("eng-001", "eng-002")
-    orders("eng-001")
-    orders("eng-002")
-    assert hx("dispatch", "eng-001", "run/order-eng-001.md", "eng-002", "run/order-eng-002.md",
+    goals("eng-001")
+    goals("eng-002")
+    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", "eng-002", "run/goal-eng-002.md",
               cwd=instance).returncode == 0
 
-    result = hx("orders", "--json")
+    result = hx("goals", "--json")
     assert result.returncode == 0, result.stderr
     view = json.loads(result.stdout)
-    assert set(view) == ORDERS_KEYS
+    assert set(view) == GOALS_KEYS
     assert view["root_abs"] == str(instance) and view["ts"].endswith("Z")
 
-    by_id = {entry["id"]: entry for entry in view["orders"]}
+    by_id = {entry["id"]: entry for entry in view["goals"]}
     assert set(by_id) == {"eng-001", "eng-002"}
-    for entry in view["orders"]:
-        assert set(entry) == ORDER_ENTRY_KEYS, set(entry) ^ ORDER_ENTRY_KEYS
+    for entry in view["goals"]:
+        assert set(entry) == GOAL_ENTRY_KEYS, set(entry) ^ GOAL_ENTRY_KEYS
 
     assert by_id["eng-001"]["state"] == "working" and by_id["eng-001"]["pod"] == "engineers"
     assert by_id["eng-001"]["outcome"] is None and by_id["eng-001"]["completed"] is None
     assert by_id["eng-001"]["dispatched"].endswith("Z")
-    assert "## Order" in by_id["eng-002"]["order"]
+    assert "## Goal" in by_id["eng-002"]["goal"]
 
 
-def test_orders_reads_tasks_json_only(instance, hx, launched, orders):
-    """The order file is consumed at dispatch, so there is nothing to compare it against."""
+def test_goals_reads_tasks_json_only(instance, hx, launched, goals):
+    """The goal file is consumed at dispatch, so there is nothing to compare it against."""
     launched("eng-001")
-    dispatched(instance, hx, orders, order="The original order.")
-    assert not (instance / "run" / "order-eng-001.md").exists()
-    view = json.loads(hx("orders", "--json").stdout)
-    assert [e["id"] for e in view["orders"]] == ["eng-001"]
-    assert "The original order." in view["orders"][0]["order"]
+    dispatched(instance, hx, goals, goal="The original order.")
+    assert not (instance / "run" / "goal-eng-001.md").exists()
+    view = json.loads(hx("goals", "--json").stdout)
+    assert [e["id"] for e in view["goals"]] == ["eng-001"]
+    assert "The original order." in view["goals"][0]["goal"]
 
-    # An order file written but never dispatched is not an entry: hx knows no orders/ (D25).
-    orders("eng-002")
-    assert [e["id"] for e in json.loads(hx("orders", "--json").stdout)["orders"]] == ["eng-001"]
+    # A goal file written but never dispatched is not an entry: hx knows no goals/ (D25).
+    goals("eng-002")
+    assert [e["id"] for e in json.loads(hx("goals", "--json").stdout)["goals"]] == ["eng-001"]
 
 
-def test_orders_carries_the_addendum(instance, hx, launched, orders):
+def test_goals_carries_the_addendum(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
     (instance / "run" / "addendum-eng-001.md").write_text("Do it the other way.\n")
     assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
 
     assert not (instance / "run" / "addendum-eng-001.md").exists(), "the addendum is consumed"
-    entry = json.loads(hx("orders", "--json").stdout)["orders"][0]
+    entry = json.loads(hx("goals", "--json").stdout)["goals"][0]
     assert len(entry["addenda"]) == 1
     assert entry["addenda"][0]["text"] == "Do it the other way."
     assert entry["addenda"][0]["ts"].endswith("Z")
@@ -207,9 +207,9 @@ def test_orders_carries_the_addendum(instance, hx, launched, orders):
 # --- hx archive ---------------------------------------------------------------------------------
 
 
-def test_archive_json_matches_contracts(instance, hx, launched, orders):
+def test_archive_json_matches_contracts(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     assert hx("complete", "done", harness_id="eng-001").returncode == 0
     assert hx("bench", "eng-001").returncode == 0
 
@@ -237,10 +237,10 @@ def test_archive_of_a_fresh_instance_has_empty_lists(instance, hx, launched):
     assert by_id["eng-001"]["bench"] == [] and by_id["eng-001"]["archive"] == []
 
 
-def test_show_and_archive_agree(instance, hx, launched, orders):
+def test_show_and_archive_agree(instance, hx, launched, goals):
     """CONTRACTS.md: `hx archive` is the whole-fleet form of what `hx show` returns per id."""
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     assert hx("complete", "done", harness_id="eng-001").returncode == 0
     assert hx("bench", "eng-001").returncode == 0
 
@@ -254,16 +254,27 @@ def test_show_and_archive_agree(instance, hx, launched, orders):
 # --- hx read and hx task ---------------------------------------------------------------------
 
 
-def test_read_prints_the_digest_and_the_open_decision(instance, hx, launched, orders):
+def test_read_prints_status_only_by_default(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
+    assert hx("complete", "done", harness_id="eng-001").returncode == 0
+
+    result = hx("read", "eng-001")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("eng-001 complete done")
+    assert "## Digest" not in result.stdout and "## Open decision" not in result.stdout
+
+
+def test_read_detail_prints_the_digest_and_the_open_decision(instance, hx, launched, goals):
+    launched("eng-001")
+    dispatched(instance, hx, goals)
     work_item = instance / "pods" / "engineers" / "eng-001-working.md"
     work_item.write_text(
         work_item.read_text().replace("## Open decision", "## Open decision\n\nFlat list or a map?")
     )
     assert hx("complete", "decision", harness_id="eng-001").returncode == 0
 
-    result = hx("read", "eng-001")
+    result = hx("read", "eng-001", "--detail")
     assert result.returncode == 0, result.stderr
     assert "## Digest" in result.stdout
     # spec 10's final pass: for `decision`, the question comes first, because that is what the
@@ -273,24 +284,24 @@ def test_read_prints_the_digest_and_the_open_decision(instance, hx, launched, or
     assert "## Open decision" in result.stdout and "Flat list or a map?" in result.stdout
 
 
-def test_read_full_prints_the_whole_body(instance, hx, launched, orders):
+def test_read_full_prints_the_whole_body(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders, order="The whole order.")
+    dispatched(instance, hx, goals, goal="The whole order.")
     result = hx("read", "eng-001", "--full")
     assert result.returncode == 0
     assert "The whole order." in result.stdout and "## Standing instructions" in result.stdout
 
 
-def test_read_refuses_an_item_that_has_not_completed(instance, hx, launched, orders):
+def test_read_refuses_an_item_that_has_not_completed(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders)
+    dispatched(instance, hx, goals)
     result = hx("read", "eng-001")
     assert result.returncode == 1 and "not `complete`" in result.stderr
 
 
-def test_task_prints_the_order_and_its_addenda(instance, hx, launched, orders):
+def test_task_prints_the_goal_and_its_addenda(instance, hx, launched, goals):
     launched("eng-001")
-    dispatched(instance, hx, orders, order="The dispatched order.")
+    dispatched(instance, hx, goals, goal="The dispatched order.")
     result = hx("task", harness_id="eng-001")
     assert result.returncode == 0, result.stderr
     assert "The dispatched order." in result.stdout and "### Checks" in result.stdout
@@ -301,7 +312,7 @@ def test_task_prints_the_order_and_its_addenda(instance, hx, launched, orders):
 
     result = hx("task", harness_id="eng-001")
     assert "The dispatched order." in result.stdout
-    assert "## Order addendum" in result.stdout and "And also this." in result.stdout
+    assert "## Goal addendum" in result.stdout and "And also this." in result.stdout
 
 
 def test_task_before_a_dispatch_says_so(instance, hx, launched):

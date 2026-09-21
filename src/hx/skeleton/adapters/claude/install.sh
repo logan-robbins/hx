@@ -49,7 +49,38 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
   "refuse: $token_file is readable by group or other; it holds a year-long credential and must
   be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
+# Pi workers call this script with HX_COMPANION_ONLY=1. The agent home is Pi's;
+# the Companion session is still Claude and still needs this home.
+companion_only=${HX_COMPANION_ONLY:-}
+
+# Hook and hx binary paths: config/hx.json when hx install recorded it, else bin/ (spec 17.1).
+# Computed for the Companion home too, which is why this sits outside the agent-home branch.
+hook_bin=$root/bin/hx-hook
+hx_bin=$root/bin/hx
+if [ -f "$root/config/hx.json" ]; then
+  hook_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hook_bin") or sys.argv[2])' \
+    "$root/config/hx.json" "$hook_bin")
+  hx_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hx_bin") or sys.argv[2])' \
+    "$root/config/hx.json" "$hx_bin")
+fi
+
+# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5). Defined
+# out here because the Companion home is written even when the agent home is Pi's.
+skills_src=${HX_SKILLS_DIR:-}
+copy_skills() {
+  local target=$1; shift
+  [ -n "$skills_src" ] && [ -d "$skills_src" ] || return 0
+  mkdir -p "$target"
+  local want
+  for want in "$@"; do
+    [ -d "$skills_src/$want" ] || continue
+    rm -rf "$target/$want"
+    cp -R "$skills_src/$want" "$target/$want"
+  done
+}
+
 home=$root/run/$id/home
+if [ "$companion_only" != 1 ]; then
 mkdir -p "$home"
 
 # The directory this agent will run in, which start.sh also uses (spec 17.4): the `workdir`
@@ -65,16 +96,6 @@ print(workdir if os.path.isabs(workdir) else os.path.join(sys.argv[2], workdir) 
       else sys.argv[2])
 CWDEOF
 )
-fi
-
-# Hook and hx binary paths: config/hx.json when hx install recorded it, else bin/ (spec 17.1).
-hook_bin=$root/bin/hx-hook
-hx_bin=$root/bin/hx
-if [ -f "$root/config/hx.json" ]; then
-  hook_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hook_bin") or sys.argv[2])' \
-    "$root/config/hx.json" "$hook_bin")
-  hx_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hx_bin") or sys.argv[2])' \
-    "$root/config/hx.json" "$hx_bin")
 fi
 
 HX_ID=$id HX_ROOT=$root HX_HOOK_BIN=$hook_bin HX_SETTINGS=$home/settings.json \
@@ -185,29 +206,13 @@ if [ -f "$root/config/CLAUDE.md" ]; then
   cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
 fi
 
-# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5). The Partner
-# gets hx-partner and hx-fleet, a worker gets hx-worker, a Companion gets hx-companion
-# (handoff/orchestrator-to-build.md, 2026-09-20). Both kinds of HarnessAgent also get
-# hx-memory: the episode store is one store for the whole instance, and the Partner searches
-# it for the same reasons a worker does. The Companion does not — it writes episodes by
-# writing step state and reads nothing but the files its pass names.
-skills_src=${HX_SKILLS_DIR:-}
-copy_skills() {
-  local target=$1; shift
-  [ -n "$skills_src" ] && [ -d "$skills_src" ] || return 0
-  mkdir -p "$target"
-  local want
-  for want in "$@"; do
-    [ -d "$skills_src/$want" ] || continue
-    rm -rf "$target/$want"
-    cp -R "$skills_src/$want" "$target/$want"
-  done
-}
-
+# The Partner gets hx-partner and hx-fleet, a worker gets hx-worker, a Companion gets
+# hx-companion. Both kinds of HarnessAgent also get hx-memory. The Companion does not.
 if [ "$id" = partner ]; then
   copy_skills "$home/skills" hx-partner hx-fleet hx-memory
 else
   copy_skills "$home/skills" hx-worker hx-memory
+fi
 fi
 
 # The Companion's own config dir (spec 10). It gets one hook, the `hx-companion` skill, and no
@@ -275,6 +280,8 @@ with open(config_json, "w") as handle:
     handle.write("\n")
 COMPANIONEOF
 
-printf 'install.sh: wrote %s\n' "$home/settings.json"
+if [ "$companion_only" != 1 ]; then
+  printf 'install.sh: wrote %s\n' "$home/settings.json"
+fi
 printf 'install.sh: wrote %s (stop hook + hx-companion, no CLAUDE.md)\n' "$companion_home/settings.json"
 printf 'install.sh: auth is %s, exported by start.sh as CLAUDE_CODE_OAUTH_TOKEN\n' "$token_file"

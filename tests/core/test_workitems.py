@@ -18,7 +18,7 @@ outcome:
 dispatched: 2026-09-20T12:00:00Z
 ---
 
-## Order
+## Goal
 
 Do it.
 
@@ -67,7 +67,7 @@ def test_good_frontmatter():
     item = parse_work_item_text(GOOD, "pods/engineers/eng-001-working.md")
     assert (item.id, item.pod, item.state) == ("eng-001", "engineers", "working")
     assert item.outcome is None and not hasattr(item, "after")
-    assert item.body.lstrip().startswith("## Order")
+    assert item.body.lstrip().startswith("## Goal")
 
 
 def malformed():

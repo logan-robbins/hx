@@ -30,7 +30,7 @@ a corpus of fixtures would measure the fixtures.
 **What a corpus entry is:** one completed task, captured whole:
 
 - `logs/<id>/<id>-main.jsonl` and every subagent stream, from dispatch to `hx complete`;
-- the `tasks.json` entry: order, addenda, outcome, timestamps;
+- the `tasks.json` entry: goal, addenda, outcome, timestamps;
 - the final work item body, including `## Tasks` as the agent left it and its `## Digest`;
 - `config/<id>/AGENTS.md` as it stood at each point (persona above the header, memory below);
 - the workdir's `git log --oneline`, which is what `closed_steps[].commit` refers to.
@@ -114,7 +114,7 @@ M7 passes when, across the corpus:
   corpus is evidence the eviction order is right.
 
 A failure here changes the design, not the decision to have a Companion (spec 14: "A failed
-test changes the design, not the decision's existence"). The likely changes, in the order worth
+test changes the design, not the decision's existence"). The likely changes, in the goal worth
 trying: the note-writing rule for `working_set.files`; the eviction order; the `next` field's
 phrasing rule; the section order in the context file (spec 07.3); and only then the budget.
 

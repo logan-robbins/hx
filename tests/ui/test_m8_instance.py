@@ -2,7 +2,7 @@
 
 `tests/scenario/m8/` and `m8b/` are the gtm lane's packs — the data spec 13's M8
 runs on. Every observation point in both packs is built here and put through the
-UI: the board and orders documents, and the views rendered by the real
+UI: the board and goals documents, and the views rendered by the real
 `static/app.js`.
 
 **Every instance is hermetic.** `hx board` matches a live tmux session by the id
@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from hx.errors import ValidationError
-from hx.orders import parse_order
+from hx.goals import parse_goal
 from .conftest import _serve, isolated_source, manifest, pack_instance_is_stale
 from .test_views_js import render
 
@@ -35,7 +35,7 @@ class StalePack(Exception):
     """The scenario pack is still pre-cut; skip rather than fail (ui-7)."""
 
 
-#: What a pack mid-cut raises: an order with `after:` frontmatter, a `tasks.json`
+#: What a pack mid-cut raises: a goal with `after:` frontmatter, a `tasks.json`
 #: with a field hx dropped, or a `packlib` whose `State` tuple has changed width
 #: while its `STEPS` have not. All of them mean "wait for the gtm lane", never
 #: "the UI is wrong" — reported in handoff/ui-to-gtm.md.
@@ -68,16 +68,16 @@ STEP_IDS = [f"{pack}-{stem}" for pack, stem, _, _ in ALL_STEPS]
 
 
 def build_step(root: Path, pack: str, states: dict, worker_pod: str) -> Path:
-    """An instance in that step's shape, with the pack's real orders and personas."""
+    """An instance in that step's shape, with the pack's real goals and personas."""
     from tests.scenario import packlib
 
     packlib.build_instance(root, states, worker_pod=worker_pod)
     source = SCENARIOS / pack
 
-    orders = root / "orders"
-    orders.mkdir(parents=True, exist_ok=True)
-    for order_file in sorted((source / "orders").glob("*.md")):
-        shutil.copy(order_file, orders / order_file.name)
+    goals = root / "goals"
+    goals.mkdir(parents=True, exist_ok=True)
+    for order_file in sorted((source / "goals").glob("*.md")):
+        shutil.copy(order_file, goals / order_file.name)
     for agents in sorted((source / "config").glob("*/AGENTS.md")):
         target = root / "config" / agents.parent.name
         target.mkdir(parents=True, exist_ok=True)
@@ -157,26 +157,26 @@ def test_orders_lists_every_dispatched_id(step_roots, pack, stem, states, worker
     """v1 cut: one entry per `tasks.json` id, no graph — sequencing is the
     Partner's own judgement now, so there is no dependency to draw."""
     source = isolated(step_roots[(pack, stem)])
-    orders = source.orders()
-    assert set(orders) == {"root_abs", "ts", "orders"}
-    assert "graph" not in orders
+    goals = source.goals()
+    assert set(goals) == {"root_abs", "ts", "goals"}
+    assert "graph" not in goals
 
-    # `hx orders` reads `tasks.json`, which is the control plane. That is not
+    # `hx goals` reads `tasks.json`, which is the control plane. That is not
     # the same as the board's `dispatched`, which comes from the work item's
     # frontmatter — an item can carry a dispatch stamp in its body without
     # having a `tasks.json` record, and the pack's idle items do.
     tasks = json.loads((step_roots[(pack, stem)] / "tasks.json").read_text())
-    assert {entry["id"] for entry in orders["orders"]} == set(tasks)
+    assert {entry["id"] for entry in goals["goals"]} == set(tasks)
 
 
 @pytest.mark.parametrize("pack,stem,states,worker_pod", ALL_STEPS, ids=STEP_IDS)
 def test_every_view_renders_at_every_step(step_roots, pack, stem, states, worker_pod, tmp_path):
-    """The board, the orders, the archive, the Partner, and each agent in turn."""
+    """The board, the goals, the archive, the Partner, and each agent in turn."""
     source = isolated(step_roots[(pack, stem)])
     ids = [item["id"] for item in source.board()["items"]]
     overrides = {
         "/api/board": source.board(),
-        "/api/orders": source.orders(),
+        "/api/goals": source.goals(),
         "/api/archive": source.archive(),
     }
     for item_id in ids:
@@ -253,9 +253,9 @@ def m8(m8_root):
 
 
 def test_the_pack_is_placed(m8_root):
-    """v1 cut: no `orders/partner.md` — the Partner has no work item."""
-    placed = sorted(p.name for p in (m8_root / "orders").glob("*.md"))
-    assert placed == sorted(p.name for p in (PACK_M8 / "orders").glob("*.md"))
+    """v1 cut: no `goals/partner.md` — the Partner has no work item."""
+    placed = sorted(p.name for p in (m8_root / "goals").glob("*.md"))
+    assert placed == sorted(p.name for p in (PACK_M8 / "goals").glob("*.md"))
     assert "partner.md" not in placed
     for item_id in ("eng-001", "eng-002"):
         agents = m8_root / "config" / item_id / "AGENTS.md"

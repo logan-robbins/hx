@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 from . import tmux
+from .config_harness import flavor_of
 from .config_models import load_models
 from .errors import ValidationError
 from .ids import ID_RE
@@ -153,6 +154,105 @@ def _first_launch_state(home: Path, item_id: str) -> tuple[str, str, str]:
         return (FAIL, label, ".claude.json accepts no workspace trust dialog; the first launch "
                              'would stop at "Quick safety check … Yes, I trust this folder"')
     return (OK, label, f".claude.json (onboarding done, {len(trusted)} trusted cwd)")
+
+
+def _pi_home(root: Path, home: Path, item_id: str) -> list[tuple[str, str, str]]:
+    """A Pi home is settings, the hx extension, and an auth file. No `.claude.json`."""
+    label = f"home:{item_id}"
+    found: list[tuple[str, str, str]] = []
+    settings_path = home / "settings.json"
+    trust = None
+    reserve = None
+    if settings_path.is_file():
+        try:
+            settings = json.loads(settings_path.read_text())
+        except json.JSONDecodeError:
+            settings = None
+        if isinstance(settings, dict):
+            trust = settings.get("defaultProjectTrust")
+            compaction = settings.get("compaction")
+            if isinstance(compaction, dict):
+                reserve = compaction.get("reserveTokens")
+    if trust == "never":
+        found.append((OK, label, "defaultProjectTrust never"))
+    else:
+        found.append((FAIL, label, "settings.json `defaultProjectTrust` is not `never`"))
+
+    extension = home / "extensions" / "hx" / "index.ts"
+    found.append(
+        (OK, label, "extensions/hx/index.ts")
+        if extension.is_file()
+        else (FAIL, label, "extensions/hx/index.ts missing; adapters/pi/install.sh copies it")
+    )
+
+    auth = home / "auth.json"
+    if not auth.is_file():
+        found.append((FAIL, label, "auth.json missing; adapters/pi/install.sh writes it from seed/pi-token"))
+    elif auth.stat().st_mode & 0o77:
+        found.append((FAIL, label, "auth.json is readable by group or other; it must be mode 0600"))
+    else:
+        found.append((OK, label, "auth.json mode 0600"))
+
+    if isinstance(reserve, int):
+        found.append((OK, label, f"compaction reserveTokens={reserve}"))
+    return found
+
+
+def _pi_instance(root: Path) -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    token = root / "seed" / "pi-token"
+    if not token.is_file():
+        found.append((
+            FAIL, "pi-token",
+            "seed/pi-token absent; a Pi worker authenticates from that file, mode 0600",
+        ))
+    elif token.stat().st_mode & 0o77:
+        found.append((FAIL, "pi-token", "seed/pi-token is readable by group or other; it must be mode 0600"))
+    elif not token.read_text().strip():
+        found.append((FAIL, "pi-token", "seed/pi-token is empty"))
+    else:
+        found.append((OK, "pi-token", "seed/pi-token present, mode 0600"))
+
+    recorded = root / "config" / "pi.json"
+    if not recorded.is_file():
+        found.append((WARN, "pi", "config/pi.json absent; record {bin, version} of the pi binary"))
+    else:
+        try:
+            body = json.loads(recorded.read_text())
+        except json.JSONDecodeError as exc:
+            found.append((FAIL, "pi", f"config/pi.json is not valid JSON: {exc}"))
+        else:
+            binary = body.get("bin") if isinstance(body, dict) else None
+            if binary and os.access(binary, os.X_OK):
+                found.append((OK, "pi", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+            else:
+                found.append((FAIL, "pi", f"config/pi.json bin {binary!r} is missing or not executable"))
+    return found
+
+
+def live_pi_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]]:
+    """A live Pi session uses its own config dir and ignores the workdir's `.pi/`."""
+    found: list[tuple[str, str]] = []
+    environment = session_environment(item_id, env)
+    expected = str(root / "run" / item_id / "home")
+    actual = environment.get("PI_CODING_AGENT_DIR")
+    if actual == expected:
+        found.append((OK, f"PI_CODING_AGENT_DIR {expected}"))
+    else:
+        found.append((
+            FAIL,
+            f"PI_CODING_AGENT_DIR is {actual!r} on session {item_id}, not {expected!r}",
+        ))
+    command = pane_command(item_id, env)
+    if not command:
+        found.append((WARN, f"could not read the pane's command line for {item_id}"))
+    elif "--no-approve" in command or " -na" in f" {command}":
+        found.append((OK, "--no-approve in the pane's argv"))
+    elif "start.sh" in command:
+        found.append((WARN, f"{item_id} is still launching (start.sh has not exec'd yet)"))
+    else:
+        found.append((FAIL, f"{item_id} is running without --no-approve; the workdir's .pi/ must not load"))
+    return found
 
 
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
@@ -310,8 +410,17 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         checks.append((WARN, "agents", "no config/<id>/ yet"))
     for item_id in ids:
         home = root / "run" / item_id / "home"
+        flavor = flavor_of(root, item_id)
+        if flavor == "pi" and item_id == "partner":
+            checks.append((
+                FAIL, f"flavor:{item_id}",
+                "the Partner stays on claude; hx wake uses its messaging socket",
+            ))
         if not home.is_dir():
-            checks.append((WARN, f"home:{item_id}", "run/<id>/home absent; `hx launch` runs adapters/claude/install.sh"))
+            checks.append((
+                WARN, f"home:{item_id}",
+                f"run/<id>/home absent; `hx launch` runs adapters/{flavor}/install.sh",
+            ))
             continue
         # Homes hold no credentials: auth is the instance token (spec 11 Auth).
         target = home / "settings.json"
@@ -320,19 +429,31 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             if target.is_file()
             else (FAIL, f"home:{item_id}", "settings.json missing; `hx launch` writes it")
         )
-        # The pre-seeded first-launch state (spec 08): without it the pane stops at the
-        # onboarding wizard or the workspace-trust dialog and nothing about launch is
-        # non-interactive any more (CONTRACTS.md `run/<id>/home/.claude.json`).
-        checks.append(_first_launch_state(home, item_id))
+        if flavor == "pi":
+            checks.extend(_pi_home(root, home, item_id))
+        else:
+            # The pre-seeded first-launch state (spec 08): without it the pane stops at the
+            # onboarding wizard or the workspace-trust dialog and nothing about launch is
+            # non-interactive any more (CONTRACTS.md `run/<id>/home/.claude.json`).
+            checks.append(_first_launch_state(home, item_id))
+
+    pi_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "pi"]
+    if pi_ids:
+        checks.extend(_pi_instance(root))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the
     # argv of the process in the pane, because either one alone can be stale.
+    # A Pi session has neither flag; it is checked for its own config dir and --no-approve.
     for item_id in ids:
         if not tmux.has_session(item_id, env):
             continue
-        for status, detail in live_agent_checks(item_id, env):
-            checks.append((status, f"sandbox:{item_id}", detail))
+        if flavor_of(root, item_id) == "pi":
+            for status, detail in live_pi_checks(root, item_id, env):
+                checks.append((status, f"pi:{item_id}", detail))
+        else:
+            for status, detail in live_agent_checks(item_id, env):
+                checks.append((status, f"sandbox:{item_id}", detail))
 
     return checks
 

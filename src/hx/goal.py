@@ -1,7 +1,7 @@
 """`hx goal` — the fixed pointer, pasted into the pane (spec 06, 08, 02 "Goal delivery").
 
 What is pasted never grows with the task: it names the work item and the proof line, and the
-order itself is read from the file. Claude Code is always launched bare; nothing is ever a
+goal itself is read from the file. Claude Code is always launched bare; nothing is ever a
 prompt argument.
 
 Workers only: the Partner has no work item and no goal, and is never a target (spec 12).
@@ -27,7 +27,7 @@ from .workitems import require_work_item, state_of
 
 #: Spec 06, verbatim. `<outcome>` is literal: the agent chooses it when it finishes.
 POINTER = (
-    "/goal The order for {id} is in {path}; read it first. "
+    "/goal The goal for {id} is in {path}; read it first. "
     "Done when `hx complete <outcome>` has been run and its output line "
     "`HX-COMPLETE {id} <outcome>` appears."
 )
@@ -59,6 +59,18 @@ POINTER = (
 # check — would have read every real pane as busy forever, and `hx launch`'s wait has no
 # timeout.
 _BUSY_MARKERS = ("esc to interrupt",)
+#: Pi 0.84 draws these only while a turn, compaction, or retry is in flight
+#: (`WorkingStatusIndicator` and the compaction/retry indicators). The startup
+#: banner says "to interrupt" and must not count: that line is on screen when idle.
+_PI_BUSY_MARKERS = (
+    "Working...",
+    "Auto-compacting",
+    "Compacting context",
+    "Summarizing branch",
+    "Retrying (",
+)
+#: Footer from `footer.js` when auto-compaction is on: `12.4%/200k (auto)` or `?/1.0M (auto)`.
+_PI_IDLE_FOOTER = re.compile(r"(?:\d+\.\d+%|\?)/[\d.]+[kM]? \(auto\)")
 #: A bare prompt, with or without the box borders around it.
 _REAL_PROMPT = re.compile(r"^\s*(?:[│|]\s*)?[❯>]\s*(?:[│|]\s*)?$")
 #: The same prompt with the empty-input placeholder after it. The `❯` glyph is required here:
@@ -95,6 +107,13 @@ def pane_is_idle(pane_text: str) -> bool:
     detector serves the fake suites and the live binary.
     """
     lines = pane_text.split("\n")
+
+    # Pi, checked before Claude's "esc to interrupt": a Pi idle banner can contain
+    # that phrase as a keybinding hint, while a busy Pi pane says "Working...".
+    if any(marker in line for line in lines for marker in _PI_BUSY_MARKERS):
+        return False
+    if any(_PI_IDLE_FOOTER.search(line) for line in lines):
+        return True
 
     # The real TUI: the status bar offers to interrupt exactly while a turn is in flight.
     if any(marker in line for line in lines for marker in _BUSY_MARKERS):

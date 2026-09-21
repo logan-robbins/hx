@@ -64,8 +64,8 @@ def board_json():
     return json.loads((FIXTURES / "board.json").read_text())
 
 
-def orders_json():
-    return json.loads((FIXTURES / "orders.json").read_text())
+def goals_json():
+    return json.loads((FIXTURES / "goals.json").read_text())
 
 
 def show_json(name="eng-001"):
@@ -93,7 +93,7 @@ def test_the_page_pulls_nothing_from_a_cdn():
 def test_every_screen_renders_without_an_error_banner(rendered):
     assert rendered["banner"] is None
     assert set(rendered["views"]) == {
-        "overview", "board", "agentTable", "activity", "orders", "archive",
+        "overview", "board", "agentTable", "activity", "goals", "archive",
         "agents", "agent", "sessions", "session", "compactions", "compaction", "podFocus",
         "cardOpens", "partner",
     }
@@ -105,7 +105,7 @@ def test_the_sidebar_lists_the_instance_the_pods_and_the_across_pod_views(render
     assert [pod["text"].lstrip("›⌄") for pod in sidebar["pods"]] == pods
     assert sidebar["workspace"] == "hx", "the instance name is the HARNESS_ROOT's own"
     assert [link["nav"] for link in sidebar["links"]] == [
-        "overview", "board", "agents", "activity", "orders", "archive", "partner",
+        "overview", "board", "agents", "activity", "goals", "archive", "partner",
     ]
     assert next(link for link in sidebar["links"] if link["nav"] == "overview")["selected"]
 
@@ -184,8 +184,8 @@ def test_every_agent_has_its_companion_beside_it(rendered):
 
 
 def test_the_partner_edges_are_the_dispatches_in_tasks_json(rendered):
-    """`hx orders` reads tasks.json; a board id with no record has no dispatch edge."""
-    dispatched = {order["id"] for order in orders_json()["orders"] if order["dispatched"]}
+    """`hx goals` reads tasks.json; a board id with no record has no dispatch edge."""
+    dispatched = {entry["id"] for entry in goals_json()["goals"] if entry["dispatched"]}
     graph = rendered["views"]["overview"]["graph"]
     handoffs = {edge["title"] for edge in graph["edges"] if edge["class"].startswith("handoff")}
     assert handoffs == {f"Partner dispatched {id}" for id in dispatched}
@@ -261,14 +261,14 @@ def test_a_card_carries_that_agents_own_tasks_checklist(rendered):
     assert [t["done"] for t in card["tasks"]] == [True, True, False, False]
 
 
-def test_a_card_is_titled_with_the_orders_first_line_and_aged_from_dispatched(rendered):
-    order = next(o for o in orders_json()["orders"] if o["id"] == "eng-001")
+def test_a_card_is_titled_with_the_goals_first_line_and_aged_from_dispatched(rendered):
+    entry = next(o for o in goals_json()["goals"] if o["id"] == "eng-001")
     card = next(c for c in rendered["views"]["board"]["cards"] if c["agent"] == "eng-001")
-    assert card["title"] == order["order"].splitlines()[1]
+    assert card["title"] == entry["goal"].splitlines()[1]
     assert card["time"].endswith("ago")
     idle = next(c for c in rendered["views"]["board"]["cards"] if c["agent"] == "eng-002")
     assert idle["time"] == "Not dispatched"
-    assert idle["title"] == "No order dispatched"
+    assert idle["title"] == "No goal dispatched"
     assert idle["noTasks"], "an item with no `## Tasks` says so rather than showing nothing"
 
 
@@ -352,7 +352,7 @@ def work_item_section(show, name):
 
 def test_the_agent_page_is_the_work_item_file_plus_the_companion(rendered):
     """The drawer renders the agent's own work item file, section by section in file order,
-    with the fleet's word for the order ("Goal"), plus the Companion's status. The pane and
+    with the fleet's word for the goal ("Goal"), plus the Companion's status. The pane and
     the event stream are on the Session page, which opens in another window."""
     agent = rendered["views"]["agent"]
     assert agent["hidden"] is False
@@ -427,10 +427,10 @@ def test_the_agent_page_renders_the_work_item_sections(rendered):
     show = show_json()
     agent = rendered["views"]["agent"]
     text = agent["text"]
-    assert "Add `--require-done`" in show["task"]["order"]
-    assert "--require-done" in text, "the order is rendered"
+    assert "Add `--require-done`" in show["task"]["goal"]
+    assert "--require-done" in text, "the goal is rendered"
     addendum = show["task"]["addenda"][0]["text"].replace("`", "")
-    assert addendum in text.replace("`", ""), "the addendum is rendered beneath the order"
+    assert addendum in text.replace("`", ""), "the addendum is rendered beneath the goal"
 
     tasks = {item["text"] for item in agent["listItems"] if item["class"].startswith("task")}
     body_tasks = [line.strip("- ").strip()
@@ -580,7 +580,7 @@ def test_the_chat_box_posts_the_trimmed_text_and_nothing_else(rendered):
     assert rendered["posted"] == [
         {
             "url": "/api/partner/wake",
-            "body": {"text": "eng-003 complete: decision; hx read eng-003"},
+            "body": {"text": "eng-003 decision"},
             "credentials": "same-origin",
         }
     ]
@@ -590,7 +590,7 @@ def test_the_chat_box_reports_delivery_and_clears(rendered):
     chat = rendered["chat"]
     assert chat["cleared"] is True
     assert chat["said"] == ["Delivered. The reply appears in the pane below."]
-    assert "eng-003 complete: decision" in chat["messages"][0], "the message stays in the log"
+    assert "eng-003 decision" in chat["messages"][0], "the message stays in the log"
     assert chat["error"] == ""
 
 
@@ -622,32 +622,32 @@ def test_escape_closes_the_drawer(rendered):
     assert rendered["drawerClosed"] is True
 
 
-# -- orders and archive (hx-only views; spec 16.2 lists both) ------------
+# -- goals and archive (hx-only views; spec 16.2 lists both) ------------
 
-def test_the_orders_view_shows_every_order_and_addendum(rendered):
+def test_the_goals_view_shows_every_goal_and_addendum(rendered):
     """v1 cut: one panel per dispatched id, rendered as markdown."""
-    orders = orders_json()["orders"]
-    view = rendered["views"]["orders"]
-    assert view["headings"] == ["Dispatched work"] + [order["id"] for order in orders]
+    goals = goals_json()["goals"]
+    view = rendered["views"]["goals"]
+    assert view["headings"] == ["Dispatched work"] + [entry["id"] for entry in goals]
     text = view["text"].replace("`", "")
-    for order in orders:
-        assert order["id"] in text
-        assert order["order"].splitlines()[1].replace("`", "") in text, order["id"]
-        for addendum in order["addenda"]:
+    for entry in goals:
+        assert entry["id"] in text
+        assert entry["goal"].splitlines()[1].replace("`", "") in text, entry["id"]
+        for addendum in entry["addenda"]:
             assert addendum["text"].replace("`", "") in text
 
 
-def test_the_orders_view_has_no_after_graph_and_no_file_badge(rendered):
-    view = rendered["views"]["orders"]
+def test_the_goals_view_has_no_after_graph_and_no_file_badge(rendered):
+    view = rendered["views"]["goals"]
     labels = [badge["text"] for badge in view["badges"]]
     assert "file edited since dispatch" not in labels
-    assert "order file missing" not in labels
+    assert "goal file missing" not in labels
     assert not any("after" in label for label in labels)
 
 
-def test_an_order_opens_its_agent(rendered):
-    orders = orders_json()["orders"]
-    assert rendered["views"]["orders"]["openable"] == [order["id"] for order in orders]
+def test_a_goal_opens_its_agent(rendered):
+    goals = goals_json()["goals"]
+    assert rendered["views"]["goals"]["openable"] == [entry["id"] for entry in goals]
 
 
 def test_the_archive_view_shows_benched_bodies_and_dispatches(rendered):
@@ -892,7 +892,7 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
     source = isolated_source(instance_root)
     overrides = {
         "/api/board": source.board(),
-        "/api/orders": source.orders(),
+        "/api/goals": source.goals(),
         "/api/archive": source.archive(),
         "/api/show/partner": source.show("partner"),
         "/api/show/eng-001": source.show("eng-001"),
@@ -1101,7 +1101,7 @@ def test_an_unreadable_agent_says_so_in_place(tmp_path):
 def test_an_id_the_board_does_not_list_says_so(tmp_path):
     board = board_json()
     board["items"] = [item for item in board["items"] if item["id"] != "eng-001"]
-    # Reached from the Orders view: the order is still recorded in tasks.json
+    # Reached from the Goals view: the goal is still recorded in tasks.json
     # while the work item behind it has gone.
     rendered = render({"/api/board": board, "/api/show/eng-001": None}, tmp_path,
                       open_ids=["eng-001"])

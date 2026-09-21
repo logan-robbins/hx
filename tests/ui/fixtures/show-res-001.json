@@ -11,10 +11,10 @@
       "outcome": null,
       "dispatched": "2026-09-20T08:40:00Z"
     },
-    "body": "## Order\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n\n## Tasks\n- [x] Read the hook documentation for SessionStart.\n- [ ] Run one live session and capture the payload.\n- [ ] Write `notes/sessionstart.md` with the fields observed.\n\n## Deliverables\n\n\n## Commands\n```bash\ntest -s notes/sessionstart.md\n```\n\n## Open decision\n\n\n## Digest\n\n"
+    "body": "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n\n## Tasks\n- [x] Read the hook documentation for SessionStart.\n- [ ] Run one live session and capture the payload.\n- [ ] Write `notes/sessionstart.md` with the fields observed.\n\n## Deliverables\n\n\n## Commands\n```bash\ntest -s notes/sessionstart.md\n```\n\n## Open decision\n\n\n## Digest\n\n"
   },
   "task": {
-    "order": "## Order\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and record what you verified.\n\n## Definition of done\n- A note naming the fields observed live.\n\n### Checks\n```bash\ntest -s notes/sessionstart.md\n```\n",
+    "goal": "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and record what you verified.\n\n## Definition of done\n- A note naming the fields observed live.\n\n### Checks\n```bash\ntest -s notes/sessionstart.md\n```\n",
     "addenda": [],
     "outcome": null,
     "dispatched": "2026-09-20T08:40:00Z",
@@ -90,8 +90,6 @@
     "ts": "2026-09-20T09:02:11Z",
     "background_tasks": []
   },
-  "archive": [],
-  "bench": [],
   "companion": {
     "pass_in_flight": false,
     "pass_stream": null,
@@ -99,5 +97,7 @@
     "last_state_ts": "2026-09-20T13:09:35Z",
     "streams": 0
   },
+  "archive": [],
+  "bench": [],
   "compactions": {}
 }

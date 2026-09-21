@@ -1,7 +1,7 @@
-"""`hx task` — print the caller's own full order and its addenda (spec 08).
+"""`hx task` — print the caller's own full goal and its addenda (spec 08).
 
 The agent never needs this to start work: the `/goal` pointer names the work item and the
-order is copied into it verbatim. This is for re-reading the order without re-reading the
+goal is copied into it verbatim. This is for re-reading the goal without re-reading the
 whole item, and it is the only agent-facing command besides `hx complete`.
 """
 
@@ -19,11 +19,11 @@ def task(root: Path, item_id: str) -> str:
     entry = load_tasks(root).get(item_id)
     if entry is None:
         raise NotFound(
-            f"{item_id}: nothing in tasks.json; you have not been dispatched an order yet (spec 08)"
+            f"{item_id}: nothing in tasks.json; you have not been dispatched a goal yet (spec 08)"
         )
-    parts = [entry.get("order") or "(no order recorded)"]
+    parts = [entry.get("goal") or "(no goal recorded)"]
     for addendum in entry.get("addenda") or []:
-        parts.append(f"## Order addendum {addendum.get('ts', '')}\n\n{addendum.get('text', '')}")
+        parts.append(f"## Goal addendum {addendum.get('ts', '')}\n\n{addendum.get('text', '')}")
     return "\n\n".join(part.strip("\n") for part in parts)
 
 

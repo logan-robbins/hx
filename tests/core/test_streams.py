@@ -69,9 +69,9 @@ def transcript_with(tmp_path, *, input_tokens=0, cache_read=0, cache_creation=0)
 
 
 @pytest.fixture
-def working(instance, hx, launched, orders):
+def working(instance, hx, launched, goals):
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     return instance
 
 

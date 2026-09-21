@@ -120,7 +120,7 @@ sessions are unattended, and a prompt nobody is there to answer is a hung agent.
 
 What replaces the permission prompt is a `PreToolUse` guard hook that denies writes outside
 each agent's own lane: another agent's identity file, the `config/` and `companion/`
-directories, `orders/` for anyone but the Partner, anything under `logs/`, `state/`, `run/`,
+directories, `goals/` for anyone but the Partner, anything under `logs/`, `state/`, `run/`,
 `archive/`, `tasks.json`, and another agent's work item. Bypass mode does not disable hooks, so
 those rules hold regardless.
 

@@ -27,9 +27,9 @@ class SpySource(FixtureSource):
         self.calls.append(("show", (agent_id,)))
         return super().show(agent_id)
 
-    def orders(self):
-        self.calls.append(("orders", ()))
-        return super().orders()
+    def goals(self):
+        self.calls.append(("goals", ()))
+        return super().goals()
 
     def archive(self):
         self.calls.append(("archive", ()))
@@ -53,7 +53,7 @@ def spy_ui():
 
 def test_wake_calls_the_source_exactly_once_with_the_text(spy_ui):
     before = manifest(FIXTURES)
-    text = "eng-003 complete: decision; hx read eng-003"
+    text = "eng-003 decision"
     response = spy_ui.client.post("/api/partner/wake", {"text": text})
     assert response.status == 200
     assert json.loads(response.body) == {"delivered": True, "status": "accepted"}
@@ -134,6 +134,6 @@ def test_a_refused_post_leaves_the_connection_usable(spy_ui):
 def test_no_endpoint_touches_the_instance(spy_ui):
     """Every read path, then the manifest again."""
     before = manifest(FIXTURES)
-    for path in ("/api/board", "/api/orders", "/api/archive", "/api/show/partner", "/api/show/eng-001", "/"):
+    for path in ("/api/board", "/api/goals", "/api/archive", "/api/show/partner", "/api/show/eng-001", "/"):
         spy_ui.client.get(path)
     assert manifest(FIXTURES) == before

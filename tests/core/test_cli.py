@@ -12,9 +12,11 @@ SPEC_08_COMMANDS = {
     "launch", "install", "doctor", "show", "ui", "up",
     "dispatch", "goal", "task", "compose", "seam", "restart", "complete", "resume",
     "read", "bench", "board", "flush", "companion", "wake", "heartbeat", "metrics",
-    "orders", "archive",
+    "goals", "archive",
     # Episode memory (docs/memory.md), not in spec 08's own table.
     "memory",
+    # File memory (CONTRACTS.md `hx read` and `hx recall`), likewise post-spec-08.
+    "recall",
 }
 
 

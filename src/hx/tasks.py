@@ -1,11 +1,11 @@
 """`tasks.json`: the control-plane record per id (spec 08).
 
-    {"eng-002": {"order": "…", "addenda": [{"ts","text"}],
+    {"eng-002": {"goal": "…", "addenda": [{"ts","text"}],
                  "outcome": null, "dispatched": "…", "completed": null}}
 
 Written only by hx (spec 04), with an ordinary write: the v1 cut (spec 14 D25) removed the
-lock and the atomic-rename ceremony. Together with the work item this is the only place task
-text lives.
+lock and the atomic-rename ceremony. Together with the Work Item this is the only place
+goal text lives.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .errors import ValidationError
 from .ids import ID_RE, OUTCOMES
 
 FILENAME = "tasks.json"
-_FIELDS = ("order", "addenda", "outcome", "dispatched", "completed")
+_FIELDS = ("goal", "addenda", "outcome", "dispatched", "completed")
 
 
 def path_for(root: Path) -> Path:
@@ -60,10 +60,10 @@ def outcome_of(tasks: dict[str, dict], item_id: str) -> str | None:
     return entry.get("outcome") if isinstance(entry, dict) else None
 
 
-def new_entry(order: str, dispatched: str) -> dict:
+def new_entry(goal: str, dispatched: str) -> dict:
     """A fresh `tasks.json` record for a dispatch (spec 08)."""
     return {
-        "order": order,
+        "goal": goal,
         "addenda": [],
         "outcome": None,
         "dispatched": dispatched,

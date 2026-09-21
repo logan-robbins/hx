@@ -1,10 +1,10 @@
 """`hx resume <id> <addendum-file>` — continue a paused item with everything it had (spec 06).
 
-Only the order grows. `## Tasks`, step state, memory, workdir and logs are all kept: that is
+Only the goal grows. `## Tasks`, step state, memory, workdir and logs are all kept: that is
 the whole difference between a resume and `hx bench` + `hx dispatch`, which is a fresh start.
 The item is `complete` while this runs, so the append never races the agent (spec 04). The
 addendum file is deleted once the resume succeeds: the text lives in `tasks.json` and the
-work item, and nowhere else (spec 06, spec 14 D25).
+Work Item, and nowhere else (spec 06, spec 14 D25).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .caller import require_partner_caller
 from .errors import NotFound, Refused
 from .ids import PARTNER
 from .workitems import (
-    SECTION_ORDER,
+    SECTION_GOAL,
     append_to_section,
     parse_work_item,
     rename_state,
@@ -25,8 +25,8 @@ from .workitems import (
     set_frontmatter,
 )
 
-#: Spec 06: `hx resume` appends `## Order addendum <ts>` beneath `## Order`.
-ADDENDUM_HEADING = "### Order addendum"
+#: Spec 06: `hx resume` appends `## Goal addendum <ts>` beneath `## Goal`.
+ADDENDUM_HEADING = "### Goal addendum"
 
 #: Only a paused item resumes; `done` and `exhausted` are ended, not paused (spec 06).
 RESUMABLE = ("blocked", "decision")
@@ -60,7 +60,7 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
         )
 
     ts = timestamps.now()
-    append_to_section(path, SECTION_ORDER, f"{ADDENDUM_HEADING} {ts}\n\n{addendum}")
+    append_to_section(path, SECTION_GOAL, f"{ADDENDUM_HEADING} {ts}\n\n{addendum}")
     set_frontmatter(path, outcome=None)
 
     entries = tasks_mod.load_tasks(root)
@@ -74,7 +74,7 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
     compose.compose(root, item_id, f"{item_id}-main", env=env)
     sent = goal.send_goal(root, item_id, env=env)
 
-    # Consumed, like the order file at dispatch (spec 06).
+    # Consumed, like the goal file at dispatch (spec 06).
     addendum_path.unlink(missing_ok=True)
 
     return {"id": item_id, "ts": ts, "file": str(final.relative_to(root)), "goal": sent}

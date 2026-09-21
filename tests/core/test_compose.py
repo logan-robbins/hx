@@ -15,7 +15,7 @@ import pytest
 
 from .conftest import PERSONA, clean_env, wait_for
 
-SECTION_ORDER = [
+SECTION_GOAL = [
     "## Memory",
     "## Task",
     "## Tasks",
@@ -55,27 +55,27 @@ def section_index(text, heading):
 # --- hx compose --------------------------------------------------------------------------------
 
 
-def test_the_sections_are_in_the_order_spec_07_3_fixes(instance, hx, launched, orders):
+def test_the_sections_are_in_the_order_spec_07_3_fixes(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders, order="Stream the importer.")
+    dispatch_working(instance, hx, goals, goal="Stream the importer.")
     result = hx("compose", "eng-001")
     assert result.returncode == 0, result.stderr
     path = context_file(instance, "eng-001")
     assert result.stdout.strip() == str(path)
 
     text = path.read_text()
-    positions = [section_index(text, heading) for heading in SECTION_ORDER]
+    positions = [section_index(text, heading) for heading in SECTION_GOAL]
     assert positions == sorted(positions), f"sections out of order: {positions}"
 
 
-def test_the_persona_is_never_in_the_context_file(instance, hx, launched, orders):
+def test_the_persona_is_never_in_the_context_file(instance, hx, launched, goals):
     """spec 02 Identity: the persona is system prompt, not context."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
 
@@ -85,22 +85,22 @@ def test_the_persona_is_never_in_the_context_file(instance, hx, launched, orders
     assert "Things I learned: nothing yet." in text, "the memory below the header is carried"
 
 
-def test_each_section_names_the_file_it_came_from(instance, hx, launched, orders):
+def test_each_section_names_the_file_it_came_from(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
     assert "_source: `config/eng-001/AGENTS.md`_" in text
     assert "_source: `pods/engineers/eng-001-working.md`_" in text
 
 
-def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launched, orders):
+def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launched, goals):
     from .test_transitions import dispatch_working, write_addendum
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders, order="The original order.")
+    dispatch_working(instance, hx, goals, goal="The original order.")
     assert hx("complete", "decision", harness_id="eng-001").returncode == 0
     write_addendum(instance, "eng-001", "And also handle the empty case.")
     assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
@@ -112,11 +112,11 @@ def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launch
     assert "And also handle the empty case." in task
 
 
-def test_the_tasks_section_is_the_agents_own_list(instance, hx, launched, orders):
+def test_the_tasks_section_is_the_agents_own_list(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     work_item = instance / "pods" / "engineers" / "eng-001-working.md"
     work_item.write_text(work_item.read_text().replace("- [ ] …", "- [x] read it\n- [ ] rewrite it"))
 
@@ -126,11 +126,11 @@ def test_the_tasks_section_is_the_agents_own_list(instance, hx, launched, orders
     assert "- [x] read it" in tasks and "- [ ] rewrite it" in tasks
 
 
-def test_step_state_is_rendered_not_dumped(instance, hx, launched, orders):
+def test_step_state_is_rendered_not_dumped(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     state = instance / "state" / "eng-001"
     state.mkdir(parents=True, exist_ok=True)
     (state / "eng-001-main.json").write_text(json.dumps({
@@ -161,22 +161,22 @@ def test_step_state_is_rendered_not_dumped(instance, hx, launched, orders):
     assert '"open_steps"' not in rendered, "rendered as lines, not dumped as JSON"
 
 
-def test_step_state_says_none_yet_before_the_companion_lands(instance, hx, launched, orders):
+def test_step_state_says_none_yet_before_the_companion_lands(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
     rendered = text[section_index(text, "## Step state"):section_index(text, "## Open subagent handles")]
     assert "_none yet_" in rendered
 
 
-def test_open_handles_list_the_running_subagents(instance, hx, launched, orders):
+def test_open_handles_list_the_running_subagents(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     logs = instance / "logs" / "eng-001"
     logs.mkdir(parents=True, exist_ok=True)
     (logs / "eng-001-s001-open.jsonl").write_text("")
@@ -190,12 +190,12 @@ def test_open_handles_list_the_running_subagents(instance, hx, launched, orders)
     assert "s002" not in handles, "a closed stream is not an open handle"
 
 
-def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched, orders):
+def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched, goals):
     """spec 07.3: SUBAGENTS.md whole for a subagent stream; `## Tasks` is main-stream only."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     (instance / "config" / "eng-001" / "SUBAGENTS.md").write_text("You are a subagent of eng-001.\n")
 
     result = hx("compose", "eng-001", "eng-001-s001")
@@ -206,7 +206,7 @@ def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched
     assert "## Who your subagents are" in text
 
 
-def test_the_partner_file_holds_partner_md_and_the_board(instance, hx, launched, orders):
+def test_the_partner_file_holds_partner_md_and_the_board(instance, hx, launched, goals):
     launched("partner")
     (instance / "PARTNER.md").write_text("# Partner state\n\nTwo workers idle.\n")
     result = hx("compose", "partner")
@@ -227,11 +227,11 @@ def test_compose_of_an_unknown_id_is_not_found(instance, hx):
 
 
 @pytest.mark.parametrize("source", SOURCES)
-def test_the_hook_prints_exactly_one_path_line(instance, hx, launched, orders, tmux_server, source):
+def test_the_hook_prints_exactly_one_path_line(instance, hx, launched, goals, tmux_server, source):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     result = run_hook(
         instance, "eng-001", "context",
         {"hook_event_name": "SessionStart", "source": source, "session_id": "s1",
@@ -250,30 +250,30 @@ def test_the_hook_prints_exactly_one_path_line(instance, hx, launched, orders, t
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "compact"])
-def test_only_clear_sends_the_goal(instance, hx, launched, orders, tmux_server, source):
+def test_only_clear_sends_the_goal(instance, hx, launched, goals, tmux_server, source):
     """spec 09.1: `startup` and `resume` send none; `hx launch`/`hx restart` do that."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
     run_hook(instance, "eng-001", "context",
              {"source": source, "cwd": str(instance)}, tmux=tmux_server)
     assert "/goal" not in (instance / "run" / "eng-001" / "fake-input.log").read_text()
 
 
-def test_clear_on_a_working_item_sends_the_goal(instance, hx, launched, orders, tmux_server):
+def test_clear_on_a_working_item_sends_the_goal(instance, hx, launched, goals, tmux_server):
     """spec 09.3 step 4: the `context` hook finishes the seam."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
     result = run_hook(instance, "eng-001", "context",
                       {"source": "clear", "cwd": str(instance)}, tmux=tmux_server)
     assert result.returncode == 0, result.stderr
     wait_for(
-        lambda: "/goal The order for eng-001" in
+        lambda: "/goal The goal for eng-001" in
         (instance / "run" / "eng-001" / "fake-input.log").read_text(),
         what="the pointer the clear hook sent",
     )
@@ -286,11 +286,11 @@ def test_clear_on_an_idle_item_sends_no_goal(instance, hx, launched, tmux_server
     assert "/goal" not in (instance / "run" / "eng-001" / "fake-input.log").read_text()
 
 
-def test_the_hook_records_a_boundary_on_the_main_stream(instance, hx, launched, orders, tmux_server):
+def test_the_hook_records_a_boundary_on_the_main_stream(instance, hx, launched, goals, tmux_server):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders)
+    dispatch_working(instance, hx, goals)
     run_hook(instance, "eng-001", "context",
              {"source": "compact", "transcript_path": "/tmp/t.jsonl", "cwd": str(instance)},
              tmux=tmux_server)
@@ -400,14 +400,14 @@ def test_every_spec_09_event_is_implemented(instance, hx, launched):
 
 
 def test_the_memory_episodes_section_is_there_before_a_single_episode_exists(
-    instance, hx, launched, orders
+    instance, hx, launched, goals
 ):
     """It is composed on an instance with no chroma store at all, and says so like any other
     empty section — the agent must never have to wonder whether hx failed to compose it."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
-    dispatch_working(instance, hx, orders, order="Stream the importer.")
+    dispatch_working(instance, hx, goals, goal="Stream the importer.")
     assert hx("compose", "eng-001").returncode == 0
 
     text = context_file(instance, "eng-001").read_text()

@@ -64,7 +64,7 @@ by the agent itself; nothing validates or polices it).
     "body": "…the markdown body after the frontmatter, verbatim…"
   },
   "task": {
-    "order": "…## Order text as dispatched…",
+    "goal": "…## Goal text as dispatched…",
     "addenda": [{"ts": "2026-09-20T12:30:00Z", "text": "…"}],
     "outcome": null,
     "dispatched": "…",
@@ -133,11 +133,11 @@ The UI calls the same function the CLI uses (`hx.wake.wake_partner(root, text)`)
 returns `True` when the socket accepted the message and `False` when no socket file exists or
 the connection was refused. It never blocks and never retries.
 
-## Orders (input files)
+## Goals (input files)
 
-`hx dispatch <id> <order-file>` reads an order file from any path and deletes it after a
+`hx dispatch <id> <goal-file>` reads a goal file from any path and deletes it after a
 successful dispatch; the text then lives in exactly two places, `tasks.json` and the work item.
-Required `## Order`; required `## Definition of done` containing a fenced ```bash block under
+Required `## Goal`; required `## Definition of done` containing a fenced ```bash block under
 `### Checks`. No frontmatter. Spec 06.
 
 ## `config/hx.json`
@@ -160,7 +160,7 @@ Python). Exactly these tokens, no others:
 | `{{id}}` | the id |
 | `{{pod}}` | the pod |
 | `{{dispatched}}` | the dispatch timestamp |
-| `{{order}}` | the order file verbatim (`## Order`, then `## Definition of done` with its `### Checks` block), on its own line directly under the frontmatter |
+| `{{goal}}` | the goal file verbatim (`## Goal`, then `## Definition of done` with its `### Checks` block), on its own line directly under the frontmatter |
 
 ## Claude Code version strings
 
@@ -174,22 +174,35 @@ version: the output of `claude --version` with the ` (Claude Code)` suffix strip
 worker configuration ships as `templates/worker/{AGENTS.md,SUBAGENTS.md,harness.json}` for the
 Partner to copy into `config/<id>/` when it creates an agent; `hx board` lists no items in a fresh root (the Partner is not an item).
 
-## `hx orders --json` and `hx archive --json`
+## `hx goals --json` and `hx archive --json`
 
-`hx orders --json` (v1 cut): one entry per id in `tasks.json`, no graph, no file comparison:
+`hx goals --json` (v1 cut): one entry per id in `tasks.json`, no graph, no file comparison:
 
 ```json
-{"root_abs": "/srv/hx", "ts": "…", "orders": [
+{"root_abs": "/srv/hx", "ts": "…", "goals": [
   {"id": "eng-002", "pod": "engineers", "state": "complete", "outcome": "decision",
-   "order": "…", "addenda": [{"ts": "…", "text": "…"}], "dispatched": "…", "completed": null}
+   "goal": "…", "addenda": [{"ts": "…", "text": "…"}], "dispatched": "…", "completed": null}
 ]}
 ```
 
 `hx archive --json`: unchanged shape, `{"root_abs", "ts", "items": [{"id", "pod", "bench": [...], "archive": [...]}]}`.
 
+## `hx read` and `hx recall`
+
+`hx read <id>` is the trust-model view: status only (`<id> <state> <outcome>`, dispatched,
+completed, file), no prose. `--detail` adds the `## Digest` and `## Open decision` sections
+for `blocked`/`decision` follow-ups; `--full` prints the whole body. A non-`complete` item
+is refused except with `--full`.
+
+`hx recall [QUERY] [--id ID] [--pod POD] [--limit N] [--full]` is last-resort file memory:
+substring search over completed Work Item bodies (live `*-complete.md` plus
+`pods/<pod>/archive/`), never the vector store. A query or a filter is required; at most 50
+files are scanned newest-first; `--limit` defaults to 5, max 20; excerpts are capped (400
+chars, 2000 with `--full`). Output lines start with `HX-RECALL`, or a single `HX-RECALL none`.
+
 ## SSE `changed` scopes
 
-`/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except two reserved scopes: `tasks`, emitted when `tasks.json` changed, and `memory`, emitted when anything under `state/memory/` moved (an episode queued or indexed). The browser treats `tasks` as "re-fetch the board and the orders view"; every scope re-reads the board, which is where `memory` and `companion_pass` land. An id also moves when a pass file appears or disappears under `run/<id>/companion/`.
+`/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except two reserved scopes: `tasks`, emitted when `tasks.json` changed, and `memory`, emitted when anything under `state/memory/` moved (an episode queued or indexed). The browser treats `tasks` as "re-fetch the board and the goals view"; every scope re-reads the board, which is where `memory` and `companion_pass` land. An id also moves when a pass file appears or disappears under `run/<id>/companion/`.
 
 ## `hx metrics <id> [--json]`
 

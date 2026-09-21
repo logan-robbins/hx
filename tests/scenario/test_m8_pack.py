@@ -1,12 +1,12 @@
 """The M8 scenario pack, checked against the spec and against the real `hx board`.
 
 `tests/scenario/m8/` is the concrete data the build lane runs spec 13 M8 with. Its value is
-entirely in being *true* — an order that `hx dispatch` would refuse, or an expected board that
+entirely in being *true* — an goal that `hx dispatch` would refuse, or an expected board that
 `hx board` would never print, is worse than no pack at all, because it gets believed.
 
 So this module does two kinds of check:
 
-* **Structural**, always: every order parses with `hx.orders.parse_order` (the same function
+* **Structural**, always: every goal parses with `hx.goals.parse_goal` (the same function
   `hx dispatch` uses), the `after` graph is acyclic and names real ids, every `AGENTS.md` has
   its mutable header, the fixture repo's tripwires are intact, and `expected/` covers exactly
   the steps the README's sequence table names — no more, no fewer.
@@ -37,7 +37,7 @@ import packlib  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PACK = pathlib.Path(__file__).resolve().parent / "m8"
-ORDERS = PACK / "orders"
+GOALS = PACK / "goals"
 EXPECTED = PACK / "expected"
 CONFIG = PACK / "config"
 FIXTURE_REPO = PACK / "repo"
@@ -87,8 +87,8 @@ STEPS: list[tuple[str, dict[str, packlib.State]]] = [
 
 
 def order_files() -> list[pathlib.Path]:
-    """Order-shaped files only: the addendum is prose appended under `## Order` (spec 06)."""
-    return sorted(p for p in ORDERS.glob("*.md") if not p.name.endswith(".addendum.md"))
+    """Goal-shaped files only: the addendum is prose appended under `## Goal` (spec 06)."""
+    return sorted(p for p in GOALS.glob("*.md") if not p.name.endswith(".addendum.md"))
 
 
 def agents_files() -> list[pathlib.Path]:
@@ -105,32 +105,32 @@ def _ids(paths):
 def test_the_pack_has_every_file_gtm_3_names():
     assert (PACK / "README.md").is_file()
     assert (PACK / "chat.md").is_file()
-    assert sorted(p.name for p in ORDERS.iterdir()) == [
+    assert sorted(p.name for p in GOALS.iterdir()) == [
         "eng-001.md", "eng-002.addendum.md", "eng-002.md",
-    ], "the Partner has no order file of its own (spec 12, D25)"
+    ], "the Partner has no goal file of its own (spec 12, D25)"
     assert sorted(p.name for p in CONFIG.iterdir()) == list(WORKERS)
-    assert FIXTURE_REPO.is_dir(), "the orders' checks run against tests/scenario/m8/repo/"
+    assert FIXTURE_REPO.is_dir(), "the goals' checks run against tests/scenario/m8/repo/"
 
 
-# ----------------------------------------------------------------------- the orders
+# ----------------------------------------------------------------------- the goals
 
 
 @pytest.mark.parametrize("path", order_files(), ids=_ids(order_files()))
 def test_order_parses_with_the_function_dispatch_uses(path):
-    """`hx.orders.parse_order` is what `hx dispatch` validates with. If it refuses one of
+    """`hx.goals.parse_goal` is what `hx dispatch` validates with. If it refuses one of
     these, M8 stops at its first command."""
-    from hx import orders
+    from hx import goals
 
-    order = orders.parse_order(path)
-    assert order.checks.strip(), f"{path}: empty `### Checks` block; dispatch refuses it"
+    goal = goals.parse_goal(path)
+    assert goal.checks.strip(), f"{path}: empty `### Checks` block; dispatch refuses it"
 
 
 @pytest.mark.parametrize("path", order_files(), ids=_ids(order_files()))
 def test_order_checks_are_runnable_commands(path):
-    from hx import orders
+    from hx import goals
 
     commands = [
-        line for line in orders.parse_order(path).checks.splitlines()
+        line for line in goals.parse_goal(path).checks.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
     assert commands, f"{path}: `### Checks` has no commands"
@@ -139,9 +139,9 @@ def test_order_checks_are_runnable_commands(path):
 
 
 def test_the_addendum_is_prose_that_lands_under_the_order_heading():
-    """`hx resume` appends it verbatim beneath `## Order` (spec 06, 08), so a `##` heading
+    """`hx resume` appends it verbatim beneath `## Goal` (spec 06, 08), so a `##` heading
     would break the work item's structure."""
-    text = (ORDERS / "eng-002.addendum.md").read_text()
+    text = (GOALS / "eng-002.addendum.md").read_text()
     assert text.strip()
     assert not re.search(r"^## ", text, re.MULTILINE)
     assert not text.startswith("---\n"), "an addendum carries no frontmatter"
@@ -149,13 +149,13 @@ def test_the_addendum_is_prose_that_lands_under_the_order_heading():
 
 def test_the_addendum_answers_the_question_eng_002_is_told_to_ask():
     """The point of the `decision` step: the worker must not be able to infer the answer from
-    its own order, and the addendum must actually settle it."""
-    order = (ORDERS / "eng-002.md").read_text()
-    addendum = (ORDERS / "eng-002.addendum.md").read_text()
-    assert "hx complete decision" in order, "eng-002's order must route it to `decision`"
-    assert "## Open decision" in order
-    # Both options are stated in the order; exactly one is chosen in the addendum.
-    assert "fall back to English" in order and "non-zero" in order
+    its own goal, and the addendum must actually settle it."""
+    goal = (GOALS / "eng-002.md").read_text()
+    addendum = (GOALS / "eng-002.addendum.md").read_text()
+    assert "hx complete decision" in goal, "eng-002's goal must route it to `decision`"
+    assert "## Open decision" in goal
+    # Both options are stated in the goal; exactly one is chosen in the addendum.
+    assert "fall back to English" in goal and "non-zero" in goal
     assert "fall back to English" in addendum
     assert "stderr" in addendum and "exits 0" in addendum
 
@@ -163,9 +163,9 @@ def test_the_addendum_answers_the_question_eng_002_is_told_to_ask():
 def test_the_orders_checks_dont_pre_decide_the_open_question():
     """If `### Checks` already encoded the fallback behaviour, the worker could read the answer
     off its own definition of done instead of asking."""
-    from hx import orders
+    from hx import goals
 
-    checks = orders.parse_order(ORDERS / "eng-002.md").checks
+    checks = goals.parse_goal(GOALS / "eng-002.md").checks
     assert "--lang xx" not in checks, checks
     assert "unknown language" not in checks, checks
 
@@ -208,7 +208,7 @@ def test_the_fixture_repo_runs_and_starts_where_the_orders_assume():
 
 
 def test_the_fixture_repo_does_not_already_do_the_work():
-    """If `--upper` or `--lang` already worked, both orders would pass their checks on arrival
+    """If `--upper` or `--lang` already worked, both goals would pass their checks on arrival
     and M8 would prove nothing."""
     for flag in ("--upper", "--lang"):
         r = subprocess.run(
@@ -232,7 +232,7 @@ def test_the_tripwires_are_present_and_loud():
 
 
 def readme_steps() -> list[str]:
-    """The `expected/` filenames the README's sequence table names, in order."""
+    """The `expected/` filenames the README's sequence table names, in goal."""
     text = (PACK / "README.md").read_text()
     return re.findall(r"`expected/([0-9]{2}-[a-z0-9-]+)\.txt`", text)
 

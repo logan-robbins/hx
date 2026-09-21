@@ -1,11 +1,11 @@
-"""`hx dispatch <id> <order-file> [...]` — the only way a task starts (spec 06, 08).
+"""`hx dispatch <id> <goal-file> [...]` — the only way a task starts (spec 06, 08).
 
-The order is a file at any path the Partner likes, copied verbatim into the work item and
-recorded in `tasks.json`, and deleted once the dispatch succeeds: no task text ever crosses a
+The goal is a file at any path the Partner likes, copied verbatim into the Work Item and
+recorded in `tasks.json`, and deleted once the dispatch succeeds: no goal text ever crosses a
 command line, and the text ends up in exactly two places. The write order is spec 08's, so
 re-running an interrupted dispatch completes it:
 
-    tasks, then per-id archive, reset, render, rename, goal, delete the order file.
+    tasks, then per-id archive, reset, render, rename, goal, delete the goal file.
 
 The Partner is never dispatched: it has no work item and its goal comes from the human in
 chat (spec 12, spec 14 D25). hx does not inspect or reset git — a dirty workdir is the
@@ -22,10 +22,10 @@ from pathlib import Path
 
 from . import archive, goal, store, tasks as tasks_mod, timestamps, tmux
 from .caller import require_partner_caller
-from .config_harness import load_harness
+from .config_harness import flavor_of, load_harness
 from .errors import NotFound, Refused, ValidationError
 from .ids import PARTNER
-from .orders import parse_order, parse_order_text
+from .goals import parse_goal, parse_goal_text
 from .workitems import (
     find_work_item,
     load_template,
@@ -37,6 +37,8 @@ from .workitems import (
 
 #: Cleared from `run/<id>/home/` at every dispatch, and nothing else (spec 08).
 HOME_WIPE = ("projects", "file-history", "history.jsonl")
+#: Pi keeps the conversation in `home/sessions`. A new goal is a new session.
+PI_HOME_WIPE = ("sessions",)
 #: Kept in `run/<id>/` across a dispatch; everything else there is cleared (spec 08).
 #: The Companion's home and system prompt are kept for the same reason the agent's home is:
 #: its session is continuous and serves the same agent across dispatches, and deleting its
@@ -50,8 +52,8 @@ class Plan:
 
     id: str
     pod: str
-    order_path: Path
-    order_text: str
+    goal_path: Path
+    goal_text: str
     work_item: Path
     already_applied: bool = False
 
@@ -64,10 +66,10 @@ def _pod_of(root: Path, item_id: str, work_item: Path) -> str:
 
 
 def _validate(root: Path, pairs: list[tuple[str, str]], existing: dict[str, dict], env) -> list[Plan]:
-    """Every order is validated before anything is written (spec 08 pseudo-code)."""
+    """Every goal is validated before anything is written (spec 08 pseudo-code)."""
     plans: list[Plan] = []
     seen: set[str] = set()
-    for item_id, order_file in pairs:
+    for item_id, goal_file in pairs:
         if item_id == PARTNER:
             raise Refused(
                 "refuse: the Partner has no work item and is never dispatched; the human "
@@ -77,13 +79,13 @@ def _validate(root: Path, pairs: list[tuple[str, str]], existing: dict[str, dict
             raise Refused(f"refuse: {item_id} named twice in one dispatch")
         seen.add(item_id)
 
-        recorded = (existing.get(item_id) or {}).get("order")
-        if not Path(order_file).exists() and recorded:
-            # The order file was consumed by the dispatch this one is completing; the text is
+        recorded = (existing.get(item_id) or {}).get("goal")
+        if not Path(goal_file).exists() and recorded:
+            # The goal file was consumed by the dispatch this one is completing; the text is
             # in `tasks.json` and hx re-renders from there (spec 08).
-            order = parse_order_text(recorded, f"tasks.json[{item_id}].order")
+            goal = parse_goal_text(recorded, f"tasks.json[{item_id}].goal")
         else:
-            order = parse_order(Path(order_file))
+            goal = parse_goal(Path(goal_file))
         work_item = find_work_item(root, item_id)
         if work_item is None:
             raise NotFound(
@@ -99,10 +101,10 @@ def _validate(root: Path, pairs: list[tuple[str, str]], existing: dict[str, dict
         already = False
         if state != "idle":
             # An interrupted dispatch re-run: this id was already applied with this very
-            # order, so completing the run means skipping it, not refusing it (spec 08,
+            # goal, so completing the run means skipping it, not refusing it (spec 08,
             # "Re-running the same `hx dispatch` completes an interrupted one").
             record = existing.get(item_id) or {}
-            if state == "working" and record.get("order") == order.text:
+            if state == "working" and record.get("goal") == goal.text:
                 already = True
             else:
                 raise Refused(
@@ -114,8 +116,8 @@ def _validate(root: Path, pairs: list[tuple[str, str]], existing: dict[str, dict
             Plan(
                 id=item_id,
                 pod=_pod_of(root, item_id, work_item),
-                order_path=Path(order_file),
-                order_text=order.text,
+                goal_path=Path(goal_file),
+                goal_text=goal.text,
                 work_item=work_item,
                 already_applied=already,
             )
@@ -139,7 +141,8 @@ def _reset_run_dir(root: Path, item_id: str) -> None:
     if home.is_dir():
         # Exactly these three: transcripts and per-project auto memory, pre-edit snapshots,
         # and typed prompts. settings.json, .credentials.json, skills/ and agents/ survive.
-        for name in HOME_WIPE:
+        wipe = HOME_WIPE + (PI_HOME_WIPE if flavor_of(root, item_id) == "pi" else ())
+        for name in wipe:
             target = home / name
             if target.is_dir() and not target.is_symlink():
                 shutil.rmtree(target)
@@ -168,7 +171,7 @@ def apply_plan(root: Path, plan: Plan, entries: dict[str, dict], ts: str, env) -
         item_id=plan.id,
         pod=plan.pod,
         dispatched=ts,
-        order=plan.order_text.rstrip("\n"),
+        goal=plan.goal_text.rstrip("\n"),
     )
     idle_path = work_item_path(root, plan.pod, plan.id, "idle")
     store.atomic_write_text(idle_path, body)
@@ -180,10 +183,10 @@ def apply_plan(root: Path, plan: Plan, entries: dict[str, dict], ts: str, env) -
     result["file"] = str(final.relative_to(root))
     result["goal"] = goal.send_goal(root, plan.id, env=env)
 
-    # The order file is consumed: the text now lives in `tasks.json` and the work item, and
+    # The goal file is consumed: the text now lives in `tasks.json` and the Work Item, and
     # nowhere else (spec 06, 08).
-    plan.order_path.unlink(missing_ok=True)
-    result["consumed"] = str(plan.order_path)
+    plan.goal_path.unlink(missing_ok=True)
+    result["consumed"] = str(plan.goal_path)
     return result
 
 
@@ -196,7 +199,7 @@ def dispatch(root: Path, pairs: list[tuple[str, str]], *, env=None) -> list[dict
     for plan in plans:
         if plan.already_applied:
             continue
-        entries[plan.id] = tasks_mod.new_entry(plan.order_text, ts)
+        entries[plan.id] = tasks_mod.new_entry(plan.goal_text, ts)
     tasks_mod.write_tasks(root, entries)
 
     return [apply_plan(root, plan, entries, ts, env) for plan in plans]
@@ -204,14 +207,14 @@ def dispatch(root: Path, pairs: list[tuple[str, str]], *, env=None) -> list[dict
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx dispatch", add_help=True)
-    parser.add_argument("pairs", nargs="+", metavar="ID ORDER-FILE")
+    parser.add_argument("pairs", nargs="+", metavar="ID GOAL-FILE")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if len(args.pairs) % 2 != 0:
         raise ValidationError(
-            "dispatch takes `<id> <order-file>` pairs: "
+            "dispatch takes `<id> <goal-file>` pairs: "
             "`hx dispatch eng-001 /tmp/eng-001.md eng-002 /tmp/eng-002.md`"
         )
     pairs = list(zip(args.pairs[0::2], args.pairs[1::2]))

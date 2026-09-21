@@ -14,7 +14,7 @@
     "body": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n\n## Standing instructions\n- Keep `## Tasks` current: mark a task done the moment it is done, add tasks the moment you discover them.\n- Commit each finished sub-task immediately with a descriptive message.\n- Your last action is `hx complete <outcome>`. Nothing after it.\n\n## Tasks\n- [x] Read spec 08 `hx board`; the exit rule is \"exit 0 iff every listed item is complete with outcome done\".\n- [x] Add `--require-done` to the argument parser in `src/hx/board.py`.\n- [ ] Refuse an id that has no `config/<id>/` rather than treating it as not-done.\n- [ ] Tests for the three exit paths in `tests/test_board.py`.\n\n## Deliverables\n- `src/hx/board.py`, `tests/test_board.py`\n\n## Commands\n- `python -m pytest tests/test_board.py -q`\n\n## Open decision\n\n## Digest\n"
   },
   "task": {
-    "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
+    "goal": "## Goal\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
     "addenda": [
       {
         "ts": "2026-09-20T12:30:00Z",
@@ -556,13 +556,6 @@
       "digest": "`hx board --json` shipped with the CONTRACTS.md shape; one invariant check per spec 08."
     }
   ],
-  "companion": {
-    "pass_in_flight": true,
-    "pass_stream": "eng-001-main",
-    "pass_since": "2026-09-20T13:09:41Z",
-    "last_state_ts": "2026-09-20T13:09:35Z",
-    "streams": 2
-  },
   "compactions": {
     "eng-001-main": {
       "path": "state/eng-001/eng-001-main.json",

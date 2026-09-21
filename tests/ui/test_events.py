@@ -80,9 +80,9 @@ def test_several_browsers_each_get_the_frame(scratch_tree, scratch_ui, stream):
     connection, second = scratch_ui.client.stream("/api/events", token=scratch_ui.token, timeout=10)
     try:
         read_preamble(second)
-        touch(scratch_tree / "orders.json")
-        assert "orders" in (next_event(stream, BUDGET) or {}).get("changed", [])
-        assert "orders" in (next_event(second, BUDGET) or {}).get("changed", [])
+        touch(scratch_tree / "goals.json")
+        assert "goals" in (next_event(stream, BUDGET) or {}).get("changed", [])
+        assert "goals" in (next_event(second, BUDGET) or {}).get("changed", [])
     finally:
         connection.close()
 

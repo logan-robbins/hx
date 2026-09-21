@@ -14,7 +14,7 @@ characters.
 | re-run the test/lint to see the error | `last_failure`: `<exact command>` → failing spec name → assertion line + `file:line` |
 | open the page again to check what it renders | the verified behaviour, one line each: what was checked, how (DOM read / screenshot / story), result |
 | re-read the design tokens file | token names and values used, in a decision or file note |
-| guess an API shape again | the endpoint + the shape + where the shape came from (order, or guessed) |
+| guess an API shape again | the endpoint + the shape + where the shape came from (goal, or guessed) |
 
 ## Keep until the task completes
 
@@ -23,7 +23,7 @@ characters.
   An unverified render is `verified: false`, never a sentence claiming it works.
 - Design-system decisions: tokens and existing components reused; any new one and why.
 - API dependencies: method + path + assumed response keys, and whether the shape came from the
-  order or was guessed. A guessed shape is a blocker candidate — say so in `blockers`.
+  goal or was guessed. A guessed shape is a blocker candidate — say so in `blockers`.
 - Commands, exact: dev server + port, test, lint, build; last result of each with counts.
 - Accessibility findings still open, each with the element and the rule.
 

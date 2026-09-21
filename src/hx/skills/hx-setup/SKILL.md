@@ -164,9 +164,9 @@ tmux attach -t partner
 ```
 
 and the UI at `http://127.0.0.1:8765/` (port from `config/ui.json`). From here on the Partner
-creates workers, writes orders, dispatches, reads digests and reports in chat; the human
+creates workers, writes goals, dispatches, reads completion states and reports in chat; the human
 describes what they want and where the code is. **The human never runs hx**, and neither do
-you after this point. Do not create `config/<id>/` directories, do not write order files, do
+you after this point. Do not create `config/<id>/` directories, do not write goal files, do
 not run `hx launch` or `hx dispatch`: an agent that starts making agents is a bug, and the
 Partner has the skills (`hx-partner`, `hx-fleet`, `hx-memory`) for all of it.
 
@@ -213,5 +213,5 @@ through `tmux attach` by the human or `hx wake partner` by the UI, and workers o
 - Use `claude -p`. Every hx participant is an interactive tmux session driven by hooks.
 - Add timeouts, kill a session mid-turn, or answer a trust or onboarding prompt by hand — hx
   pre-seeds each home so no such prompt appears; one that does is a bug to report.
-- Create workers, write orders, dispatch, or edit a worker's `workdir`. That is the Partner's.
+- Create workers, write goals, dispatch, or edit a worker's `workdir`. That is the Partner's.
 - Tell the human to run an hx command after hand-over. They talk to the Partner.

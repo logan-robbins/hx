@@ -20,7 +20,7 @@ Each file is one section. Edit one file per change; cross-references use file na
 | `13-build-order.md` | Milestones and acceptance tests |
 | `14-open-items.md` | Decisions pinned at implementation, with the milestone that verifies each |
 | `15-dataflow.md` | Data flow human → Partner → HarnessAgents → Subagents and back, plus the episode-memory loop |
-| `16-ui.md` | Observing UI: board, agent, Partner chat, orders, archive |
+| `16-ui.md` | Observing UI: board, agent, Partner chat, goals, archive |
 | `17-packaging.md` | Package vs instance, `hx install`, isolation from the user's Claude, launch, skills, build plan |
 <!-- END 00-index.md -->
 
@@ -30,10 +30,10 @@ Each file is one section. Edit one file per change; cross-references use file na
 | Term | Definition |
 |---|---|
 | HarnessAgent | One full Claude Code instance in a tmux session named by its id. Not a bare model loop: every task is given to it as a `/goal` so it runs with the harness's full capability (subagents, hooks, compaction, skills). Claude Code only for now. |
-| Partner | The supervising HarnessAgent, id `partner`. The human talks to it in its tmux session (`tmux attach -t partner`) and tells it what to do; it turns that into order files and dispatches workers, one or more at a time, when it decides to, as a human would. The Partner is not a work item and is never dispatched, resumed, or completed: its persistent state is `PARTNER.md`. It has its own Companion. |
+| Partner | The supervising HarnessAgent, id `partner`. The human talks to it in its tmux session (`tmux attach -t partner`) and tells it what to do; it turns that into goal files and dispatches workers, one or more at a time, when it decides to, as a human would. The Partner is not a work item and is never dispatched, resumed, or completed: its persistent state is `PARTNER.md`. It has its own Companion. |
 | Subagent | A child agent spawned inside a HarnessAgent, addressed by handle `<id>-sNNN` |
-| Order | A Partner-written markdown file holding `## Order` and `## Definition of done`. `hx dispatch` reads it, copies it verbatim into the work item and `tasks.json`, and deletes it; the order text then lives in exactly those two places. Never passed as command-line text |
-| Task | The control-plane record for one id in `tasks.json`: order text, addenda, outcome, dispatch and completion timestamps. Delivered to the HarnessAgent as a `/goal` pointer, never as prompt text |
+| Goal | A Partner-written markdown file holding `## Goal` and `## Definition of done`. `hx dispatch` reads it, copies it verbatim into the work item and `tasks.json`, and deletes it; the goal text then lives in exactly those two places. Never passed as command-line text |
+| Task | The control-plane record for one id in `tasks.json`: goal text, addenda, outcome, dispatch and completion timestamps. Delivered to the HarnessAgent as a `/goal` pointer, never as prompt text |
 | Work item | `pods/<pod>/<id>-<state>.md`, one per worker; the Partner has none. State ∈ `idle`, `working`, `complete` is the filename suffix. The body is the HarnessAgent's own running task list, which it updates frequently |
 | Stream | One append-only raw log: `<id>-main` or `<id>-sNNN` |
 | Companion | A small model paired one-to-one with a HarnessAgent (the Partner included); maintains coherency state for each of its streams. Companion prompts are tuned to the persona of the HarnessAgent they support. |
@@ -76,7 +76,7 @@ Each file is one section. Edit one file per change; cross-references use file na
 |---|---|
 | Orchestrator | tmux + `hx` CLI + per-id hooks |
 | LangGraph | **No** |
-| Supervisor | Partner: reads `hx board`, writes order files, launches and dispatches workers, consumes digests, resumes paused items. The human tells the Partner what to do by talking to it in its tmux session and answers its questions there. The Partner is not a work item and carries no `/goal` of its own; it decides when to dispatch the next order, the way a human running three sessions would. |
+| Supervisor | Partner: reads `hx board`, writes goal files, launches and dispatches workers, consumes digests, resumes paused items. The human tells the Partner what to do by talking to it in its tmux session and answers its questions there. The Partner is not a work item and carries no `/goal` of its own; it decides when to dispatch the next goal, the way a human running three sessions would. |
 | Control-plane writes | Deterministic `hx` scripts: `tasks.json`, work item state, stream files, the derived persona file, context files |
 | Knowledge writes | Companion: step state, digest. HarnessAgent: its own work item body (running task list) and the mutable section of its own `AGENTS.md` (long-term memory). The Companion does not drive execution and holds no task graph; it continuously interprets the agent's actions from the stream so that continuity survives seams and the agent does not re-call tools to relearn what it already knew. |
 | Continuity | Companion step state + raw records after its last processed seq, kept as a file on disk. At start, resume, clear, compaction, and subagent start a hook hands the agent the path; the agent reads it with one tool call. Hooks never inject file contents. |
@@ -84,11 +84,11 @@ Each file is one section. Edit one file per change; cross-references use file na
 | Compaction (last resort) | Harness autocompact is left at its native window (about 967k on 1M models) and is never blocked. hx enforces its own seam threshold from `config/models.json` (500k on 1M models) through the `log` hook, so a seam is always taken long before the harness would compact. The harness compacts only if a single turn grows from the threshold to the native window without ending, which at 467k tokens of headroom does not happen in practice; if it does, `SessionStart(compact)` still hands over the context file and the persona is still in the system prompt. `PreCompact` is not used to block: live tests show a block suppresses compaction for the whole turn regardless of later hook output, and the hook also fires for subagent compactions, so blocking would silently disable subagent compaction. `PreCompact`/`PostCompact` are log-only. |
 | Identity | One file per agent type, per id: `config/<id>/AGENTS.md` for the HarnessAgent main thread and `config/<id>/SUBAGENTS.md` for its subagents. `AGENTS.md` has two parts. Above the mutable header (`## UPDATES BELOW ONLY`) is the project-scoped persona, written and rarely edited by the Partner; `start.sh` copies it to `run/<id>/persona.md` and launches with `--append-system-prompt-file` pointing at it, so the persona is in every turn's system prompt, survives compaction and `/clear`, costs no tool call, and cannot be skipped. A persona edit takes effect at the next `hx restart`. Below the header the agent writes its own long-term memory; it travels in the context file. Subagents get `SUBAGENTS.md` inside their context file by path from the `SubagentStart` hook (the subagent system-prompt flag exists only in `-p` mode). These files live outside the workdir, so Claude Code's own `AGENTS.md` discovery never sees them. Repo `AGENTS.md` and `CLAUDE.md` discovery is turned off in the harness user's settings; the one global `config/CLAUDE.md` is the only CLAUDE.md that loads. |
 | Single-file context | Everything the agent needs at a boundary that is not already in its system prompt (memory, task, `## Tasks`, step state, open handles) is composed by hx into one file per stream with a fixed section schema, always current on disk. The hook output is only the path to that file. Rehydration therefore costs exactly one read, never a search, and never a second file. No size cap applies because nothing is injected. |
-| Goal delivery | The `/goal` pointer is pasted into a worker's pane by `hx goal <id>` on every conversation start of a `working` item: dispatch, resume, seam (`context` hook on `clear`), `hx restart`, `hx launch` of an item that is already working. It waits for the idle prompt before pasting; only the `context` hook on `clear` pastes immediately (`--now`), the live-verified path for a slash command issued from that hook. It is never a prompt argument and never freeform text: the order lives in the work item and is read from there. Claude Code is always launched bare. The Partner is never sent a `/goal`; the human tells it what to do in chat. |
-| Orders | The Partner writes an order as a file with `## Order` and `## Definition of done`; `hx dispatch <id> <order-file>` copies it verbatim into the work item, records it in `tasks.json`, and deletes the file. Task text then lives in exactly two places: `tasks.json` and the work item. No task text crosses a command line. |
+| Goal delivery | The `/goal` pointer is pasted into a worker's pane by `hx goal <id>` on every conversation start of a `working` item: dispatch, resume, seam (`context` hook on `clear`), `hx restart`, `hx launch` of an item that is already working. It waits for the idle prompt before pasting; only the `context` hook on `clear` pastes immediately (`--now`), the live-verified path for a slash command issued from that hook. It is never a prompt argument and never freeform text: the goal lives in the work item and is read from there. Claude Code is always launched bare. The Partner is never sent a `/goal`; the human tells it what to do in chat. |
+| Goals | The Partner writes a goal as a file with `## Goal` and `## Definition of done`; `hx dispatch <id> <goal-file>` copies it verbatim into the work item, records it in `tasks.json`, and deletes the file. Task text then lives in exactly two places: `tasks.json` and the work item. No task text crosses a command line. |
 | Completion | `hx complete done` is machine-checked: the `### Checks` block of the definition of done runs in the workdir, `git status --porcelain` must be empty when the workdir is a git repo, and no subagent stream may be open. Failure prints `HX-CHECK-FAILED <id>` with the output, the item stays `working`, and the goal stays active, so the agent fixes and retries. Only success prints `HX-COMPLETE <id> done`. The evaluator judges a machine result, not prose. `blocked`, `decision`, and `exhausted` run no checks. |
-| Sequencing | None in hx. A work item has no dependency field and no waiting state; hx never sequences anything. The Partner dispatches the next order when it decides to, from what it read in the digest, exactly as a human managing several sessions does. |
-| Resume | `hx resume <id> <addendum-file>` continues a `complete` item with outcome `blocked` or `decision` with everything it had: `## Tasks`, step state, memory, workdir, logs. Only the order grows, by the addendum, and the addendum file is deleted once appended. `hx bench` + `hx dispatch` is a fresh start and is used only when the task itself changes or moves to another id. |
+| Sequencing | None in hx. A work item has no dependency field and no waiting state; hx never sequences anything. The Partner dispatches the next goal when it decides to, from what it read in the digest, exactly as a human managing several sessions does. |
+| Resume | `hx resume <id> <addendum-file>` continues a `complete` item with outcome `blocked` or `decision` with everything it had: `## Tasks`, step state, memory, workdir, logs. Only the goal grows, by the addendum, and the addendum file is deleted once appended. `hx bench` + `hx dispatch` is a fresh start and is used only when the task itself changes or moves to another id. |
 | Model calls | Every model call in hx is a Claude Code session in tmux that hx operates by pasting files' paths: HarnessAgents, subagents (Claude Code's own), and Companions alike. No `claude -p`, no API client. One mechanism for launch, auth, permissions, persona, and observation | Spec author, 2026-09-20 |
 <!-- END 02-decisions.md -->
 
@@ -113,7 +113,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   config/<id>/SUBAGENTS.md                 # identity for this HarnessAgent's subagents (→ subagent context file)
   config/<id>/harness.json                 # per-agent config (05-configuration.md)
   PARTNER.md                               # Partner state doc; the Partner's whole persistent state
-  tasks.json                               # {"<id>": {order, addenda, outcome, dispatched, completed}}
+  tasks.json                               # {"<id>": {goal, addenda, outcome, dispatched, completed}}
   pods/<pod>/<id>-<state>.md               # work items, one per worker; state is the suffix
   pods/<pod>/archive/<id>-<ts>.md          # benched bodies
   logs/<id>/<id>-main.jsonl                # main stream
@@ -146,7 +146,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
 - The human authors and commits `config/CLAUDE.md`, `config/models.json`, `companion/**`, `templates/**`, and commits `PARTNER.md`.
 - Personas and per-agent config live in `config/<id>/`, outside every agent's working directory; each agent is told the exact absolute paths of its own files and that it reads nothing else under `HARNESS_ROOT`. Nothing is enforced.
 - `config/<id>/AGENTS.md` has two writers separated by the mutable header (`## UPDATES BELOW ONLY`). Above it: the project-scoped persona for that id, written by the Partner and edited rarely; it reaches the agent as system prompt via `run/<id>/persona.md`. Below it: that HarnessAgent's own long-term memory, written only by that agent; it reaches the agent in the context file. Neither the human nor the Companion writes this file. It survives seams because it is a file, not context.
-- The work item is the HarnessAgent's own running task list. The agent updates its body frequently as it works; hx owns the state suffix and the `## Order` addenda.
+- The work item is the HarnessAgent's own running task list. The agent updates its body frequently as it works; hx owns the state suffix and the `## Goal` addenda.
 - `config/CLAUDE.md` is the only CLAUDE.md that loads. The product repo's own `CLAUDE.md` and `AGENTS.md` are not loaded and are not edited: the harness user's settings set `claudeMdExcludes` for the repo file and instruction-files mode `claude-md`, so nothing in the agent's workdir is discovered.
 - Per-agent `run/<id>/home/` isolates each HarnessAgent's hooks, credentials, auto memory, and transcripts, so one agent's memory never pollutes another's and hx can reset it between dispatches.
 <!-- END 03-layout.md -->
@@ -166,10 +166,10 @@ Personas and per-agent config live in `config/<id>/`, outside every agent's work
 | `config/<id>/SUBAGENTS.md`, `config/<id>/harness.json` | Partner, rarely, only on direct human instruction | Edit tool |
 | `run/<id>/persona.md` | `hx` | `start.sh`, derived from the part of `AGENTS.md` above the header at every launch |
 | `PARTNER.md` | Partner | Edit tool |
-| Order and addendum files (any path the Partner chooses) | Partner | Write tool; `hx dispatch` / `hx resume` read them and delete them |
+| Goal and addendum files (any path the Partner chooses) | Partner | Write tool; `hx dispatch` / `hx resume` read them and delete them |
 | `tasks.json` | `hx` | `hx dispatch`, `hx complete`, `hx resume` (an ordinary write) |
 | Work item create / rename (state suffix) | `hx`; the HarnessAgent may rename its own item directly | `hx launch`, `hx dispatch`, `hx complete`, `hx resume`, `hx bench` |
-| Work item `## Order` addendum | `hx` | `hx resume`, appended verbatim from the addendum file |
+| Work item `## Goal` addendum | `hx` | `hx resume`, appended verbatim from the addendum file |
 | Work item body (running task list) | That HarnessAgent | Edit tool |
 | Raw streams (`logs/**`), incl. open→closed rename of subagent streams | Hooks | `hx-hook` |
 | Step state (`state/**`) | Companion | `hx companion` |
@@ -181,7 +181,7 @@ Personas and per-agent config live in `config/<id>/`, outside every agent's work
 
 - Work item rename vs. body edit can race if hx renames while the agent's Edit tool is mid-write. Accepted: rare, and hx transitions happen at turn boundaries; the Partner and the agent never touch the item at the same time.
 - Partner edits to the top of `AGENTS.md` can race with the agent's edits below the header. Accepted: the Partner only does this on direct human instruction, and the human is aware of the timing.
-- `hx resume` appends to `## Order` while the agent is stopped (the item is `complete`), so it never races the agent.
+- `hx resume` appends to `## Goal` while the agent is stopped (the item is `complete`), so it never races the agent.
 <!-- END 04-ownership.md -->
 
 <!-- BEGIN 05-configuration.md -->
@@ -241,21 +241,21 @@ The shipped defaults accept a 250k working context: the seam fires at 200k, comp
 
 - **File:** `pods/<pod>/<id>-<state>.md`, one per worker id, state ∈ `idle`, `working`, `complete`. The state is the filename suffix: renaming the file is the transition, and reading the directory is reading the fleet. The Partner has no work item.
 
-**Who renames.** `hx launch` creates the item `-idle`; `hx dispatch <id> <order-file>` renames `idle → working`; `hx complete <outcome>` renames `working → complete`; `hx resume <id> <addendum-file>` renames a `complete` item whose outcome is `blocked` or `decision` back to `working`; `hx bench <id>` renames `complete → idle`. The HarnessAgent may also rename its own item directly; the Partner and the agent never touch it at the same time. A `working` item has a live tmux session and a `run/<id>/goal` marker.
+**Who renames.** `hx launch` creates the item `-idle`; `hx dispatch <id> <goal-file>` renames `idle → working`; `hx complete <outcome>` renames `working → complete`; `hx resume <id> <addendum-file>` renames a `complete` item whose outcome is `blocked` or `decision` back to `working`; `hx bench <id>` renames `complete → idle`. The HarnessAgent may also rename its own item directly; the Partner and the agent never touch it at the same time. A `working` item has a live tmux session and a `run/<id>/goal` marker.
 
-**The order is a file, and hx consumes it.** The Partner writes an order file — any path it likes — containing exactly two sections, `## Order` and `## Definition of done`. `hx dispatch` refuses an order that lacks either section or the `### Checks` block. The order has no length limit; it is copied verbatim into the work item and recorded in `tasks.json`, and the file is deleted once the dispatch succeeds. The order text then lives in exactly two places, `tasks.json` and the work item, and nowhere else. No task text is ever a command-line argument.
+**The goal is a file, and hx consumes it.** The Partner writes an goal file — any path it likes — containing exactly two sections, `## Goal` and `## Definition of done`. `hx dispatch` refuses a goal that lacks either section or the `### Checks` block. The goal has no length limit; it is copied verbatim into the work item and recorded in `tasks.json`, and the file is deleted once the dispatch succeeds. The goal text then lives in exactly two places, `tasks.json` and the work item, and nowhere else. No task text is ever a command-line argument.
 
 **The task is a `/goal`, delivered by pointer.** What `hx goal` pastes is a fixed short form that never grows with the task:
 
 ```
-/goal The order for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
+/goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
 ```
 
 The same pointer is sent on every conversation start of a `working` item: dispatch, resume, seam (`context` hook on `clear`), `hx restart`, and `hx launch` of an item that is already working. Claude Code is launched bare; nothing is passed as a prompt argument. The Partner is never sent a `/goal`: the human tells it what to do in chat.
 
-The evaluator reads the conversation including tool results, but calls no tools itself, so completion is proven by a deterministic line hx prints to stdout, which appears in the transcript, not by the agent's claims. The evaluator's no-progress guard (several turns with no tool use) never trips on a working agent. The Partner's job at dispatch is scoping: a definition of done the agent can satisfy and `hx complete` can check, sized to finish inside one context window with seams as backup rather than plan, and self-contained so the work item is the whole order.
+The evaluator reads the conversation including tool results, but calls no tools itself, so completion is proven by a deterministic line hx prints to stdout, which appears in the transcript, not by the agent's claims. The evaluator's no-progress guard (several turns with no tool use) never trips on a working agent. The Partner's job at dispatch is scoping: a definition of done the agent can satisfy and `hx complete` can check, sized to finish inside one context window with seams as backup rather than plan, and self-contained so the work item is the whole goal.
 
-**Definition of done** has two parts, both Partner-written in the order file:
+**Definition of done** has two parts, both Partner-written in the goal file:
 
 1. An acceptance checklist the goal evaluator can judge from the transcript.
 2. A `### Checks` fenced `bash` block. `hx complete done` runs it in the workdir with `bash -e`; every command must exit 0. When nothing is executable the check verifies the deliverable exists (`test -s report.md`); an empty block is refused at dispatch.
@@ -264,7 +264,7 @@ The evaluator reads the conversation including tool results, but calls no tools 
 
 **Body** (HarnessAgent-maintained; sections defined by `templates/work-item.md`):
 
-`templates/work-item.md`, rendered by `hx dispatch` with the id, pod, timestamp, and the order file filled in:
+`templates/work-item.md`, rendered by `hx dispatch` with the id, pod, timestamp, and the goal file filled in:
 
 ```markdown
 ---
@@ -273,7 +273,7 @@ pod: <pod>
 outcome:
 dispatched: <ts>
 ---
-<order file verbatim: ## Order, then ## Definition of done with its ### Checks block>
+<goal file verbatim: ## Goal, then ## Definition of done with its ### Checks block>
 
 ## Standing instructions
 - Keep `## Tasks` current: mark a task done the moment it is done, add tasks the moment you discover them. This section is what you get back after a seam.
@@ -297,7 +297,7 @@ dispatched: <ts>
 <written by the Companion at completion>
 ```
 
-- `## Order` and `## Definition of done` are the Partner's, written once at dispatch; `hx resume` appends `## Order addendum <ts>` beneath `## Order`.
+- `## Goal` and `## Definition of done` are the Partner's, written once at dispatch; `hx resume` appends `## Goal addendum <ts>` beneath `## Goal`.
 - `## Tasks`, `## Deliverables`, `## Commands`, `## Open decision` are the agent's, updated as it works. `## Tasks` is what the context file carries at a seam.
 - `## Digest` is the Partner-facing summary, the only section written by the Companion, in its final pass inside `hx complete`. Two writers on this file is safe because the Companion writes only after the agent has stopped.
 <!-- END 06-work-items.md -->
@@ -364,7 +364,7 @@ The raw stream exists for one reader: the Companion. The HarnessAgent never read
 At every boundary (start, resume, clear, compaction, subagent start) hx composes `run/<id>/<stream>.context.md` and the hook hands the agent its path. The persona is not in this file: it is in the system prompt (`02-decisions.md` Identity). Sections in order:
 
 1. Memory: the part of `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream); `config/<id>/SUBAGENTS.md` whole (subagent streams)
-2. Task: the verbatim `## Order` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight. The Partner has no work item and no order: its sections 2 and 3 are `PARTNER.md` and the current `hx board` output
+2. Task: the verbatim `## Goal` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight. The Partner has no work item and no goal: its sections 2 and 3 are `PARTNER.md` and the current `hx board` output
 3. Work item `## Tasks` section (main stream only)
 4. Step state, rendered from `state/<id>/<stream>.json`, one tagged line per fact (`goal:`, `dec:`, `open/next`, `done`, `dead:`, `file`, `fail`, `hypo`, `block`)
 5. Memory episodes: the closest episodes other agents of the same role left behind, recency-weighted, queried from this stream's own step state (10-companion.md Episode memory; omitted when `companion.memory_inject_k` is 0)
@@ -384,7 +384,7 @@ The design question at every critical step: *if this stopped right now, is there
 
 | Step | What exists on disk at that instant | Guaranteed by |
 |---|---|---|
-| Dispatch | Work item with `## Order`, `## Definition of done` (checks), empty `## Tasks`; `tasks.json` entry; the order file consumed and deleted; fresh logs/state; agent home wiped of prior transcripts and auto memory; persona + agent memory in `AGENTS.md` | `hx dispatch` |
+| Dispatch | Work item with `## Goal`, `## Definition of done` (checks), empty `## Tasks`; `tasks.json` entry; the goal file consumed and deleted; fresh logs/state; agent home wiped of prior transcripts and auto memory; persona + agent memory in `AGENTS.md` | `hx dispatch` |
 | Session start | Persona in the system prompt; context file composed from memory, task, `## Tasks`, step state; the agent's first action is one Read | `start.sh`, `context` hook, `hx compose` |
 | Every tool call | One raw record with excerpt + ref appended before the next call; Companion within `batch_records` of head | `log` hook, Companion loop |
 | Every `## Tasks` edit | The agent's own plan is current in the work item; the Companion sees the edit as a record | Standing instructions, `log` hook |
@@ -396,7 +396,7 @@ The design question at every critical step: *if this stopped right now, is there
 | Threshold hit | `log` hook touches `run/<id>/seam`; the next `stop` with no background work takes the seam; native compaction is never reached on the planned path, and if it is, `SessionStart(compact)` still hands over the context file | `log`, `stop`, `context` hooks |
 | Crash / restart | Companion catches up to head; context file recomposed; goal restored by Claude Code on `resume`, or sent by `hx goal` after `hx restart` once the pane is ready | `context` hook, `hx restart` |
 | Complete | Zero open streams; checks passed and workdir clean (for `done`); Companion final pass; `## Digest` written; agent memory updated; outcome set in the work item and `tasks.json`; `HX-COMPLETE` line printed | `hx complete`, standing instructions |
-| Resume | The item's logs, step state, `## Tasks`, memory, and workdir exactly as it paused; the addendum appended to `## Order`; context file recomposed; goal sent | `hx resume` |
+| Resume | The item's logs, step state, `## Tasks`, memory, and workdir exactly as it paused; the addendum appended to `## Goal`; context file recomposed; goal sent | `hx resume` |
 | Partner wake | The worker's renamed work item and the wake message are the signal; the Partner's context file is `PARTNER.md` plus the board | `12-partner-loop.md` |
 | Bench | Body archived with timestamp; item reset; logs/state archived at next dispatch | `hx bench`, `hx dispatch` |
 <!-- END 07-streams-and-step-state.md -->
@@ -404,7 +404,7 @@ The design question at every critical step: *if this stopped right now, is there
 <!-- BEGIN 08-hx-cli.md -->
 ## 8. `hx` CLI
 
-Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempfile`), one file per command group. Renames use same-directory rename. Agent-side commands identify the caller by `HARNESS_ID` from the tmux session env; Partner commands refuse when `HARNESS_ID` is set and is not `partner`; `hx up` and `hx heartbeat` run with no `HARNESS_ID`, from the human's shell or their own cron. Day to day the human runs nothing: they talk to the Partner. No timeouts anywhere: hx waits for the condition it needs. Models are always passed as full ids (`claude-opus-5`), never aliases, which drift. No task text is ever a command-line argument: orders and addenda are files, and hx deletes each one once it has read it.
+Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempfile`), one file per command group. Renames use same-directory rename. Agent-side commands identify the caller by `HARNESS_ID` from the tmux session env; Partner commands refuse when `HARNESS_ID` is set and is not `partner`; `hx up` and `hx heartbeat` run with no `HARNESS_ID`, from the human's shell or their own cron. Day to day the human runs nothing: they talk to the Partner. No timeouts anywhere: hx waits for the condition it needs. Models are always passed as full ids (`claude-opus-5`), never aliases, which drift. No task text is ever a command-line argument: goals and addenda are files, and hx deletes each one once it has read it.
 
 | Command | Caller | Effect |
 |---|---|---|
@@ -412,25 +412,25 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 | `hx install` | Human, once | 17-packaging.md 17.2: checks, instance skeleton, seed token gate, `hx launch partner` |
 | `hx doctor` | Partner, human | Check `tmux`, `git`, Python ≥ 3.14, the pinned `claude` binary and version; the paths in `config/hx.json` resolve; `seed/token` present and mode 0600; each `run/<id>/home/settings.json` and its pre-seeded first-launch state file; and, for each running agent, `--dangerously-skip-permissions` in argv and `IS_SANDBOX=1` in env (a warning, not an error, while `start.sh` has not yet exec'd). Exit 1 with the list. It does not inspect work items |
 | `hx show <id> [--json]` | Partner, UI | Work item, step state, context file, stream tails, metrics, subagent handles for one id |
-| `hx orders [--json]` | Partner, UI | The `tasks.json` record for every id: its order text, its addenda in order, outcome, dispatched and completed timestamps |
+| `hx goals [--json]` | Partner, UI | The `tasks.json` record for every id: its goal text, its addenda in order, outcome, dispatched and completed timestamps |
 | `hx archive [--json]` | Partner, UI | Benched bodies and archived dispatches per id with their digests |
 | `hx ui` | Human, Partner | 16-ui.md server on `127.0.0.1` |
 | `hx up` | Human, or their own cron at boot | `hx launch <id>` for every `config/<id>/`, `partner` first |
-| `hx dispatch <id> <order-file> [<id> <order-file> …]` | Partner | Validate each order file (`## Order`, `## Definition of done`, non-empty `### Checks`). Then per id: write the `tasks.json` entry; archive `logs/<id>/` and `state/<id>/` to `archive/<id>/<ts>/`; clear `run/<id>/` except `home/` and `persona.md` (and wipe `home/projects/`, `home/file-history/`, `home/history.jsonl`); render the body with the order verbatim; rename `idle → working`; `hx goal <id>`; delete the order file. It does not inspect or reset git: a dirty workdir is the agent's business, not hx's |
-| `hx goal <id> [--now]` | `hx dispatch`, `hx resume`, `hx restart`, `hx launch`, `context` hook | Workers only. Paste the fixed-form `/goal` pointer from `06-work-items.md` into window `main` via tmux buffer; write `run/<id>/goal` marker with ts. It waits for the idle prompt (`capture-pane`) before pasting — dispatch, resume, restart, and launch all call it when the pane is idle. `--now` pastes without checking and is used only from the `context` hook on `clear` (E3), where the pane is by construction about to be ready. The pointer names the work item path and the `HX-COMPLETE` line; it never carries the order itself. The Partner is never a target: it has no work item and no goal |
-| `hx task` | HarnessAgent | Print own full order and addenda |
+| `hx dispatch <id> <goal-file> [<id> <goal-file> …]` | Partner | Validate each goal file (`## Goal`, `## Definition of done`, non-empty `### Checks`). Then per id: write the `tasks.json` entry; archive `logs/<id>/` and `state/<id>/` to `archive/<id>/<ts>/`; clear `run/<id>/` except `home/` and `persona.md` (and wipe `home/projects/`, `home/file-history/`, `home/history.jsonl`); render the body with the goal verbatim; rename `idle → working`; `hx goal <id>`; delete the goal file. It does not inspect or reset git: a dirty workdir is the agent's business, not hx's |
+| `hx goal <id> [--now]` | `hx dispatch`, `hx resume`, `hx restart`, `hx launch`, `context` hook | Workers only. Paste the fixed-form `/goal` pointer from `06-work-items.md` into window `main` via tmux buffer; write `run/<id>/goal` marker with ts. It waits for the idle prompt (`capture-pane`) before pasting — dispatch, resume, restart, and launch all call it when the pane is idle. `--now` pastes without checking and is used only from the `context` hook on `clear` (E3), where the pane is by construction about to be ready. The pointer names the work item path and the `HX-COMPLETE` line; it never carries the goal itself. The Partner is never a target: it has no work item and no goal |
+| `hx task` | HarnessAgent | Print own full goal and addenda |
 | `hx compose <id> <stream>` | Hooks, `hx seam`, `hx resume` | Write `run/<id>/<stream>.context.md` per `07-streams-and-step-state.md` 7.3; print its path |
 | `hx seam <id>` | `stop` hook, when `run/<id>/seam` exists | Require empty `background_tasks` in the Stop payload, else return and retry at the next boundary; `hx flush`; `hx compose <id> <id>-main`; paste `/clear` (it queues and runs after the hook returns); append `seam` record; remove `run/<id>/seam`; return. The `context` hook on `source=clear` finishes the seam by sending the goal because the item is `working` |
 | `hx restart <id>` | Partner, `hx heartbeat` | Fallback seam: `hx flush`; `hx compose`; kill window `main`; `start.sh <id>` bare; for a worker, `hx goal <id>` once the pane is ready. Restarting `partner` sends no goal; its state is `PARTNER.md` and the human talks to it |
 | `hx complete <outcome>` | HarnessAgent | Require zero `-open` subagent streams. For `done`: run the `### Checks` block with `bash -e` in the workdir and, when the workdir is a git repository, require `git status --porcelain` to be empty; on any failure print `HX-CHECK-FAILED <id>` and the failing output, exit 1, change nothing. Then: `hx flush`; companion writes Digest; write outcome to the work item and `tasks.json`; rename `working → complete`; remove `run/<id>/goal`; print `HX-COMPLETE <id> <outcome>` as the last line of stdout (the goal evaluator's proof: tool output is in the transcript it reads); `hx wake partner "<id> complete: <outcome>; hx read <id>"` |
-| `hx resume <id> <addendum-file>` | Partner | Require `complete` with outcome `blocked` or `decision`. Append `## Order addendum <ts>` + the file verbatim beneath `## Order`; record the addendum in `tasks.json` and clear the outcome; keep logs, state, `## Tasks`, memory, workdir; rename `complete → working`; `hx compose`; `hx goal <id>`; delete the addendum file |
+| `hx resume <id> <addendum-file>` | Partner | Require `complete` with outcome `blocked` or `decision`. Append `## Goal addendum <ts>` + the file verbatim beneath `## Goal`; record the addendum in `tasks.json` and clear the outcome; keep logs, state, `## Tasks`, memory, workdir; rename `complete → working`; `hx compose`; `hx goal <id>`; delete the addendum file |
 | `hx read <id>` | Partner | Print Digest of a `complete` work item; `--full` prints the whole body |
 | `hx bench <id>` | Partner | Archive the completed body to `pods/<pod>/archive/<id>-<ts>.md`; reset the body from `templates/work-item.md`; rename `complete → idle`. It touches neither git nor the workdir. Does not touch `tasks.json`: the board shows the benched id as `idle` with its last outcome until the next dispatch, by design (the outcome is history, the state is the board) |
 | `hx board [--json]` | Partner, UI | A plain listing of what is on disk, one line per id: id, pod, state, outcome, dispatched, session alive, open subagents, `context_tokens` of the last record, seams this dispatch. It judges nothing and exits 0 |
 | `hx flush <id>` | `hx complete`, `hx seam` | For every stream with records past `state.seq`: `hx companion <id> --wake <stream>` and wait (no timeout) until `state.seq` is at the log head |
 | `hx companion <id>` | `hx launch` | Launch the Companion session in window `<id>:companion` via `start.sh <id> --companion` (idempotent); write `run/<id>/companion-system.md` first |
 | `hx companion <id> --wake <stream>` | `stop` hook, `hx flush`, `subagent-stop` | Write `run/<id>/companion/<stream>.pass.md`; paste `/clear` then the fixed pointer into `<id>:companion` when its pane is idle; else queue the pass and paste it from the Companion's own `stop` hook |
-| `hx wake partner "<text>"` | `hx complete`, `hx heartbeat` | Connect to the unix socket in `run/partner/socket.json`; write `{"type":"auth","token":"<token>"}` then `{"type":"user","message":{"role":"user","content":"<text>"}}`, newline-terminated; the socket answers nothing. An idle Partner starts a turn; a busy one takes it as steering in the current turn. The text is a fixed short form composed by hx, never an order |
+| `hx wake partner "<text>"` | `hx complete`, `hx heartbeat` | Connect to the unix socket in `run/partner/socket.json`; write `{"type":"auth","token":"<token>"}` then `{"type":"user","message":{"role":"user","content":"<text>"}}`, newline-terminated; the socket answers nothing. An idle Partner starts a turn; a busy one takes it as steering in the current turn. The text is a fixed short form composed by hx, never a goal |
 | `hx heartbeat` | Human's own cron, if they want it | `hx board`; `hx restart <id>` for every `working` item whose session is dead; `hx launch partner` if the Partner's session is dead; then, if any item is `working` and the board output differs from the last heartbeat's, `hx wake partner "check on each HarnessAgent: <board diff>"` |
 | `hx memory search <query> [--role R] [--pod P] [--id ID] [--kind K] [--k N] [--all-roles] [--half-life-h H] [--json]` | HarnessAgent, Partner, human | Drain `state/memory/queue/` into the ChromaDB store, then a recency-weighted semantic search over every agent's episodes (`score = similarity × (0.5 + 0.5·2^(−age_h/half_life_h))`). The default filter is the caller's own role (`HX_ROLE` on the session); `--all-roles` widens. The `hx-memory` skill tells agents to read the context file's Memory episodes section first, search their own role next, and widen only when that is empty or off-topic |
 | `hx memory index` · `hx memory list [--id] [--role] [--kind] [--limit] [--json]` · `hx memory stats [--json]` | Human, cron, Partner | Drain the queue; list episode metadata newest first; counts by role and kind plus the queue length. Every store access, reads included, holds `state/memory/index.lock` |
@@ -441,7 +441,7 @@ Zero-dependency Python (3.14, stdlib only: `json`, `fcntl`, `subprocess`, `tempf
 ```json
 {
   "eng-002": {
-    "order": "<the order file verbatim>",
+    "goal": "<the goal file verbatim>",
     "addenda": [{"ts": "…", "text": "…"}],
     "outcome": null,
     "dispatched": "20260920T101500Z",
@@ -455,23 +455,23 @@ Together with the work item this is the only place task text lives. `hx bench` d
 **`hx dispatch`** (the shape; Python in the implementation):
 
 ```
-for each (id, order_file):
+for each (id, goal_file):
     refuse unless item is idle and tmux session <id> exists
     refuse unless HARNESS_ID is partner
-    require ## Order, ## Definition of done, non-empty ### Checks
-    tasks[id] = {order, addenda: [], outcome: null, dispatched: ts, completed: null}
+    require ## Goal, ## Definition of done, non-empty ### Checks
+    tasks[id] = {goal, addenda: [], outcome: null, dispatched: ts, completed: null}
 write tasks.json
 for each id:
     move logs/<id>, state/<id> to archive/<id>/<ts>/; recreate
     remove run/<id>/* except home/ and persona.md
     remove home/projects, home/file-history, home/history.jsonl
     write run/<id>/subagents.json = {}
-    render templates/work-item.md with the order file verbatim → pods/<pod>/<id>-idle.md
+    render templates/work-item.md with the goal file verbatim → pods/<pod>/<id>-idle.md
     rename to -working; hx goal <id>
-    delete the order file
+    delete the goal file
 ```
 
-- Write order: tasks, then per-id archive, reset, render, rename, goal, delete the order file. Re-running the same `hx dispatch` completes an interrupted one, except that an order file already consumed is gone — the order text is in `tasks.json` and hx re-renders from there.
+- Write sequence: tasks, then per-id archive, reset, render, rename, goal, delete the goal file. Re-running the same `hx dispatch` completes an interrupted one, except that a goal file already consumed is gone — the goal text is in `tasks.json` and hx re-renders from there.
 - `home/` wipe is exactly `projects/` (all session and subagent transcripts, spilled tool results, and per-project auto memory with its `MEMORY.md`), `file-history/` (pre-edit snapshots), and `history.jsonl` (typed prompts). `settings.json`, `.credentials.json`, `agents/`, `skills/`, `plugins/`, and `agent-memory/` are siblings and survive. Auto memory is keyed by git repo, so without a per-agent home two agents pointed at the same checkout would share one memory; the per-agent home is what isolates it.
 <!-- END 08-hx-cli.md -->
 
@@ -531,7 +531,7 @@ No hook fires on a subagent's own compaction, so its step state cannot be recomp
 [companion/BASE.md]                       cache breakpoint (shared by all companions on this model)
 [companion/roles/<role>.md]               cache breakpoint
 [config/<id>/AGENTS.md or SUBAGENTS.md]   cache breakpoint, cache_ttl
-[task: order + addenda]                   cache breakpoint, cache_ttl
+[goal: goal + addenda]                   cache breakpoint, cache_ttl
 [current step state]
 [raw records with seq > state.seq]
 → new step state, written by the Companion to run/<id>/companion/<stream>.out.json
@@ -599,17 +599,17 @@ Verified 2026-09-20 against the CLI reference, permission-modes, model-config, a
 <!-- BEGIN 12-partner-loop.md -->
 ## 12. Partner loop
 
-The Partner is a HarnessAgent with its own Companion, running in `tmux attach -t partner`. It has no work item, no order file of its own, and no `/goal`: the human gives it its goal every time, by talking to it. Its persistent state is `PARTNER.md`. Everything the harness does to a worker — dispatch, goal delivery, seams, restart, completion — the Partner does to workers; nothing does it to the Partner. It is the human's counterpart in the fleet, and it runs on the same thing the human runs on: a conversation and a memory file.
+The Partner is a HarnessAgent with its own Companion, running in `tmux attach -t partner`. It has no work item, no goal file of its own, and no `/goal`: the human gives it its goal every time, by talking to it. Its persistent state is `PARTNER.md`. Everything the harness does to a worker — dispatch, goal delivery, seams, restart, completion — the Partner does to workers; nothing does it to the Partner. It is the human's counterpart in the fleet, and it runs on the same thing the human runs on: a conversation and a memory file.
 
-1. **The human tells the Partner what to do in chat.** No order file, no dispatch, no goal: the Partner reads the ask, asks back whatever is unclear, and starts working in that same conversation. The human's messages are the only clock the Partner answers to.
-2. **Decompose** (06-work-items.md): one order file per work item, with a definition of done the agent can satisfy and `### Checks` that `hx complete` can run; sized to finish inside one context window, seams being backup rather than plan. The Partner writes each order to a file, `hx launch <id>` for any id with no session yet, and picks each worker's `workdir` — a directory it creates or an existing checkout — in `config/<id>/harness.json`.
-3. **Dispatch when it decides to.** `hx dispatch eng-001 <order-file>` starts one worker; `hx dispatch eng-001 <f1> eng-002 <f2>` starts two at once. There is no dependency field and no queue: if `eng-002` should not start until `eng-001` is done, the Partner simply waits for `eng-001` to complete and then dispatches `eng-002`, the way a human running three sessions does. Each order file is consumed and deleted by the dispatch that reads it.
+1. **The human tells the Partner what to do in chat.** No goal file, no dispatch, no goal: the Partner reads the ask, asks back whatever is unclear, and starts working in that same conversation. The human's messages are the only clock the Partner answers to.
+2. **Decompose** (06-work-items.md): one goal file per work item, with a definition of done the agent can satisfy and `### Checks` that `hx complete` can run; sized to finish inside one context window, seams being backup rather than plan. The Partner writes each goal to a file, `hx launch <id>` for any id with no session yet, and picks each worker's `workdir` — a directory it creates or an existing checkout — in `config/<id>/harness.json`.
+3. **Dispatch when it decides to.** `hx dispatch eng-001 <goal-file>` starts one worker; `hx dispatch eng-001 <f1> eng-002 <f2>` starts two at once. There is no dependency field and no queue: if `eng-002` should not start until `eng-001` is done, the Partner simply waits for `eng-001` to complete and then dispatches `eng-002`, the way a human running three sessions does. Each goal file is consumed and deleted by the dispatch that reads it.
 4. **Wake on worker completion: cross-session messaging.** Messaging is on by default. An idle session starts a new turn on an inbound message; a busy one reads it between tool calls, so a wake is never lost. With an explicit `crossSessionInbound: accept` there is no approval hold in any permission mode. The Partner's `context` hook records `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` to `run/partner/socket.json` at every `SessionStart` (so it survives `/clear`), and the Partner's home settings set `crossSessionInbound: accept`. `hx wake partner "<text>"` posts the auth line then the message. Callers: `hx complete` (`<id> complete: <outcome>; hx read <id>`) and `hx heartbeat` when the board changed. `hx heartbeat` runs outside Claude Code, from the human's own cron if they want it: it runs `hx board`, restarts dead sessions, and wakes the Partner only when something changed. Rejected: `watchPaths`/`FileChanged` (cannot start a turn), Monitor (30-minute ceiling, not restored), session crons and `/loop` (cleared by `/clear`).
 5. **On each completion:** `hx read <id>` → update `PARTNER.md` (the Partner's long-term memory) → act by outcome:
    - `done` → read the digest, update `PARTNER.md`, and dispatch whatever that unblocks. `hx bench <id>` when the id is wanted for something else; there is no reason to keep it `complete`.
    - `decision` → ask the human in chat and note the open question in `PARTNER.md`; leave the item `complete`. When the human answers, write an addendum file with the answer and `hx resume <id> <addendum-file>`: the worker continues from its `## Tasks` and step state.
-   - `blocked` → if the blocker can be lifted by rescoping, `hx resume` with an addendum that lifts it; if the work belongs elsewhere, `hx bench` and dispatch a new order to another id.
-   - `exhausted` → the task was too big; `hx bench`, split it into two orders, and dispatch the first.
+   - `blocked` → if the blocker can be lifted by rescoping, `hx resume` with an addendum that lifts it; if the work belongs elsewhere, `hx bench` and dispatch a new goal to another id.
+   - `exhausted` → the task was too big; `hx bench`, split it into two goals, and dispatch the first.
 6. **On a dead session or a `working` item with no goal marker:** `hx restart <id>`.
 7. **Rarely, on direct human instruction only:** edit a worker's persona above the header in `config/<id>/AGENTS.md` or its `SUBAGENTS.md` (04-ownership.md); it takes effect at that worker's next `hx restart`.
 8. **Goal met: the Partner says so in chat.** There is nothing to complete and no check to run: the Partner reports what was done, what it read in the digests, and what it recommends next, and the human takes it from there. It benches the workers it is finished with so their ids are free, and keeps `PARTNER.md` current so the next conversation starts where this one ended.
@@ -623,16 +623,16 @@ pytest, temp `HARNESS_ROOT` fixtures, hook JSON piped into stdin, recorded raw l
 
 | M | Build | Pass criteria |
 |---|---|---|
-| M0 | Layout, `models.json` + `harness.json` validators, order-file parser, `install.sh`, `start.sh` | Validators and the order-file parser reject every malformed fixture (order without `### Checks` included); `run/<id>/home/settings.json` validates: hooks present with the right `--id`, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` set; `start.sh` argv is exactly `--dangerously-skip-permissions --effort … --model … --append-system-prompt-file run/<id>/persona.md` with no prompt argument; `persona.md` equals `AGENTS.md` above the header |
-| M1 | `hx` control-plane commands | `hx dispatch` renames `idle → working`, renders the order verbatim, archives that id's logs and state, wipes exactly `home/projects`, `home/file-history`, `home/history.jsonl`, sends the goal, and deletes the order file; dispatching 2 of 20 ids changes exactly 2 tasks and 2 work items and archives 2 log/state dirs, and leaves a dirty workdir untouched; `hx complete done` is refused with `HX-CHECK-FAILED` on a failing check, on a dirty workdir that is a git repo, or on an open stream, and changes nothing; `hx complete` on a non-git workdir runs the checks and skips the git test; `hx resume` keeps logs, state, and `## Tasks`, appends the addendum, sends the goal, and deletes the addendum file; `hx bench` archives the body before reset and touches no git; `hx board` lists every id it finds and exits 0; an interrupted dispatch is completed by re-running it from the order text in `tasks.json`; `hx dispatch`, `hx resume`, and `hx complete` refuse the id `partner`, which has no work item |
-| M2 | `context`, `hx compose`, Claude adapter | On `startup`, `resume`, `clear`, `compact` the hook prints one path line; the file holds memory section, task with addenda, `## Tasks`, step state, open handles, in that order and no persona; the Partner's file holds `PARTNER.md` and board output in place of task and `## Tasks`; the agent's first tool call after a boundary is one Read-tool call on that path and it is not read again in that turn (no `cat`); asked who it is, the agent answers from the persona without reading any identity file (the persona is system prompt, verified live 2026-09-20) |
+| M0 | Layout, `models.json` + `harness.json` validators, order-file parser, `install.sh`, `start.sh` | Validators and the goal-file parser reject every malformed fixture (order without `### Checks` included); `run/<id>/home/settings.json` validates: hooks present with the right `--id`, instruction-files mode `claude-md` (the real key is `pluginConfigs["agents-md@builtin"].options.instructionFiles`, honoured in the settings file at the root of `CLAUDE_CONFIG_DIR`; verified 2026-09-20 against `docs/en/memory`), `claudeMdExcludes` set; `start.sh` argv is exactly `--dangerously-skip-permissions --effort … --model … --append-system-prompt-file run/<id>/persona.md` with no prompt argument; `persona.md` equals `AGENTS.md` above the header |
+| M1 | `hx` control-plane commands | `hx dispatch` renames `idle → working`, renders the goal verbatim, archives that id's logs and state, wipes exactly `home/projects`, `home/file-history`, `home/history.jsonl`, sends the goal, and deletes the goal file; dispatching 2 of 20 ids changes exactly 2 tasks and 2 work items and archives 2 log/state dirs, and leaves a dirty workdir untouched; `hx complete done` is refused with `HX-CHECK-FAILED` on a failing check, on a dirty workdir that is a git repo, or on an open stream, and changes nothing; `hx complete` on a non-git workdir runs the checks and skips the git test; `hx resume` keeps logs, state, and `## Tasks`, appends the addendum, sends the goal, and deletes the addendum file; `hx bench` archives the body before reset and touches no git; `hx board` lists every id it finds and exits 0; an interrupted dispatch is completed by re-running it from the goal text in `tasks.json`; `hx dispatch`, `hx resume`, and `hx complete` refuse the id `partner`, which has no work item |
+| M2 | `context`, `hx compose`, Claude adapter | On `startup`, `resume`, `clear`, `compact` the hook prints one path line; the file holds memory section, task with addenda, `## Tasks`, step state, open handles, in that goal and no persona; the Partner's file holds `PARTNER.md` and board output in place of task and `## Tasks`; the agent's first tool call after a boundary is one Read-tool call on that path and it is not read again in that turn (no `cat`); asked who it is, the agent answers from the persona without reading any identity file (the persona is system prompt, verified live 2026-09-20) |
 | M3 | (removed in the v1 cut, D25) | — |
 | M4 | `log`, `subagent-start`, `subagent-stop`, `subagent-result`, `stop` (turn marker) | Three parallel subagents produce three isolated streams with correct handles; each receives its own context file path; main stream records every spawn and close; closed-stream digest reaches the parent via `PostToolUse(Agent)`; `hx complete` refuses while any stream is `-open` |
 | M5 | Companion loop, schema validator, cache layering, FIFO retention | State stays within budget across a 500-record replay; cache-read tokens reported on every call after the first; invalid output keeps prior state; `hx flush` returns with `seq` at log head; stream truncation never drops records ahead of `state.seq`; `prompt_version` stamped on every write; after a replayed `hx resume` the state keeps its closed steps and absorbs the addendum |
 | M6 | Seam policy + `hx seam` + `context` on `clear` + `hx goal` readiness wait | Companion marker written only at step close above `seam_min_context_tokens`, after `seam_min_interval_s`, with no open subagents; `log` hook marker written when `context_tokens ≥ threshold` on the main stream and never for subagent streams; `hx seam` refuses while `background_tasks` is non-empty and succeeds at the next boundary; transcript order is `Stop` → `SessionStart(clear)` → `/goal` → one Read of the context file; `hx restart` and `hx launch` of a working item deliver the goal after the idle prompt appears; no `compact_boundary` in the main transcript across a 10-seam run |
 | M7 | Companion replay eval | From recorded logs, seam at 5 points per task; a fresh HarnessAgent continues from each context file without re-reading files noted in `working_set` or repeating dead ends. Record via `hx metrics`: tool calls in the first 10 turns after each seam, split into Reads of noted files vs. other; Reads of the context file per seam (must be 1) |
-| M8 | End-to-end: Partner + 2 HarnessAgents with subagents | The human types the goal to the Partner in its pane; the Partner writes two order files and dispatches `eng-001`; when `eng-001` completes, the Partner reads the digest and dispatches `eng-002`; `eng-002` works with subagents and takes seams, then ends `decision`; the human answers in chat; the Partner writes an addendum file and `hx resume eng-002 <file>`, which continues it from its step state; both items end `complete`/`done` with a Digest; the Partner updates `PARTNER.md`, benches both, and reports the result in chat. The human runs no hx command at any point, and the Partner is never dispatched, resumed, or completed. Same metrics as M7 recorded per seam |
-| M9 | UI (`16-ui.md`) | Board, agent, Partner, orders, archive views render from `hx board --json` and `hx show --json` fixtures; SSE fires within 1 s of a file change; a message from the Partner page arrives in the Partner pane; no endpoint mutates instance state |
+| M8 | End-to-end: Partner + 2 HarnessAgents with subagents | The human types the goal to the Partner in its pane; the Partner writes two goal files and dispatches `eng-001`; when `eng-001` completes, the Partner reads the digest and dispatches `eng-002`; `eng-002` works with subagents and takes seams, then ends `decision`; the human answers in chat; the Partner writes an addendum file and `hx resume eng-002 <file>`, which continues it from its step state; both items end `complete`/`done` with a Digest; the Partner updates `PARTNER.md`, benches both, and reports the result in chat. The human runs no hx command at any point, and the Partner is never dispatched, resumed, or completed. Same metrics as M7 recorded per seam |
+| M9 | UI (`16-ui.md`) | Board, agent, Partner, goals, archive views render from `hx board --json` and `hx show --json` fixtures; SSE fires within 1 s of a file change; a message from the Partner page arrives in the Partner pane; no endpoint mutates instance state |
 | M10 | Packaging (`17-packaging.md`) | `uv tool install` from a wheel; `hx install` on a clean macOS and Linux user refuses root, gates on the tested version list, creates the instance, exits 4 with the two human steps until `seed/token` exists, then exports that token into every agent environment and launches the Partner; the user's `~/.claude` is byte-identical before and after a full M8 run |
 
 All harness assumptions were settled by docs, changelog, or live test on 2026-09-20 (`01-terminology.md` 1.1).
@@ -651,7 +651,7 @@ Nothing here is an option. Each row is a decision already written into the named
 | D4 | 1M window needs no configuration; hx seam threshold 500000 on 1M models, enforced by the `log` hook, native autocompact untouched | `05-configuration.md`, `09-hooks.md`, `11-adapters.md` | M6 |
 | D5 | Subagent compaction continuity is an accepted limitation (live test: `SubagentStart` context is not re-injected at compaction; the subagent system-prompt flag is `-p` only); mitigations are scoping and commit-as-you-go; subagents compact natively | `09-hooks.md` 9.3 | design |
 | D6 | `PreCompact` never blocks (live test: a block suppresses compaction for the whole turn and fires for subagent compactions). Seam threshold is enforced by the `log` hook instead | `02-decisions.md`, `09-hooks.md` | M6 |
-| D7 | `/goal` is a fixed-form pointer to the work item plus the `HX-COMPLETE <id> <outcome>` line; the order is unbounded in `## Order`; the pointer is sent on every conversation start of a working item and never as a prompt argument | `06-work-items.md`, `08-hx-cli.md` | M2, M6, M8 |
+| D7 | `/goal` is a fixed-form pointer to the work item plus the `HX-COMPLETE <id> <outcome>` line; the goal is unbounded in `## Goal`; the pointer is sent on every conversation start of a working item and never as a prompt argument | `06-work-items.md`, `08-hx-cli.md` | M2, M6, M8 |
 | D8 | Seam metric is tool calls in the 10 turns after a seam, split into `working_set` re-Reads vs. other, plus context-file Reads (must be 1) | `07-streams-and-step-state.md` 7.4, `08-hx-cli.md` `hx metrics` | M7 |
 | D9 | Work item template content and standing instructions | `06-work-items.md` | M1 |
 | D10 | Step-state schema and the 10k-token budget as a tuning knob | `07-streams-and-step-state.md` 7.2, `05-configuration.md` | M5 |
@@ -659,14 +659,14 @@ Nothing here is an option. Each row is a decision already written into the named
 | D12 | Raw records are excerpt + `ref` into the transcript; FIFO bounds never drop ahead of the Companion's cursor; the agent never reads the raw log | `07-streams-and-step-state.md` 7.1 | M5 |
 | D13 | Persona (above the header) reaches the agent as system prompt through `--append-system-prompt-file` on a file hx derives at launch; memory (below the header) travels in the context file | `02-decisions.md` Identity, `11-adapters.md` | M0, M2 |
 | D14 | The Partner is not a work item: it is never dispatched, resumed, seamed by a goal, or completed. The human gives it its goal every time by talking to it in its tmux session, and its persistent state is `PARTNER.md` | `01-terminology.md`, `12-partner-loop.md` | M8 |
-| D15 | Orders and addenda are files the Partner writes and hx deletes after reading; task text then lives only in `tasks.json` and the work item; no task text is a command-line argument anywhere | `02-decisions.md` Orders, `08-hx-cli.md` | M0, M1 |
+| D15 | Goals and addenda are files the Partner writes and hx deletes after reading; goal text then lives only in `tasks.json` and the Work Item; no goal text is a command-line argument anywhere | `02-decisions.md` Goals, `08-hx-cli.md` | M0, M1 |
 | D16 | `hx complete done` is machine-checked: `### Checks` run in the workdir, `git status --porcelain` empty when the workdir is a git repo, no open stream; failure prints `HX-CHECK-FAILED` and changes nothing | `06-work-items.md`, `08-hx-cli.md` | M1, M8 |
 | D20 | Package and instance are separate: `hx` is a zero-dependency Python package; `HARNESS_ROOT` is the user's instance; a package upgrade never writes into an instance, and hook commands reference the absolute path recorded in `config/hx.json` | `17-packaging.md` 17.1 | M10 |
 | D21 | Isolation from the user's Claude is by config dir, a seed token in the agent environment, and a pinned binary with the autoupdater off; the user's `~/.claude` is never read and never written | `17-packaging.md` 17.3, `11-adapters.md` | M10 |
 | D23 | Skills `hx-partner` and `hx-worker` are installed into each agent home from the package; autodev's operator and GM skills are dropped; nothing is linked into `~/.claude/skills` | `17-packaging.md` 17.5 | M10 |
 | D24 | The UI observes only: SSE on file mtimes, `hx board --json` and `hx show --json` as the data layer, chat through `hx wake partner` with replies from pane capture | `16-ui.md` | M9 |
-| D18 | `hx resume` continues a `blocked`/`decision` item with its logs, step state, `## Tasks`, memory, and workdir; only the order grows | `06-work-items.md`, `08-hx-cli.md`, `10-companion.md` | M1, M5, M8 |
-| D25 | v1 scope cut, 2026-09-20. Cut: `after` dependency chains, the `queued` state, and promotion; the Partner as a work item (`pods/partner/`, its own order, self-dispatch, self-resume, self-completion, `goal-pending`, `hx board --require-done`); the `guard` `PreToolUse` hook and its rule list; the `run/tasks.lock` flock around `tasks.json`; the `orders/` directory as a permanent home for task text; git management by hx (`hx repo add`, `config/repo.json`, the bare mirror, sparse worktrees, `keep_claude_dir`, `base_branch`, `harness.json.branch`, `hx push`); `hx upgrade` and its tested-list gate; shipped launchd/systemd unit files; `hx bench` patch files and worktree resets; `hx dispatch` refusing or resetting a dirty workdir; and all enforcement machinery around work items — the filename regex as a validation gate, the transitions table, the nine `hx board` invariants and "invariant errors", and `hx doctor` policing work items. The spec author's rule: the human already runs one Partner managing three tmux sessions with nothing; hx adds only what that cannot do | everywhere | — |
+| D18 | `hx resume` continues a `blocked`/`decision` item with its logs, step state, `## Tasks`, memory, and workdir; only the goal grows | `06-work-items.md`, `08-hx-cli.md`, `10-companion.md` | M1, M5, M8 |
+| D25 | v1 scope cut, 2026-09-20. Cut: `after` dependency chains, the `queued` state, and promotion; the Partner as a work item (`pods/partner/`, its own goal, self-dispatch, self-resume, self-completion, `goal-pending`, `hx board --require-done`); the `guard` `PreToolUse` hook and its rule list; the `run/tasks.lock` flock around `tasks.json`; the `goals/` directory as a permanent home for task text; git management by hx (`hx repo add`, `config/repo.json`, the bare mirror, sparse worktrees, `keep_claude_dir`, `base_branch`, `harness.json.branch`, `hx push`); `hx upgrade` and its tested-list gate; shipped launchd/systemd unit files; `hx bench` patch files and worktree resets; `hx dispatch` refusing or resetting a dirty workdir; and all enforcement machinery around work items — the filename regex as a validation gate, the transitions table, the nine `hx board` invariants and "invariant errors", and `hx doctor` policing work items. The spec author's rule: the human already runs one Partner managing three tmux sessions with nothing; hx adds only what that cannot do | everywhere | — |
 | D26 | A `/goal` must not pause on its own: every agent's env carries `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000` (E10), and `hx heartbeat` re-pastes the pointer to a `working` agent that is alive, idle, and without `HX-COMPLETE` (the recovery if it pauses anyway). No timeouts, no caps that end work early | `11-adapters.md`, `08-hx-cli.md` | M6 |
 
 Content still to be authored, not decided: `companion/BASE.md` and `companion/roles/*.md` text (M7), each `AGENTS.md` persona above the header, `SUBAGENTS.md`, and `PARTNER.md` (M8), `config/CLAUDE.md` (M2), `skills/hx-partner/SKILL.md` and `skills/hx-worker/SKILL.md` (M10). These are prompts, tuned against the M7 metric.
@@ -688,8 +688,8 @@ flowchart TB
   end
 
   subgraph CP["Control plane (hx, deterministic)"]
-    OF["order file / addendum file\n(written by the Partner, deleted by hx after it reads it)"]
-    T["tasks.json\n{order, addenda, outcome}"]
+    OF["goal file / addendum file\n(written by the Partner, deleted by hx after it reads it)"]
+    T["tasks.json\n{goal, addenda, outcome}"]
     WI["pods/&lt;pod&gt;/&lt;id&gt;-&lt;state&gt;.md\nidle · working · complete"]
     CF["run/&lt;id&gt;/&lt;stream&gt;.context.md\n(one file the agent reads)"]
     PF["run/&lt;id&gt;/persona.md\n(system prompt at launch)"]
@@ -716,14 +716,14 @@ flowchart TB
   end
 
   H -- "1 gives the Partner its goal in chat (tmux attach -t partner)" --> PG
-  PG -- "2 writes an order file" --> OF
+  PG -- "2 writes an goal file" --> OF
   OF -- "hx dispatch: verbatim, then deleted" --> T
   T -- "render" --> WI
   WI -. "3 /goal pointer pasted (working)" .-> WA
   ID -- "above header, at launch" --> PF
   PF -- "system prompt: no read" --> WA
   ID -- "below header" --> CF
-  T -- "order + addenda" --> CF
+  T -- "goal + addenda" --> CF
   WI -- "## Tasks" --> CF
   WC -- "step state" --> CF
   CF -- "4 one Read at start / seam / resume" --> WA
@@ -756,7 +756,7 @@ flowchart TB
   MS -. "answers" .-> PG
 ```
 
-**Reading the numbers.** 1 is the human giving the Partner its goal, in conversation, every time; there is no order file and no dispatch for the Partner, and nothing else starts its work. 2–3 are dispatch: the order is a file hx consumes and deletes, so the text ends up in exactly two places, and the pointer is the only thing pasted. 4 is the only read an agent does to know what it is doing and where it left off; who it is came with the system prompt at launch; the read repeats after every seam and resume. 5 is continuous: every tool call becomes evidence the Companion turns into step state. 6–7 are the subagent round trip, with the parent receiving a Companion-written digest, not a transcript. 8 is the provable end of a task: checks first, then the line the evaluator reads. 9–11 close the loop through the Partner's memory, and the Partner decides for itself when the next order goes out. 12 is the Partner telling the human, in chat, what happened; a `decision` comes back down as an addendum, not a fresh start.
+**Reading the numbers.** 1 is the human giving the Partner its goal, in conversation, every time; there is no goal file and no dispatch for the Partner, and nothing else starts its work. 2–3 are dispatch: the goal is a file hx consumes and deletes, so the text ends up in exactly two places, and the pointer is the only thing pasted. 4 is the only read an agent does to know what it is doing and where it left off; who it is came with the system prompt at launch; the read repeats after every seam and resume. 5 is continuous: every tool call becomes evidence the Companion turns into step state. 6–7 are the subagent round trip, with the parent receiving a Companion-written digest, not a transcript. 8 is the provable end of a task: checks first, then the line the evaluator reads. 9–11 close the loop through the Partner's memory, and the Partner decides for itself when the next goal goes out. 12 is the Partner telling the human, in chat, what happened; a `decision` comes back down as an addendum, not a fresh start.
 
 **Reading the letters.** E1 is the write side of episode memory and costs a hook one small file: every state the Companion produces (a `pass`), every seam, every native compaction and every Digest is queued as an episode with its time, agent, pod, role and kind. E2 is the only place ChromaDB is opened, always under `state/memory/index.lock`, so many agents' processes share one store safely. E3 is the passive read: at every boundary `hx compose` queries the store with the stream's own step state and puts the closest recency-weighted episodes of other agents with the same role into the context file, so the agent continues instead of searching. E4 is the active read, `hx memory search`, filtered to the caller's role by default and widened with `--all-roles` only when the own-role result is empty or off-topic (the `hx-memory` skill). Nothing on the E arrows is a precondition: an empty, broken or uninstalled store changes the section's text and nothing else.
 
@@ -777,11 +777,11 @@ The UI observes; it does not operate. Everything it shows is a file under `HARNE
 | View | Shows | Source |
 |---|---|---|
 | Board | One row per id, `partner` first: pod, state, outcome, dispatched, open subagents, goal ts, session alive, `context_tokens` of the last record, seams this dispatch. It shows what is there; it judges nothing | `hx board --json` |
-| Agent | A drawer over whatever page is open: the agent's work item file rendered section by section in file order (`## Order` labelled **Goal**, with the `hx task` addenda under it; definition of done with its checks; `## Tasks` live; deliverables; commands; open decision; digest), and the Companion's status: whether a pass is running (`run/<id>/companion/*.pass.md` present) and on which stream, when it last wrote state, and the open steps' next actions. No step-state dump, no stream tail, no memories: the drawer is what the agent is working on. An **Open session** link opens the Session page in another window | `hx show <id> --json` |
+| Agent | A drawer over whatever page is open: the agent's work item file rendered section by section in file order (`## Goal` labelled **Goal**, with the `hx task` addenda under it; definition of done with its checks; `## Tasks` live; deliverables; commands; open decision; digest), and the Companion's status: whether a pass is running (`run/<id>/companion/*.pass.md` present) and on which stream, when it last wrote state, and the open steps' next actions. No step-state dump, no stream tail, no memories: the drawer is what the agent is working on. An **Open session** link opens the Session page in another window | `hx show <id> --json` |
 | Session | A page of its own (`#session?agent=<id>`, opened from the drawer with `target=_blank`): the pane capture (last 120 lines, refreshed with the SSE tick, ANSI stripped); the Companion's step state rendered per stream (open steps with next action, closed steps with commits, working set, blockers, dead ends); the last composed context file with the seam record it belongs to, its **Memory episodes** section reduced to a count; main and subagent stream tails; subagent handles with their digests; `hx metrics`. The Partner's Session page has its pane and streams only | `hx show <id> --json`, `tmux capture-pane` |
 | Compaction | A page of its own (`#compaction?agent=<id>&stream=<handle>`, opened from the fleet graph's Companion node, the drawer and the Session page): the Companion's last written compaction for one stream, which is the installed `state/<id>/<stream>.json`, rendered for a person (open and closed steps, decisions, working set, blockers, dead ends) and then exactly as the master reads it in its context file (`render_step_state`). One tab per stream, main first. The Partner's Companion is shown the same way | `hx show <id> --json` → `compactions` |
 | Partner | `PARTNER.md` rendered; the board; chat: a text box that sends through `hx wake partner`, replies read from the Partner's pane capture. Full control (slash commands, interrupts) stays `tmux attach -t partner`; the page says so | messaging socket, `capture-pane` |
-| Goals | Per id, the goal text (the dispatched order file) and every addendum in order, with dispatched and completed timestamps and the outcome. Order files are consumed and deleted at dispatch, so `tasks.json` is the whole source | `tasks.json` |
+| Goals | Per id, the goal text (the dispatched goal file) and every addendum in order, with dispatched and completed timestamps and the outcome. Goal files are consumed and deleted at dispatch, so `tasks.json` is the whole source | `tasks.json` |
 | Archive | Benched bodies and archived dispatches per id, with their digests | `pods/*/archive/`, `archive/` |
 
 Rendering of `## Tasks` and step state is the point of the UI: the human sees, without reading a transcript, what the agent believes it is doing and what the Companion has recorded as done. A seam appears as a marker in the stream tail with the context file size and the tool calls of the ten turns that followed. The fleet graph's Companion node pulses while a pass is running, and the page header carries the episode count of the memory store (`hx board --json` → `memory`).
@@ -868,7 +868,7 @@ Operating knowledge is delivered in three layers, none of which touches `~/.clau
 - `config/CLAUDE.md` (always loaded, short): what the `/goal` pointer means, that the work item is the task list, that the first action after any boundary is one Read of the path the hook printed, that `hx complete` is the last action, and that the agent's own files live at named absolute paths under `config/<id>/` and it reads nothing else under `HARNESS_ROOT`.
 - `config/<id>/AGENTS.md` above the header (system prompt): the project-scoped persona.
 - Skills, installed by `install.sh` into `run/<id>/home/skills/` from the package, loaded on demand:
-  - `hx-partner`: the order file format and what makes a good definition of done and `### Checks`; `hx launch`, `dispatch`, `board`, `read`, `resume`, `bench`, `restart`; what each outcome means and the action for it; that sequencing is its own judgement, not a field; that its own goal comes from the human in chat and its memory is `PARTNER.md`.
+  - `hx-partner`: the goal file format and what makes a good definition of done and `### Checks`; `hx launch`, `dispatch`, `board`, `read`, `resume`, `bench`, `restart`; what each outcome means and the action for it; that sequencing is its own judgement, not a field; that its own goal comes from the human in chat and its memory is `PARTNER.md`.
   - `hx-worker`: `## Tasks` discipline, commit-as-you-go, one Read per file, subagent use and what `SUBAGENTS.md` gives them, `hx task`, `hx complete` and `HX-CHECK-FAILED`, memory below the header.
   - `hx-fleet`: the Partner's manual for creating a worker from a shipped persona, writing a new role, updating a persona, retiring a worker. `hx-memory`: searching the episode store (docs/memory.md). `hx-companion`: the Companion's own instructions (spec 10).
   - `hx-setup`: for a coding agent or another harness installing hx on a machine — prerequisites, the wheel install, `hx install` and its exit-4 stop for the seed token (the human's step, never the agent's), verification with `hx doctor`, models and cost for a trial instance, hand-over to the Partner, `hx up`, upgrading, and what never to do. Read from the package or the repository; never copied into an agent home.

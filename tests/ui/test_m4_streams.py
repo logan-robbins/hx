@@ -382,8 +382,8 @@ def test_the_v1_shapes_are_what_the_real_commands_return(companion_root):
         "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts", "companion_pass", "companion_ts",
     }
 
-    orders = source.orders()
-    assert set(orders) == {"root_abs", "ts", "orders"}
+    goals = source.goals()
+    assert set(goals) == {"root_abs", "ts", "goals"}
 
     show = source.show(ITEM)
     assert "after" not in show["task"]

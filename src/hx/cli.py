@@ -27,8 +27,9 @@ from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
 from . import memory as memory_cmd
-from . import orders as orders_cmd
+from . import goals as goals_cmd
 from . import read as read_cmd
+from . import recall as recall_cmd
 from . import resume as resume_cmd
 from . import seam as seam_cmd
 from . import show as show_cmd
@@ -61,8 +62,9 @@ IMPLEMENTED = {
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
     "memory": memory_cmd.main,
-    "orders": orders_cmd.main,
+    "goals": goals_cmd.main,
     "read": read_cmd.main,
+    "recall": recall_cmd.main,
     "restart": lifecycle.main_restart,
     "resume": resume_cmd.main,
     "seam": seam_cmd.main,
@@ -82,14 +84,15 @@ selects the instance; it defaults to ~/hx and may never be inside the user's ~/.
 
 the control plane:
   launch ID                    idle work item, home, tmux session, goal if working
-  dispatch ID ORDER [ID ORDER] validate the orders, then working; the files are consumed
+  dispatch ID GOAL [ID GOAL]   validate the goals, then working; the files are consumed
   goal ID [--now]              paste the pointer into a worker's pane
-  task                         print your own order and its addenda
+  task                         print your own goal and its addenda
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   bench ID                     archive the body and free the id
   seam ID                      flush, recompose, and cut the conversation
-  read ID [--full]             the Digest and the open decision
+  read ID [--detail|--full]      status; prose only with --detail, body with --full
+  recall [QUERY] [--id ID]       last-resort file-memory search over completed items
   companion ID [--once]        the Companion loop, one per agent
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
@@ -99,7 +102,7 @@ the control plane:
 read-only views:
   board [--json]                          a plain listing of what is on disk
   show ID [--json]                        everything hx knows about one id
-  orders [--json] / archive [--json]      the task records, and what has been archived
+  goals [--json] / archive [--json]       the goal records, and what has been archived
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
   install --root PATH [--claude B]        create the instance (spec 17.2)

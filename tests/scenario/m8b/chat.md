@@ -30,13 +30,13 @@ early" below.
 ## Turn 2 — the question comes back
 
 `eng-001` completes `decision`. `hx complete` wakes the Partner with
-`eng-001 complete: decision; hx read eng-001`. The Partner runs `hx read eng-001`, updates
+`eng-001 decision`. The Partner runs `hx read eng-001 --detail`, updates
 `PARTNER.md`, and asks the human in chat.
 
 **The Partner's message must contain:**
 
 - that `--json` printing a JSON object *and nothing else* and `--json` still printing the
-  human-readable line first cannot both be true, and that the order asked for both;
+  human-readable line first cannot both be true, and that the goal asked for both;
 - what each choice costs — a pipeline that cannot be parsed, or scripts that grep for `Hello,`
   and stop matching;
 - that everything else is built and waiting on this one answer.

@@ -32,7 +32,7 @@ hx/
   src/hx/                    the package: CLI, hooks, companion, adapters, ui, skeleton, skills
   src/hx/packaging/          tested-claude-versions.json
   tests/                     core, guard, ui, packaging, scenario
-  tests/scenario/m8/         the M8 scenario pack: chat, orders, expected boards, fixture repo
+  tests/scenario/m8/         the M8 scenario pack: chat, goals, expected boards, fixture repo
   tools/                     claude-home-hash.sh, milestone-check.sh
   docs/                      deploy.md, two-worlds.md, companion-eval.md, github-plan.md
   packaging/                 e2e-install.sh

@@ -19,5 +19,5 @@ Each file is one section. Edit one file per change; cross-references use file na
 | `13-build-order.md` | Milestones and acceptance tests |
 | `14-open-items.md` | Decisions pinned at implementation, with the milestone that verifies each |
 | `15-dataflow.md` | Data flow human → Partner → HarnessAgents → Subagents and back, plus the episode-memory loop |
-| `16-ui.md` | Observing UI: board, agent, Partner chat, orders, archive |
+| `16-ui.md` | Observing UI: board, agent, Partner chat, goals, archive |
 | `17-packaging.md` | Package vs instance, `hx install`, isolation from the user's Claude, launch, skills, build plan |

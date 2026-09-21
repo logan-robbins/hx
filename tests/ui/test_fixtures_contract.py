@@ -2,7 +2,7 @@
 
 Until the build lane's commands exist these files are the only definition of
 what the views render, so they are checked against CONTRACTS.md directly, not
-only through the server. `orders.json` and `archive.json` have no contract yet:
+only through the server. `goals.json` and `archive.json` have no contract yet:
 their shapes are the ui lane's proposal in handoff/to-orchestrator.md, and what
 they reuse from CONTRACTS.md is asserted here.
 """
@@ -56,14 +56,14 @@ def timestamps(value, path="$"):
 
 
 @pytest.mark.parametrize(
-    "name", ["board.json", "orders.json", "archive.json", "show-partner.json", "show-eng-001.json"]
+    "name", ["board.json", "goals.json", "archive.json", "show-partner.json", "show-eng-001.json"]
 )
 def test_every_required_fixture_is_present_and_is_an_object(name):
     assert isinstance(load(name), dict)
 
 
 @pytest.mark.parametrize(
-    "name", ["board.json", "orders.json", "archive.json", "show-partner.json", "show-eng-001.json"]
+    "name", ["board.json", "goals.json", "archive.json", "show-partner.json", "show-eng-001.json"]
 )
 def test_every_timestamp_is_iso_8601_utc_with_a_z(name):
     bad = [(where, value) for where, value in timestamps(load(name)) if not TS_RE.match(value)]
@@ -138,11 +138,11 @@ def test_each_show_fixture_has_the_contract_shape(name):
     show = load(name)
     assert set(show["work_item"]) == {"frontmatter", "body"}
     assert show["work_item"]["frontmatter"]["id"] == show["id"]
-    assert set(show["task"]) == {"order", "addenda", "outcome", "dispatched", "completed"}
-    assert "## Order" in show["task"]["order"]
-    assert "## Definition of done" in show["task"]["order"]
-    assert "### Checks" in show["task"]["order"]
-    assert "```bash" in show["task"]["order"]
+    assert set(show["task"]) == {"goal", "addenda", "outcome", "dispatched", "completed"}
+    assert "## Goal" in show["task"]["goal"]
+    assert "## Definition of done" in show["task"]["goal"]
+    assert "### Checks" in show["task"]["goal"]
+    assert "```bash" in show["task"]["goal"]
     assert set(show["context_file"]) == {"path", "text", "seam_ts"}
     assert show["context_file"]["path"].startswith(f"run/{show['id']}/")
     assert show["persona_path"] == f"run/{show['id']}/persona.md"
@@ -296,22 +296,22 @@ def test_no_seam_record_yet_because_hx_seam_is_build_7():
 def test_the_orders_fixture_matches_the_v1_contract(board):
     """v1 cut: one entry per id in `tasks.json`, no graph, no file comparison.
 
-    `hx dispatch` deletes the order file it read, so the text lives only in
+    `hx dispatch` deletes the goal file it read, so the text lives only in
     `tasks.json` and the work item — there is nothing left on disk to compare
     against, which is why `path` and `file_matches_record` are gone.
     """
-    orders = load("orders.json")
-    assert set(orders) == {"root_abs", "ts", "orders"}
+    goals = load("goals.json")
+    assert set(goals) == {"root_abs", "ts", "goals"}
     rows = {item["id"]: item for item in board["items"]}
-    for entry in orders["orders"]:
+    for entry in goals["goals"]:
         assert set(entry) == {
-            "id", "pod", "state", "outcome", "order", "addenda", "dispatched", "completed",
+            "id", "pod", "state", "outcome", "goal", "addenda", "dispatched", "completed",
         }
         assert ID_RE.match(entry["id"])
         assert entry["state"] in STATES
         assert entry["outcome"] in OUTCOMES
-        assert "## Order" in entry["order"]
-        assert "### Checks" in entry["order"]
+        assert "## Goal" in entry["goal"]
+        assert "### Checks" in entry["goal"]
         for addendum in entry["addenda"]:
             assert set(addendum) == {"ts", "text"}
             assert TS_RE.match(addendum["ts"])
@@ -322,8 +322,8 @@ def test_the_orders_fixture_matches_the_v1_contract(board):
 
 
 def test_an_idle_never_dispatched_id_is_not_an_order(board):
-    """`hx orders` reads `tasks.json`, which only has dispatched ids."""
-    dispatched = {entry["id"] for entry in load("orders.json")["orders"]}
+    """`hx goals` reads `tasks.json`, which only has dispatched ids."""
+    dispatched = {entry["id"] for entry in load("goals.json")["goals"]}
     for item in board["items"]:
         if item["dispatched"] is None:
             assert item["id"] not in dispatched

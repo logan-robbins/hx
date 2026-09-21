@@ -29,7 +29,7 @@ Do not read it a second time later in the turn.
 That path is your context file. It holds, in order:
 
 1. Your memory — what you wrote below `## UPDATES BELOW ONLY` in your `AGENTS.md`
-2. Your task — the verbatim `## Order` and every addendum
+2. Your goal — the verbatim `## Goal` and every addendum
 3. Your `## Tasks` section, as you last left it
 4. Your step state — what your Companion recorded: open steps with the next action, closed
    steps with their commits, decisions, dead ends, the working set, blockers
@@ -68,13 +68,15 @@ skill for how to search further.
 `hx goal` pastes a fixed pointer into your pane:
 
 ```
-/goal The order for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
+/goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
 ```
 
-The work item is the task. Read it. `## Order` and every `## Order addendum` are the whole of
+The Work Item is the goal. Read it. `## Goal` and every `## Goal addendum` are the whole of
 what you were asked for, `## Definition of done` is what you will be judged on, and
-`### Checks` is what will actually be run against you. `hx task` reprints the order and its
-addenda at any time.
+`### Checks` is what will actually be run against you. `hx task` reprints the goal and its
+addenda at any time. The how is yours: decompose into `## Tasks`, fan out to subagents along
+micro bounds with a clear task list each, and construct the deliverables yourself — the
+Partner named the functional deliverables, never the procedure.
 
 A `/goal` keeps you working past the end of a turn: after each turn an evaluator decides met /
 not yet met / impossible. It reads tool results, so the proof of completion is a line hx
@@ -82,8 +84,8 @@ prints, not anything you claim.
 
 ### 3. `## Tasks` is yours, and it is what survives
 
-The work item body is your running task list. You own `## Tasks`, `## Deliverables`,
-`## Commands`, and `## Open decision`; hx owns the filename state and the `## Order` section.
+The Work Item body is your running task list. You own `## Tasks`, `## Deliverables`,
+`## Commands`, and `## Open decision`; hx owns the filename state and the `## Goal` section.
 
 - Mark a task done **the moment** it is done. Not at the end of the turn, not at the end of
   the task.
@@ -133,13 +135,17 @@ one-line form above.
 
 Use them freely, for bounded separable pieces: a survey, an independent module, a test pass.
 
+The boundary line names the read tool this session actually has: `Read` on Claude Code,
+`read` on Pi. Delegation is the `Agent` tool on Claude Code and the `subagent` tool on Pi
+(`prompt`, and an optional `agent_type`). The rest of this section is the same for both.
+
 - Each one gets its own context file automatically, built from `config/<id>/SUBAGENTS.md`, its
   own step state, and a pointer to its task. A hook hands it the path with the same line you
   get at a boundary, so it reads one file with the Read tool and starts. You do not have to
   brief it on the harness.
 - **Its task is the message you spawned it with**, which is already in its conversation — the
   context file says so rather than repeating it. So that message is the whole of what it knows
-  about the job: write it as you would write an order, not as a one-line handle.
+  about the job: write it as a goal with its own deliverables, not as a one-line handle.
 - Each one gets its own stream, `logs/<id>/<id>-sNNN-open.jsonl`, renamed to `-closed.jsonl`
   when it stops, and its own Companion state. Handles are assigned under a lock, so three
   subagents starting at once get three streams rather than colliding on one.
@@ -218,6 +224,11 @@ that header is yours; `start.sh` re-derives the persona from it at every launch.
 `HX-COMPLETE <id> <outcome>` as its last line, and that line, in your transcript, is what
 proves you are done.
 
+Report back simply: completed or blocked. The Partner trusts the persona and reads status,
+not prose — the Digest your Companion writes is file memory for last-resort recall, not a
+report you must compose. Put remaining how-to-reproduce facts in `## Open decision` only
+when blocked or deciding; otherwise finish.
+
 ### 10. `HX-CHECK-FAILED`
 
 `hx complete done` is machine-checked. If a check exits non-zero, the workdir is dirty, or a
@@ -234,7 +245,7 @@ This is yours to fix. Not the Partner's, not a reason to complete with a differe
 Read the output, fix the actual problem, commit, and run `hx complete done` again. Retry as
 many times as it takes.
 
-Do not edit the `### Checks` block to make it pass — it is in `## Order`, it is the Partner's,
+Do not edit the `### Checks` block to make it pass — it is in `## Goal`, it is the Partner's,
 and `hx complete` runs the copy in `tasks.json`, not the one in your file.
 
 ### 11. When `done` is not available
@@ -245,12 +256,12 @@ better than forcing a `done` that is not true.
 - `blocked` — something outside your task stops you: a missing dependency, an access you do not
   have, a broken thing you were told not to touch. Put what would unblock you in
   `## Open decision` first; the digest leads with it and the Partner's addendum answers it.
-- `decision` — the order is ambiguous or two valid paths diverge and the choice is not yours.
+- `decision` — the goal is ambiguous or two valid paths diverge and the choice is not yours.
   State the question and the options in `## Open decision`, with what each one costs.
 - `exhausted` — the task was too large. Say where the natural split is.
 
 All three keep everything: your `## Tasks`, your step state, your memory, your workdir, your
-logs. The Partner resumes you with an addendum appended to your order, and you pick up exactly
+logs. The Partner resumes you with an addendum appended to your goal, and you pick up exactly
 where you stopped. You are not restarted.
 
 ## What is not yours

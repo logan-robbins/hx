@@ -1,4 +1,4 @@
-"""`hx bench <id>` — free an id for the next order (spec 06, 08).
+"""`hx bench <id>` — free an id for the next goal (spec 06, 08).
 
 The completed body is archived to `pods/<pod>/archive/<id>-<ts>.md` before the work item is
 reset from `templates/work-item.md` and renamed `complete → idle`. `tasks.json` is not
@@ -40,7 +40,7 @@ def bench(root: Path, item_id: str, *, env=None) -> dict:
     target = archive_mod.bench_archive_path(root, item.pod, item_id, ts)
     store.atomic_write_text(target, path.read_text())
 
-    blank = render(load_template(root), item_id=item_id, pod=item.pod, dispatched="", order="")
+    blank = render(load_template(root), item_id=item_id, pod=item.pod, dispatched="", goal="")
     store.atomic_write_text(path, blank)
     final = rename_state(path, "idle")
 

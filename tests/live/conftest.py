@@ -151,12 +151,12 @@ def worker(live_root, live_env):
     return _add
 
 
-def work_item(live_root, item_id, state="idle", pod="engineers", order="none."):
+def work_item(live_root, item_id, state="idle", pod="engineers", goal="none."):
     path = live_root / "pods" / pod / f"{item_id}-{state}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"---\nid: {item_id}\npod: {pod}\noutcome:\ndispatched:\n---\n\n"
-        f"## Order\n\n{order}\n\n## Tasks\n- [ ] …\n"
+        f"## Goal\n\n{order}\n\n## Tasks\n- [ ] …\n"
     )
     return path
 

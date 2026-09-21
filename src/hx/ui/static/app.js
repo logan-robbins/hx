@@ -55,7 +55,7 @@ document.querySelectorAll("[data-icon]").forEach((el) => (el.innerHTML = icon(el
 /* -- state ------------------------------------------------------------- */
 
 let board = null; // /api/board
-let orders = null; // /api/orders
+let goals = null; // /api/goals
 let archive = null; // /api/archive
 let fleet = null; // the pod/agent model built from the three above
 const details = new Map(); // id -> /api/show/<id>, filled lazily and by SSE
@@ -334,7 +334,7 @@ function memoryNote(memory) {
 
 const allAgents = () => (fleet ? fleet.agents : []);
 const findAgent = (id) => allAgents().find((a) => a.id === id) || null;
-const orderOf = (id) => ((orders && orders.orders) || []).find((o) => o.id === id) || null;
+const goalOf = (id) => ((goals && goals.goals) || []).find((o) => o.id === id) || null;
 
 /** Split a work-item body into its `## ` sections, in order. */
 function sections(body) {
@@ -396,16 +396,16 @@ function currentText(a) {
   return "No step recorded yet";
 }
 
-/** The order's first line, which is what a board card is titled with. */
-function orderTitle(id) {
-  const order = orderOf(id);
-  const text = (order && order.order) || ((details.get(id) || {}).task || {}).order || "";
+/** The goal's first line, which is what a board card is titled with. */
+function goalTitle(id) {
+  const goal = goalOf(id);
+  const text = (goal && goal.goal) || ((details.get(id) || {}).task || {}).goal || "";
   for (const line of String(text).split("\n")) {
     const body = line.trim();
     if (!body || body.startsWith("#") || body.startsWith("```")) continue;
     return body;
   }
-  return "No order dispatched";
+  return "No goal dispatched";
 }
 
 /* -- lazy detail ------------------------------------------------------- *
@@ -1098,7 +1098,7 @@ const PAGE_LABEL = {
   agents: "Harness Agents",
   partner: "Partner chat",
   activity: "Activity",
-  orders: "Goals",
+  goals: "Goals",
   archive: "Archive",
   session: "Session",
   compaction: "Compaction",
@@ -1245,7 +1245,7 @@ function graphPage(focus) {
     : "";
   const layout = graphLayout(fleet.pods);
   const dispatched = new Set(
-    ((orders && orders.orders) || []).filter((o) => o.dispatched).map((o) => o.id),
+    ((goals && goals.goals) || []).filter((o) => o.dispatched).map((o) => o.id),
   );
   let edges = "";
   const from = { x: layout.partner.x + CARD_W / 2, y: layout.partner.y + CARD_H };
@@ -1298,7 +1298,7 @@ function cardTasks(id) {
 }
 
 function taskCard(a) {
-  return `<button class="task-card" data-agent="${esc(a.id)}"><div class="task-card-top"><span>${esc(a.pod || "—")}</span><span>${esc(a.id.toUpperCase())}</span></div><h3>${esc(orderTitle(a.id))}</h3>${cardTasks(a.id)}<p class="task-progress">${esc(currentText(a))}</p>${a.state === "working" && !a.session_alive ? badge("interrupted", "Session gone") : ""}<div class="task-card-bottom">${avatar(a)}<span>${esc(a.id)}</span><span class="time">${esc(age(a.dispatched))}</span></div></button>`;
+  return `<button class="task-card" data-agent="${esc(a.id)}"><div class="task-card-top"><span>${esc(a.pod || "—")}</span><span>${esc(a.id.toUpperCase())}</span></div><h3>${esc(goalTitle(a.id))}</h3>${cardTasks(a.id)}<p class="task-progress">${esc(currentText(a))}</p>${a.state === "working" && !a.session_alive ? badge("interrupted", "Session gone") : ""}<div class="task-card-bottom">${avatar(a)}<span>${esc(a.id)}</span><span class="time">${esc(age(a.dispatched))}</span></div></button>`;
 }
 
 /* build-to-ui, build-7: `state` is whatever the filename suffix says and nothing
@@ -1312,7 +1312,7 @@ function boardColumnsFor(agents) {
 }
 
 function boardColumns(agents) {
-  const shown = agents.filter((a) => matches(a.id + " " + a.pod + " " + orderTitle(a.id) + " " + currentText(a)));
+  const shown = agents.filter((a) => matches(a.id + " " + a.pod + " " + goalTitle(a.id) + " " + currentText(a)));
   return `<div class="board-wrap"><div class="board" style="grid-template-columns:repeat(${boardColumnsFor(agents).length},minmax(228px,1fr))">${boardColumnsFor(agents).map(([key, label, color]) => {
     const items = shown
       .filter((a) => phase(a) === key)
@@ -1385,29 +1385,29 @@ function activityPage() {
   }</section>`;
 }
 
-/* -- orders and archive ------------------------------------------------ *
+/* -- goals and archive ------------------------------------------------- *
  * hx-only views with no autodev counterpart (spec 16.2 lists both). They keep
  * the autodev shell — page heading, panels, cards — and their bodies are the
  * markdown renderers, mounted through slot(). */
 
-function orderPanel(order) {
+function goalPanel(goal) {
   const meta = [
-    order.dispatched ? "dispatched " + clock(order.dispatched) : "not dispatched",
-    order.completed ? "completed " + clock(order.completed) : null,
-    (order.addenda || []).length ? count(order.addenda.length, "addendum", "addenda") : null,
+    goal.dispatched ? "dispatched " + clock(goal.dispatched) : "not dispatched",
+    goal.completed ? "completed " + clock(goal.completed) : null,
+    (goal.addenda || []).length ? count(goal.addenda.length, "addendum", "addenda") : null,
   ]
     .filter(Boolean)
     .join(" · ");
-  const addenda = (order.addenda || [])
+  const addenda = (goal.addenda || [])
     .map((a) => `<div class="small-label">addendum ${esc(clock(a.ts))}</div>${slot(markdown(a.text || ""), "addendum-block")}`)
     .join("");
-  return `<section class="panel"><div class="panel-body"><div class="panel-head"><div><h2>${esc(order.id)}</h2><p>${esc(order.pod || "")} · ${esc(meta)}</p></div>${phaseBadge(order)}<button class="button" data-agent="${esc(order.id)}">${icon("arrow")}Open agent</button></div><div class="divider"></div>${slot(markdown(order.order || ""))}${addenda}</div></section>`;
+  return `<section class="panel"><div class="panel-body"><div class="panel-head"><div><h2>${esc(goal.id)}</h2><p>${esc(goal.pod || "")} · ${esc(meta)}</p></div>${phaseBadge(goal)}<button class="button" data-agent="${esc(goal.id)}">${icon("arrow")}Open agent</button></div><div class="divider"></div>${slot(markdown(goal.goal || ""))}${addenda}</div></section>`;
 }
 
-function ordersPage() {
-  const list = ((orders && orders.orders) || []).filter((o) => matches(o.id + " " + (o.order || "")));
+function goalsPage() {
+  const list = ((goals && goals.goals) || []).filter((o) => matches(o.id + " " + (o.goal || "")));
   return `<div class="page-heading"><div><div class="eyebrow">tasks.json</div><h1>Goals</h1><p class="subtitle">The goal text and every addendum, per id. Goal files are consumed at dispatch, so this is the whole source.</p></div><span class="badge">${esc(count(list.length, "goal"))}</span></div>${section("Dispatched work", "", filters("Search goals…"))}${
-    list.length ? list.map(orderPanel).join("") : empty("Nothing dispatched yet", "The Partner dispatches with hx dispatch <id> <goal-file>.", "file")
+    list.length ? list.map(goalPanel).join("") : empty("Nothing dispatched yet", "The Partner dispatches with hx dispatch <id> <goal-file>.", "file")
   }`;
 }
 
@@ -1584,8 +1584,8 @@ function workItemBlocks(show) {
     .join("");
   const notYet = '<p class="notyet">not yet</p>';
   if (!found.length) {
-    const order = (show.task || {}).order;
-    return `<div class="small-label">Goal</div>${order ? slot(markdown(order)) : notYet}${addenda}`;
+    const goal = (show.task || {}).goal;
+    return `<div class="small-label">Goal</div>${goal ? slot(markdown(goal)) : notYet}${addenda}`;
   }
   return found
     .map((section) => {
@@ -1846,7 +1846,7 @@ const PAGES = {
   agents: agentsPage,
   partner: partnerPage,
   activity: activityPage,
-  orders: ordersPage,
+  goals: goalsPage,
   archive: archivePage,
   session: sessionPage,
   compaction: compactionPage,
@@ -1925,9 +1925,9 @@ async function refresh() {
   if (fetching) return;
   fetching = true;
   try {
-    const [nextBoard, nextOrders] = await Promise.all([api("/api/board"), api("/api/orders").catch(() => orders)]);
+    const [nextBoard, nextGoals] = await Promise.all([api("/api/board"), api("/api/goals").catch(() => goals)]);
     board = nextBoard;
-    orders = nextOrders;
+    goals = nextGoals;
     fleet = buildFleet();
     lastSuccess = Date.now();
     clearFail();
@@ -2018,7 +2018,7 @@ window.addEventListener("hashchange", () => render());
 /* -- live updates ------------------------------------------------------ *
  * SSE replaces autodev's 2 s poll. Every entry in `changed` is an id except the
  * reserved scope `tasks` (CONTRACTS.md), which is "re-fetch the board and the
- * orders view". An id is dropped from the detail cache so the next paint reads
+ * goals view". An id is dropped from the detail cache so the next paint reads
  * it again; `route()` then re-renders. */
 
 function listen() {
@@ -2039,7 +2039,7 @@ function listen() {
     // reload (live rehearsal 2026-09-21).
     let wantsBoard = true;
     for (const scope of changed) {
-      if (scope === "tasks" || scope === "board" || scope === "orders" || scope === "archive") {
+      if (scope === "tasks" || scope === "board" || scope === "goals" || scope === "archive") {
         archiveStale = true;
       } else if (scope === "partner") refreshPartner().then(() => render());
       else details.delete(scope);

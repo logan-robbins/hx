@@ -1,13 +1,13 @@
 {
   "root_abs": "/srv/hx",
   "ts": "2026-09-20T13:10:00Z",
-  "orders": [
+  "goals": [
     {
       "id": "eng-000",
       "pod": "engineers",
       "state": "complete",
       "outcome": "done",
-      "order": "## Order\nShip `hx board --json`.\n\n## Definition of done\n- It validates.\n\n### Checks\n```bash\ntrue\n```\n",
+      "goal": "## Goal\nShip `hx board --json`.\n\n## Definition of done\n- It validates.\n\n### Checks\n```bash\ntrue\n```\n",
       "addenda": [],
       "dispatched": "2026-09-20T10:00:00Z",
       "completed": "2026-09-20T11:58:12Z"
@@ -17,7 +17,7 @@
       "pod": "engineers",
       "state": "working",
       "outcome": null,
-      "order": "## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
+      "goal": "## Goal\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\n```\n",
       "addenda": [
         {
           "ts": "2026-09-20T12:30:00Z",
@@ -32,7 +32,7 @@
       "pod": "engineers",
       "state": "complete",
       "outcome": "decision",
-      "order": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
+      "goal": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
       "addenda": [],
       "dispatched": "2026-09-20T10:30:00Z",
       "completed": "2026-09-20T12:47:31Z"

@@ -55,7 +55,7 @@ def test_show_matches_the_contract(ui, agent_id):
     ):
         assert key in payload, key
     assert set(payload["work_item"]) == {"frontmatter", "body"}
-    assert set(payload["task"]) == {"order", "addenda", "outcome", "dispatched", "completed"}
+    assert set(payload["task"]) == {"goal", "addenda", "outcome", "dispatched", "completed"}
     assert set(payload["context_file"]) == {"path", "text", "seam_ts"}
     for stream in payload["streams"]:
         assert {"handle", "path", "open", "records", "tail"} <= set(stream)
@@ -84,23 +84,23 @@ def test_show_rejects_a_non_id(ui, bad):
 
 def test_orders_is_the_v1_shape(ui):
     """One entry per `tasks.json` id: no graph, no file comparison."""
-    status, payload = ui.client.json("/api/orders")
+    status, payload = ui.client.json("/api/goals")
     assert status == 200
-    assert set(payload) == {"root_abs", "ts", "orders"}
-    by_id = {entry["id"]: entry for entry in payload["orders"]}
-    assert by_id, "the fixture has dispatched orders"
-    for entry in payload["orders"]:
+    assert set(payload) == {"root_abs", "ts", "goals"}
+    by_id = {entry["id"]: entry for entry in payload["goals"]}
+    assert by_id, "the fixture has dispatched goals"
+    for entry in payload["goals"]:
         assert set(entry) == {
-            "id", "pod", "state", "outcome", "order", "addenda", "dispatched", "completed",
+            "id", "pod", "state", "outcome", "goal", "addenda", "dispatched", "completed",
         }
 
 
 def test_orders_keeps_the_order_text_verbatim(ui):
-    _, orders = ui.client.json("/api/orders")
+    _, goals = ui.client.json("/api/goals")
     _, show = ui.client.json("/api/show/eng-001")
-    recorded = next(o for o in orders["orders"] if o["id"] == "eng-001")["order"]
-    assert recorded == show["task"]["order"]
-    assert "## Order" in recorded and "### Checks" in recorded
+    recorded = next(o for o in goals["goals"] if o["id"] == "eng-001")["goal"]
+    assert recorded == show["task"]["goal"]
+    assert "## Goal" in recorded and "### Checks" in recorded
 
 
 def test_archive_holds_benched_bodies_and_dispatches(ui):

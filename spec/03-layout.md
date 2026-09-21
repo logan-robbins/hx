@@ -18,7 +18,7 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   config/<id>/SUBAGENTS.md                 # identity for this HarnessAgent's subagents (→ subagent context file)
   config/<id>/harness.json                 # per-agent config (05-configuration.md)
   PARTNER.md                               # Partner state doc; the Partner's whole persistent state
-  tasks.json                               # {"<id>": {order, addenda, outcome, dispatched, completed}}
+  tasks.json                               # {"<id>": {goal, addenda, outcome, dispatched, completed}}
   pods/<pod>/<id>-<state>.md               # work items, one per worker; state is the suffix
   pods/<pod>/archive/<id>-<ts>.md          # benched bodies
   logs/<id>/<id>-main.jsonl                # main stream
@@ -51,6 +51,6 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
 - The human authors and commits `config/CLAUDE.md`, `config/models.json`, `companion/**`, `templates/**`, and commits `PARTNER.md`.
 - Personas and per-agent config live in `config/<id>/`, outside every agent's working directory; each agent is told the exact absolute paths of its own files and that it reads nothing else under `HARNESS_ROOT`. Nothing is enforced.
 - `config/<id>/AGENTS.md` has two writers separated by the mutable header (`## UPDATES BELOW ONLY`). Above it: the project-scoped persona for that id, written by the Partner and edited rarely; it reaches the agent as system prompt via `run/<id>/persona.md`. Below it: that HarnessAgent's own long-term memory, written only by that agent; it reaches the agent in the context file. Neither the human nor the Companion writes this file. It survives seams because it is a file, not context.
-- The work item is the HarnessAgent's own running task list. The agent updates its body frequently as it works; hx owns the state suffix and the `## Order` addenda.
+- The work item is the HarnessAgent's own running task list. The agent updates its body frequently as it works; hx owns the state suffix and the `## Goal` addenda.
 - `config/CLAUDE.md` is the only CLAUDE.md that loads. The product repo's own `CLAUDE.md` and `AGENTS.md` are not loaded and are not edited: the harness user's settings set `claudeMdExcludes` for the repo file and instruction-files mode `claude-md`, so nothing in the agent's workdir is discovered.
 - Per-agent `run/<id>/home/` isolates each HarnessAgent's hooks, credentials, auto memory, and transcripts, so one agent's memory never pollutes another's and hx can reset it between dispatches.

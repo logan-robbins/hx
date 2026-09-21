@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 
 from . import compose as compose_mod, flush as flush_mod, goal as goal_mod, streams
+from .config_harness import flavor_of
 from .errors import NotFound
 from .hook_log import seam_marker
 from .workitems import find_work_item
@@ -69,6 +70,16 @@ def seam_record(root: Path, item_id: str, context_file: Path, *, source: str = S
     }
 
 
+def seam_slash(root: Path, item_id: str) -> str:
+    """The slash command that cuts the conversation. Claude pastes `/clear`; Pi pastes `/new`."""
+    path = root / "adapters" / flavor_of(root, item_id) / "seam-command"
+    if path.is_file():
+        line = path.read_text().strip()
+        if line.startswith("/") and " " not in line and "\n" not in line:
+            return line
+    return "/clear"
+
+
 def seam(root: Path, item_id: str, *, env=None) -> dict:
     """Take the seam, or defer it. Returns `{"id", "outcome", "seq", "background_tasks"}`."""
     marker = seam_marker(root, item_id)
@@ -81,12 +92,12 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     if find_work_item(root, item_id) is None:
         raise NotFound(f"{item_id}: no work item; a seam belongs to a dispatched agent (spec 06)")
 
-    # Order is spec 08's: the Companion reaches the head, the context file is composed from
+    # Sequence is spec 08's: the Companion reaches the head, the context file is composed from
     # what it recorded, then the `/clear` is queued and the record written.
     flush_mod.flush(root, item_id, env=env)
     context_file = Path(compose_mod.compose(root, item_id, f"{item_id}-main", env=env))
 
-    goal_mod.paste(item_id, "/clear", env)
+    goal_mod.paste(item_id, seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
 
     # A seam is the one boundary where the whole conversation ends, so the state at that point

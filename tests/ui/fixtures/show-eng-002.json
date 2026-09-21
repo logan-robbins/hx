@@ -14,7 +14,7 @@
     "body": "\n## Tasks\n_none yet_\n\n## Deliverables\n\n\n## Commands\n\n\n## Open decision\n\n\n## Digest\n\n"
   },
   "task": {
-    "order": "",
+    "goal": "",
     "addenda": [],
     "outcome": null,
     "dispatched": null,
@@ -46,13 +46,11 @@
     "session": "eng-002",
     "alive": true,
     "lines": [
-      "Waiting. No order dispatched."
+      "Waiting. No goal dispatched."
     ],
     "source": "session"
   },
   "turn": null,
-  "archive": [],
-  "bench": [],
   "companion": {
     "pass_in_flight": false,
     "pass_stream": null,
@@ -60,5 +58,7 @@
     "last_state_ts": "2026-09-20T13:09:35Z",
     "streams": 0
   },
+  "archive": [],
+  "bench": [],
   "compactions": {}
 }

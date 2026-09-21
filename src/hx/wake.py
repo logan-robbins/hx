@@ -95,7 +95,7 @@ def wake_partner(root: Path, text: str) -> bool:
     """True when the socket accepted the message, False otherwise (CONTRACTS.md).
 
     The UI calls this one; the CLI calls `wake_partner_status`, which says which failure it
-    was. The text is a fixed short form composed by hx, never an order: orders are files.
+    was. The text is a fixed short form composed by hx, never a goal: goals are files.
     """
     return wake_partner_status(root, text) == ACCEPTED
 
@@ -103,7 +103,7 @@ def wake_partner(root: Path, text: str) -> bool:
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx wake", add_help=True)
     parser.add_argument("target", help="only `partner` is a wake target")
-    parser.add_argument("text", help="the fixed short form hx composed; never an order")
+    parser.add_argument("text", help="the fixed short form hx composed; never a goal")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 

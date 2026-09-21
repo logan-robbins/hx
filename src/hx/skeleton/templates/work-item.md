@@ -4,7 +4,7 @@ pod: {{pod}}
 outcome:
 dispatched: {{dispatched}}
 ---
-{{order}}
+{{goal}}
 
 ## Standing instructions
 - Keep `## Tasks` current: mark a task done the moment it is done, add tasks the moment you discover them. This section is what you get back after a seam.

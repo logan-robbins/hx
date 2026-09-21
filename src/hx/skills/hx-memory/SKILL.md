@@ -85,6 +85,22 @@ work done now rather than on the next search.
 - **A release, a merge, or anything already shipped.** `--kind complete` gets the Digests: what
   was delivered and which commits carry it.
 
+## File memory: the last resort
+
+Completed Work Item bodies live on as files — live `*-complete.md` items and
+`pods/<pod>/archive/` bodies from `hx bench`. `hx recall` searches them with plain
+substring matching, no embeddings:
+
+```bash
+hx recall "alembic revision for the assets table"   # bounded: 50 files, 5 hits, short excerpts
+hx recall --id eng-001 --limit 3                    # one persona's finished Work Items
+```
+
+Bounds are the point: a query or a filter is required, at most 20 hits, excerpts capped.
+Reach for this only after the context file's Memory episodes section and `hx memory search`
+came up empty. The Partner in particular treats this as file memory, never a first read —
+its context is what/why/state, and the how stays here until genuinely needed.
+
 ## What it is not
 
 It is not authoritative about the present. An episode is what was true when an agent wrote it;

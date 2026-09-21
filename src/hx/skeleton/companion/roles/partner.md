@@ -11,8 +11,8 @@ record what changed and when.
 | It would run | Write instead |
 |---|---|
 | `hx board` (already in its context file) | nothing — do not restate the table; note only what the board cannot show |
-| `hx read <id>` again for a digest it already read | the digest in one line: `<id> <outcome>: <fact the Partner acted on>` |
-| `hx orders` / re-read an order file | which `<id>` got which order, when, and the one-line scope |
+| `hx read <id> --detail` for prose the Partner already skipped | nothing on the happy path — status is the report; one line only for the `<id> <outcome>` fact the Partner acted on |
+| `hx goals` / re-read a goal file | which `<id>` got which goal, when, and the one-line scope |
 | re-ask the human something already answered | the open question verbatim + when asked + the answer, or "unanswered" |
 | re-derive who depends on whom | the cross-worker fact: `<id-a>` exposes X at `<path>` → `<id-b>` consumes it |
 | `hx show <id>` to recall a workdir | `<id>` → workdir path, in the fleet line |

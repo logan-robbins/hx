@@ -27,13 +27,13 @@ class HxRefusal(HxError):
 
 
 class ValidationError(HxError):
-    """A config, order, or work item file failed validation. Exit 2 (spec 05)."""
+    """A config, goal, or work item file failed validation. Exit 2 (spec 05)."""
 
     exit_code = 2
 
 
 class NotFound(HxError):
-    """A named id, order file, or work item does not exist.
+    """A named id, goal file, or work item does not exist.
 
     Distinct from `ValidationError` so a caller can tell "no such id" from "the instance is
     broken": the UI turns this into 404 and everything else into 502

@@ -1,13 +1,13 @@
-"""Parser and validator for order files (spec 06, CONTRACTS.md).
+"""Parser and validator for goal files (spec 06, CONTRACTS.md).
 
-The order is a file at any path the Partner likes, never command-line text, and `hx dispatch`
-deletes it once it has read it: the text then lives in `tasks.json` and the work item and
-nowhere else. There is no `orders/` directory (spec 14 D25).
+The Partner dispatches a goal as a file at any path it likes, never command-line text, and
+`hx dispatch` deletes it once it has read it: the text then lives in `tasks.json` and the
+Work Item and nowhere else. The persona treats the dispatched goal as its Work Item.
 
-It holds exactly two sections, `## Order` and `## Definition of done`, and no frontmatter.
-The definition of done must carry a `### Checks` heading with a fenced ```bash block that is
-not empty: `hx dispatch` refuses an order that lacks either section or the checks block, and
-`hx complete done` runs that block with `bash -e`.
+A goal file holds exactly two sections, `## Goal` and `## Definition of done`, and no
+frontmatter. The definition of done must carry a `### Checks` heading with a fenced ```bash
+block that is not empty: `hx dispatch` refuses a goal that lacks either section or the
+checks block, and `hx complete done` runs that block with `bash -e`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 from .errors import ValidationError
 from .frontmatter import parse_frontmatter
 
-ORDER_HEADING = "## Order"
+GOAL_HEADING = "## Goal"
 DOD_HEADING = "## Definition of done"
 CHECKS_HEADING = "### Checks"
 
@@ -29,18 +29,18 @@ _FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)\s*$")
 
 
 @dataclass(frozen=True)
-class Order:
-    """One parsed order file."""
+class Goal:
+    """One parsed goal file."""
 
     path: Path
-    order: str
+    goal: str
     definition_of_done: str
     checks: str
     text: str
 
     @property
     def body(self) -> str:
-        """Everything below the frontmatter, copied verbatim into the work item (spec 06)."""
+        """Everything below the frontmatter, copied verbatim into the Work Item (spec 06)."""
         return self.text
 
 
@@ -106,14 +106,14 @@ def _fenced_bash(lines: list[str], path: str) -> str:
     return checks
 
 
-def parse_order_text(text: str, path: str | Path) -> Order:
-    """Parse and validate an order. Every message names the file and the rule it broke."""
+def parse_goal_text(text: str, path: str | Path) -> Goal:
+    """Parse and validate a goal. Every message names the file and the rule it broke."""
     path_str = str(path)
     data, body = parse_frontmatter(text, path_str)
     if data:
         raise ValidationError(
-            f"{path_str}: frontmatter key(s) {', '.join(sorted(data))}; an order has no "
-            f"frontmatter, only `{ORDER_HEADING}` and `{DOD_HEADING}` (spec 06, CONTRACTS.md). "
+            f"{path_str}: frontmatter key(s) {', '.join(sorted(data))}; a goal has no "
+            f"frontmatter, only `{GOAL_HEADING}` and `{DOD_HEADING}` (spec 06, CONTRACTS.md). "
             f"There are no dependency fields: sequencing is the Partner's own judgement"
         )
 
@@ -122,22 +122,27 @@ def parse_order_text(text: str, path: str | Path) -> Order:
     except ValidationError as exc:
         heading = str(exc).split("DUPLICATE:", 1)[1]
         raise ValidationError(
-            f"{path_str}: `## {heading}` appears more than once; an order has exactly one "
-            f"`{ORDER_HEADING}` and one `{DOD_HEADING}` (spec 06)"
+            f"{path_str}: `## {heading}` appears more than once; a goal has exactly one "
+            f"`{GOAL_HEADING}` and one `{DOD_HEADING}` (spec 06)"
         ) from None
 
     lines = body.split("\n")
-    for heading in (ORDER_HEADING, DOD_HEADING):
-        if heading.removeprefix("## ") not in sections:
-            raise ValidationError(
-                f"{path_str}: no `{heading}` section; an order has exactly two sections, "
-                f"`{ORDER_HEADING}` and `{DOD_HEADING}` (spec 06). `hx dispatch` refuses it"
-            )
+    goal_key = GOAL_HEADING.removeprefix("## ")
+    if goal_key not in sections:
+        raise ValidationError(
+            f"{path_str}: no `{GOAL_HEADING}` section; a goal has exactly two sections, "
+            f"`{GOAL_HEADING}` and `{DOD_HEADING}` (spec 06). `hx dispatch` refuses it"
+        )
+    if DOD_HEADING.removeprefix("## ") not in sections:
+        raise ValidationError(
+            f"{path_str}: no `{DOD_HEADING}` section; a goal has exactly two sections, "
+            f"`{GOAL_HEADING}` and `{DOD_HEADING}` (spec 06). `hx dispatch` refuses it"
+        )
 
-    order_start, order_end = sections[ORDER_HEADING.removeprefix("## ")]
-    order_text = "\n".join(lines[order_start + 1 : order_end]).strip("\n")
-    if order_text.strip() == "":
-        raise ValidationError(f"{path_str}: `{ORDER_HEADING}` is empty; the order is the whole task (spec 06)")
+    goal_start, goal_end = sections[goal_key]
+    goal_text = "\n".join(lines[goal_start + 1 : goal_end]).strip("\n")
+    if goal_text.strip() == "":
+        raise ValidationError(f"{path_str}: `{GOAL_HEADING}` is empty; the goal is the whole task (spec 06)")
 
     dod_start, dod_end = sections[DOD_HEADING.removeprefix("## ")]
     dod_lines = lines[dod_start + 1 : dod_end]
@@ -168,30 +173,30 @@ def parse_order_text(text: str, path: str | Path) -> Order:
         )
     checks = _fenced_bash(dod_lines[checks_at + 1 :], path_str)
 
-    return Order(
+    return Goal(
         path=Path(path),
-        order=order_text,
+        goal=goal_text,
         definition_of_done=dod_text,
         checks=checks,
         text=body.strip("\n") + "\n",
     )
 
 
-def parse_order(path: str | Path) -> Order:
+def parse_goal(path: str | Path) -> Goal:
     path = Path(path)
     if not path.is_file():
-        raise ValidationError(f"{path}: order file not found; the order is always a file (spec 06)")
-    return parse_order_text(path.read_text(), path)
+        raise ValidationError(f"{path}: goal file not found; the goal is always a file (spec 06)")
+    return parse_goal_text(path.read_text(), path)
 
 
-# --- `hx orders [--json]` (CONTRACTS.md) -------------------------------------------------------
+# --- `hx goals [--json]` (CONTRACTS.md) -------------------------------------------------------
 #
-# Read-only over `tasks.json`, and nothing else. The order file is consumed and deleted at
+# Read-only over `tasks.json`, and nothing else. The goal file is consumed and deleted at
 # dispatch, so there is no file to compare against and no graph to draw (spec 14 D25).
 
 
 def collect(root: Path) -> dict:
-    """The `hx orders --json` document: one entry per id in `tasks.json`."""
+    """The `hx goals --json` document: one entry per id in `tasks.json`."""
     from . import timestamps
     from .ids import sort_key
     from .tasks import load_tasks
@@ -213,21 +218,21 @@ def collect(root: Path) -> dict:
                 "pod": work_item.parent.name if work_item else None,
                 "state": state,
                 "outcome": record.get("outcome"),
-                "order": record.get("order"),
+                "goal": record.get("goal"),
                 "addenda": list(record.get("addenda") or []),
                 "dispatched": record.get("dispatched"),
                 "completed": record.get("completed"),
             }
         )
 
-    return {"root_abs": str(root), "ts": timestamps.now(), "orders": entries}
+    return {"root_abs": str(root), "ts": timestamps.now(), "goals": entries}
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
     import argparse
     import json
 
-    parser = argparse.ArgumentParser(prog="hx orders", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx goals", add_help=True)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -236,7 +241,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     if args.json:
         print(json.dumps(view, indent=2))
     else:
-        for entry in view["orders"]:
+        for entry in view["goals"]:
             print(
                 f"{entry['id']}  {entry['state'] or '-'}  {entry['outcome'] or '-'}  "
                 f"addenda={len(entry['addenda'])}  dispatched={entry['dispatched'] or '-'}  "

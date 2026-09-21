@@ -11,7 +11,7 @@ produce or check the data, it does:
 * **step state** goes through `hx.stepstate.validate` and `evict`, the same
   functions the Companion's `stop` hook accepts a pass with, so a fixture hx
   would reject cannot be committed;
-* **board, orders and `show partner`** are written to the contract by hand,
+* **board, goals and `show partner`** are written to the contract by hand,
   because build-7 is still cutting those commands and they do not yet emit the
   v1 shape. `goals/ui-7.done.md` says so plainly.
 
@@ -94,9 +94,9 @@ BOARD = {
 }
 
 
-# -- orders (v1 cut: one entry per tasks.json id, no graph, no file compare) ---
+# -- goals (v1 cut: one entry per tasks.json id, no graph, no file compare) ---
 
-ORDER_001 = """## Order
+GOAL_001 = """## Goal
 Add `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a
 set of ids finished with outcome `done`.
 
@@ -109,7 +109,7 @@ python -m pytest tests/test_board.py -q
 ```
 """
 
-ORDER_003 = """## Order
+GOAL_003 = """## Goal
 Decide where the seam threshold lives: per model in `config/models.json`, or per agent in
 `config/<id>/harness.json`. Write the recommendation and the losing option's cost.
 
@@ -122,19 +122,19 @@ test -s /srv/hx/pods/engineers/eng-003-complete.md
 ```
 """
 
-ORDERS = {
+GOALS = {
     "root_abs": ROOT_ABS,
     "ts": TS,
-    "orders": [
+    "goals": [
         {
             "id": "eng-000", "pod": "engineers", "state": "complete", "outcome": "done",
-            "order": "## Order\nShip `hx board --json`.\n\n## Definition of done\n- It validates.\n\n### Checks\n```bash\ntrue\n```\n",
+            "goal": "## Goal\nShip `hx board --json`.\n\n## Definition of done\n- It validates.\n\n### Checks\n```bash\ntrue\n```\n",
             "addenda": [],
             "dispatched": "2026-09-20T10:00:00Z", "completed": "2026-09-20T11:58:12Z",
         },
         {
             "id": "eng-001", "pod": "engineers", "state": "working", "outcome": None,
-            "order": ORDER_001,
+            "goal": GOAL_001,
             "addenda": [{
                 "ts": "2026-09-20T12:30:00Z",
                 "text": "Also refuse an id with no `config/<id>/` directory; exit 1 and name it.",
@@ -143,7 +143,7 @@ ORDERS = {
         },
         {
             "id": "eng-003", "pod": "engineers", "state": "complete", "outcome": "decision",
-            "order": ORDER_003,
+            "goal": GOAL_003,
             "addenda": [],
             "dispatched": "2026-09-20T10:30:00Z", "completed": "2026-09-20T12:47:31Z",
         },
@@ -278,12 +278,12 @@ DIGESTS = {
 # has something real in it.
 
 
-def work_item_body(order: str, tasks: list[tuple[bool, str]], *, deliverables: str = "",
+def work_item_body(goal: str, tasks: list[tuple[bool, str]], *, deliverables: str = "",
                    commands: str = "", decision: str = "", digest: str = "") -> str:
-    """The rendered `templates/work-item.md` body: the order, then the sections."""
+    """The rendered `templates/work-item.md` body: the goal, then the sections."""
     checklist = "\n".join(f"- [{'x' if done else ' '}] {text}" for done, text in tasks)
     return (
-        f"{order}\n## Tasks\n{checklist or '_none yet_'}\n\n"
+        f"{goal}\n## Tasks\n{checklist or '_none yet_'}\n\n"
         f"## Deliverables\n{deliverables}\n\n## Commands\n{commands}\n\n"
         f"## Open decision\n{decision}\n\n## Digest\n{digest}\n"
     )
@@ -295,7 +295,7 @@ def record(seq: int, ts: str, stream: str, **fields) -> dict:
 
 def show_document(
     *, id: str, pod: str, role: str, state: str, outcome, dispatched, completed,
-    order: str, body: str, step_state: dict, streams: list, pane: dict,
+    goal: str, body: str, step_state: dict, streams: list, pane: dict,
     metrics: dict | None = None, context_file=None, addenda=(), turn=None,
 ) -> dict:
     return {
@@ -309,7 +309,7 @@ def show_document(
             "body": body,
         },
         "task": {
-            "order": order,
+            "goal": goal,
             "addenda": list(addenda),
             "outcome": outcome,
             "dispatched": dispatched,
@@ -350,7 +350,7 @@ def compactions(id: str, step_state) -> dict:
     }
 
 
-ORDER_000 = """## Order
+GOAL_000 = """## Goal
 Ship `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`
 not among them.
 
@@ -427,9 +427,9 @@ def other_shows() -> dict:
     eng000 = show_document(
         id="eng-000", pod="engineers", role="engineer", state="complete", outcome="done",
         dispatched="2026-09-20T10:00:00Z", completed="2026-09-20T11:58:12Z",
-        order=ORDER_000,
+        goal=GOAL_000,
         body=work_item_body(
-            ORDER_000,
+            GOAL_000,
             [(True, "Read CONTRACTS.md for the board document."),
              (True, "Write `collect()` in `src/hx/board.py`."),
              (True, "Leave `partner` out of the items."),
@@ -498,12 +498,12 @@ def other_shows() -> dict:
     eng002 = show_document(
         id="eng-002", pod="engineers", role="engineer", state="idle", outcome=None,
         dispatched=None, completed=None,
-        order="",
+        goal="",
         body=work_item_body("", [], digest=""),
         step_state={},
         streams=[],
         pane={"session": "eng-002", "alive": True,
-              "lines": ["Waiting. No order dispatched."], "source": "session"},
+              "lines": ["Waiting. No goal dispatched."], "source": "session"},
         context_file={"path": "run/eng-002/eng-002-main.context.md", "text": None, "seam_ts": None},
         turn=None,
     )
@@ -511,9 +511,9 @@ def other_shows() -> dict:
     eng003 = show_document(
         id="eng-003", pod="engineers", role="engineer", state="complete", outcome="decision",
         dispatched="2026-09-20T10:30:00Z", completed="2026-09-20T12:47:31Z",
-        order=ORDER_003,
+        goal=GOAL_003,
         body=work_item_body(
-            ORDER_003,
+            GOAL_003,
             [(True, "Read spec 05 and spec 10 for where configuration lives."),
              (True, "Write the recommendation and the cost of the option not taken.")],
             deliverables="- The recommendation, in `## Open decision` below.",
@@ -580,11 +580,11 @@ def other_shows() -> dict:
     res001 = show_document(
         id="res-001", pod="research", role="researcher", state="working", outcome=None,
         dispatched="2026-09-20T08:40:00Z", completed=None,
-        order=("## Order\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and "
+        goal=("## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and "
                "record what you verified.\n\n## Definition of done\n- A note naming the fields "
                "observed live.\n\n### Checks\n```bash\ntest -s notes/sessionstart.md\n```\n"),
         body=work_item_body(
-            "## Order\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n",
+            "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n",
             [(True, "Read the hook documentation for SessionStart."),
              (False, "Run one live session and capture the payload."),
              (False, "Write `notes/sessionstart.md` with the fields observed.")],
@@ -652,7 +652,7 @@ def main() -> int:
         },
         "task": {
             # v1 cut: no `after` in the task block.
-            "order": ORDER_001,
+            "goal": GOAL_001,
             "addenda": [{
                 "ts": "2026-09-20T12:30:00Z",
                 "text": "Also refuse an id with no `config/<id>/` directory; exit 1 and name it.",
@@ -694,7 +694,7 @@ def main() -> int:
 
     for name, document in (
         ("board.json", BOARD),
-        ("orders.json", ORDERS),
+        ("goals.json", GOALS),
         ("show-eng-001.json", show),
         ("show-partner.json", partner),
         *other_shows().items(),
@@ -703,7 +703,7 @@ def main() -> int:
         print(f"wrote {name}")
 
     print(f"  board items   : {[item['id'] for item in BOARD['items']]}")
-    print(f"  orders        : {[entry['id'] for entry in ORDERS['orders']]}")
+    print(f"  goals        : {[entry['id'] for entry in GOALS['goals']]}")
     print(f"  step state    : {sorted(show['step_state'])}")
     print(f"  turn          : {show['turn']}")
     print(f"  partner keys  : {sorted(partner)}")

@@ -259,9 +259,9 @@ def test_postcompact_without_a_summary_queues_nothing(instance):
     assert queue_items(instance) == []
 
 
-def test_complete_enqueues_the_digest_with_its_outcome(instance, hx, launched, orders):
+def test_complete_enqueues_the_digest_with_its_outcome(instance, hx, launched, goals):
     launched("eng-001")
-    dispatch_working(instance, hx, orders, checks="test -f README.md")
+    dispatch_working(instance, hx, goals, checks="test -f README.md")
     (instance / "state" / "eng-001").mkdir(parents=True, exist_ok=True)
     (instance / "state" / "eng-001" / "eng-001-main.json").write_text(
         json.dumps(state_with("stream the importer"))

@@ -1,6 +1,6 @@
 """Shared machinery for the scenario packs.
 
-Both packs assert the same two kinds of thing — that their orders are ones `hx dispatch` would
+Both packs assert the same two kinds of thing — that their goals are ones `hx dispatch` would
 accept, and that their `expected/` boards are what `hx board` really prints — so the parts that
 build an instance and read a board live here rather than being written twice and drifting.
 
@@ -86,7 +86,7 @@ def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: 
             body.replace("{{id}}", item_id)
             .replace("{{pod}}", worker_pod)
             .replace("{{dispatched}}", FIXED_TS)
-            .replace("{{order}}", "## Order\n\nscenario fixture\n\n## Definition of done\n\n1. n/a")
+            .replace("{{goal}}", "## Goal\n\nscenario fixture\n\n## Definition of done\n\n1. n/a")
         )
         # Only a `complete` item carries an outcome in its frontmatter (spec 06).
         if outcome and state == "complete":
@@ -102,7 +102,7 @@ def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: 
 
         if state != "idle" or outcome:
             tasks[item_id] = {
-                "order": "scenario fixture", "addenda": [],
+                "goal": "scenario fixture", "addenda": [],
                 "outcome": outcome, "dispatched": FIXED_TS,
                 "completed": FIXED_TS if outcome else None,
             }
@@ -146,12 +146,12 @@ def assert_mutable_header(path: pathlib.Path) -> None:
 
 
 def assert_addendum_is_prose(path: pathlib.Path) -> None:
-    """`hx resume` appends it verbatim beneath `## Order` (spec 06, 08), so a `##` heading
+    """`hx resume` appends it verbatim beneath `## Goal` (spec 06, 08), so a `##` heading
     would break the work item's structure."""
     text = path.read_text()
     assert text.strip(), f"{path} is empty"
     assert not re.search(r"^## ", text, re.MULTILINE), (
-        f"{path}: must not introduce `##` headings; it is appended under `## Order`"
+        f"{path}: must not introduce `##` headings; it is appended under `## Goal`"
     )
     assert not text.startswith("---\n"), f"{path}: an addendum carries no frontmatter"
 

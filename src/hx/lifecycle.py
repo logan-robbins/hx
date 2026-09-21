@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import board, compose, flush as flush_mod, goal, store, timestamps, tmux, wake
 from .caller import require_partner_caller
-from .config_harness import load_harness, resolve_workdir
+from .config_harness import flavor_of, load_harness, resolve_workdir
 from .errors import HxError, NotFound
 from .ids import ID_RE, PARTNER, sort_key
 from .workitems import find_work_item, load_template, render, work_item_path
@@ -33,8 +33,10 @@ def package_skills_dir() -> Path:
     return Path(__file__).resolve().parent / "skills"
 
 
-def adapter(root: Path, name: str) -> Path:
-    path = root / "adapters" / "claude" / name
+def adapter(root: Path, name: str, item_id: str | None = None, *, flavor: str | None = None) -> Path:
+    """`adapters/<flavor>/<name>`. The Companion is always the Claude adapter."""
+    chosen = flavor or (flavor_of(root, item_id) if item_id else "claude")
+    path = root / "adapters" / chosen / name
     if not path.is_file():
         raise NotFound(f"{path}: missing; `hx install` copies the adapters from the package (spec 17.2)")
     return path
@@ -63,7 +65,7 @@ def ensure_work_item(root: Path, item_id: str) -> Path | None:
     pod = load_harness(harness, check_cross_file=False).pod
     path = work_item_path(root, pod, item_id, "idle")
     store.atomic_write_text(
-        path, render(load_template(root), item_id=item_id, pod=pod, dispatched="", order="")
+        path, render(load_template(root), item_id=item_id, pod=pod, dispatched="", goal="")
     )
     return path
 
@@ -100,8 +102,10 @@ def run_adapter(
             recorded = None
         if recorded:
             child.setdefault("HX_PYTHON", recorded)
+    # The Companion session is Claude even when the worker is Pi.
+    flavor = "claude" if extra and "--companion" in extra else None
     return subprocess.run(
-        ["bash", str(adapter(root, name)), *(extra or []), item_id],
+        ["bash", str(adapter(root, name, item_id, flavor=flavor)), *(extra or []), item_id],
         env=child,
         capture_output=True,
         text=True,

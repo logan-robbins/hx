@@ -74,7 +74,7 @@ global.fetch = async (url, init) => {
   }
   const name = {
     "/api/board": "board.json",
-    "/api/orders": "orders.json",
+    "/api/goals": "goals.json",
     "/api/archive": "archive.json",
   }[url];
   const show = /^\/api\/show\/(.+)$/.exec(url);
@@ -250,8 +250,8 @@ function sidebarSnapshot() {
   await go("#activity");
   out.views.activity = snapshot(content);
 
-  await go("#orders");
-  out.views.orders = snapshot(content);
+  await go("#goals");
+  out.views.goals = snapshot(content);
 
   await go("#archive");
   out.views.archive = snapshot(content);
@@ -309,7 +309,7 @@ function sidebarSnapshot() {
 
   // The chat box is the page's only write path.
   const box = doc.getElementById("chat-text");
-  box.value = "  eng-003 complete: decision; hx read eng-003  ";
+  box.value = "  eng-003 decision  ";
   fire(doc, box, "input");
   await click(doc.getElementById("chat-send"));
   out.posted = posted;

@@ -17,7 +17,7 @@ everything. Never read a file to find out who you are.
 you took from them. Read one again only if it has changed since.
 
 **`/goal` points at your work item.** The goal you are given names a file. That file is the
-whole task: `## Order` and every `## Order addendum` the Partner has appended, the
+whole task: `## Goal` and every `## Goal addendum` the Partner has appended, the
 `## Definition of done` with the `### Checks` that will be run against you, and `## Tasks`,
 which is yours. Keep `## Tasks` current — it is what you get back after a seam.
 
@@ -33,6 +33,6 @@ again. `blocked`, `decision`, and `exhausted` run no checks and are the honest a
 
 **What is not yours.** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
 `pods/` other than your own `-working` item, and `tasks.json` are managed by hx or belong to
-another agent. Do not write there. `orders/` belongs to the Partner.
+another agent. Do not write there. `goals/` belongs to the Partner.
 
-Run `hx task` to print your order and its addenda at any time.
+Run `hx task` to print your goal and its addenda at any time.

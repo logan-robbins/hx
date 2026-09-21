@@ -1,6 +1,6 @@
 """`hx complete <outcome>` — the HarnessAgent's last action (spec 06, 08).
 
-Completion is machine-checked, never prose: `done` runs the order's `### Checks` block with
+Completion is machine-checked, never prose: `done` runs the goal's `### Checks` block with
 `bash -e` in the workdir, requires a clean `git status` when that workdir is a git repository,
 and requires no subagent stream to be open. A refusal prints `HX-CHECK-FAILED <id>` with the failing output, changes nothing, and
 leaves the item `working` with its goal active, so the agent fixes it and runs it again.
@@ -23,7 +23,7 @@ from .caller import require_agent_caller
 from .config_harness import load_harness, resolve_workdir
 from .errors import Refused
 from .ids import OUTCOMES, PARTNER
-from .orders import parse_order_text
+from .goals import parse_goal_text
 from .workitems import (
     SECTION_DIGEST,
     SECTION_TASKS,
@@ -116,13 +116,13 @@ def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> None:
         )
 
     entry = tasks_mod.load_tasks(root).get(item_id) or {}
-    order_text = entry.get("order")
-    if not order_text:
+    goal_text = entry.get("goal")
+    if not goal_text:
         raise CheckFailed(
-            f"{CHECK_FAILED} {item_id}\nno order recorded in tasks.json; `hx complete done` runs "
-            f"the `### Checks` block of the order it was dispatched with (spec 06)."
+            f"{CHECK_FAILED} {item_id}\nno goal recorded in tasks.json; `hx complete done` runs "
+            f"the `### Checks` block of the goal it was dispatched with (spec 06)."
         )
-    checks = parse_order_text(order_text, f"tasks.json[{item_id}].order").checks
+    checks = parse_goal_text(goal_text, f"tasks.json[{item_id}].goal").checks
     result = run_checks(checks, workdir, env)
     if result.returncode != 0:
         raise CheckFailed(
@@ -191,7 +191,7 @@ def agent_digest(root: Path, item_id: str) -> str:
     """What the agent itself left, when the Companion left no step state.
 
     A digest that reads `pending companion` tells the Partner nothing and stays that way
-    forever (live rehearsal 2026-09-21: three orders, every digest empty, the Partner read
+    forever (live rehearsal 2026-09-21: three goals, every digest empty, the Partner read
     git instead). The work item's own `## Deliverables` (or `## Tasks`) is the agent's
     Partner-facing summary and is what the Partner would read next anyway.
     """
@@ -257,7 +257,7 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
     final = rename_state(path, "complete")
     goal.clear_marker(root, item_id)
 
-    woke = wake.wake_partner_status(root, f"{item_id} complete: {outcome}; hx read {item_id}")
+    woke = wake.wake_partner_status(root, f"{item_id} {outcome}")
 
     return {
         "id": item_id,

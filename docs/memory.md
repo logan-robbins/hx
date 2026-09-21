@@ -100,7 +100,7 @@ Exact output shapes are in `CONTRACTS.md`.
 
 `hx compose` adds a **Memory episodes** section directly after **Step state**, on main and
 subagent streams (subagents get half the `k`). The query is built from this stream's own step
-state — goal, every open step's intent and next, the hypothesis — falling back to the order text
+state — goal, every open step's intent and next, the hypothesis — falling back to the goal text
 before the Companion has written anything. The agent's own id is excluded: its own state is the
 section above, and seeing it again as a "memory" is noise at best. With fewer than two hits under
 the role filter the search is repeated across all roles, because a thin own-role result is

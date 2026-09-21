@@ -15,7 +15,7 @@ That is the interface. Tell it what you want in plain language; it asks back wha
 decomposes the work, creates and dispatches workers, and reports when the ask is met. Detach
 with `Ctrl-b d` — the fleet keeps working.
 
-The Partner has no order file, no `/goal` and no work item. **Your message is its goal.** There
+The Partner has no goal file, no `/goal` and no work item. **Your message is its goal.** There
 is nothing to complete and no check to run against it: when it says the ask is met, that is the
 end of the ask, and the next thing you type starts the next one.
 
@@ -29,14 +29,14 @@ A worker that hits something only a human can settle stops and completes `decisi
 guessing. You will see it as a message from the Partner, in chat, containing the question and
 what each answer costs. For example:
 
-> `be-001` has the `--json` flag working, but the order asks for two things that cannot both be
+> `be-001` has the `--json` flag working, but the goal asks for two things that cannot both be
 > true: the object on stdout and nothing else, *and* the human-readable line still printed
 > first. Which wins? JSON only makes the pipeline work and breaks scripts that grep for
 > `Hello,`; keeping the line breaks the pipeline, which was the point of the flag.
 
 You answer in chat, in your own words. The Partner turns that into an addendum file and runs
 `hx resume be-001 <file>`; the worker picks up from its own `## Tasks` and step state with the
-answer appended to its order. It does not start again.
+answer appended to its goal. It does not start again.
 
 Two things worth knowing about that exchange:
 
@@ -62,10 +62,10 @@ read.
 The `/goal` you will see pasted is always the same fixed line, whatever the task is:
 
 ```
-/goal The order for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
+/goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
 ```
 
-It is a **pointer**, not the task. The order itself never travels through the pane — it lives
+It is a **pointer**, not the task. The goal itself never travels through the pane — it lives
 in the work item that line names, which is why a seam costs nothing to re-send and why a pane
 capture never leaks what an agent was asked to do. The same line is pasted on every
 conversation start of a working item: dispatch, resume, seam, `hx restart`, and `hx launch` of
@@ -175,7 +175,7 @@ tmux kill-session -t be-001      # one worker
 tmux kill-server                 # the lot, Partner included
 ```
 
-Nothing is lost by killing a session. The work item, the order, the step state, the logs and
+Nothing is lost by killing a session. The work item, the goal, the step state, the logs and
 the agent's memory are all files; `hx launch <id>` brings a worker back, and a `working` item
 gets its `/goal` again on the way up. What you do lose is the conversation the agent was in the
 middle of, so prefer stopping between completions when you have the choice.

@@ -24,8 +24,8 @@ def build_root(root):
         "pods/partner/partner-working.md",
         "pods/engineers/eng-001-working.md",
         "pods/engineers/archive/eng-001-2026-09-19T10:00:00Z.md",
-        "orders/eng-001.md",
-        "orders/eng-001.addendum.md",
+        "goals/eng-001.md",
+        "goals/eng-001.addendum.md",
         "state/eng-001/eng-001-main.json",
         "logs/eng-001/eng-001-main.jsonl",
         "run/eng-001/turn",
@@ -109,8 +109,8 @@ def test_scan_covers_exactly_the_watched_paths(tmp_path):
         ("pods/engineers/eng-001-working.md", "eng-001"),
         ("pods/partner/partner-working.md", "partner"),
         ("pods/engineers/archive/eng-001-2026-09-19T10:00:00Z.md", "eng-001"),
-        ("orders/eng-001.md", "eng-001"),
-        ("orders/eng-001.addendum.md", "eng-001"),
+        ("goals/eng-001.md", "eng-001"),
+        ("goals/eng-001.addendum.md", "eng-001"),
         ("state/eng-001/eng-001-main.json", "eng-001"),
         ("logs/eng-001/eng-001-main.jsonl", "eng-001"),
         ("run/eng-001/turn", "eng-001"),
@@ -141,7 +141,7 @@ def test_scan_of_a_missing_root_is_empty(tmp_path):
 
 
 # -- the readers ---------------------------------------------------------
-# `InstanceSource.board/show/orders/archive/wake_partner` are exercised in
+# `InstanceSource.board/show/goals/archive/wake_partner` are exercised in
 # tests/ui/test_instance_source.py, against a real `HARNESS_ROOT` built with
 # `hx install --skeleton-only` and against a stub `hx`.
 

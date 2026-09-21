@@ -162,18 +162,19 @@ def find_work_items(root: Path) -> dict[str, list[Path]]:
 
 # --- renames (spec 06) -----------------------------------------------------------------------
 #
-# hx owns the state suffix and the `## Order` addenda; the body between them is the
+# hx owns the state suffix and the `## Goal` addenda; the body between them is the
 # HarnessAgent's (spec 04). Renames are same-directory renames (spec 08). There is no
 # transition table: a rename is a rename (spec 14 D25).
 
-SECTION_ORDER = "## Order"
+#: The Partner-dispatched goal inside a Work Item.
+SECTION_GOAL = "## Goal"
 SECTION_TASKS = "## Tasks"
 SECTION_DIGEST = "## Digest"
 SECTION_OPEN_DECISION = "## Open decision"
 
 #: `templates/work-item.md` placeholders, rendered by literal replacement, never `str.format`
 #: (CONTRACTS.md "`templates/work-item.md` placeholders", handoff/gtm-to-build.md).
-TEMPLATE_TOKENS = ("{{id}}", "{{pod}}", "{{dispatched}}", "{{order}}")
+TEMPLATE_TOKENS = ("{{id}}", "{{pod}}", "{{dispatched}}", "{{goal}}")
 
 
 def pods_dir(root: Path, pod: str) -> Path:
@@ -213,14 +214,14 @@ def rename_state(path: Path, state: str) -> Path:
     return target
 
 
-def render(template: str, *, item_id: str, pod: str, dispatched: str, order: str) -> str:
+def render(template: str, *, item_id: str, pod: str, dispatched: str, goal: str) -> str:
     """Render `templates/work-item.md`. Literal replacement of the four tokens, nothing else."""
     rendered = template
     for token, value in (
         ("{{id}}", item_id),
         ("{{pod}}", pod),
         ("{{dispatched}}", dispatched),
-        ("{{order}}", order),
+        ("{{goal}}", goal),
     ):
         rendered = rendered.replace(token, value)
     return rendered
@@ -290,6 +291,11 @@ def section_text(body: str, heading: str) -> str | None:
         return None
     start, end = bounds
     return "\n".join(body.split("\n")[start + 1 : end]).strip("\n")
+
+
+def goal_text(body: str) -> str | None:
+    """The Partner-dispatched goal."""
+    return section_text(body, SECTION_GOAL)
 
 
 def append_to_section(path: Path, heading: str, text: str) -> None:

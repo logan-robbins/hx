@@ -11,7 +11,7 @@ from hx.ui.server import TOKEN_COOKIE
 # Everything the server answers, other than `GET /`.
 GUARDED_GET = [
     "/api/board",
-    "/api/orders",
+    "/api/goals",
     "/api/archive",
     "/api/show/eng-001",
     "/api/show/partner",

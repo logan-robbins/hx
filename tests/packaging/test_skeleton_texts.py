@@ -5,8 +5,8 @@ when one drifts out of the shape the spec (and `hx dispatch`) requires of it.
 
 Constraints checked here, with the section each comes from:
 
-* order-shaped examples: `## Order`, `## Definition of done`, and a non-empty fenced ``bash``
-  block under `### Checks` — spec 06, `CONTRACTS.md` "Orders", and what `hx dispatch` refuses
+* goal-shaped examples: `## Goal`, `## Definition of done`, and a non-empty fenced ``bash``
+  block under `### Checks` — spec 06, `CONTRACTS.md` "Goals", and what `hx dispatch` refuses
 * `templates/work-item.md`: the frontmatter keys and every body section of spec 06
 * every `AGENTS.md`: exactly one `## UPDATES BELOW ONLY` — spec 03, 04, guard rule 1
 * both `SKILL.md` files: valid frontmatter with `name` and `description` — spec 17.5 and
@@ -26,9 +26,9 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 SKELETON = REPO / "src" / "hx" / "skeleton"
 SKILLS = REPO / "src" / "hx" / "skills"
 
-# Order-shaped files: everything `hx dispatch` would have to accept. The work-item template
-# embeds an order rather than being one, so it is checked separately below.
-ORDER_EXAMPLES = [SKELETON / "templates" / "order.md"]
+# Goal-shaped files: everything `hx dispatch` would have to accept. The work-item template
+# embeds a goal rather than being one, so it is checked separately below.
+GOAL_EXAMPLES = [SKELETON / "templates" / "goal.md"]
 
 #: Every skill that ships, for the checks that apply to any skill.
 SKILL_FILES = [
@@ -58,7 +58,7 @@ def _ids(paths):
     return [str(p.relative_to(REPO)) for p in paths]
 
 
-# --------------------------------------------------------------------------- orders
+# --------------------------------------------------------------------------- goals
 
 
 def _checks_bash_blocks(text: str) -> list[str]:
@@ -72,18 +72,18 @@ def _checks_bash_blocks(text: str) -> list[str]:
     return re.findall(r"^```bash\n(.*?)^```", tail, flags=re.MULTILINE | re.DOTALL)
 
 
-@pytest.mark.parametrize("path", ORDER_EXAMPLES, ids=_ids(ORDER_EXAMPLES))
-def test_order_example_has_the_sections_dispatch_requires(path):
+@pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
+def test_goal_example_has_the_sections_dispatch_requires(path):
     text = path.read_text()
-    assert re.search(r"^## Order$", text, re.MULTILINE), f"{path}: no `## Order` section"
+    assert re.search(r"^## Goal$", text, re.MULTILINE), f"{path}: no `## Goal` section"
     assert re.search(r"^## Definition of done$", text, re.MULTILINE), (
         f"{path}: no `## Definition of done` section"
     )
     assert re.search(r"^### Checks$", text, re.MULTILINE), f"{path}: no `### Checks` heading"
 
 
-@pytest.mark.parametrize("path", ORDER_EXAMPLES, ids=_ids(ORDER_EXAMPLES))
-def test_order_example_has_a_non_empty_checks_bash_block(path):
+@pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
+def test_goal_example_has_a_non_empty_checks_bash_block(path):
     blocks = _checks_bash_blocks(path.read_text())
     assert blocks, f"{path}: no fenced ```bash block under `### Checks`"
     commands = [
@@ -93,28 +93,28 @@ def test_order_example_has_a_non_empty_checks_bash_block(path):
     assert commands, f"{path}: the `### Checks` bash block has no commands"
 
 
-@pytest.mark.parametrize("path", ORDER_EXAMPLES, ids=_ids(ORDER_EXAMPLES))
-def test_order_example_has_only_the_two_top_level_sections(path):
-    # Spec 06: "contains exactly two sections, `## Order` and `## Definition of done`".
+@pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
+def test_goal_example_has_only_the_two_top_level_sections(path):
+    # Spec 06: "contains exactly two sections, `## Goal` and `## Definition of done`".
     headings = re.findall(r"^## (.+)$", path.read_text(), re.MULTILINE)
-    assert headings == ["Order", "Definition of done"], f"{path}: {headings}"
+    assert headings == ["Goal", "Definition of done"], f"{path}: {headings}"
 
 
-def test_order_example_has_no_frontmatter():
-    """Spec 14 D25 cut `after` and with it the only reason an order file had frontmatter. An
+def test_goal_example_has_no_frontmatter():
+    """Spec 14 D25 cut `after` and with it the only reason a goal file had frontmatter. An
     example that still carried some would teach the Partner to write a field nothing reads."""
-    text = (SKELETON / "templates" / "order.md").read_text()
-    assert not text.startswith("---"), "templates/order.md still opens with frontmatter"
-    assert "after:" not in text, "templates/order.md still names `after`"
+    text = (SKELETON / "templates" / "goal.md").read_text()
+    assert not text.startswith("---"), "templates/goal.md still opens with frontmatter"
+    assert "after:" not in text, "templates/goal.md still names `after`"
 
 
-def test_addendum_example_is_prose_that_lands_under_the_order_heading():
-    # `hx resume` appends the file verbatim beneath `## Order` as `## Order addendum <ts>`
+def test_addendum_example_is_prose_that_lands_under_the_goal_heading():
+    # `hx resume` appends the file verbatim beneath `## Goal` as `## Goal addendum <ts>`
     # (spec 06, 08). A `##` heading in the addendum would break the work item's structure.
     text = (SKELETON / "templates" / "addendum.md").read_text()
     assert text.strip(), "the addendum example is empty"
     assert not re.search(r"^## ", text, re.MULTILINE), (
-        "the addendum must not introduce `##` headings: it is appended under `## Order`"
+        "the addendum must not introduce `##` headings: it is appended under `## Goal`"
     )
     assert not text.startswith("---\n"), "an addendum carries no frontmatter"
 
@@ -165,7 +165,7 @@ def test_work_item_template_standing_instructions_are_the_spec_text():
 def test_work_item_template_placeholders_are_rendered_by_dispatch():
     text = (SKELETON / "templates" / "work-item.md").read_text()
     found = set(re.findall(r"\{\{(\w+)\}\}", text))
-    assert found == {"id", "pod", "dispatched", "order"}, found
+    assert found == {"id", "pod", "dispatched", "goal"}, found
 
 
 # ----------------------------------------------------------------------- AGENTS.md
@@ -474,7 +474,7 @@ def test_the_companion_skill_covers_the_pass_file_fields():
 
 def test_the_companion_skill_forbids_reading_the_agents_files():
     text = companion_skill()
-    for path in ("pods/", "orders/", "tasks.json", "worktree"):
+    for path in ("pods/", "goals/", "tasks.json", "worktree"):
         assert path in text, f"hx-companion does not say it must not read {path}"
 
 

@@ -271,7 +271,7 @@ def test_a_worker_home_gets_hx_worker_only(instance):
 
 def test_both_kinds_of_harness_agent_get_hx_memory(instance):
     """The episode store is one store for the whole instance (docs/memory.md): the Partner
-    searches it before writing an order, a worker before exploring a part of the tree."""
+    searches it before writing a goal, a worker before exploring a part of the tree."""
     for item_id in ("eng-001", "partner"):
         assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
         home_skills = instance / "run" / item_id / "home" / "skills"

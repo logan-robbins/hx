@@ -45,7 +45,7 @@ def reads_of_the_context_file(live_root, item_id, since_seq=0):
 #: order is malformed and completing `blocked` — which is what a bare "Say READY" produced on
 #: the first live run. The checks can never pass, so the agent cannot finish and wander off:
 #: the seam handshake is what this file is about, not completion.
-STANDING_ORDER = """## Order
+STANDING_ORDER = """## Goal
 Wait for instructions. Answer each message with exactly what it asks, in as few words as
 possible, and then stop. Do not run `hx complete`: this task ends when the human says so.
 
@@ -60,7 +60,7 @@ test -f NEVER-WRITTEN.txt
 """
 
 
-def dispatched_worker(live_root, live_env, worker, order=STANDING_ORDER):
+def dispatched_worker(live_root, live_env, worker, goal=STANDING_ORDER):
     """A live worker with a `working` item and its goal delivered."""
     from hx.lifecycle import launch
 
@@ -71,7 +71,7 @@ def dispatched_worker(live_root, live_env, worker, order=STANDING_ORDER):
         f"{order}\n## Tasks\n- [ ] wait for instructions\n"
     )
     (live_root / "tasks.json").write_text(json.dumps({item_id: {
-        "order": order, "addenda": [], "outcome": None,
+        "goal": order, "addenda": [], "outcome": None,
         "dispatched": "2026-09-20T12:00:00Z", "completed": None,
     }}))
     # `launch` waits for the idle prompt itself before pasting the pointer, and the pointer
@@ -164,7 +164,7 @@ def test_restart_delivers_the_goal_once_the_pane_is_ready(live_root, live_env, w
     assert marker.is_file()
     # The marker's timestamp is second-resolution, so a restart inside the same second
     # leaves it byte-identical: what proves delivery is the pointer in the new pane.
-    wait_for(lambda: "/goal The order for" in transcript_of(item_id, live_env),
+    wait_for(lambda: "/goal The goal for" in transcript_of(item_id, live_env),
              what="the pointer in the relaunched pane")
 
 
@@ -187,5 +187,5 @@ def test_launch_of_a_working_item_delivers_the_goal(live_root, live_env, worker)
     result = launch(live_root, item_id, companion=False, env=live_env)
     assert result["session"] == "started" and result["goal"] == "pasted"
     assert (live_root / "run" / item_id / "goal").is_file()
-    wait_for(lambda: "/goal The order for" in transcript_of(item_id, live_env),
+    wait_for(lambda: "/goal The goal for" in transcript_of(item_id, live_env),
              what="the pointer in the relaunched pane")

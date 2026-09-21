@@ -71,7 +71,7 @@ Write telegraphically. Not terse prose — telegraphic:
   Ambiguity is the one thing worse than length.
 - **Numbers, not adjectives.** "3 of 47 failed", "p95 180ms vs 120ms target", not "several",
   "slow", "mostly working".
-- **Never restate the order, the schema, or what you are doing.** The agent has the order.
+- **Never restate the goal, the schema, or what you are doing.** The agent has the goal.
 
 Length is a budget per field, not a style. Hard guidance, in characters:
 
@@ -109,7 +109,7 @@ you write, go through this table and make sure each row is answered:
 | "is this done already" | `closed_steps[]` with `verified` and `commit` |
 | "should I try X" | `dead_ends[]`, with what X cost |
 | re-decide something already settled | `decisions[]` with `why` |
-| re-check a constraint from the order | `constraints[]` |
+| re-check a constraint from the goal | `constraints[]` |
 | "what proved it" | `ev` seqs on the entry |
 
 Two rules follow from that table.
@@ -175,7 +175,7 @@ is not enough.
 
 Your system prompt already holds this file, your role file, the identity file of the stream
 (`config/<id>/AGENTS.md` for a main stream, `SUBAGENTS.md` for a subagent stream) and the
-task — the verbatim `## Order` and every addendum, or for a subagent stream the message it was
+task — the verbatim `## Goal` and every addendum, or for a subagent stream the message it was
 spawned with. You do not go looking for any of that, and you do not read the agent's work item,
 its workdir, or any file not named in the pass.
 
@@ -234,9 +234,9 @@ One JSON line per hook event:
 
 Field rules, with what a good value looks like:
 
-- `goal` — the task as the agent is actually pursuing it, taken from the order; rewrite it only
+- `goal` — the task as the agent is actually pursuing it, taken from the goal; rewrite it only
   when an addendum changes it. `"ETag caching on /v1/assets; p95 < 120ms"`.
-- `constraints` — what the agent must not do or must preserve, from the order, the definition
+- `constraints` — what the agent must not do or must preserve, from the goal, the definition
   of done, or a decision it is holding itself to. `"no new runtime deps"`, `"response shape of
   /v1/assets frozen"`.
 - `decisions` — the choice and the reason, with `ev` seqs. A decision survives to the end of
@@ -378,14 +378,14 @@ it for that reader:
   costs. Then the state the work is in.
 - For `exhausted`: where the task actually got to, and the natural seam to split it at.
 
-No praise, no restatement of the order, no speculation about what the Partner should do beyond
+No praise, no restatement of the goal, no speculation about what the Partner should do beyond
 what the evidence supports.
 
 ## Across `hx resume`
 
 A resumed item is the same task continuing, not a new one. Your streams and your state are not
 archived, and `seq` keeps counting. The addendum appears in the task block of your next call,
-appended under `## Order`.
+appended under `## Goal`.
 
 Absorb it: fold the new instruction into `goal` and `constraints`, add the steps it implies as
 open steps, and **keep every closed step, decision, dead end, and working-set entry you already

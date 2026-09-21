@@ -1,7 +1,7 @@
 """Data access for the UI (spec 16.2).
 
 The UI observes; it does not operate. Every view is one call on a `Source`:
-`board()`, `show(id)`, `orders()` and `archive()` return the JSON documents that
+`board()`, `show(id)`, `goals()` and `archive()` return the JSON documents that
 `CONTRACTS.md` defines, and `wake_partner(text)` is the UI's only write path.
 
 `scan()` is the other half of the interface: it returns `{scope: mtime}` for
@@ -41,13 +41,13 @@ WAKE_NOT_DELIVERED = 3
 # Scopes that are not an agent id. `TASKS` covers tasks.json, whose every write
 # can change any row of the board.
 SCOPE_BOARD = "board"
-SCOPE_ORDERS = "orders"
+SCOPE_GOALS = "goals"
 SCOPE_ARCHIVE = "archive"
 SCOPE_TASKS = "tasks"
 SCOPE_MEMORY = "memory"
-VIEW_SCOPES = (SCOPE_BOARD, SCOPE_ORDERS, SCOPE_ARCHIVE, SCOPE_TASKS)
+VIEW_SCOPES = (SCOPE_BOARD, SCOPE_GOALS, SCOPE_ARCHIVE, SCOPE_TASKS)
 
-# Work items, orders and bench files are all named `<id>-…` or `<id>.…`; spec 06.
+# Work items, goals and bench files are all named `<id>-…` or `<id>.…`; spec 06.
 ID_RE = re.compile(r"^(partner|[a-z]+-[0-9]{3})(?=[-.]|$)")
 
 
@@ -80,10 +80,10 @@ class Source:
         """`hx show <id> --json`; CONTRACTS.md. Raises NotFound for an unknown id."""
         raise NotImplementedError
 
-    def orders(self) -> dict[str, Any]:
-        """One entry per id in `tasks.json`: the order, its addenda and its outcome.
+    def goals(self) -> dict[str, Any]:
+        """One entry per id in `tasks.json`: the goal, its addenda and its outcome.
 
-        v1 cut (build-7): no `after` graph and no comparison against an order
+        v1 cut (build-7): no `after` graph and no comparison against a goal
         file — `hx dispatch` deletes the file it read.
         """
         raise NotImplementedError
@@ -127,7 +127,7 @@ def _newest(table: dict[str, float], scope: str, mtime: float) -> None:
 class FixtureSource(Source):
     """Hand-written JSON conforming to CONTRACTS.md, under one directory.
 
-    `board.json`, `orders.json`, `archive.json` and `show-<id>.json`. Nothing is
+    `board.json`, `goals.json`, `archive.json` and `show-<id>.json`. Nothing is
     ever written: `wake_partner` records the text in memory so the fixture tree
     is provably untouched by any request.
     """
@@ -162,8 +162,8 @@ class FixtureSource(Source):
             raise NotFound(f"not an agent id: {agent_id!r}")
         return self._read(f"show-{agent_id}.json")
 
-    def orders(self) -> dict[str, Any]:
-        return self._read("orders.json")
+    def goals(self) -> dict[str, Any]:
+        return self._read("goals.json")
 
     def archive(self) -> dict[str, Any]:
         return self._read("archive.json")
@@ -260,7 +260,7 @@ def run_hx(
 PUBLISHED = {
     "board": ("hx.board", "collect"),
     "show": ("hx.show", "collect"),
-    "orders": ("hx.orders", "collect"),
+    "goals": ("hx.goals", "collect"),
     "archive": ("hx.archive", "collect"),
     "wake": ("hx.wake", "wake_partner_status"),
     # `hx metrics` is M7. Nothing to bind yet; `hx.show.collect` is what fills the
@@ -308,7 +308,7 @@ class InstanceSource(Source):
     WATCHED = (
         ("tasks.json", False),
         ("pods", True),
-        ("orders", True),
+        ("goals", True),
         ("state", True),
         ("logs", True),
     )
@@ -388,10 +388,10 @@ class InstanceSource(Source):
         document["pane"] = pane.capture(self.root, agent_id, socket=self.tmux_socket)
         return document
 
-    def orders(self) -> dict[str, Any]:
-        collect = self.bound("orders")
+    def goals(self) -> dict[str, Any]:
+        collect = self.bound("goals")
         if collect is None:
-            return self._json(["orders", "--json"])
+            return self._json(["goals", "--json"])
         return self._translate(lambda: collect(self.root))
 
     def archive(self) -> dict[str, Any]:
@@ -406,7 +406,7 @@ class InstanceSource(Source):
 
         The text crosses no process boundary at all now: `wake_partner_status`
         is called in process. It is hx's own fixed-form message either way,
-        never an order — orders are files (spec 08).
+        never a goal — goals are files (spec 08).
         """
         status = self.bound("wake")
         if status is None:
@@ -486,7 +486,7 @@ class InstanceSource(Source):
         """The id a watched path belongs to.
 
         `state/<id>/…` and `logs/<id>/…` are keyed by their first segment;
-        `pods/<pod>/<id>-<state>.md` and `orders/<id>.md` by their filename.
+        `pods/<pod>/<id>-<state>.md` and `goals/<id>.md` by their filename.
         """
         relative = path.relative_to(root).parts
         if relative[0] == "memory":

@@ -144,7 +144,7 @@ def test_a_fresh_instance_has_no_mirror_worktrees_or_orders_dir(
     assert run_install(
         tmp_path, root, fake_claude_on_path, tmux=tmux_server
     ).returncode == 0
-    for gone in ("repos", "wt", "orders", "config/repo.json"):
+    for gone in ("repos", "wt", "goals", "config/repo.json"):
         assert not (root / gone).exists(), gone
     assert (root / "personas" / "partner" / "AGENTS.md").is_file()
 
@@ -206,24 +206,24 @@ def test_no_install_path_reads_the_users_claude_home(tmp_path, fake_claude_on_pa
     assert opened == [], f"hx opened the user's Claude home: {opened}"
 
 
-def test_dispatch_leaves_a_dirty_workdir_untouched(instance, hx, orders, launched):
+def test_dispatch_leaves_a_dirty_workdir_untouched(instance, hx, goals, launched):
     """spec 13 M1, spec 14 D25: a dirty workdir is the agent's business, not hx's."""
     launched("eng-001")
     workdir = instance / "wt" / "eng-001"
     (workdir / "half-done.py").write_text("work in progress\n")
-    orders("eng-001")
+    goals("eng-001")
 
-    result = hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance)
+    result = hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     assert (workdir / "half-done.py").read_text() == "work in progress\n"
     assert git("-C", str(workdir), "status", "--porcelain").stdout.strip() != ""
 
 
-def test_bench_touches_neither_git_nor_the_workdir(instance, hx, orders, launched):
+def test_bench_touches_neither_git_nor_the_workdir(instance, hx, goals, launched):
     """spec 08, spec 14 D25: the body archive is the whole of `hx bench`."""
     launched("eng-001")
-    orders("eng-001")
-    assert hx("dispatch", "eng-001", "run/order-eng-001.md", cwd=instance).returncode == 0
+    goals("eng-001")
+    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
     assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
 
     workdir = instance / "wt" / "eng-001"

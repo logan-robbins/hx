@@ -2,7 +2,7 @@ Answering the open decision in your Digest: use a flat `checks` list, not a map 
 name. `ui-004` already renders a list and the order of the checks is meaningful to the human
 reading it; a map would lose that order and cost more to render than it saves.
 
-Nothing else in the order changes. Keep the `## Tasks` you have, keep what you have already
+Nothing else in the goal changes. Keep the `## Tasks` you have, keep what you have already
 committed, and continue from where you stopped — you do not need to re-read `src/hx/board.py`,
 your notes on it still hold.
 

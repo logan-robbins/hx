@@ -67,7 +67,7 @@ Tell it what you want, in plain language, and where the code is. For example:
 > The repo is at /Users/me/src/shop. Add a `--json` flag to the `report` command and make the
 > frontend's Reports page call it. Backend first, then frontend.
 
-The Partner decomposes that into orders, creates a backend and a frontend worker if none exist
+The Partner decomposes that into goals, creates a backend and a frontend worker if none exist
 (`be-001`, `fe-001`), points each at the directory you named, launches them, dispatches, and
 waits. Each worker is its own Claude Code session (`tmux attach -t be-001` to watch one) with a
 Companion session beside it keeping its state. When a worker finishes, the Partner is woken,

@@ -63,7 +63,7 @@ def wait_for_state(instance, item_id, stream, seq):
 
 
 @pytest.fixture
-def companion(instance, hx, launched, orders, companion_script, tmux_server, monkeypatch):
+def companion(instance, hx, launched, goals, companion_script, tmux_server, monkeypatch):
     """A worker with a live Companion session, dispatched and working.
 
     `HX_TMUX` is set in this process too, so the helpers that talk to tmux with no explicit
@@ -71,7 +71,7 @@ def companion(instance, hx, launched, orders, companion_script, tmux_server, mon
     """
     monkeypatch.setenv("HX_TMUX", " ".join(tmux_server))
     launched("eng-001", companion=True)
-    dispatch_working(instance, hx, orders, order="Stream the importer.")
+    dispatch_working(instance, hx, goals, goal="Stream the importer.")
     wait_for((instance / "run" / "eng-001" / "companion-home" / "settings.json").is_file,
              what="the Companion home")
     return instance

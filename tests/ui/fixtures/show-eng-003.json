@@ -11,10 +11,10 @@
       "outcome": "decision",
       "dispatched": "2026-09-20T10:30:00Z"
     },
-    "body": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n\n## Tasks\n- [x] Read spec 05 and spec 10 for where configuration lives.\n- [x] Write the recommendation and the cost of the option not taken.\n\n## Deliverables\n- The recommendation, in `## Open decision` below.\n\n## Commands\n\n\n## Open decision\n**Per model, in `config/models.json`.** The seam threshold is a share of the context window, and the window is a property of the model, not of the agent.\n\nCost of the option not taken: per agent in `config/<id>/harness.json` would let one agent seam earlier than its podmates, which is occasionally wanted \u2014 but it puts a number that has to track the model in a file nobody rewrites when the model changes.\n\n## Digest\nRecommended per model in `config/models.json`; the per-agent cost is written above.\n"
+    "body": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n\n## Tasks\n- [x] Read spec 05 and spec 10 for where configuration lives.\n- [x] Write the recommendation and the cost of the option not taken.\n\n## Deliverables\n- The recommendation, in `## Open decision` below.\n\n## Commands\n\n\n## Open decision\n**Per model, in `config/models.json`.** The seam threshold is a share of the context window, and the window is a property of the model, not of the agent.\n\nCost of the option not taken: per agent in `config/<id>/harness.json` would let one agent seam earlier than its podmates, which is occasionally wanted \u2014 but it puts a number that has to track the model in a file nobody rewrites when the model changes.\n\n## Digest\nRecommended per model in `config/models.json`; the per-agent cost is written above.\n"
   },
   "task": {
-    "order": "## Order\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
+    "goal": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
     "addenda": [],
     "outcome": "decision",
     "dispatched": "2026-09-20T10:30:00Z",
@@ -197,8 +197,6 @@
     "ts": "2026-09-20T12:47:31Z",
     "background_tasks": []
   },
-  "archive": [],
-  "bench": [],
   "companion": {
     "pass_in_flight": false,
     "pass_stream": null,
@@ -206,6 +204,8 @@
     "last_state_ts": "2026-09-20T13:09:35Z",
     "streams": 1
   },
+  "archive": [],
+  "bench": [],
   "compactions": {
     "eng-003-main": {
       "path": "state/eng-003/eng-003-main.json",

@@ -9,7 +9,7 @@ Sections, in the order spec 07.3 fixes them:
 
   1. Memory        — `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream),
                      or `config/<id>/SUBAGENTS.md` whole (subagent streams)
-  2. Task          — the `## Order` section of the work item, with the addenda `hx resume`
+  2. Task          — the `## Goal` section of the Work Item, with the addenda `hx resume`
                      appended to it
   3. Tasks         — the work item's `## Tasks` section (main stream only)
   4. Step state    — `state/<id>/<stream>.json`, rendered
@@ -33,7 +33,7 @@ from . import board as board_mod, store, streams
 from .errors import NotFound
 from .ids import PARTNER
 from .workitems import (
-    SECTION_ORDER,
+    SECTION_GOAL,
     SECTION_TASKS,
     find_work_item,
     section_text,
@@ -92,7 +92,7 @@ def memory(root: Path, item_id: str, stream: str) -> tuple[str, str]:
     return _relative(root, path), path.read_text().strip("\n")
 
 
-#: What a subagent gets in place of the order. Spec 07.3 says "the subagent prompt", but the
+#: What a subagent gets in place of the goal. Spec 07.3 says "the subagent prompt", but the
 #: `SubagentStart` payload does not carry one: its documented fields are `session_id`,
 #: `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`, and a live run on
 #: 2026-09-20 confirmed there is nothing else to read. The subagent already has the parent's
@@ -105,10 +105,10 @@ SUBAGENT_TASK = (
 
 
 def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[str | None, str]:
-    """Section 2. The order as dispatched, plus every addendum `hx resume` appended.
+    """Section 2. The goal as dispatched, plus every addendum `hx resume` appended.
 
     For a subagent stream it is the spawn prompt instead: that *is* its task, and the parent's
-    order is not its business (spec 07.3).
+    goal is not its business (spec 07.3).
     """
     if subagent_prompt is not None:
         if subagent_prompt.strip():
@@ -117,18 +117,18 @@ def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[
     work_item = find_work_item(root, item_id)
     if work_item is not None:
         _, body = split_frontmatter_text(work_item.read_text())
-        order = section_text(body, SECTION_ORDER)
-        if order:
-            return _relative(root, work_item), order
+        goal = section_text(body, SECTION_GOAL)
+        if goal:
+            return _relative(root, work_item), goal
 
-    # Before the first dispatch there is no rendered work item; `tasks.json` still has the
-    # order once one has been recorded.
+    # Before the first dispatch there is no rendered Work Item; `tasks.json` still has the
+    # goal once one has been recorded.
     from .tasks import load_tasks
 
     entry = load_tasks(root).get(item_id) or {}
-    parts = [entry.get("order") or ""]
+    parts = [entry.get("goal") or ""]
     for addendum in entry.get("addenda") or []:
-        parts.append(f"### Order addendum {addendum.get('ts', '')}\n\n{addendum.get('text', '')}")
+        parts.append(f"### Goal addendum {addendum.get('ts', '')}\n\n{addendum.get('text', '')}")
     text = "\n\n".join(part.strip("\n") for part in parts if part.strip())
     return ("tasks.json" if text else None), text
 
@@ -279,7 +279,7 @@ def memory_episodes(
 
     Everything the Companions of this instance ever compacted lives in one searchable
     collection (`docs/memory.md`). The query is built from this stream's own step state — goal,
-    what is next, the current hypothesis — falling back to the order text before the Companion
+    what is next, the current hypothesis — falling back to the goal text before the Companion
     has written anything, and this agent's own id is excluded, because its own state is the
     section directly above.
 
@@ -350,7 +350,7 @@ def compose_text(
     source, text = task(root, item_id, None if main else (subagent_prompt or ""))
     parts.append(_section("Task", source, text))
     # What memory is asked about before the Companion has written a step state to ask from.
-    order_text = text
+    goal_text = text
 
     if main:
         source, text = tasks_section(root, item_id)
@@ -359,7 +359,7 @@ def compose_text(
     source, text = step_state(root, item_id, stream)
     parts.append(_section("Step state", source, text))
 
-    injected = memory_episodes(root, item_id, stream, fallback=order_text)
+    injected = memory_episodes(root, item_id, stream, fallback=goal_text)
     if injected is not None:
         parts.append(_section("Memory episodes", injected[0], injected[1]))
 

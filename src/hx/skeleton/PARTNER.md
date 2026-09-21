@@ -28,7 +28,7 @@ withdraws it.
 ## The fleet
 
 One line per id, what it is for, and how it has actually performed. This is what scoping the
-next order depends on, and none of it is recoverable from `hx board`.
+next goal depends on, and none of it is recoverable from `hx board`.
 
 | id | pod | role | what it is for | notes |
 |---|---|---|---|---|
@@ -36,7 +36,7 @@ next order depends on, and none of it is recoverable from `hx board`.
 
 ## Pods
 
-What each pod owns, and any boundary between pods that orders must respect.
+What each pod owns, and any boundary between pods that goals must respect.
 
 -
 
