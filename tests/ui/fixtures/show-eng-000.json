@@ -229,5 +229,13 @@
     "pass_since": null,
     "last_state_ts": null,
     "streams": 1
+  },
+  "compactions": {
+    "eng-000-main": {
+      "path": "state/eng-000/eng-000-main.json",
+      "ts": "2026-09-20T13:09:41Z",
+      "seq": 131,
+      "text": "goal: ship `hx board --json` to the CONTRACTS.md shape\ncon: stdlib only\ncon: exit 0 always in v1\ndec: read the state from the filename suffix, not the frontmatter <- the v1 cut made the filename the state and nothing polices it [120]\ndone st1 verified a41f0b2: collect() returns the contract document [88]\ndone st2 verified a41f0b2: `partner` is not an item; the Partner has no work item [104]\ndone st3 verified c70d18e: tests cover a fresh root, one item and five [131]\ncommit: a41f0b2 board: the CONTRACTS.md document\ncommit: c70d18e board: tests\nfile CONTRACTS.md: the board document, field by field\nseq 131 ts 2026-09-20T13:09:41Z"
+    }
   }
 }

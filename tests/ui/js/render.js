@@ -284,6 +284,14 @@ function sidebarSnapshot() {
   }
   out.views.session = out.views.sessions[OPEN[0]];
 
+  // The Compaction page: the Companion's last written compaction, from the Companion node.
+  out.views.compactions = {};
+  for (const id of OPEN) {
+    await go("#compaction?agent=" + encodeURIComponent(id));
+    out.views.compactions[id] = Object.assign(snapshot(content), { drawerHidden: drawer.hidden, hash: location.hash });
+  }
+  out.views.compaction = out.views.compactions[OPEN[0]];
+
   // The sidebar's pod entry zooms the graph; there is no pod page.
   await go("#overview?pod=engineers");
   out.views.podFocus = Object.assign(snapshot(content), { graph: graphSnapshot(), sidebar: sidebarSnapshot() });
@@ -320,6 +328,8 @@ function sidebarSnapshot() {
   out.views.agents.partner = Object.assign(snapshot(drawer), { hidden: drawer.hidden, hash: location.hash });
   await go("#session?agent=partner");
   out.views.sessions.partner = Object.assign(snapshot(content), { drawerHidden: drawer.hidden });
+  await go("#compaction?agent=partner");
+  out.views.compactions.partner = Object.assign(snapshot(content), { drawerHidden: drawer.hidden });
   await go("#overview");
   await click(content.querySelectorAll('[data-agent="partner"]')[0]);
 

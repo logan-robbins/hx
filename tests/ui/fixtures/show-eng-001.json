@@ -562,5 +562,19 @@
     "pass_since": "2026-09-20T13:09:41Z",
     "last_state_ts": "2026-09-20T13:09:35Z",
     "streams": 2
+  },
+  "compactions": {
+    "eng-001-main": {
+      "path": "state/eng-001/eng-001-main.json",
+      "ts": "2026-09-20T13:09:41Z",
+      "seq": 412,
+      "text": "goal: add `--require-done` to hx board, with the spec 08 exit rule\ncon: stdlib only\ncon: no timeouts anywhere\ndec: `--require-done` takes ids, not a file <- spec 08 shows it inline in the Partner's own `### Checks` block [401]\ndec: read tasks.json under the flock <- two dispatches raced the read and one saw a half-written file [372,380]\nopen st7: refuse an id that has no `config/<id>/` [398,410]\nnext st7: raise in `_require_done` before the outcome lookup\nopen st8: cover the three exit paths in tests/test_board.py [410]\nnext st8: write the unknown-id case first; the other two already pass\ndone st6 verified 1b90c3d: `--require-done` parsed and threaded to the board reader [390]\ndone st5 UNVERIFIED: read spec 08 end to end; the exit rule is in the `hx board` row [340]\ndead: parsed the flag with a manual argv scan before finding argparse already had the group\ncommit: 1b90c3d board: parse --require-done\ndirty: src/hx/board.py\ndirty: tests/test_board.py\nfile spec/08-hx-cli.md: exit 0 iff every listed id is complete/done\nfile CONTRACTS.md: board items are keyed by id, partner is not one\nfail: test_unknown_id_exits_1: expected 1, got 0\nhypo: the lookup treats a missing id as not-done rather than refusing\nseq 412 ts 2026-09-20T13:09:41Z"
+    },
+    "eng-001-s001": {
+      "path": "state/eng-001/eng-001-s001.json",
+      "ts": "2026-09-20T13:09:41Z",
+      "seq": 40,
+      "text": "goal: survey every exit-code assertion already in tests/\nopen st1: grep the suite [2]\nnext st1: report the list to the parent\nblock: cannot run the suite: no worktree on this stream\nseq 40 ts 2026-09-20T13:09:41Z"
+    }
   }
 }

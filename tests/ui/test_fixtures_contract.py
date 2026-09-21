@@ -114,7 +114,7 @@ def test_the_board_states_agree_with_their_other_columns(board):
 
 def test_the_partner_show_is_the_reduced_shape():
     """v1 cut: `hx show partner --json` is only these keys (plus its Companion's activity)."""
-    assert set(load("show-partner.json")) == {"id", "partner_md", "pane", "streams", "companion"}
+    assert set(load("show-partner.json")) == {"id", "partner_md", "pane", "streams", "companion", "compactions"}
 
 
 @pytest.mark.parametrize("name", ["show-eng-001.json"])
@@ -146,6 +146,10 @@ def test_each_show_fixture_has_the_contract_shape(name):
     assert set(show["context_file"]) == {"path", "text", "seam_ts"}
     assert show["context_file"]["path"].startswith(f"run/{show['id']}/")
     assert show["persona_path"] == f"run/{show['id']}/persona.md"
+    for handle, compaction in show["compactions"].items():
+        assert set(compaction) == {"path", "ts", "seq", "text"}
+        assert compaction["path"] == f"state/eng-001/{handle}.json"
+        assert compaction["text"].startswith("goal: ")
     for handle, state in show["step_state"].items():
         assert handle.startswith(show["id"] + "-")
         assert {"seq", "prompt_version", "open_steps", "closed_steps", "working_set"} <= set(state)

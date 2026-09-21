@@ -2545,3 +2545,19 @@ select {
 .drawer-actions .button {
   margin-left: auto;
 }
+
+/* The Companion's compaction text, as the master reads it: dense lines, wrapped, never clipped. */
+pre.output.compaction {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: none;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.drawer-actions.compact {
+  margin: 4px 0 0;
+}
+.companion-node {
+  text-decoration: none;
+  cursor: pointer;
+}

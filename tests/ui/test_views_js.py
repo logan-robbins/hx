@@ -94,7 +94,8 @@ def test_every_screen_renders_without_an_error_banner(rendered):
     assert rendered["banner"] is None
     assert set(rendered["views"]) == {
         "overview", "board", "agentTable", "activity", "orders", "archive",
-        "agents", "agent", "sessions", "session", "podFocus", "cardOpens", "partner",
+        "agents", "agent", "sessions", "session", "compactions", "compaction", "podFocus",
+        "cardOpens", "partner",
     }
 
 
@@ -384,6 +385,34 @@ def test_the_session_page_has_the_pane_and_the_event_stream(rendered):
     for name in ("open steps", "closed steps", "working set", "blockers", "dead ends", "tail"):
         assert name in session["subheadings"], name
     assert session["breadcrumb"] == ["hx", "engineers", "eng-001", "Session"]
+
+
+def test_the_compaction_page_is_the_companions_last_written_state(rendered):
+    """The Companion node, the drawer and the Session page open it in another window."""
+    show = show_json()
+    page = rendered["views"]["compaction"]
+    assert page["drawerHidden"] is True
+    assert page["hash"] == "#compaction?agent=eng-001"
+    assert page["breadcrumb"] == ["hx", "engineers", "eng-001", "Compaction"]
+    text = page["text"].replace("`", "")
+    main = show["step_state"]["eng-001-main"]
+    compaction = show["compactions"]["eng-001-main"]
+    assert compaction["path"] in text
+    assert "caught up through record " + str(compaction["seq"]) in text
+    assert main["goal"].replace("`", "") in text, "rendered for a person"
+    assert any(block["class"].endswith("compaction") and block["text"] == compaction["text"]
+               for block in page["pre"]), "and exactly as the master reads it"
+    tabs = [tab["label"] for tab in page["tabs"]]
+    assert tabs == ["eng-001-main", "eng-001-s001"], "one tab per stream, main first"
+    assert "Open last compaction" in rendered["views"]["agent"]["text"]
+    assert "Open last compaction" in rendered["views"]["session"]["text"]
+
+
+def test_an_agent_with_no_compaction_says_so(rendered):
+    page = rendered["views"]["compactions"].get("eng-001")
+    assert page is not None
+    partner = rendered["views"]["compactions"]["partner"]
+    assert "No compaction yet" in partner["text"] or "Last compaction of" in partner["text"]
 
 
 def test_the_partner_session_page_has_its_pane_and_streams(rendered):

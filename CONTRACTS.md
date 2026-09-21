@@ -99,8 +99,9 @@ by the agent itself; nothing validates or polices it).
 ```
 
 `tail` holds the last 50 records of the stream as parsed JSON objects. `hx show partner --json`
-returns only `{"id": "partner", "partner_md": "…", "pane": {…}, "streams": […], "companion": {…}}`:
-the Partner has no work item, task, or step-state contract beyond its Companion's main stream.
+returns only `{"id": "partner", "partner_md": "…", "pane": {…}, "streams": […], "companion": {…},
+"compactions": {…}}`: the Partner has no work item or task; its Companion's compactions are shown
+like any other agent's.
 
 Every `hx show` document carries its Companion's visible activity:
 
@@ -112,6 +113,19 @@ Every `hx show` document carries its Companion's visible activity:
 
 `pass_in_flight` and `pass_stream` come from the pass file in `run/<id>/companion/`, `pass_since`
 is its mtime, `last_state_ts` the newest step state's `ts`, `streams` how many streams have one.
+
+Every `hx show` document also carries the Companion's last written compaction per stream, the
+installed `state/<id>/<stream>.json` rendered exactly as `hx compose` puts it in front of the
+master (one tagged line per fact, spec 07.2):
+
+```json
+"compactions": {"eng-001-main": {"path": "state/eng-001/eng-001-main.json",
+                                 "ts": "2026-09-20T13:09:35Z", "seq": 412,
+                                 "text": "goal: …\ncon: …\nopen st7 … next …\nseq 412 ts …"}}
+```
+
+A stream whose state file is unreadable is left out. The UI's Compaction page
+(`#compaction?agent=<id>&stream=<handle>`) is this block and nothing else.
 
 ## `hx wake partner "<text>"`
 

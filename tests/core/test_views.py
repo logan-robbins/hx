@@ -11,6 +11,7 @@ from .conftest import wait_for
 SHOW_KEYS = {
     "id", "pod", "role", "state", "file", "work_item", "task", "persona_path", "step_state",
     "context_file", "streams", "subagents", "metrics", "pane", "turn", "archive", "bench",
+    "companion", "compactions",
 }
 ORDERS_KEYS = {"root_abs", "ts", "orders"}
 ORDER_ENTRY_KEYS = {

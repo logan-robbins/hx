@@ -62,7 +62,7 @@ def test_show_is_live_against_a_real_instance(instance_root):
 def test_show_partner_is_the_reduced_shape_against_a_real_instance(instance_root):
     """v1 cut: only these four keys."""
     show = isolated_source(instance_root).show("partner")
-    assert set(show) == {"id", "partner_md", "pane", "streams", "companion"}
+    assert set(show) == {"id", "partner_md", "pane", "streams", "companion", "compactions"}
     assert isinstance(show["partner_md"], str)
 
 

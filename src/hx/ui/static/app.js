@@ -322,7 +322,7 @@ function companionPanel(show, a, steps) {
   const tracking = steps.length
     ? `<ul class="companion-steps">${steps.map((s) => `<li><strong>${esc(s.id || "")}</strong> ${esc(s.next || s.intent || "")}</li>`).join("")}</ul>`
     : `<p class="notyet">no open steps</p>`;
-  return `<div class="companion-status ${busy ? "busy" : ""}">${status} · ${esc(count(c.streams || 0, "stream"))} · window ${esc(a.id)}:companion</div>${tracking}`;
+  return `<div class="companion-status ${busy ? "busy" : ""}">${status} · ${esc(count(c.streams || 0, "stream"))} · window ${esc(a.id)}:companion</div>${tracking}<div class="drawer-actions compact">${compactionLink(a.id, show)}</div>`;
 }
 
 function memoryNote(memory) {
@@ -1101,6 +1101,7 @@ const PAGE_LABEL = {
   orders: "Goals",
   archive: "Archive",
   session: "Session",
+  compaction: "Compaction",
 };
 
 function route() {
@@ -1230,7 +1231,7 @@ function companionNode(a) {
     : a.companion_ts
       ? `${streams ? esc(count(streams, "stream")) + " · " : ""}${esc(clock(a.companion_ts))}`
       : streams ? esc(count(streams, "stream")) : "no state yet";
-  return `<div class="companion-node ${a.companion_pass ? "busy" : ""}" style="left:${pos.x + 44}px;top:${pos.y + CARD_H + 22}px" title="${esc(a.id)}'s Companion — window ${esc(a.id)}:companion · ${esc(companionNote(a))}">${icon("clock")}<span>Companion</span>${live}<small>${detail}</small></div>`;
+  return `<a class="companion-node ${a.companion_pass ? "busy" : ""}" href="#compaction?agent=${encodeURIComponent(a.id)}" target="_blank" rel="noopener" style="left:${pos.x + 44}px;top:${pos.y + CARD_H + 22}px" title="${esc(a.id)}'s Companion — window ${esc(a.id)}:companion · ${esc(companionNote(a))} · opens its last compaction">${icon("clock")}<span>Companion</span>${live}<small>${detail}</small></a>`;
 }
 
 function graphPage(focus) {
@@ -1563,7 +1564,7 @@ function partnerDrawer() {
   return (
     `<div class="drawer-head"><a href="#partner">Partner chat</a><span class="slash">/</span><span>partner</span><button class="icon-button" id="close-drawer" aria-label="Close details">${icon("close")}</button></div>` +
     `<div class="drawer-title">${avatar({ id: "partner", session_alive: pane.alive })}<div><h2>Partner</h2><p>no work item · no task · ${esc(companionNote(show.companion))}</p></div><span style="margin-left:auto">${badge(pane.alive ? "completed" : "unknown", pane.alive ? "session alive" : "no session")}</span></div>` +
-    `<div class="drawer-actions"><a class="button primary" href="#partner">${icon("terminal")}Open the chat</a>${sessionLink("partner")}</div>` +
+    `<div class="drawer-actions"><a class="button primary" href="#partner">${icon("terminal")}Open the chat</a>${sessionLink("partner")}${compactionLink("partner", show)}</div>` +
     `<div class="small-label">PARTNER.md</div>${slot(markdown(show.partner_md || "_not yet_"))}`
   );
 }
@@ -1593,6 +1594,13 @@ function workItemBlocks(show) {
       return label === "Goal" ? block + addenda : block;
     })
     .join("");
+}
+
+/* The Companion's last written compaction, on a page of its own (another window). */
+function compactionLink(id, show) {
+  const streams = Object.keys((show || {}).compactions || {});
+  if (!streams.length) return `<span class="badge">no compaction yet</span>`;
+  return `<a class="button" href="#compaction?agent=${encodeURIComponent(id)}" target="_blank" rel="noopener">${icon("file")}Open last compaction ↗</a>`;
 }
 
 function sessionLink(id) {
@@ -1667,6 +1675,42 @@ function sessionPage(focus) {
   );
 }
 
+/* The Compaction page: the Companion's last written compaction for one stream — the installed
+ * `state/<id>/<stream>.json` — rendered for a person first, then exactly as the master reads
+ * it in its context file. Opened from the Companion node, the drawer and the Session page. */
+function compactionPage(focus) {
+  const id = focus.agent;
+  const r = route();
+  if (!id) {
+    return `<div class="page-heading"><div><div class="eyebrow">Compaction</div><h1>Compaction</h1><p class="subtitle">The last compaction a Companion wrote.</p></div></div>${empty("No agent named", "Open an agent and choose Open last compaction.", "file")}`;
+  }
+  const partner = id === "partner";
+  const a = partner ? null : findAgent(id);
+  const show = partner ? partnerShow || {} : details.get(id) || {};
+  const compactions = show.compactions || {};
+  const handles = Object.keys(compactions).sort((x, y) => (x.endsWith("-main") ? -1 : y.endsWith("-main") ? 1 : x.localeCompare(y)));
+  const wanted = r.params.get("stream");
+  const handle = handles.includes(wanted) ? wanted : handles[0];
+  const compaction = handle ? compactions[handle] : null;
+  const state = handle ? (show.step_state || {})[handle] : null;
+  const head = `<div class="page-heading"><div><div class="eyebrow">${esc(partner ? "Partner" : (a && a.pod) || "fleet")} · companion</div><h1>${esc(id)}</h1><p class="subtitle">${
+    compaction
+      ? `Last compaction of <code class="code-inline">${esc(handle)}</code> · written ${esc(clock(compaction.ts))} · caught up through record ${esc(compaction.seq === null || compaction.seq === undefined ? "—" : compaction.seq)} · <code class="code-inline">${esc(compaction.path)}</code>`
+      : "The Companion has not written a compaction for this agent yet."
+  }</p></div>${a ? phaseBadge(a) : ""}</div>`;
+  if (!compaction) {
+    return head + (show.__error ? `<div class="alert-note">${esc(id)} could not be read: ${esc(show.__error)}.</div>` : "") + empty("No compaction yet", `The Companion writes one after each pass (hx companion ${id} --wake <stream>).`, "file");
+  }
+  const switcher = handles.length > 1
+    ? `<div class="tabs" role="tablist">${handles.map((h) => `<a class="tab ${h === handle ? "selected" : ""}" href="#compaction?agent=${encodeURIComponent(id)}&stream=${encodeURIComponent(h)}">${esc(h)}</a>`).join("")}</div>`
+    : "";
+  return (
+    head + switcher +
+    `<section class="panel"><div class="panel-body"><div class="small-label">Rendered</div>${state ? slot(stepState(handle, state)) : '<p class="notyet">not yet</p>'}</div></section>` +
+    `<section class="panel"><div class="panel-body"><div class="small-label">As the master reads it · ${esc(count((compaction.text || "").split("\n").filter(Boolean).length, "line"))}</div>${slot(el("pre", { class: "output compaction", text: compaction.text || "" }))}</div></section>`
+  );
+}
+
 /** `subagents.json` is {claude agent_id: sNNN}; the stream is the handle ending in it. */
 function subagentTable(show) {
   return el(
@@ -1729,7 +1773,7 @@ function renderDrawer() {
   const r = route();
   // The Session page names its agent in the same `agent=` parameter, but it is a page of
   // its own (opened in another window), not the drawer over one.
-  const id = r.parts[0] === "session" ? null : r.params.get("agent");
+  const id = r.parts[0] === "session" || r.parts[0] === "compaction" ? null : r.params.get("agent");
   const drawer = $("drawer");
   if (!id) {
     if (!drawer.hidden) {
@@ -1781,8 +1825,8 @@ function breadcrumb(parts, focusPod, focusAgent) {
   const name = fleet ? fleet.name : "hx";
   const trail = [`<a href="#overview">${esc(name)}</a>`];
   if (focusPod) trail.push(`<span class="slash">/</span><a href="#overview?pod=${encodeURIComponent(focusPod)}">${esc(focusPod)}</a>`);
-  if (focusAgent && parts[0] === "session") {
-    trail.push(`<span class="slash">/</span><a href="#overview?agent=${encodeURIComponent(focusAgent)}">${esc(focusAgent)}</a><span class="slash">/</span><strong aria-current="page">Session</strong>`);
+  if (focusAgent && (parts[0] === "session" || parts[0] === "compaction")) {
+    trail.push(`<span class="slash">/</span><a href="#overview?agent=${encodeURIComponent(focusAgent)}">${esc(focusAgent)}</a><span class="slash">/</span><strong aria-current="page">${esc(PAGE_LABEL[parts[0]])}</strong>`);
   } else if (focusAgent) trail.push(`<span class="slash">/</span><strong aria-current="page">${esc(focusAgent)}</strong>`);
   if (!focusPod && !focusAgent) {
     trail.push(`<span class="slash">/</span><strong aria-current="page">${esc(PAGE_LABEL[parts[0]] || "All Pods")}</strong>`);
@@ -1805,6 +1849,7 @@ const PAGES = {
   orders: ordersPage,
   archive: archivePage,
   session: sessionPage,
+  compaction: compactionPage,
 };
 
 function render() {
@@ -1868,7 +1913,7 @@ function render() {
       ? allAgents().map((a) => a.id)
       : [];
   if (focusAgent && focusAgent !== "partner") wanted.push(focusAgent);
-  if (parts[0] === "session" && focusAgent === "partner" && !partnerShow) refreshPartner().then(() => render());
+  if ((parts[0] === "session" || parts[0] === "compaction") && focusAgent === "partner" && !partnerShow) refreshPartner().then(() => render());
   if (wanted.length) fillDetails(wanted);
 }
 

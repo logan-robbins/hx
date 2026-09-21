@@ -205,5 +205,13 @@
     "pass_since": null,
     "last_state_ts": "2026-09-20T13:09:35Z",
     "streams": 1
+  },
+  "compactions": {
+    "eng-003-main": {
+      "path": "state/eng-003/eng-003-main.json",
+      "ts": "2026-09-20T13:09:41Z",
+      "seq": 77,
+      "text": "goal: decide where the seam threshold lives and write the recommendation\ncon: decide, do not implement\ndec: per model in `config/models.json` <- the threshold is a property of the context window, which is the model's [61,77]\ndone st1 verified: read spec 05 and 10; both leave the location open [44]\ndone st2 verified: wrote the recommendation and the losing option's cost into ## Open decision [77]\ndead: tried to infer the threshold from the last seam's context_tokens; too few seams to be worth it\nfile spec/05-configuration.md: models.json is per model, already read at launch\nfile spec/10-companion.md: the budget is per agent; the threshold is not\nseq 77 ts 2026-09-20T13:09:41Z"
+    }
   }
 }

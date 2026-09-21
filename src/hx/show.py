@@ -71,6 +71,23 @@ def _step_state(root: Path, item_id: str) -> dict:
     return state
 
 
+def _compactions(root: Path, item_id: str, step_state: dict) -> dict:
+    """The Companion's last written compaction per stream: `state/<id>/<stream>.json` rendered
+    exactly as `hx compose` puts it in front of the master (spec 07.2, 07.4). Read-only; the
+    UI's Compaction page shows it, and nothing here is a new file."""
+    out: dict[str, dict] = {}
+    for handle, state in step_state.items():
+        if not isinstance(state, dict):
+            continue
+        out[handle] = {
+            "path": f"state/{item_id}/{handle}.json",
+            "ts": state.get("ts"),
+            "seq": state.get("seq"),
+            "text": compose.render_step_state(state),
+        }
+    return out
+
+
 def _context_file(root: Path, item_id: str) -> dict:
     path = compose.context_path(root, item_id, f"{item_id}-main")
     if not path.is_file():
@@ -180,6 +197,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
 
     persona = root / "run" / item_id / "persona.md"
 
+    step_state = _step_state(root, item_id)
     document = {
         "id": item_id,
         "pod": pod,
@@ -189,7 +207,8 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         "work_item": work_item,
         "task": task,
         "persona_path": str(persona.relative_to(root)) if persona.is_file() else None,
-        "step_state": _step_state(root, item_id),
+        "step_state": step_state,
+        "compactions": _compactions(root, item_id, step_state),
         "context_file": _context_file(root, item_id),
         "streams": _streams(root, item_id),
         "subagents": subagents,
@@ -202,7 +221,8 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         "bench": archive.bench_entries(root, pod, item_id),
     }
     if item_id == PARTNER:
-        # The Partner has no work item, task, or step state (CONTRACTS.md, spec 14 D25).
+        # The Partner has no work item or task (CONTRACTS.md, spec 14 D25); it does have a
+        # Companion, so its last compaction is shown like any other.
         partner_md = root / "PARTNER.md"
         return {
             "id": PARTNER,
@@ -210,6 +230,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
             "pane": document["pane"],
             "streams": document["streams"],
             "companion": document["companion"],
+            "compactions": document["compactions"],
         }
     return document
 

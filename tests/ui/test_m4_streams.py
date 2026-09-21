@@ -389,4 +389,4 @@ def test_the_v1_shapes_are_what_the_real_commands_return(companion_root):
     assert "after" not in show["task"]
     assert "after" not in show["work_item"]["frontmatter"]
 
-    assert set(source.show("partner")) == {"id", "partner_md", "pane", "streams", "companion"}
+    assert set(source.show("partner")) == {"id", "partner_md", "pane", "streams", "companion", "compactions"}

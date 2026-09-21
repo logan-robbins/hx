@@ -32,6 +32,11 @@ as milestones are accepted.
   watcher adds the `memory` scope and watches `run/<id>/companion/`.
 - UI: a **Session** page (`#session?agent=<id>`) that the agent drawer opens in another window
   with the pane, step state, context file, stream tails, subagents and metrics.
+- `hx show <id> --json` carries `compactions`: per stream, the Companion's last written
+  compaction (`state/<id>/<stream>.json`) with its `ts`, `seq` and the text `hx compose` puts in
+  front of the master. The UI's **Compaction** page (`#compaction?agent=<id>&stream=<handle>`)
+  opens it in another window from the Companion node, the drawer and the Session page, rendered
+  for a person and then verbatim. The Partner's reduced shape carries it too.
 - `models.json` rows accept `autocompact_window`; `start.sh` exports it as
   `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, validation requires `threshold < autocompact_window <=
   window`, and `hx doctor` reports it. Shipped defaults: 1M window, 250k autocompact, 200k seam.

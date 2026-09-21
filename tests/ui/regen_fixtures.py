@@ -335,6 +335,18 @@ def show_document(
         },
         "archive": [],
         "bench": [],
+        "compactions": compactions(id, step_state),
+    }
+
+
+def compactions(id: str, step_state) -> dict:
+    """CONTRACTS.md: the installed step state per stream, rendered as the master reads it."""
+    from hx.compose import render_step_state
+
+    return {
+        handle: {"path": f"state/{id}/{handle}.json", "ts": state.get("ts"),
+                 "seq": state.get("seq"), "text": render_step_state(state)}
+        for handle, state in (step_state or {}).items() if isinstance(state, dict)
     }
 
 
@@ -667,14 +679,17 @@ def main() -> int:
         "archive": existing["archive"],
         "bench": existing["bench"],
     }
+    show["compactions"] = compactions("eng-001", show["step_state"])
 
-    # v1 cut: `hx show partner --json` returns only these four keys.
+    # v1 cut: `hx show partner --json` has no work item or task.
     partner_existing = json.loads((FIXTURES / "show-partner.json").read_text(encoding="utf-8"))
     partner = {
         "id": "partner",
         "partner_md": partner_existing["partner_md"],
         "pane": partner_existing["pane"],
         "streams": partner_existing["streams"],
+        "companion": partner_existing["companion"],
+        "compactions": partner_existing.get("compactions", {}),
     }
 
     for name, document in (

@@ -40,7 +40,7 @@ def test_show_partner_is_the_reduced_shape(ui):
     """v1 cut: the Partner has no work item, task or step state."""
     status, payload = ui.client.json("/api/show/partner")
     assert status == 200
-    assert set(payload) == {"id", "partner_md", "pane", "streams", "companion"}
+    assert set(payload) == {"id", "partner_md", "pane", "streams", "companion", "compactions"}
 
 
 @pytest.mark.parametrize("agent_id", ["eng-001"])
@@ -51,6 +51,7 @@ def test_show_matches_the_contract(ui, agent_id):
     for key in (
         "pod", "role", "state", "file", "work_item", "task", "persona_path", "step_state",
         "context_file", "streams", "subagents", "metrics", "pane", "archive", "bench",
+        "compactions",
     ):
         assert key in payload, key
     assert set(payload["work_item"]) == {"frontmatter", "body"}
