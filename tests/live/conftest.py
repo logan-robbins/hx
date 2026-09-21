@@ -69,11 +69,14 @@ def pytest_collection_modifyitems(config, items):
 
 MODELS = {
     "claude-haiku-4-5-20251001": {"window": 200000, "seam_threshold": 100000},
+    "claude-sonnet-5": {"window": 1000000, "seam_threshold": 500000},
     "claude-opus-5": {"window": 1000000, "seam_threshold": 500000},
 }
 
-#: Small and cheap: every live test here is about the harness, never about the model's answer.
-LIVE_MODEL = "claude-haiku-4-5-20251001"
+#: Every live test here is about the harness, never about the model's answer. The user's
+#: standing rule (2026-09-21): tests run Sonnet at medium effort, for agents and Companions.
+LIVE_MODEL = "claude-sonnet-5"
+LIVE_EFFORT = "medium"
 
 
 @pytest.fixture
@@ -126,7 +129,7 @@ def worker(live_root, live_env):
     """Add a worker to the live instance. Returns `(id, workdir)`."""
 
     def _add(item_id="be-001", *, workdir: Path | None = None, pod="engineers",
-             role="backend-engineer", effort="low"):
+             role="backend-engineer", effort=LIVE_EFFORT):
         workdir = workdir or (live_root / "work" / item_id)
         workdir.mkdir(parents=True, exist_ok=True)
         config = live_root / "config" / item_id
