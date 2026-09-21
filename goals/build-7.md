@@ -39,6 +39,11 @@ blocked/decision, `hx bench` (body archive only), the `context`, `log`, `subagen
 (turn marker, seam, Companion wake) hooks, the Companion session, `hx flush`, `hx show`,
 `hx archive`, `hx read`, `hx task`, `hx up`, `hx heartbeat`, `hx install` with the token gate.
 
+9. The one thing this goal adds: the Companion live check build-6 left open. On a scratch root
+   with the seed token, launch a worker and its Companion against the real binary, run two
+   passes on a small stream, paste the written state, kill everything you launched. The
+   Companion home has no guard hook after this goal.
+
 ## Done when
 
 - `tools/milestone-check.sh build` passes; `grep -rn` of `src/` for `after`, `queued`, `guard`,
