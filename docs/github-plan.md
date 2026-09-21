@@ -30,7 +30,7 @@ hx/
   CONTRACTS.md               JSON shapes shared between the CLI and the UI
   pyproject.toml             name, version, entry points, package data
   src/hx/                    the package: CLI, hooks, companion, adapters, ui, skeleton, skills
-  src/hx/packaging/          launchd plists, systemd units, tested-claude-versions.json
+  src/hx/packaging/          tested-claude-versions.json
   tests/                     core, guard, ui, packaging, scenario
   tests/scenario/m8/         the M8 scenario pack: chat, orders, expected boards, fixture repo
   tools/                     claude-home-hash.sh, milestone-check.sh
@@ -87,8 +87,7 @@ pipx install hx-harness
 
 `uv tool install` is the documented path because hx is an application, not a library: it should
 live in its own isolated environment with `hx` and `hx-hook` on `PATH`, and those two absolute
-paths are what get baked into every agent home's `settings.json` and into the launchd and
-systemd units.
+paths are what get baked into every agent home's `settings.json`.
 
 ### Release steps
 
@@ -110,8 +109,11 @@ Semantic versioning. Below 1.0.0 the public surface is the `hx` command set (spe
 instance layout (spec 03), and `CONTRACTS.md`; a breaking change to any of them is a minor
 bump with a migration note. 1.0.0 waits on M10 passing on a clean macOS and a clean Linux user.
 
-Upgrading the package never writes into a user's instance. `hx upgrade` is the only path that
-does, and it is a separate, explicit command (spec 17.6).
+Upgrading the package never writes into a user's instance (spec 14 D20). `uv tool install`
+again replaces the package and nothing else; the instance at `$HARNESS_ROOT` is untouched, and
+hook commands keep working because they reference the absolute path recorded in
+`config/hx.json`. There is no `hx upgrade` command: it was cut with its tested-list gate
+(D25).
 
 ## 3. What CI does
 
@@ -166,10 +168,9 @@ the first test, `milestone-check.sh` run, the e2e script run, the wheel uploaded
 ### Not in CI, and why
 
 The M6+ milestones run a live Claude Code against a real account. That needs credentials, costs
-money per run, and is non-deterministic in wall-clock terms. It stays a local and pre-release
-gate — specifically the gate `hx upgrade` enforces before pinning a new Claude Code version —
-and never becomes a pull-request check. CI covers everything that runs against the fake
-`claude` and the fixtures.
+money per run, and is non-deterministic in wall-clock terms. It stays a local, pre-release gate
+run by a human before a version is added to the tested list, and never becomes a pull-request
+check. CI covers everything that runs against the fake `claude` and the fixtures.
 
 Branch protection on `main`: both `test` jobs and `package` required, linear history, no force
 push. CI needs no secrets — it only reads, builds, and uploads an artifact; publishing is a
@@ -191,10 +192,10 @@ has actually passed on.
   after compaction) that the seam mechanism depends on.
 - Sessions launch with `DISABLE_AUTOUPDATER=1` and the recorded absolute binary path, so an
   upstream release cannot change a running fleet underneath its operator.
-- `hx upgrade` is the only way the pin moves: it re-renders every agent home's settings and
-  skills from the new package, and if `claude --version` changed, runs the M6 live suite
-  against it in a scratch instance **before** writing the new version to `config/claude.json`.
-  A failed suite leaves the existing pin in place and says why.
+- The pin moves when a human runs `hx install` again against the instance: it re-runs the
+  version check against the tested list, rewrites `config/claude.json`, and re-renders every
+  agent home's settings and skills at the next `hx launch`. Nothing moves a pin on its own,
+  and an untested version is refused rather than warned about.
 
 **Adding a version to the list is a human act with evidence behind it.** The pull request that
 adds an entry states which live suite run passed on it, on which OS. A version is never added
@@ -238,17 +239,20 @@ Nothing sensitive is in the repository today, and the rules that keep it that wa
   of the build-process material. It compares hx against a product the reader cannot see and
   would read as a claim about someone else's software. The decisions it produced are already in
   `spec/`, stated on their own terms, which is where a reader should meet them.
-- **Credentials, always.** hx never stores a token in the repository. Instance credentials live
-  in `$HARNESS_ROOT/seed/home` and `run/<id>/home/`, both outside the package. The UI's bearer
+- **Credentials, always.** hx never stores a token in the repository. The one instance
+  credential is `$HARNESS_ROOT/seed/token`, mode 0600, outside the package; agent homes under
+  `run/<id>/home/` hold none at all. The UI's bearer
   token is `run/ui-token`, mode 0600, generated per instance. PyPI publishing uses a Trusted
   Publisher, so no token exists in repository secrets either.
-- **Instance data.** `config/`, `orders/`, `pods/`, `logs/`, `state/`, `run/`, `archive/`,
-  `repos/`, `wt/` belong to a user's `$HARNESS_ROOT` and never to this repository. Only the
+- **Instance data.** `config/`, `pods/`, `logs/`, `state/`, `run/`, `archive/` and `seed/`
+  belong to a user's `$HARNESS_ROOT` and never to this repository. Only the
   *skeleton* under `src/hx/skeleton/` is shipped, and the only id in it is `partner`: the
   example worker ships as `templates/worker/`, templated on `{{id}}`, and is not installed.
-- **Real repository contents of any user.** Agent worktrees are cut from a bare mirror inside
-  the instance. Nothing about a user's product repo is ever collected, and the bug template
-  asks for board and doctor output rather than transcripts for exactly this reason.
+- **Real repository contents of any user.** hx never copies, clones or pushes a user's code: a
+  worker's `workdir` is an absolute directory its operator chose, and hx only ever runs
+  `git status --porcelain` in it. Nothing about a user's product repo is ever collected, and
+  the bug template asks for board and doctor output rather than transcripts for exactly this
+  reason.
 
 ## 7. Open questions for the spec author
 

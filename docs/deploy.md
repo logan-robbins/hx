@@ -7,13 +7,15 @@ nothing else.
 
 `hx` is a control plane for a fleet of Claude Code sessions. Each one — including the
 supervising **Partner** — is a full Claude Code instance in its own tmux session, running under
-a `/goal`, with its own config directory and its own worktree.
+a `/goal`, with its own config directory and its own working directory.
 
-Each is also paired with a small **Companion**, which runs through the same pinned `claude`
-binary as a one-shot `claude -p` on the same instance token — no API key needed — in a config
-home of its own with no hooks, no skills and no CLAUDE.md, and **no tools at all**. It reads
-the agent's tool-call stream and answers with one JSON object: the bounded step state that lets
-the agent's conversation be cut and rebuilt without losing what it knew.
+Each is also paired with a small **Companion**: another Claude Code session, in the next tmux
+window, on the same pinned binary and the same instance token — no API key needed — in a config
+home of its own with no product skills and no CLAUDE.md, and with **two tools, Read and
+Write**. hx wakes it with `/clear` and one pointer to a pass file; it reads the agent's
+tool-call stream and writes one JSON object, the bounded step state that lets the agent's
+conversation be cut and rebuilt without losing what it knew. It cannot run a command, so the
+thing watching every agent is the one participant here that cannot act.
 
 Two things exist and never mix:
 
@@ -21,7 +23,8 @@ Two things exist and never mix:
 - The **instance** `$HARNESS_ROOT`: your data. Created by `hx install`. `/srv/hx` on a server,
   `~/hx` on a workstation.
 
-Upgrading the package never writes into your instance except through `hx upgrade`.
+Upgrading the package never writes into your instance; `hx install` is idempotent and is
+what re-copies the skeleton.
 
 ## Before you start
 
@@ -49,10 +52,10 @@ all `hx`. `pipx install hx-harness` works too. It installs two entry points, `hx
 
 ```bash
 export HARNESS_ROOT=~/hx        # or /srv/hx on a server
-hx install --repo git@github.com:you/your-project.git
+hx install
 ```
 
-That is the whole of it. `hx install` runs six numbered steps and prints each one; it is
+That is the whole of it. `hx install` runs four numbered steps and prints each one; it is
 idempotent, so the run below is what happens the first time and re-running it picks up where it
 stopped. Everything that follows on this page is output from a real run of
 `packaging/e2e-deploy.sh`, not an illustration.
@@ -66,14 +69,19 @@ It refuses to run as root, checks `tmux`, `git` and Python, and pins the `claude
    created  adapters/claude/install.sh
    created  adapters/claude/start.sh
    created  companion/BASE.md
-   created  companion/roles/engineer.md
+   created  companion/roles/backend-engineer.md
+   created  companion/roles/frontend-engineer.md
    created  companion/roles/partner.md
-   created  companion/roles/reviewer.md
+   created  companion/roles/release-engineer.md
    created  config/CLAUDE.md
    created  config/models.json
    created  config/partner/AGENTS.md
    created  config/partner/SUBAGENTS.md
    created  config/partner/harness.json
+   created  personas/backend-engineer/AGENTS.md
+   created  personas/frontend-engineer/AGENTS.md
+   created  personas/partner/AGENTS.md
+   created  personas/release-engineer/AGENTS.md
    created  templates/addendum.md
    created  templates/order.md
    created  templates/work-item.md
@@ -87,7 +95,9 @@ It refuses to run as root, checks `tmux`, `git` and Python, and pins the `claude
 
 If your `claude` is not a version this package has been tested against, it stops here and says
 which one to install. `partner` is the only agent a fresh instance has; `templates/worker/` is
-what the Partner copies to create another, and you never do that yourself.
+what the Partner copies to create another, and `personas/<role>/AGENTS.md` are the four
+personas it copies over `config/<id>/AGENTS.md` when it does. You never do either yourself —
+the Partner has a skill for it.
 
 ## 3. Seed the token
 
@@ -114,60 +124,31 @@ in one place, with nothing of yours entangled in it.
 
 ## 4. The rest of the install
 
-The second run picks up at step 3 and finishes:
+The second run picks up at step 3 and finishes. Step 2 runs again and prints `kept` for
+everything already there — that is what idempotent looks like:
 
 ```
 3. seed token at ~/hx/seed/token, mode 0600
-4. mirrored product from git@github.com:you/your-project.git (main)
-5. units written to ~/Library/LaunchAgents
-   created  com.hx.up.plist
-   created  com.hx.heartbeat.plist
-   hx does not enable them. To start them at login, run:
-     launchctl bootstrap gui/$(id -u) "~/Library/LaunchAgents/com.hx.up.plist"
-     launchctl bootstrap gui/$(id -u) "~/Library/LaunchAgents/com.hx.heartbeat.plist"
-6. partner started
+4. partner started
 
 tmux attach -t partner
 ```
 
-**Step 4, the mirror.** `repos/<name>.git` is a bare mirror fetched from your upstream. Agent
-worktrees are cut from it at `wt/<id>`, on their own branches, with a sparse checkout that
-excludes the repo's own `.claude/` so its hooks and settings never fight hx. Your checkout is
-not touched — no worktree is added to it, no remote of yours is contacted. Your remote sees
-nothing until you tell the Partner to push, and `hx push <id>` is the only command in the whole
-system that reaches it.
+**Keeping it running is yours.** hx ships no launchd plist and no systemd unit. `hx up`
+(launch everything) and `hx heartbeat` (restart dead sessions, wake the Partner when the board
+moved) are ordinary commands; put them in your own cron if you want them at boot or on a
+timer:
 
-If your repo's `.claude/` carries skills the agents genuinely need, set `keep_claude_dir: true`
-in `config/repo.json`.
-
-**Step 5, the units.** hx writes them and deliberately does not enable them — starting a fleet
-at every login is your decision, not the installer's. Run the two commands it printed:
-
-```bash
-# macOS
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hx.up.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hx.heartbeat.plist
+```cron
+@reboot      hx up
+*/15 * * * * hx heartbeat
 ```
 
-```bash
-# Linux — the units land in ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now hx-up.service
-systemctl --user enable --now hx-heartbeat.timer
-loginctl enable-linger "$USER"      # so the fleet starts without an interactive login
-```
-
-Enable the **timer**, not `hx-heartbeat.service`; the service carries no `[Install]` section on
-purpose.
-
-The systemd units are checked by a real `systemd-analyze --user verify` in CI on every change.
-The launchd plists are not, and cannot sensibly be: bootstrapping a real agent on a CI runner
-is a bad idea. They are lint-clean and they parse, and **the two `launchctl bootstrap` commands
-above are the first time launchd itself sees them** — so if either reports an error, that is
-worth telling us about rather than working around. `hx up` launches every configured agent at boot. `hx heartbeat` runs every 900 seconds:
-it reads the board, restarts any `working` item whose tmux session has died, and wakes the
-Partner when something changed. That clock lives outside Claude Code on purpose — a timer
-inside a session would be cleared by `/clear`, and every seam is a `/clear`.
+**Working directories are not hx's business.** Each worker's `workdir` is whatever absolute
+directory the Partner puts in `config/<id>/harness.json` — a fresh directory it creates, or a
+checkout that already exists. hx creates no repository and no branch, and pushes nothing
+anywhere. The only git it ever runs is `git status --porcelain` inside `hx complete done`, and
+only when that directory is a git repository.
 
 ## 5. Talk to the Partner
 
@@ -201,44 +182,18 @@ observes; it does not operate. Full control — slash commands, interrupts — i
 
 ## Upgrading
 
-Two separate things, in this order.
-
-**The hx package:**
-
 ```bash
 uv tool upgrade hx-harness
+hx install --root "$HARNESS_ROOT"
 ```
 
-**The pinned `claude` binary:**
+`hx install` is idempotent: re-running it re-copies the package skeleton over the instance
+without touching anything you or the Partner have written under `config/<id>/`, and re-checks
+that your `claude` is a version this package has been tested against.
 
-```bash
-hx upgrade                       # re-probe whatever `claude` is on PATH
-hx upgrade --claude /path/to/claude   # or pin a specific one
-```
-
-`hx upgrade` moves the pin in `config/claude.json` **only** to a version this package has been
-tested against, and it checks before it writes anything, so a refused upgrade leaves your
-working pin exactly as it was. Real output of a refusal:
-
-```
-$ hx upgrade --claude ./claude-9.9.9
-hx: claude 9.9.9 is not in this package's tested list (2.1.278). Install 2.1.278 and run this
-again, or upgrade hx to a package that has been tested on 9.9.9 (spec 17.2 step 1, 17.6)
-```
-
-and of one that is accepted:
-
-```
-$ hx upgrade --claude ./claude-2.1.278
-HX-UPGRADE unchanged 2.1.278
-```
-
-It prints `HX-UPGRADE <old> -> <new>` when the version actually moves.
-
-**It does not restart anything.** Running sessions keep the binary they launched with until
-they are restarted, which is deliberate: a restart mid-turn throws that turn away. Ask the
-Partner to `hx restart <id>` one id at a time, at a boundary, once you are satisfied with the
-new version.
+**It does not restart anything.** Running sessions keep the binary and the skills they launched
+with until they are restarted, which is deliberate: a restart mid-turn throws that turn away.
+Ask the Partner to `hx restart <id>` one id at a time, at a boundary, once you are satisfied.
 
 ## What hx never touches
 
@@ -260,31 +215,31 @@ Real `hx doctor` output from a finished install — every line `ok`, exit 0:
 
 ```
 $ hx doctor
-ok    python        3.14.7 (~/.local/share/uv/tools/hx-harness/bin/python)
-ok    tmux          tmux 3.7c
-ok    git           git version 2.50.1 (Apple Git-155)
-ok    root          ~/hx
-ok    claude        /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe pinned at 2.1.278
-ok    skeleton      PARTNER.md
-ok    skeleton      adapters/claude/install.sh
-ok    skeleton      adapters/claude/start.sh
-ok    skeleton      companion/BASE.md
-ok    skeleton      companion/roles/partner.md
-ok    skeleton      config/CLAUDE.md
-ok    skeleton      config/models.json
-ok    skeleton      config/partner/AGENTS.md
-ok    skeleton      config/partner/SUBAGENTS.md
-ok    skeleton      config/partner/harness.json
-ok    skeleton      templates/work-item.md
-ok    models        2 model(s): claude-opus-5, claude-sonnet-5
-ok    hx.json       hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
-ok    hx.json       hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook
-ok    hx.json       python_bin ~/.local/share/uv/tools/hx-harness/bin/python
+ok    python           3.14.7 (~/.local/share/uv/tools/hx-harness/bin/python)
+ok    tmux             tmux 3.7c
+ok    git              git version 2.50.1 (Apple Git-155)
+ok    root             ~/hx
+ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe pinned at 2.1.278
+ok    skeleton         PARTNER.md
+ok    skeleton         adapters/claude/install.sh
+ok    skeleton         adapters/claude/start.sh
+ok    skeleton         companion/BASE.md
+ok    skeleton         companion/roles/partner.md
+ok    skeleton         config/CLAUDE.md
+ok    skeleton         config/models.json
+ok    skeleton         config/partner/AGENTS.md
+ok    skeleton         config/partner/SUBAGENTS.md
+ok    skeleton         config/partner/harness.json
+ok    skeleton         personas/partner/AGENTS.md
+ok    skeleton         templates/work-item.md
+ok    models           2 model(s): claude-opus-5, claude-sonnet-5
+ok    hx.json          hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
+ok    hx.json          hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook
+ok    hx.json          python_bin ~/.local/share/uv/tools/hx-harness/bin/python
 ok    token            seed/token present, mode 0600
 ok    home:partner     settings.json
 ok    sandbox:partner  IS_SANDBOX=1 on the tmux session
 ok    sandbox:partner  --dangerously-skip-permissions in the pane's argv
-ok    repo             product at aa1be46651e5 (main)
 ```
 
 The two `sandbox:` lines are per live agent, and they are the ones worth reading: they check

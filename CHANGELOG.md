@@ -16,9 +16,13 @@ as milestones are accepted.
 ### Added
 
 - Instance skeleton texts (`src/hx/skeleton/`):
-  - `companion/BASE.md` and `companion/roles/{partner,engineer,reviewer}.md` — the Companion's
-    step-state schema, retention rules, seam policy, digest rules, and addendum absorption
-    (spec 10).
+  - `companion/BASE.md` and `companion/roles/{partner,backend-engineer,frontend-engineer,release-engineer}.md`
+    — the Companion's step-state schema, retention rules, seam policy, digest rules, and
+    addendum absorption (spec 10).
+  - `personas/{partner,backend-engineer,frontend-engineer,release-engineer}/AGENTS.md` — the
+    four personas a Partner copies over `config/<id>/AGENTS.md` when it creates a worker. A
+    role is a pair: a persona and the Companion role file of the same name, and `hx launch`
+    refuses a `role` with no role file.
   - `templates/work-item.md` (spec 06), plus `templates/order.md` and `templates/addendum.md`
     as worked examples of the two Partner-written file formats.
   - `PARTNER.md`, the Partner's initial memory document.
@@ -26,61 +30,77 @@ as milestones are accepted.
   - `config/partner/{AGENTS.md,SUBAGENTS.md,harness.json}`, the only agent a fresh instance
     installs, plus `templates/worker/{AGENTS.md,SUBAGENTS.md,harness.json}` — the worker
     identity the Partner copies into `config/<id>/` to create an agent (spec 05, 17.2).
-- Agent skills `src/hx/skills/hx-partner/SKILL.md` and `src/hx/skills/hx-worker/SKILL.md`,
-  installed into agent homes only (spec 17.5).
-- Boot and heartbeat units in `src/hx/packaging/`, shipped inside the wheel so `hx install` can
-  render them with no checkout present: launchd plists for macOS, systemd user units and a
-  900 s timer for Linux, templated on `{HARNESS_ROOT}` and `{HX_BIN}` (spec 17.2 step 5).
-- `src/hx/packaging/tested-claude-versions.json`, the list `hx install` checks and `hx upgrade`
-  consults before pinning a new Claude Code version (spec 17.2 step 1, 17.6). First entry:
-  `2.1.278`.
+- Agent skills, installed into agent homes only and never into `~/.claude/skills` (spec 17.5):
+  `hx-partner` and `hx-fleet` into the Partner's home, `hx-worker` into a worker's, and
+  `hx-companion` into the Companion's. `hx-fleet` is the Partner's manual for creating,
+  changing and retiring HarnessAgents — the default personas, what `hx launch` wires for a
+  worker, how to add a role, and how to verify one is really wired rather than assume it.
+- `src/hx/packaging/tested-claude-versions.json`, the list `hx install` checks before pinning a
+  Claude Code version (spec 17.2 step 1). First entry: `2.1.278`.
 - `packaging/e2e-install.sh`: the release check. Builds the wheel, asserts it carries every
   package-data file `hx install` needs, installs it with `uv tool install` into a `HOME` that
   did not exist a moment ago, runs the installed `hx doctor` and `hx install --skeleton-only`,
   asserts every skeleton file landed byte-identical and that a fresh instance holds only
   `partner`, and asserts that neither the fresh Claude home nor the real `~/.claude` was
   touched. Run as a test by `tests/packaging/test_e2e_install.py`.
-- `tests/packaging/test_units.py`: renders each unit template the way `hx install` will, then
-  lints the rendered output — `plutil -lint` where it exists, `plistlib` everywhere, an INI
-  parse for systemd — and checks both platforms agree on the 900 s heartbeat and cover exactly
-  `hx up` and `hx heartbeat`.
+- `packaging/e2e-deploy.sh`: the deploy proof. Fourteen steps in a `HOME` that did not exist a
+  moment ago, with a planted `~/.claude` full of tripwires — the exit-4 seed stop, the token at
+  mode 0600 and in no argv, no credentials file in any agent home, no planted string reaching
+  the instance, no repository or worker or unit file created by hx, a real `hx launch` into the
+  workdir its `harness.json` names, and the operator's own `~/.claude` byte-identical before
+  and after. Run as a test by `tests/packaging/test_e2e_deploy.py`.
 - `tests/packaging/test_docs_match_reality.py`: builds a real instance and compares
-  `docs/deploy.md`'s `$ hx doctor` block — 23 rows — against what `hx doctor` prints, so the
+  `docs/deploy.md`'s `$ hx doctor` block — 25 rows — against what `hx doctor` prints, so the
   doc cannot go stale silently. It compares `(status, name)` pairs rather than whole lines,
-  because the detail column is paths and versions that differ per machine.
+  because the detail column is paths and versions that differ per machine. It also holds
+  `docs/operating.md` to quoting spec 06's `/goal` pointer verbatim, and
+  `docs/getting-started.md` to the flags, exit code, versions and wheel name the CLI really
+  has.
+- `docs/getting-started.md`: a fresh machine to a working Partner, and `docs/operating.md`:
+  the day-to-day operator view, every command and every block of output copied from a real
+  instance rather than described.
+- `tests/scenario/m8/` and `tests/scenario/m8b/`: the two scenario packs M8 runs on, with every
+  `hx board` in them regenerated from a real `hx board` rather than hand-written. m8 is the
+  scripted `decision`; m8b is the one nobody scripted — a single self-contradicting order with
+  deliberately neutral checks, so there is no path that satisfies the checks while dodging the
+  question.
 - `tests/packaging/test_ci_workflow.py`: validates `.github/workflows/ci.yml` with `actionlint`
   when present, otherwise a minimal structural YAML parser with its own negative tests, then
   asserts what CI must do.
-- `docs/deploy.md`, `docs/two-worlds.md`, `docs/github-plan.md`, `README.md`, `LICENSE` (MIT),
-  and this file.
+- `docs/deploy.md`, `docs/two-worlds.md`, `docs/github-plan.md`, `docs/companion-eval.md`,
+  `README.md`, `LICENSE` (MIT), and this file.
 - `tests/packaging/test_skeleton_texts.py`, which checks the shipped texts against the spec
   constraints: order-shaped examples carry `## Order`, `## Definition of done`, and a non-empty
   `### Checks` bash block; the work-item template keeps spec 06's sections, its standing
-  instructions, and the five placeholders `CONTRACTS.md` pins; every `AGENTS.md` has exactly
-  one `## UPDATES BELOW ONLY`; both `SKILL.md` files have valid frontmatter.
+  instructions, and the placeholders `CONTRACTS.md` pins; every `AGENTS.md` has exactly one
+  `## UPDATES BELOW ONLY`; every `SKILL.md` has valid frontmatter; and every shipped role has
+  both halves, a persona and a Companion role file of the same name.
 
 ### Changed
 
-- **The Companion is a `claude -p` session**, not an API client. `provider: claude-cli` in both
-  shipped `harness.json` files: the same pinned binary, the same `seed/token`, a bare config
-  home at `run/<id>/companion-home` with no hooks, no skills and no CLAUDE.md, and **no
-  tools**. A subscription-only instance gets a Companion with no API key. `companion/BASE.md`
-  now opens with its output contract — one JSON object, the eleven keys in a table, empty forms
-  spelled out, and what happens to a malformed answer.
+- **The Companion is a tmux Claude Code session** (M5), not an API client and no longer a
+  `claude -p` call: window `<id>:companion`, its own config home at `run/<id>/companion-home`,
+  the same pinned binary and the same `seed/token`. It has one hook — its own `Stop`, which
+  validates what it wrote and installs it — the `hx-companion` skill, and no CLAUDE.md. hx
+  drives it the way it drives every other agent: `/clear`, then one line pointing at a pass
+  file. A subscription-only instance gets a Companion with no API key. `companion/BASE.md`
+  opens with its output contract — one JSON object, the eleven keys in a table, empty forms
+  spelled out, and what happens to a malformed answer — and is explicit that its two tools are
+  a rule it keeps rather than a fence it cannot cross: it runs with permissions bypassed like
+  everything else here.
 - **Auth is one long-lived token per instance**, not a copy of the user's credentials.
   `claude setup-token` once, pasted into `$HARNESS_ROOT/seed/token` at mode 0600, exported as
   `CLAUDE_CODE_OAUTH_TOKEN` by `start.sh`. `--from-user-config` is gone. hx reads nothing from
   `~/.claude` on any platform — not the credentials file, not the macOS Keychain — and agent
   homes hold no credentials file at all.
-- `docs/two-worlds.md` is checked against `adapters/claude/install.sh`, `start.sh`, `repo.py`,
-  `push.py`, `upgrade.py` and `dispatch.py` rather than against the spec they implement, and
-  now carries a table naming, claim by claim, the file each one is true in — nineteen rows, so
-  a reader who wants to verify the isolation story can. The "what is built today" hedge is
-  gone: the install path is built and the deploy proof runs it.
-- `docs/deploy.md` is the real `hx install` transcript, including the exit-4 stop for the seed
-  token and the exact two commands the human runs, the real rendered unit paths, the
-  `launchctl` / `systemctl --user` lines, a healthy `hx doctor`, and an `hx upgrade` section
-  with the real refusal and acceptance output.
+- `docs/two-worlds.md` is checked against `adapters/claude/install.sh`, `start.sh` and
+  `dispatch.py` rather than against the spec they implement, and now carries a table naming,
+  claim by claim, the file each one is true in, so a reader who wants to verify the isolation
+  story can. The "what is built today" hedge is gone: the install path is built and the deploy
+  proof runs it.
+- `docs/deploy.md` is the real `hx install` transcript: four numbered steps, the exit-4 stop
+  for the seed token and the exact two commands the human runs, an idempotent second run, and
+  a healthy `hx doctor`. Keeping hx running is the operator's cron, and the page says so.
 - `docs/two-worlds.md` and `README.md` reflect M4: the raw stream written one line per tool
   call, a stream per subagent opened and renamed when it stops, the `agent_id → sNNN` map
   assigned under a lock, `run/<id>/turn` after every turn, and the pane log. The claim table
@@ -91,7 +111,37 @@ as milestones are accepted.
   the turn has to end before the harness can deliver a goal or take a seam — each checked
   against the hooks in the tree rather than against the spec.
 - `.github/workflows/ci.yml`: the `package` job runs `packaging/e2e-deploy.sh` as well as
-  `e2e-install.sh`, and on Linux runs `systemd-analyze --user verify` over the rendered units
-  — the only place a real systemd ever sees them. The `test` job runs the full suite directly
-  rather than `tools/milestone-check.sh`, which now takes a lane name and would otherwise run
-  the guard tests and nothing else.
+  `e2e-install.sh`. The `test` job runs the full suite directly rather than
+  `tools/milestone-check.sh`, which now takes a lane name and would otherwise run the guard
+  tests and nothing else.
+
+### Removed
+
+Pre-release scope cut (`spec/14-open-items.md` D25, 2026-09-20). The rule behind it: a human
+already runs one Partner managing three tmux sessions with nothing, so hx adds only what that
+cannot do. None of this shipped in a release; it is recorded because the spec, the skills and
+the scenario packs all referred to it.
+
+- **`after` dependency chains, the `queued` state, and promotion.** A Partner that must
+  sequence two items dispatches the second when the first's completion wakes it. Work items
+  are `pods/<pod>/<id>-<state>.md` with `state ∈ {idle, working, complete}` and no fourth.
+- **The Partner as a work item.** No `pods/partner/`, no order file of its own, no
+  self-dispatch, no self-completion, no `goal-pending`. The human's message in its tmux session
+  is its goal, and it is not a row on `hx board`.
+- **Git management.** No `hx repo add`, no `config/repo.json`, no bare mirror, no sparse
+  worktrees, no `keep_claude_dir`, no `base_branch`, no `harness.json.branch`, no `hx push`. A
+  worker's `workdir` is an absolute directory somebody chose. The only git hx runs is
+  `git status --porcelain` inside `hx complete done`, and only when that directory is a
+  repository.
+- **Shipped launchd plists and systemd units**, and the CI step that verified them. Spec 17.2:
+  "hx ships no launchd plist and no systemd unit." `hx up` and `hx heartbeat` are ordinary
+  commands for the operator's own cron.
+- **`hx upgrade` and its tested-list gate.** Upgrading the package is `uv tool install` again.
+- **The `guard` `PreToolUse` hook and its rule list.** Nothing refuses an agent a tool call.
+  What an agent may not touch is a rule in its persona, its `CLAUDE.md` and its skill — stated
+  as a rule, not as a fence, because a fence that is not there teaches the wrong thing.
+- **The enforcement machinery around work items**: the filename regex as a validation gate, the
+  transitions table, the nine `hx board` invariants and their error lines, `hx board
+  --require-done`, and `hx doctor` policing work items. `hx board` is a listing and exits 0.
+- **`run/tasks.lock`**, the flock around `tasks.json`; **`hx bench` patch files and workdir
+  resets**; and **`hx dispatch` refusing or resetting a dirty workdir**.

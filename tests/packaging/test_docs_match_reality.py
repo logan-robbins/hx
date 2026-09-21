@@ -84,22 +84,13 @@ def test_the_doc_has_a_doctor_block_worth_checking():
 
 
 def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
-    """A complete instance, the way `hx install` makes one.
+    """A complete instance, the way `hx install` makes one: four steps, partner only.
 
     `HX_CLAUDE_BIN` is the fake `claude`, so `hx install` step 6 launches a fake Partner rather
     than a real agent, and `HX_TMUX` keeps that session on a private server this test kills.
     The version check in step 1 needs a *real* binary, so the real one is pinned with `--claude`
     and never launched.
     """
-    src = scratch / "product-src"
-    shutil.copytree(REPO / "tests" / "scenario" / "m8" / "repo", src)
-    git = ["git", "-c", "user.email=t@example.invalid", "-c", "user.name=t"]
-    subprocess.run(["git", "init", "-q", "-b", "main", str(src)], check=True)
-    subprocess.run([*git, "-C", str(src), "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "-C", str(src), "commit", "-qm", "p"], check=True, capture_output=True)
-    product = scratch / "product.git"
-    subprocess.run(["git", "clone", "-q", "--bare", str(src), str(product)], check=True)
-
     fake = scratch / "bin" / "claude"
     fake.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(FAKE_CLAUDE, fake)
@@ -131,7 +122,7 @@ def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
     token.chmod(0o600)
 
     second = subprocess.run(
-        [sys.executable, "-m", "hx", "install", "--root", str(root), "--repo", str(product)],
+        [sys.executable, "-m", "hx", "install", "--root", str(root)],
         capture_output=True, text=True, env=env,
     )
     assert second.returncode == 0, f"{second.stdout}\n{second.stderr}"
@@ -201,12 +192,17 @@ def test_the_documented_doctor_output_is_what_hx_doctor_prints(tmp_path):
 
 
 def test_the_documented_install_transcript_names_the_real_steps(tmp_path):
-    """The six numbered steps `hx install` prints are quoted in the doc. If one is renamed or
-    renumbered, the walkthrough stops matching what the reader sees."""
+    """The four numbered steps `hx install` prints are quoted in the doc. If one is renamed or
+    renumbered, the walkthrough stops matching what the reader sees.
+
+    Four, not six: spec 14 D25 cut the mirror and the shipped unit files, and 17.2 renumbered
+    what was left. A doc showing six steps is describing a version that no longer exists.
+    """
     text = DEPLOY_MD.read_text()
-    for step in ("1. claude ", "2. instance at ", "3. seed token at ", "4. mirrored ",
-                 "5. units written to ", "6. partner started"):
+    for step in ("1. claude ", "2. instance at ", "3. seed token at ", "4. partner started"):
         assert step in text, f"docs/deploy.md does not quote the install step {step!r}"
+    for gone in ("mirrored ", "units written to ", "6. partner"):
+        assert gone not in text, f"docs/deploy.md still quotes the cut install step {gone!r}"
 
 
 def test_the_documented_exit_code_for_the_seed_stop_is_right():
@@ -215,24 +211,181 @@ def test_the_documented_exit_code_for_the_seed_stop_is_right():
     assert "claude setup-token" in text
 
 
-def test_the_companion_is_described_as_toolless_everywhere_it_is_described():
-    """The Companion reads every agent's stream, so "it has no tools" is the load-bearing
-    claim about it. Both pages that introduce it have to carry that, not just one."""
-    for path in (REPO / "docs" / "deploy.md", REPO / "docs" / "two-worlds.md", REPO / "README.md"):
-        text = path.read_text()
-        if "Companion" not in text:
+def test_the_companion_is_described_as_a_near_toolless_session_everywhere():
+    """The Companion reads every agent's stream, so what it *cannot* do is the load-bearing
+    claim about it, and every page that introduces it has to carry that.
+
+    It is a tmux Claude Code session now, not a `claude -p` call (CONTRACTS.md, "The Companion
+    is a tmux session"), with Read and Write and nothing else — so "no tools" is no longer the
+    right phrase, and a doc still using it is describing the headless design.
+    """
+    for name in ("deploy.md", "two-worlds.md", "operating.md", "getting-started.md"):
+        path = REPO / "docs" / name
+        if not path.is_file():
             continue
-        assert "claude -p" in text, f"{path.name} describes the Companion without saying how it runs"
-        assert "no tools" in text, f"{path.name} does not say the Companion has no tools"
+        text = path.read_text()
+        assert "claude -p" not in text, (
+            f"docs/{name} still describes the Companion as a headless `claude -p` call"
+        )
+    readme = (REPO / "README.md").read_text()
+    assert "claude -p" not in readme, "README.md still describes a headless Companion"
+    assert "two tools and nothing else" in readme, (
+        "README.md does not say what the Companion can and cannot do"
+    )
 
 
-def test_the_agent_branch_is_named_consistently():
-    """Settled 2026-09-20: `agent/<id>` everywhere. `hx push` is the one command that reaches a
-    real remote, so a doc naming a different branch would be actively misleading."""
+def test_hx_manages_no_git_anywhere_in_the_docs_or_the_template():
+    """Spec 14 D25 cut git management entirely: no mirror, no worktree, no branch, no push.
+    The branch name was argued over for two goals and then the whole question went away —
+    which is exactly the kind of thing that survives in prose long after it stops being true."""
     worker = json.loads(
         (REPO / "src" / "hx" / "skeleton" / "templates" / "worker" / "harness.json").read_text()
     )
-    assert worker["branch"] == "agent/{{id}}", worker["branch"]
-    for path in (REPO / "docs" / "two-worlds.md", REPO / "docs" / "deploy.md", REPO / "README.md"):
+    assert "branch" not in worker, "the worker template still names a branch"
+    for name in ("two-worlds.md", "deploy.md", "operating.md", "getting-started.md"):
+        path = REPO / "docs" / name
+        if not path.is_file():
+            continue
         text = path.read_text()
-        assert "hx/<id>" not in text, f"{path.name} still names the old hx/<id> branch"
+        for cut in ("hx push", "hx repo add", "sparse checkout", "bare mirror", "agent/<id>"):
+            assert cut not in text, f"docs/{name} still describes {cut!r} (cut, spec 14 D25)"
+    readme = (REPO / "README.md").read_text()
+    for cut in ("hx push", "bare mirror", "sparse worktree"):
+        assert cut not in readme, f"README.md still describes {cut!r} (cut, spec 14 D25)"
+
+
+# --------------------------------------------------- docs/operating.md and the /goal pointer
+
+OPERATING_MD = REPO / "docs" / "operating.md"
+SPEC_06 = REPO / "spec" / "06-work-items.md"
+
+
+def spec_06_goal_pointer() -> str:
+    """The one `/goal …` line spec 06 fixes, taken from the spec rather than retyped."""
+    lines = [l for l in SPEC_06.read_text().splitlines() if l.startswith("/goal The order for")]
+    assert len(lines) == 1, f"spec/06-work-items.md has {len(lines)} `/goal` lines, expected 1"
+    return lines[0]
+
+
+def test_operating_quotes_the_goal_pointer_exactly_as_spec_06_fixes_it():
+    """The pointer is a contract, not a paraphrase: hx pastes this text byte for byte at every
+    conversation start of a working item, and the operator page is where a human meets it.
+
+    Quoting it is the whole point — a reader who sees it in a pane needs to recognise it, and
+    a reader who sees something *else* in a pane needs to know that is wrong. Retyped, it would
+    drift from the spec the first time either side was reworded, and nothing would notice.
+    """
+    pointer = spec_06_goal_pointer()
+    text = OPERATING_MD.read_text()
+    assert pointer in text, (
+        "docs/operating.md does not quote spec 06's `/goal` pointer verbatim.\n"
+        f"  spec 06: {pointer}\n"
+        "  Quote that line exactly, inside a fenced block."
+    )
+    assert "pointer" in text, (
+        "docs/operating.md quotes the line but never says it is a pointer rather than the task"
+    )
+
+
+def test_the_goal_pointer_is_quoted_the_same_way_in_the_worker_skill():
+    """Two places carry it — the operator page and the skill the worker reads. They are written
+    for different readers, so they drift independently unless something holds them together."""
+    pointer = spec_06_goal_pointer()
+    skill = (REPO / "src" / "hx" / "skills" / "hx-worker" / "SKILL.md").read_text()
+    assert pointer in skill, "hx-worker/SKILL.md no longer quotes spec 06's `/goal` pointer"
+
+
+# ------------------------------------------------ docs/getting-started.md against the real CLI
+
+GETTING_STARTED_MD = REPO / "docs" / "getting-started.md"
+
+
+def test_getting_started_quotes_commands_that_exist():
+    """Every hx command the first-run page tells a human to type, checked against the CLI.
+
+    This page is the one a person follows with a terminal open, so a flag that was renamed
+    costs them the install. `--repo` is the example: it was on this page, and `hx install`
+    stopped accepting it when D25 cut git management.
+    """
+    text = GETTING_STARTED_MD.read_text()
+    assert "hx install --root ~/hx" in text
+    assert "--repo" not in text, "getting-started still passes --repo to hx install (cut, D25)"
+
+    help_text = subprocess.run(
+        [sys.executable, "-m", "hx", "install", "--help"],
+        capture_output=True, text=True, cwd=str(REPO),
+        env={**os.environ, "PYTHONPATH": str(REPO / "src")},
+    ).stdout
+    for flag in ("--root", "--claude"):
+        assert flag in help_text, f"hx install no longer accepts {flag}"
+
+
+def test_getting_started_matches_what_install_really_prints():
+    """The numbers, the exit code and the last line, from `hx install` itself."""
+    text = GETTING_STARTED_MD.read_text()
+    assert "exit 4" in text, "the page does not say the first run stops with exit 4"
+    assert "claude setup-token" in text
+    assert "chmod 600" in text, "the page does not set the token file's mode"
+    assert "tmux attach -t partner" in text, (
+        "the page does not end where `hx install` ends, at the Partner's session"
+    )
+    from hx import install as install_mod
+
+    assert install_mod.TOKEN_WAIT_EXIT == 4, (
+        f"hx install now stops with {install_mod.TOKEN_WAIT_EXIT}, not 4; the page says 4"
+    )
+
+
+def test_getting_started_pins_the_versions_the_package_really_carries():
+    text = GETTING_STARTED_MD.read_text()
+    tested = json.loads(
+        (REPO / "src" / "hx" / "packaging" / "tested-claude-versions.json").read_text()
+    )["versions"]
+    for version in tested:
+        assert version in text, f"getting-started does not name the tested claude {version}"
+    pyproject = (REPO / "pyproject.toml").read_text()
+    wheel_version = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
+    assert f"hx_harness-{wheel_version}-py3-none-any.whl" in text, (
+        f"getting-started installs a wheel that is not {wheel_version}"
+    )
+    assert "--python 3.14" in text, "the page does not pin the Python hx requires"
+
+
+# ---------------------------------------------- the personas and their Companion role files
+
+PERSONAS = REPO / "src" / "hx" / "skeleton" / "personas"
+ROLES = REPO / "src" / "hx" / "skeleton" / "companion" / "roles"
+SHIPPED_ROLES = ("backend-engineer", "frontend-engineer", "release-engineer")
+
+
+def test_every_shipped_role_has_both_halves():
+    """A role is a pair: the persona the agent runs as, and the retention rules its Companion
+    keeps. `hx launch` refuses a role with no role file, so a persona shipped without one is a
+    worker that cannot start."""
+    for role in (*SHIPPED_ROLES, "partner"):
+        assert (PERSONAS / role / "AGENTS.md").is_file(), f"no persona for {role}"
+        assert (ROLES / f"{role}.md").is_file(), f"no companion role file for {role}"
+
+
+def test_no_persona_is_shipped_without_a_role_file_or_the_other_way_round():
+    personas = sorted(p.name for p in PERSONAS.iterdir() if p.is_dir())
+    roles = sorted(p.stem for p in ROLES.glob("*.md"))
+    assert personas == roles, (personas, roles)
+
+
+def test_the_worker_template_defaults_to_a_role_that_ships():
+    worker = json.loads(
+        (REPO / "src" / "hx" / "skeleton" / "templates" / "worker" / "harness.json").read_text()
+    )
+    assert worker["role"] in SHIPPED_ROLES, worker["role"]
+    assert (PERSONAS / worker["role"] / "AGENTS.md").is_file()
+
+
+def test_the_partner_config_is_the_partner_persona():
+    """`config/partner/AGENTS.md` is what the Partner launches with; `personas/partner/AGENTS.md`
+    is what the Partner would copy to rebuild it. Two texts would mean two Partners."""
+    config = (REPO / "src" / "hx" / "skeleton" / "config" / "partner" / "AGENTS.md").read_text()
+    persona = (PERSONAS / "partner" / "AGENTS.md").read_text()
+    assert config == persona, (
+        "config/partner/AGENTS.md has drifted from personas/partner/AGENTS.md"
+    )

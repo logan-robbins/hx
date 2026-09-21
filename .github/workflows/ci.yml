@@ -114,34 +114,18 @@ jobs:
 
       # The same two scripts a human runs before a release. e2e-install proves the wheel
       # builds, installs, and can create a skeleton; e2e-deploy goes the whole way — the full
-      # hx install, the mirror, a sparse worktree, a launch, the rendered units, hx upgrade
-      # and hx push — in a HOME that did not exist a moment ago.
+      # hx install, the exit-4 seed stop, the token never reaching argv or an agent home, and
+      # a launch — in a HOME that did not exist a moment ago.
       - name: End-to-end install (packaging/e2e-install.sh)
         run: packaging/e2e-install.sh "$RUNNER_TEMP/e2e"
 
       - name: End-to-end deploy (packaging/e2e-deploy.sh)
         run: packaging/e2e-deploy.sh "$RUNNER_TEMP/deploy"
 
-      # The rendered systemd units have never been loaded by a real systemd anywhere else:
-      # this machine has no container runtime and macOS has no systemd. `systemd-analyze` is
-      # on ubuntu-latest, so this is the first and only place they are checked by the thing
-      # that will actually run them.
-      - name: systemd accepts the rendered units
-        run: |
-          if ! command -v systemd-analyze >/dev/null 2>&1; then
-            echo "systemd-analyze is not installed on this runner; skipping" >&2
-            exit 0
-          fi
-          units="$RUNNER_TEMP/deploy/home/.config/systemd/user"
-          if [ ! -d "$units" ]; then
-            echo "no rendered units at $units" >&2
-            exit 1
-          fi
-          ls -l "$units"
-          systemd-analyze --user verify \
-            "$units/hx-up.service" \
-            "$units/hx-heartbeat.service" \
-            "$units/hx-heartbeat.timer"
+      # There is no `systemd accepts the rendered units` step any more: spec 14 D25 cut the
+      # shipped launchd plists and systemd units, and 17.2 says "hx ships no launchd plist and
+      # no systemd unit". Keeping hx running is the operator's cron. e2e-deploy asserts the
+      # absence — step 12, "hx creates no repository, no worktree, and no unit files".
 
       - name: Collect the wheel
         run: |

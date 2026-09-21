@@ -211,13 +211,19 @@ def test_ci_runs_every_lane_s_tests_as_required():
     assert "tests/guard" in blob, "the guard tests must still run on their own first"
 
 
-def test_the_package_job_runs_both_release_scripts_and_verifies_the_units():
+def test_the_package_job_runs_both_release_scripts():
     blob = "\n".join(str(s) for s in workflow()["jobs"]["package"]["steps"])
     assert "packaging/e2e-install.sh" in blob
     assert "packaging/e2e-deploy.sh" in blob
-    assert "systemd-analyze --user verify" in blob, (
-        "the rendered systemd units are checked by a real systemd nowhere else"
-    )
+
+
+def test_ci_does_not_verify_units_that_are_no_longer_shipped():
+    """Spec 14 D25 cut the launchd plists and systemd units; 17.2 says hx ships neither. A CI
+    step that still rendered and verified them would pass by skipping — `systemd-analyze` is
+    absent on most runners — and would read as coverage that does not exist."""
+    blob = "\n".join(str(s) for s in workflow()["jobs"]["package"]["steps"])
+    for gone in ("systemd-analyze", "hx-up.service", "hx-heartbeat.timer", "launchctl"):
+        assert gone not in blob, f"the package job still references {gone!r} (cut, D25)"
 
 
 def test_the_package_job_runs_the_end_to_end_script_and_uploads_the_wheel():
