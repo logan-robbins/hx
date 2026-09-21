@@ -147,14 +147,18 @@ def test_step_state_is_rendered_not_dumped(instance, hx, launched, orders):
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
     rendered = text[section_index(text, "## Step state"):section_index(text, "## Open subagent handles")]
-    assert "**Goal:** stream the importer" in rendered
-    assert "use a generator — memory" in rendered
-    assert "`st7` rewrite read_all" in rendered and "next: delete the buffer" in rendered
-    assert "`st6` read the importer (verified) `abc1234`" in rendered
-    assert "mmap: the file is a stream" in rendered
-    assert "`src/importer.py` — read_all buffers" in rendered
-    assert "_step state at seq 412_" in rendered
-    assert '"open_steps"' not in rendered, "rendered as markdown, not dumped as JSON"
+    # One tagged line per fact: the section is read by a model at every boundary and every
+    # heading, bullet and blank line in it is paid for again (tests/core/test_density.py).
+    assert "goal: stream the importer" in rendered
+    assert "dec: use a generator <- memory [401]" in rendered
+    assert "open st7: rewrite read_all [398]" in rendered
+    assert "next st7: delete the buffer" in rendered
+    assert "done st6 verified abc1234: read the importer" in rendered
+    assert "dead: mmap: the file is a stream" in rendered
+    assert "file src/importer.py: read_all buffers" in rendered
+    assert "commit abc1234: read the importer" in rendered
+    assert "seq 412" in rendered
+    assert '"open_steps"' not in rendered, "rendered as lines, not dumped as JSON"
 
 
 def test_step_state_says_none_yet_before_the_companion_lands(instance, hx, launched, orders):
