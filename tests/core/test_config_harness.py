@@ -88,6 +88,17 @@ def test_the_partner_cannot_be_grok():
     assert "messaging socket" in str(exc.value)
 
 
+def test_flavor_meta_is_accepted():
+    config = validate_harness({**WORKER, "flavor": "meta"}, "config/eng-001/harness.json", dir_name="eng-001")
+    assert config.flavor == "meta"
+
+
+def test_the_partner_cannot_be_meta():
+    with pytest.raises(ValidationError) as exc:
+        validate_harness({**PARTNER, "flavor": "meta"}, "config/partner/harness.json", dir_name="partner")
+    assert "messaging socket" in str(exc.value)
+
+
 def test_good_partner():
     config = validate_harness(PARTNER, "config/partner/harness.json", dir_name="partner")
     assert config.is_partner and config.workdir is None

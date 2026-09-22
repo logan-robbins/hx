@@ -23,7 +23,7 @@ _REQUIRED = ("id", "pod", "role", "model", "effort")
 _OPTIONAL = ("workdir", "harness", "companion", "flavor")
 
 #: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
-FLAVORS = ("claude", "pi", "grok")
+FLAVORS = ("claude", "pi", "grok", "meta")
 
 _COMPANION_INT_FIELDS = (
     "batch_records",

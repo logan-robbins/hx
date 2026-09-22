@@ -233,6 +233,10 @@ ok    skeleton         adapters/grok/install.sh
 ok    skeleton         adapters/grok/start.sh
 ok    skeleton         adapters/grok/seam-command
 ok    skeleton         adapters/grok/hook.py
+ok    skeleton         adapters/meta/install.sh
+ok    skeleton         adapters/meta/start.sh
+ok    skeleton         adapters/meta/seam-command
+ok    skeleton         adapters/meta/hook.py
 ok    skeleton         companion/BASE.md
 ok    skeleton         companion/roles/partner.md
 ok    skeleton         config/CLAUDE.md

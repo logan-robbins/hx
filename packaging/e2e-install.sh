@@ -127,6 +127,10 @@ hx/skeleton/adapters/grok/install.sh
 hx/skeleton/adapters/grok/start.sh
 hx/skeleton/adapters/grok/seam-command
 hx/skeleton/adapters/grok/hook.py
+hx/skeleton/adapters/meta/install.sh
+hx/skeleton/adapters/meta/start.sh
+hx/skeleton/adapters/meta/seam-command
+hx/skeleton/adapters/meta/hook.py
 hx/skeleton/config/partner/AGENTS.md
 hx/skeleton/config/partner/SUBAGENTS.md
 hx/skeleton/config/partner/harness.json
