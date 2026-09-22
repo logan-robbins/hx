@@ -153,6 +153,7 @@ function snapshot(root) {
     listItems: all(root, "li").map((n) => ({ class: n.className, text: textOf(n) })),
     code: all(root, "code").map((n) => ({ class: n.className, text: textOf(n) })),
     labels: labelled(root),
+    folds: all(root, "details.fold").map((n) => ({ label: textOf(all(n, "summary")[0]), open: n.hasAttribute("open") })),
     notYet: all(root, ".notyet").length,
     empty: all(root, ".empty").map(textOf),
     followups: all(root, ".followup").map((n) => ({ class: n.className, title: n.getAttribute("title"), text: textOf(n) })),
@@ -306,6 +307,17 @@ function sidebarSnapshot() {
 
   await go("#partner");
   out.views.partner = snapshot(content);
+
+  // An SSE frame repaints main in place; a pane mid-scroll must not jump to top.
+  const paneOut = content.querySelectorAll("pre.output")[0];
+  if (paneOut) paneOut.scrollTop = 150;
+  render();
+  await quiet();
+  const paneAfter = content.querySelectorAll("pre.output")[0];
+  out.views.partnerRepaint = { scrollTop: paneAfter ? paneAfter.scrollTop || 0 : null };
+  out.views.partnerSequence = content
+    .querySelectorAll("h2, form")
+    .map((n) => n.tagName.toLowerCase() + ":" + (textOf(n) || "").slice(0, 24));
 
   // The chat box is the page's only write path.
   const box = doc.getElementById("chat-text");

@@ -23,6 +23,7 @@ from . import compose as compose_mod, flush as flush_mod, goal as goal_mod, stre
 from .config_harness import flavor_of
 from .errors import NotFound
 from .hook_log import seam_marker
+from .ids import PARTNER
 from .workitems import find_work_item
 
 #: What the `context` hook sees as `source` when the queued `/clear` runs (spec 09.1).
@@ -89,8 +90,10 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
         # stays exactly where it is and the next `stop` retries (spec 09.2 step 2).
         return {"id": item_id, "outcome": DEFERRED, "seq": None, "background_tasks": pending}
 
-    if find_work_item(root, item_id) is None:
+    if find_work_item(root, item_id) is None and item_id != PARTNER:
         raise NotFound(f"{item_id}: no work item; a seam belongs to a dispatched agent (spec 06)")
+    # The Partner has no work item and no goal: its seam is /clear + rehydrate from the
+    # context file, and the `context` hook on `clear` sends no pointer for it.
 
     # Sequence is spec 08's: the Companion reaches the head, the context file is composed from
     # what it recorded, then the `/clear` is queued and the record written.

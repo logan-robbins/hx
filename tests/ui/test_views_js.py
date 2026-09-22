@@ -95,7 +95,7 @@ def test_every_screen_renders_without_an_error_banner(rendered):
     assert set(rendered["views"]) == {
         "overview", "board", "agentTable", "activity", "goals", "archive",
         "agents", "agent", "sessions", "session", "compactions", "compaction", "podFocus",
-        "cardOpens", "partner",
+        "cardOpens", "partner", "partnerRepaint", "partnerSequence",
     }
 
 
@@ -178,9 +178,21 @@ def test_every_agent_has_its_companion_beside_it(rendered):
     """CONTRACTS.md: every agent has exactly one Companion; it is not a board row."""
     graph = rendered["views"]["overview"]["graph"]
     workers = [node for node in graph["nodes"] if node["agent"] != "partner"]
-    assert len(graph["companions"]) == len(workers)
+    assert len(graph["companions"]) == len(workers) + 1, "the Partner's Companion hangs under its card"
     assert all(text.startswith("Companion") for text in graph["companions"])
-    assert sum(1 for edge in graph["edges"] if edge["class"] == "companion-edge") == len(workers)
+    assert sum(1 for edge in graph["edges"] if edge["class"] == "companion-edge") == len(workers) + 1
+
+
+@node
+def test_the_partner_companion_shows_what_it_is_doing(rendered):
+    """The Partner's Companion node carries its pass/state detail and links to
+    its last compaction, the way worker Companions do."""
+    graph = rendered["views"]["overview"]["graph"]
+    mine = graph["companions"][0]
+    assert mine.startswith("Companion")
+    assert "1 stream" in mine, "the show-partner fixture has one stream"
+    titles = {edge["title"] for edge in graph["edges"] if edge["class"] == "companion-edge"}
+    assert "The Partner and its Companion" in titles
 
 
 def test_the_partner_edges_are_the_dispatches_in_tasks_json(rendered):
@@ -1148,6 +1160,64 @@ def test_the_graph_viewport_scrolls_rather_than_the_page():
     block = css().split(".graph-viewport {")[1].split("}")[0]
     assert "overflow: auto" in block
     assert "height:" in block
+
+
+def test_stacked_panels_keep_vertical_spacing():
+    """Views stack section.panel/div.panel directly (Partner chat, PARTNER.md,
+    board, pane); without a bottom margin they touch."""
+    text = css()
+    assert "main > section.panel" in text
+    assert "main > div.panel" in text
+    assert "margin-bottom:" in text.split("main > div.panel")[1].split("}")[0]
+
+
+def test_folded_bodies_get_a_clickable_summary():
+    """Full file bodies fold into details.fold; the summary must read clickable."""
+    text = css()
+    assert "details.fold" in text
+    block = text.split("details.fold > summary {")[1].split("}")[0]
+    assert "cursor: pointer" in block
+
+
+def test_the_partner_pane_is_taller_than_a_standard_pane():
+    """The Partner pane is the conversation history; it gets ~300px over the
+    standard .output max-height."""
+    text = css()
+    block = text.split(".pane-panel .output {")[1].split("}")[0]
+    assert "max-height:580px" in block.replace(" ", "")
+
+
+@node
+def test_a_repaint_keeps_pane_scroll(rendered):
+    """Every SSE frame repaints main; a pane scrolled mid-output must not jump
+    back to the top."""
+    assert rendered["views"]["partnerRepaint"]["scrollTop"] == 150
+
+
+@node
+def test_the_partner_pane_reads_as_chat_history(rendered):
+    """The Partner pane is its own section above the messages window: the pane
+    renders first, then the composer, then the file bodies below."""
+    seq = rendered["views"]["partnerSequence"]
+    pane = next(i for i, s in enumerate(seq) if s == "h2:Partner pane")
+    composer = next(i for i, s in enumerate(seq) if s.startswith("form:"))
+    md = next(i for i, s in enumerate(seq) if s == "h2:PARTNER.md")
+    assert pane < composer < md
+
+
+@node
+def test_full_file_bodies_render_folded_shut(rendered):
+    """PARTNER.md, work-item sections, goal text and context files render inside
+    closed details.fold: the name stays visible, the body opens on demand."""
+    for view in ("partner", "agent", "session", "goals"):
+        folds = rendered["views"][view]["folds"]
+        assert folds, f"{view} has no folded bodies"
+        assert all(f["open"] is False for f in folds), f"{view} has a body open by default"
+    assert "Full text" in [f["label"] for f in rendered["views"]["partner"]["folds"]]
+    assert "PARTNER.md" in [f["label"] for f in rendered["views"]["agents"]["partner"]["folds"]]
+    assert "Goal" in [f["label"] for f in rendered["views"]["agent"]["folds"]]
+    assert "Context file" in [f["label"] for f in rendered["views"]["session"]["folds"]]
+    assert "Goal text" in [f["label"] for f in rendered["views"]["goals"]["folds"]]
 
 
 # -- build-7's "render the string" ---------------------------------------

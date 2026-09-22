@@ -294,7 +294,12 @@ function companionNote(c) {
 }
 
 /* A drawer block that opens on demand. The `.small-label` sits in the summary so the
- * block keeps its name in the drawer's outline. */
+ * block keeps its name in the drawer's outline. Full file bodies (PARTNER.md, work-item
+ * sections, goal text, context files) always render folded: the page shows the name,
+ * the body opens on click. Native details/summary, no JS. */
+function fold(label, body) {
+  return `<details class="fold"><summary class="small-label">${label}</summary><div class="fold-body">${body}</div></details>`;
+}
 /* The composed context carries a "Memory episodes" section (spec 07.6). The user wants the
  * count, not the memories, so the drawer drops the section body and keeps a one-line tally. */
 function withoutMemoryEpisodes(text) {
@@ -1234,6 +1239,23 @@ function companionNode(a) {
   return `<a class="companion-node ${a.companion_pass ? "busy" : ""}" href="#compaction?agent=${encodeURIComponent(a.id)}" target="_blank" rel="noopener" style="left:${pos.x + 44}px;top:${pos.y + CARD_H + 22}px" title="${esc(a.id)}'s Companion — window ${esc(a.id)}:companion · ${esc(companionNote(a))} · opens its last compaction">${icon("clock")}<span>Companion</span>${live}<small>${detail}</small></a>`;
 }
 
+/* The Partner's own Companion, hung under the Partner card the same way. Its
+ * state comes from `/api/show/partner` rather than the board: `show.companion`
+ * carries pass_in_flight, last_state_ts and the stream count. */
+function partnerCompanionNode(pos) {
+  const c = ((partnerShow || {}).companion) || {};
+  const streams = c.streams || 0;
+  const live = c.pass_in_flight
+    ? `<span class="dot green pulse" title="a pass is running"></span>`
+    : "";
+  const detail = c.pass_in_flight
+    ? "pass running"
+    : c.last_state_ts
+      ? `${streams ? esc(count(streams, "stream")) + " · " : ""}${esc(clock(c.last_state_ts))}`
+      : streams ? esc(count(streams, "stream")) : "no state yet";
+  return `<a class="companion-node ${c.pass_in_flight ? "busy" : ""}" href="#compaction?agent=partner" target="_blank" rel="noopener" style="left:${pos.x + 44}px;top:${pos.y + CARD_H + 22}px" title="The Partner's Companion — window partner:companion · ${esc(companionNote(c))} · opens its last compaction">${icon("clock")}<span>Companion</span>${live}<small>${detail}</small></a>`;
+}
+
 function graphPage(focus) {
   if (!fleet) {
     return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>hx is the graph</h1><p class="subtitle">The Partner at the root, every HarnessAgent below it, clustered by pod.</p></div></div>${tabs("overview")}${empty("Reading the instance…", "hx board has not answered yet.", "graph")}`;
@@ -1274,8 +1296,10 @@ function graphPage(focus) {
     .join("");
   graphNode.pos = layout.partner;
   const partner = `<button class="agent-node manager ${focus.agent === "partner" ? "focused" : ""}" style="left:${layout.partner.x}px;top:${layout.partner.y}px" data-agent="partner" aria-label="Open the Partner"><div class="node-top">${avatar(fleet.partner)}<strong>Partner</strong><span class="dot ${partnerAlive() ? "green" : "muted"}"></span></div><div class="node-task">Operates the fleet on your instruction, in chat</div><div class="node-bottom"><span>no work item</span><span class="stage">${esc(count(dispatched.size, "dispatch", "dispatches"))}</span></div></button>`;
+  edges += `<path class="companion-edge" d="M${layout.partner.x + 60} ${layout.partner.y + CARD_H} L${layout.partner.x + 60} ${layout.partner.y + CARD_H + 22}"><title>The Partner and its Companion</title></path>`;
+  const partnerCompanion = partnerCompanionNode(layout.partner);
 
-  return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>${esc(fleet.name)} <span class="count">${fleet.agents.length}</span></h1><p class="subtitle">The Partner at the root, every HarnessAgent below it as a card clustered by pod, each with its Companion.</p></div><span class="badge">${esc(count(fleet.pods.length, "pod"))} · ${fleet.agents.filter((a) => a.session_alive).length} / ${fleet.agents.length} sessions alive${esc(memoryNote(fleet.memory))}</span></div>${tabs("overview")}<section class="panel graph-panel"><div class="panel-head"><div><h2>Fleet graph</h2><p>${esc(count(fleet.agents.length, "HarnessAgent"))} · ${esc(count(dispatched.size, "dispatch", "dispatches"))} from the Partner</p></div><div class="graph-toolbar"><span id="zoom-value">${Math.round(zoom * 100)}%</span><button class="icon-button" data-zoom="out" aria-label="Zoom out">${icon("minus")}</button><button class="icon-button" data-zoom="in" aria-label="Zoom in">${icon("plus")}</button><button class="button" data-zoom="fit">Fit</button></div></div><div class="graph-viewport" id="graph-viewport"><div style="width:${layout.width * zoom}px;height:${layout.height * zoom}px"><div class="graph-canvas" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg class="graph-edges" viewBox="0 0 ${layout.width} ${layout.height}" aria-label="Dispatch and Companion connections"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#6cbaa2"/></marker></defs>${edges}</svg>${clusterBoxes}${partner}${nodes}</div></div></div>${onlyPartner}<div class="graph-legend"><span><i class="legend-line handoff"></i>Dispatched by the Partner (tasks.json)</span><span><i class="legend-line"></i>No dispatch on record</span><span><span class="dot green"></span> Working</span><span><span class="dot amber"></span> Needs attention</span><span><span class="dot muted"></span> Idle or no session</span></div></section>`;
+  return `<div class="page-heading"><div><div class="eyebrow">The whole instance</div><h1>${esc(fleet.name)} <span class="count">${fleet.agents.length}</span></h1><p class="subtitle">The Partner at the root, every HarnessAgent below it as a card clustered by pod, each with its Companion.</p></div><span class="badge">${esc(count(fleet.pods.length, "pod"))} · ${fleet.agents.filter((a) => a.session_alive).length} / ${fleet.agents.length} sessions alive${esc(memoryNote(fleet.memory))}</span></div>${tabs("overview")}<section class="panel graph-panel"><div class="panel-head"><div><h2>Fleet graph</h2><p>${esc(count(fleet.agents.length, "HarnessAgent"))} · ${esc(count(dispatched.size, "dispatch", "dispatches"))} from the Partner</p></div><div class="graph-toolbar"><span id="zoom-value">${Math.round(zoom * 100)}%</span><button class="icon-button" data-zoom="out" aria-label="Zoom out">${icon("minus")}</button><button class="icon-button" data-zoom="in" aria-label="Zoom in">${icon("plus")}</button><button class="button" data-zoom="fit">Fit</button></div></div><div class="graph-viewport" id="graph-viewport"><div style="width:${layout.width * zoom}px;height:${layout.height * zoom}px"><div class="graph-canvas" style="width:${layout.width}px;height:${layout.height}px;transform:scale(${zoom})"><svg class="graph-edges" viewBox="0 0 ${layout.width} ${layout.height}" aria-label="Dispatch and Companion connections"><defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#6cbaa2"/></marker></defs>${edges}</svg>${clusterBoxes}${partner}${partnerCompanion}${nodes}</div></div></div>${onlyPartner}<div class="graph-legend"><span><i class="legend-line handoff"></i>Dispatched by the Partner (tasks.json)</span><span><i class="legend-line"></i>No dispatch on record</span><span><span class="dot green"></span> Working</span><span><span class="dot amber"></span> Needs attention</span><span><span class="dot muted"></span> Idle or no session</span></div></section>`;
 }
 
 /* -- task board -------------------------------------------------------- *
@@ -1399,9 +1423,9 @@ function goalPanel(goal) {
     .filter(Boolean)
     .join(" · ");
   const addenda = (goal.addenda || [])
-    .map((a) => `<div class="small-label">addendum ${esc(clock(a.ts))}</div>${slot(markdown(a.text || ""), "addendum-block")}`)
+    .map((a) => fold(`addendum ${esc(clock(a.ts))}`, slot(markdown(a.text || ""), "addendum-block")))
     .join("");
-  return `<section class="panel"><div class="panel-body"><div class="panel-head"><div><h2>${esc(goal.id)}</h2><p>${esc(goal.pod || "")} · ${esc(meta)}</p></div>${phaseBadge(goal)}<button class="button" data-agent="${esc(goal.id)}">${icon("arrow")}Open agent</button></div><div class="divider"></div>${slot(markdown(goal.goal || ""))}${addenda}</div></section>`;
+  return `<section class="panel"><div class="panel-body"><div class="panel-head"><div><h2>${esc(goal.id)}</h2><p>${esc(goal.pod || "")} · ${esc(meta)}</p></div>${phaseBadge(goal)}<button class="button" data-agent="${esc(goal.id)}">${icon("arrow")}Open agent</button></div><div class="divider"></div>${fold("Goal text", slot(markdown(goal.goal || "")))}${addenda}</div></section>`;
 }
 
 function goalsPage() {
@@ -1467,12 +1491,14 @@ function partnerPage() {
   const show = partnerShow || {};
   const pane = show.pane || {};
   const alive = Boolean(pane.alive);
-  const paneBlock = `<section class="panel"><div class="panel-head"><div><h2>Partner pane</h2><p>${esc(count((pane.lines || []).length, "line"))} · ${esc(paneSource(pane.source))} · the Partner's replies</p></div><span class="badge ${alive ? "completed" : "unknown"}"><span class="dot"></span>${alive ? "session alive" : "no session"}</span></div><div class="panel-body">${slot(el("pre", { class: "output", text: (pane.lines || []).join("\n") || "No pane capture yet." }))}</div></section>`;
-  const partnerMd = `<section class="panel"><div class="panel-head"><div><h2>PARTNER.md</h2><p>What the Partner reads at every SessionStart.</p></div></div><div class="panel-body">${slot(markdown(show.partner_md || "_not yet_"))}</div></section>`;
+  // The pane is its own section at the top of the page, separate from the
+  // messages window below it.
+  const paneBlock = `<section class="panel pane-panel"><div class="panel-head"><div><h2>Partner pane</h2><p>${esc(count((pane.lines || []).length, "line"))} · ${esc(paneSource(pane.source))} · the Partner's replies</p></div><span class="badge ${alive ? "completed" : "unknown"}"><span class="dot"></span>${alive ? "session alive" : "no session"}</span></div><div class="panel-body">${slot(el("pre", { class: "output", text: (pane.lines || []).join("\n") || "No pane capture yet." }))}</div></section>`;
+  const partnerMd = `<section class="panel"><div class="panel-head"><div><h2>PARTNER.md</h2><p>What the Partner reads at every SessionStart.</p></div></div><div class="panel-body">${fold("Full text", slot(markdown(show.partner_md || "_not yet_")))}</div></section>`;
   // Spec 16.2 puts the board on the Partner view: it is what the human and the
   // Partner are talking about. It is the same table the Agents tab draws.
   const board = `${section("The fleet", "Every HarnessAgent, with the open step each one is on.")}${agentTable(allAgents())}`;
-  return `<div class="page-heading"><div><div class="eyebrow">The fleet's own agent</div><h1>Partner chat</h1><p class="subtitle">The Partner has no work item and never dispatches itself. You give it its goal here, or in its pane.</p></div><span class="badge ${alive ? "completed" : "unknown"}"><span class="dot"></span>${alive ? "session alive" : "no session"}</span></div>${tabs("partner")}<section class="panel gm-chat"><header class="chat-heading">${avatar({ id: "partner", session_alive: alive })}<div><h2>Partner</h2><span>hx wake partner · Claude Code in tmux session partner</span></div><span id="chat-status" role="status">${alive ? "Online" : "Offline · the message waits for a session"}</span></header><div id="chat-messages" class="chat-messages" role="log" aria-label="Messages sent to the Partner" aria-live="polite">${chatMessages()}</div><form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-text">Message the Partner</label><textarea id="chat-text" rows="3" maxlength="16000" placeholder="Message the Partner. This goes through hx wake partner."></textarea><div class="chat-compose-actions"><label>An idle Partner starts a turn; a busy one takes it as steering in the current turn.</label><button class="button primary" id="chat-send" type="button">Send</button></div><div id="chat-error" role="alert"></div><small>Full control — slash commands, interrupts — stays <code class="code-inline">tmux attach -t partner</code>. This page observes and sends; it does not operate the fleet.</small></form></section>${partnerMd}${board}${paneBlock}`;
+  return `<div class="page-heading"><div><div class="eyebrow">The fleet's own agent</div><h1>Partner chat</h1><p class="subtitle">The Partner has no work item and never dispatches itself. You give it its goal here, or in its pane.</p></div><span class="badge ${alive ? "completed" : "unknown"}"><span class="dot"></span>${alive ? "session alive" : "no session"}</span></div>${tabs("partner")}${paneBlock}<section class="panel gm-chat"><header class="chat-heading">${avatar({ id: "partner", session_alive: alive })}<div><h2>Partner</h2><span>hx wake partner · Claude Code in tmux session partner</span></div><span id="chat-status" role="status">${alive ? "Online" : "Offline · the message waits for a session"}</span></header><div id="chat-messages" class="chat-messages" role="log" aria-label="Messages sent to the Partner" aria-live="polite">${chatMessages()}</div><form id="chat-form" class="chat-composer"><label class="sr-only" for="chat-text">Message the Partner</label><textarea id="chat-text" rows="3" maxlength="16000" placeholder="Message the Partner. This goes through hx wake partner."></textarea><div class="chat-compose-actions"><label>An idle Partner starts a turn; a busy one takes it as steering in the current turn.</label><button class="button primary" id="chat-send" type="button">Send</button></div><div id="chat-error" role="alert"></div><small>Full control — slash commands, interrupts — stays <code class="code-inline">tmux attach -t partner</code>. This page observes and sends; it does not operate the fleet.</small></form></section>${partnerMd}${board}`;
 }
 
 function bindChat() {
@@ -1565,7 +1591,7 @@ function partnerDrawer() {
     `<div class="drawer-head"><a href="#partner">Partner chat</a><span class="slash">/</span><span>partner</span><button class="icon-button" id="close-drawer" aria-label="Close details">${icon("close")}</button></div>` +
     `<div class="drawer-title">${avatar({ id: "partner", session_alive: pane.alive })}<div><h2>Partner</h2><p>no work item · no task · ${esc(companionNote(show.companion))}</p></div><span style="margin-left:auto">${badge(pane.alive ? "completed" : "unknown", pane.alive ? "session alive" : "no session")}</span></div>` +
     `<div class="drawer-actions"><a class="button primary" href="#partner">${icon("terminal")}Open the chat</a>${sessionLink("partner")}${compactionLink("partner", show)}</div>` +
-    `<div class="small-label">PARTNER.md</div>${slot(markdown(show.partner_md || "_not yet_"))}`
+    fold("PARTNER.md", slot(markdown(show.partner_md || "_not yet_")))
   );
 }
 
@@ -1580,17 +1606,17 @@ function sectionLabel(title) {
 function workItemBlocks(show) {
   const found = sections((show.work_item || {}).body || "");
   const addenda = ((show.task || {}).addenda || [])
-    .map((x) => `<div class="small-label">Goal addendum ${esc(clock(x.ts))}</div>${slot(markdown(x.text || ""), "addendum-block")}`)
+    .map((x) => fold(`Goal addendum ${esc(clock(x.ts))}`, slot(markdown(x.text || ""), "addendum-block")))
     .join("");
   const notYet = '<p class="notyet">not yet</p>';
   if (!found.length) {
     const goal = (show.task || {}).goal;
-    return `<div class="small-label">Goal</div>${goal ? slot(markdown(goal)) : notYet}${addenda}`;
+    return `${fold("Goal", goal ? slot(markdown(goal)) : notYet)}${addenda}`;
   }
   return found
     .map((section) => {
       const label = sectionLabel(section.title);
-      const block = `<div class="small-label">${esc(label)}</div>${section.text ? slot(markdown(section.text)) : notYet}`;
+      const block = fold(esc(label), section.text ? slot(markdown(section.text)) : notYet);
       return label === "Goal" ? block + addenda : block;
     })
     .join("");
@@ -1664,9 +1690,9 @@ function sessionPage(focus) {
       ? ""
       : block("Companion", a ? companionPanel(show, a, openSteps(id)) : notYet) +
         block("Step state", Object.keys(stepStates).length ? slot(Object.entries(stepStates).map(([handle, state]) => stepState(handle, state))) : notYet) +
-        block("Context file", contextFile
+        `<section class="panel"><div class="panel-body">${fold("Context file", contextFile
           ? `<code class="file-path">${esc(contextFile.path)} · seam ${esc(clock(contextFile.seam_ts))}</code>${slot(markdown(withoutMemoryEpisodes(contextFile.text) || "_not composed yet_"), "context")}`
-          : notYet)) +
+          : notYet)}</div></section>`) +
     block("Streams", (show.streams || []).length ? slot((show.streams || []).map((s) => streamCard(s, show.metrics || null))) : notYet) +
     (partner
       ? ""
@@ -1880,6 +1906,13 @@ function render() {
   // caret out of the search box or the Partner's message mid-sentence.
   const focused = document.activeElement && document.activeElement.id;
   const caret = focused && $(focused) ? $(focused).selectionStart : null;
+  // Pane outputs are scrollable boxes; a repaint resets them to the top. Keep
+  // each one's position, or pin it to the bottom when it was already there so
+  // streaming output follows the tail instead of jumping.
+  const outputScroll = Array.from(document.querySelectorAll("pre.output") || []).map((n) => ({
+    top: n.scrollTop || 0,
+    pinned: (n.scrollHeight || 0) - (n.scrollTop || 0) - (n.clientHeight || 0) < 24,
+  }));
   const page = PAGES[parts[0]] || graphPage;
 
   paint($("content"), page({ pod: focusPod, agent: focusAgent }));
@@ -1888,6 +1921,13 @@ function render() {
     $("graph-viewport").scrollLeft = graphScroll[0];
     $("graph-viewport").scrollTop = graphScroll[1];
   }
+  Array.from(document.querySelectorAll("pre.output") || []).forEach((n, i) => {
+    const prev = outputScroll[i];
+    if (!prev) return;
+    // scrollHeight is always a number where layout runs; where it is unknown,
+    // restoring the exact prior position beats assigning undefined.
+    n.scrollTop = prev.pinned && n.scrollHeight ? n.scrollHeight : prev.top;
+  });
   // The sidebar's pod and agent entries zoom the home graph to that cluster or
   // node; there are no pod pages to go to (goal ui-8).
   if (parts[0] === "overview" && (focusPod || focusAgent) && $("graph-viewport")) {

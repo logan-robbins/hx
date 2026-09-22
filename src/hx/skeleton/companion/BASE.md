@@ -71,6 +71,9 @@ Write telegraphically. Not terse prose — telegraphic:
   Ambiguity is the one thing worse than length.
 - **Numbers, not adjectives.** "3 of 47 failed", "p95 180ms vs 120ms target", not "several",
   "slow", "mostly working".
+- **No token or context counts, ever.** Never write `context_tokens`, token estimates, or
+  `ctx=N` into any field: the stream records carry them and both seam triggers read them
+  there. A number in prose is stale on arrival and spends the budget it claims to track.
 - **Never restate the goal, the schema, or what you are doing.** The agent has the goal.
 
 Length is a budget per field, not a style. Hard guidance, in characters:

@@ -771,6 +771,12 @@ select {
   border-radius: var(--radius);
   overflow: hidden;
 }
+/* Views stack panels directly (Partner chat, PARTNER.md, board, pane, goal
+   and agent sections). Without this they touch; one rule covers every screen. */
+main > section.panel,
+main > div.panel {
+  margin-bottom: 24px;
+}
 .panel-head {
   padding: 18px 20px;
   display: flex;
@@ -1110,6 +1116,29 @@ select {
   text-transform: uppercase;
   color: var(--faint);
   margin-bottom: 10px;
+}
+/* Folded file bodies: the name is always visible, the body opens on demand. */
+details.fold {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  margin-bottom: 12px;
+}
+details.fold > summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  margin-bottom: 0;
+}
+details.fold > summary:hover {
+  color: var(--muted);
+}
+details.fold > summary::marker {
+  color: var(--faint);
+}
+details.fold[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+details.fold .fold-body {
+  padding: 12px 14px;
 }
 .pulse-agent {
   display: flex;
@@ -1869,6 +1898,7 @@ select {
 .chat-heading h2 {margin:0;font-size:16px}.chat-heading span{font-size:12px;color:var(--muted)}
 #chat-status {margin-left:auto}
 .chat-messages {padding:24px;display:flex;flex-direction:column;gap:18px;min-height:280px;max-height:55vh;overflow:auto}
+.pane-panel .output {max-height:580px}
 .chat-message {max-width:88%;padding:16px 20px;border-radius:12px;border:1px solid var(--line)}
 .chat-message.user {align-self:flex-end;background:#213343}.chat-message.gm {align-self:flex-start;background:var(--raised)}
 .chat-byline {font-size:12px;font-weight:650;display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}
