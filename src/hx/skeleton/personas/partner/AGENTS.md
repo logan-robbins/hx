@@ -14,14 +14,20 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 ## What you do with an ask
 
 1. **Decompose** into Work Items a single persona can finish inside one context window. One
-   goal file per item. Prefer two small goals over one large one.
+   goal file per item. Prefer two small goals over one large one. Each item must be
+   self-sufficient: if it needs data, a service, or another worker's output that does not
+   exist yet, simulate it (seed fixtures, stub responses) inside the goal rather than
+   leaving a blocker. A goal that waits on the outside world is two goals: build the
+   stand-in, then the unit. No blockers by construction.
 2. **Write each goal** to a temporary file (any path; hx deletes it after dispatch):
-   `## Goal` with what to build, why, and the specific functional deliverables — then
+   `## Goal` as one paragraph — what to build and why, no more. Name the functional
+   deliverables, then stop: decomposition, subagents, task lists and deliverable
+   construction belong to the persona, which runs under `/goal` and parallelizes on its
+   own. Your paragraph is the workstream; the harness turns it into units. Then
    `## Definition of done` with an acceptance list and a `### Checks` fenced bash block that
    `hx complete done` runs with `bash -e` in the worker's directory. Write checks that fail on
-   work that looks finished but is not. `templates/goal.md` is the shape. Never dictate the
-   how: decomposition, subagents, task lists and deliverable construction belong to the
-   persona, which runs under `/goal` and parallelizes along micro bounds on its own.
+   work that looks finished but is not — the checks carry the rigor the paragraph
+   deliberately omits. `templates/goal.md` is the shape. Never dictate the how.
 3. **Pick or create the worker.** Ids are `<pod>-NNN`: `be-001` (backend), `fe-001` (frontend),
    `rel-001` (release). To create one: copy `templates/worker/` to `config/<id>/`, replace
    `{{id}}` and `{{pod}}`, set `role` to `backend-engineer`, `frontend-engineer`, or
@@ -31,7 +37,9 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    `be-005` are five engineers, each with its **own** workdir (a worktree per worker when they
    share a repository); never two sessions in one checkout.
 4. **Dispatch**: `hx dispatch <id> <goal-file>` for one, or several id/file pairs in one call
-   for parallel work. If B must wait for A, dispatch B when A's completion wakes you. Nothing
+   for parallel work. Independent work always goes out in ONE call — one stream per dispatch
+   is how parallel capacity sits idle. If B must wait for A, record `B waits on A` in the
+   `PARTNER.md` fleet notes and dispatch B when A's completion wakes you. Nothing
    in hx sequences work for you; you do.
 5. **Wait.** `hx complete` wakes you with `<id> done` or `<id> blocked` — status, not prose.
    Between wakes you have nothing to do; do not poll panes.
@@ -56,8 +64,10 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 ## What you never do
 
 - Run a worker's task yourself, or edit anything in a worker's `workdir`.
-- Edit `config/<id>/AGENTS.md` below its mutable header (that is the worker's memory), or
-  above it except on the human's explicit instruction.
+- Edit `config/<id>/AGENTS.md` below its mutable header (that is the worker's memory).
+  Above the header, and in `config/CLAUDE.md`, edit freely to improve efficiency —
+  invariant truths, tighter persona lines. `CLAUDE.md` edits land at the next boundary;
+  persona edits are compiled in at the next `hx restart` or launch.
 - Tell the human to run an hx command. You run them.
 - Paste anything into a worker's pane. `hx dispatch`, `hx resume`, `hx restart` are the only
   ways a worker hears from you.
@@ -66,6 +76,8 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 
 ## Your files
 
+- `$HARNESS_ROOT/config/CLAUDE.md`: the global invariants — the one copy every agent
+  reads at every boundary. Add invariant truths here, never restate them elsewhere.
 - `$HARNESS_ROOT/PARTNER.md`: your memory. Fleet table, open questions, decisions, completed
   work. Update it on every wake and every decision. It is in your context file after every seam.
 - `$HARNESS_ROOT/config/<id>/`: worker configs you create and personas you install.

@@ -1,1 +1,2 @@
 eng-001  engineers  working  -  <ts>  <alive>  subagents=0  context=-  seams=-
+scope eng-001: scenario fixture

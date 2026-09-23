@@ -20,14 +20,13 @@ compaction. At every one of them a hook prints a single line (spec 09.1, verbati
 Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
-**Use the Read tool, exactly once, before anything else.** Not `cat`, not `head`, not any Bash
-command. A `Bash cat` of that path spends the same tokens, does not count as the one Read the
-seam metric measures, and is recorded against you as waste — the harness is trying to find out
-whether one composed file is enough, and a shell read makes the answer look better than it is.
-Do not read it a second time later in the turn.
+The global rules are the file's first section (`## Invariants`, from `config/CLAUDE.md`) —
+they are not restated here. One mechanics note the invariants do not carry: use the Read
+tool (a Bash `cat` of that path does not count as the one Read the seam metric measures).
 
 That path is your context file. It holds, in order:
 
+0. Invariants — the global rules; read them, do not restate them
 1. Your memory — what you wrote below `## UPDATES BELOW ONLY` in your `AGENTS.md`
 2. Your goal — the verbatim `## Goal` and every addendum
 3. Your `## Tasks` section, as you last left it
@@ -165,8 +164,7 @@ The boundary line names the read tool this session actually has: `Read` on Claud
 You will not see any of this, but it explains the shape of the rest.
 
 A hook runs after each of your turns. It records the turn and whether background work is still
-running; it delivers a `/goal` pointer if one was owed to your pane (which is how the Partner
-dispatches itself from inside its own turn); and it takes a seam if one is pending and nothing
+running, wakes your Companion, and takes a seam if one is pending and nothing
 is running in the background.
 
 Two consequences for you. **Finishing your turn is what lets the harness act** — a turn that

@@ -49,6 +49,7 @@ BOARD_ITEMS = [
         "dispatched": "2026-09-20T10:00:00Z", "completed": "2026-09-20T11:58:12Z",
         "open_subagents": 0, "goal_ts": "2026-09-20T10:00:03Z", "session_alive": True,
         "context_tokens": 132880, "seams": 2, "turn_ts": "2026-09-20T11:58:12Z",
+        "scope": "Ship `hx board --json`.",
     },
     {
         "id": "eng-001", "pod": "engineers", "role": "engineer", "state": "working",
@@ -56,6 +57,7 @@ BOARD_ITEMS = [
         "dispatched": "2026-09-20T12:00:00Z", "completed": None,
         "open_subagents": 1, "goal_ts": "2026-09-20T12:00:03Z", "session_alive": True,
         "context_tokens": 48211, "seams": 2, "turn_ts": "2026-09-20T13:09:40Z",
+        "scope": "Add `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a",
     },
     {
         # Never dispatched: no goal, no stream, so `seams` and `context_tokens`
@@ -64,7 +66,7 @@ BOARD_ITEMS = [
         "file": "pods/engineers/eng-002-idle.md", "outcome": None,
         "dispatched": None, "completed": None,
         "open_subagents": 0, "goal_ts": None, "session_alive": True,
-        "context_tokens": None, "seams": None, "turn_ts": None,
+        "context_tokens": None, "seams": None, "turn_ts": None, "scope": None,
     },
     {
         "id": "eng-003", "pod": "engineers", "role": "engineer", "state": "complete",
@@ -72,6 +74,7 @@ BOARD_ITEMS = [
         "dispatched": "2026-09-20T10:30:00Z", "completed": "2026-09-20T12:47:31Z",
         "open_subagents": 0, "goal_ts": "2026-09-20T10:30:04Z", "session_alive": True,
         "context_tokens": 74902, "seams": 1, "turn_ts": "2026-09-20T12:47:31Z",
+        "scope": "Decide where the seam threshold lives: per model in `config/models.json`, or per agent in",
     },
     {
         # A working item whose session is gone. With no invariants in v1 this is
@@ -80,7 +83,7 @@ BOARD_ITEMS = [
         "file": "pods/research/res-001-working.md", "outcome": None,
         "dispatched": "2026-09-20T08:40:00Z", "completed": None,
         "open_subagents": 0, "goal_ts": "2026-09-20T08:40:02Z", "session_alive": False,
-        "context_tokens": 20118, "seams": 0, "turn_ts": "2026-09-20T09:02:11Z",
+        "context_tokens": 20118, "seams": 0, "turn_ts": "2026-09-20T09:02:11Z", "scope": None,
     },
 ]
 

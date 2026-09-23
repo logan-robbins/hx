@@ -4,7 +4,10 @@ It judges nothing and exits 0. The v1 cut (spec 14 D25) removed the nine invaria
 `errors` list, and `--require-done`: a board that refuses to agree with the filesystem is a
 policy engine, and hx has none. `partner` is not an item: the Partner has no work item.
 
-Text form: `id  pod  state  outcome  dispatched  alive|dead  subagents=N  context=N  seams=N`.
+Text form: `id  pod  state  outcome  dispatched  alive|dead  subagents=N  context=N  seams=N`,
+one line per id, followed by one `scope <id>: <first line of the goal>` line per id that
+has a goal. The scopes are machine-derived from `tasks.json` (else the work item), so the
+Partner sees what each stream is building without spending a read per worker.
 `--json` is the object in CONTRACTS.md.
 """
 
@@ -19,7 +22,10 @@ from .config_harness import load_harness
 from .errors import HxError, ValidationError
 from .ids import ID_RE, PARTNER, sort_key
 from .tasks import load_tasks
-from .workitems import find_work_items, parse_work_item
+from .workitems import SECTION_GOAL, find_work_items, parse_work_item, section_text
+
+#: The scope line carries at most this much of the goal: a pointer, not the goal.
+SCOPE_CHARS = 160
 
 
 def _config_ids(root: Path) -> list[str]:
@@ -60,6 +66,26 @@ INPUT_PATTERNS = (
 def pane_awaits_input(lines) -> bool:
     """True when a pane tail carries a known awaiting-human marker."""
     return any(marker in line for line in lines for marker in INPUT_PATTERNS)
+
+
+def scope_for(task: dict, work_item) -> str | None:
+    """One line saying what this id is building: the goal's first content line.
+
+    Read from `tasks.json` first (the record `hx dispatch` wrote), else from the work
+    item's `## Goal`. Capped at `SCOPE_CHARS`: a pointer for planning, not the goal.
+    Never raises: a board that refuses to agree with the filesystem is a policy engine.
+    """
+    try:
+        goal = (task.get("goal") or "").strip()
+        if not goal and work_item is not None:
+            goal = (section_text(work_item.body, SECTION_GOAL) or "").strip()
+        for line in goal.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line[:SCOPE_CHARS]
+    except Exception:
+        pass
+    return None
 
 
 def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
@@ -138,6 +164,8 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
                 # it last wrote a state. The UI's "something is happening" for a complete id.
                 "companion_pass": activity["pass_in_flight"],
                 "companion_ts": activity["last_state_ts"],
+                # What this id is building, machine-derived (see `scope_for`).
+                "scope": scope_for(task, work_item),
             }
         )
 
@@ -150,7 +178,10 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
 
 
 def render_text(board: dict) -> str:
-    """One line per id, in the order of spec 08. No verdicts, no trailing error block."""
+    """Status rows in the order of spec 08, then one scope line per id that has a goal.
+
+    No verdicts, no trailing error block.
+    """
     lines = []
     for item in board["items"]:
         lines.append(
@@ -169,6 +200,9 @@ def render_text(board: dict) -> str:
                 )
             )
         )
+    for item in board["items"]:
+        if item.get("scope"):
+            lines.append(f"scope {item['id']}: {item['scope']}")
     return "\n".join(lines)
 
 

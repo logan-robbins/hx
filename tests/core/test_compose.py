@@ -16,6 +16,7 @@ import pytest
 from .conftest import PERSONA, clean_env, wait_for
 
 SECTION_GOAL = [
+    "## Invariants",
     "## Memory",
     "## Task",
     "## Tasks",
@@ -66,8 +67,23 @@ def test_the_sections_are_in_the_order_spec_07_3_fixes(instance, hx, launched, g
     assert result.stdout.strip() == str(path)
 
     text = path.read_text()
-    positions = [section_index(text, heading) for heading in SECTION_GOAL]
+    # Headings match with their newline: `## Task` is a prefix of `## Tasks`, which the
+    # Invariants prose mentions, so a bare substring finds the mention, not the section.
+    positions = [section_index(text, heading + "\n") for heading in SECTION_GOAL]
     assert positions == sorted(positions), f"sections out of order: {positions}"
+
+
+def test_the_invariants_ride_first_from_the_single_file(instance, hx, launched, goals):
+    """One copy of the global rules (`config/CLAUDE.md`), read on every stream."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    assert hx("compose", "eng-001").returncode == 0
+    text = context_file(instance, "eng-001").read_text()
+    source = (instance / "config" / "CLAUDE.md").read_text().strip("\n")
+    assert source in text, "the invariants file is not carried whole"
+    assert "_source: `config/CLAUDE.md`_" in text
 
 
 def test_the_persona_is_never_in_the_context_file(instance, hx, launched, goals):
@@ -107,7 +123,7 @@ def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launch
 
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
-    task = text[section_index(text, "## Task"):section_index(text, "## Tasks")]
+    task = text[section_index(text, "## Task\n"):section_index(text, "## Tasks\n")]
     assert "The original order." in task
     assert "And also handle the empty case." in task
 
@@ -202,7 +218,7 @@ def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched
     assert result.returncode == 0, result.stderr
     text = (instance / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
     assert "You are a subagent of eng-001." in text
-    assert "## Tasks" not in text
+    assert "\n## Tasks\n" not in text, "`## Tasks` is main-stream only"
     assert "## Who your subagents are" in text
 
 

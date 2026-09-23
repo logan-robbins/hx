@@ -3,12 +3,18 @@
 Two jobs at every turn boundary, in this order:
 
   1. record the turn and its `background_tasks` in `run/<id>/turn`, and wake the Companion
+     when a batch of records is owed to it
   2. take a seam if one is pending — `hx seam` reads the marker this hook just wrote, so the
      `background_tasks` it gates on are this turn's
 
 It returns no decision output: `/goal` owns whether the agent keeps working (spec 09.1).
 The v1 cut (spec 14 D25) removed `goal-pending` delivery: it existed only for the Partner
 dispatching itself, and the Partner has no work item and no goal.
+
+The turn-end wake is batch-gated, not forced: waking the Companion past a `/clear` and a
+full re-read on every turn is how the continuity machinery eats the context budget it
+exists to protect. Forced wakes belong to deliberate acts — `hx flush`, `hx seam`'s
+readiness signal, and the Companion's own `stop` hook installing a pass.
 """
 
 from __future__ import annotations
@@ -42,10 +48,11 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         "session_id": payload.get("session_id"),
     })
 
-    # Spec 10 wake trigger: `run/<id>/turn` touched.
+    # Spec 10 wake trigger: `run/<id>/turn` touched. Batch-gated: the turn end is
+    # routine, and a forced wake per turn is Companion churn (see the module docstring).
     from . import companion as companion_mod
 
-    companion_mod.wake_due(root, item_id, force=True, env=env)
+    companion_mod.wake_due(root, item_id, env=env)
 
     from .hook_log import seam_marker
 

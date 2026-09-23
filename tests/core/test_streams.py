@@ -190,7 +190,7 @@ def test_three_parallel_subagents_get_three_isolated_streams(working):
     first = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
     assert "look at thing 1" in first and "look at thing 2" not in first
     assert "subagent" in first.lower(), "SUBAGENTS.md is the memory section (spec 07.3)"
-    assert "## Tasks" not in first, "`## Tasks` is main-stream only"
+    assert "\n## Tasks\n" not in first, "`## Tasks` is main-stream only"
 
 
 def test_the_main_stream_records_every_spawn_and_close(working):
@@ -423,7 +423,7 @@ def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(work
     assert result.returncode == 0, result.stderr
 
     text = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
-    section = text[text.index("## Task"):text.index("## Step state")]
+    section = text[text.index("## Task\n"):text.index("## Step state")]
     assert "_none yet_" not in section, "an empty task section tells the subagent nothing"
     assert "already in this conversation" in section
 

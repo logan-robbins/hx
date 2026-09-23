@@ -33,8 +33,9 @@ def append(instance, item_id, stream, count, **extra):
 
     for _ in range(count):
         append_record(instance, item_id, stream, {"event": "post_tool", "tool": "Bash", **extra})
-    # `force` is the turn-end trigger: the `stop` and `subagent-stop` hooks and `hx flush` all
-    # wake regardless of `batch_records`, which is the threshold the `log` hook uses.
+    # `force` is the deliberate-act trigger: `hx flush`, `hx seam`'s readiness signal, and
+    # the Companion's own `stop` hook wake regardless of `batch_records`, which is the
+    # threshold the `log` hook and the turn-end `stop` hook use.
     wake_due(instance, item_id, force=True)
 
 
@@ -513,30 +514,27 @@ def test_doctor_warns_rather_than_failing_while_start_sh_has_not_execd(instance)
         doctor_mod.pane_command = original
 
 
-def test_the_partner_is_never_seamed(instance):
-    """spec 12: nothing the harness does to a worker is done to the Partner — seams included.
-
-    Seen live 2026-09-21: the Partner's Companion set the marker at 133k context, and every
-    `stop` afterwards tracebacked in `hx seam`'s "no work item" refusal.
+def test_a_pending_partner_seam_is_acted_on(instance):
+    """spec 14 D14: the Partner takes seams like any agent — `/clear` plus rehydrate from
+    its context file, with no goal pointer. The old "no work item" refusal is gone: a
+    pending marker runs the readiness checks, and while the Companion is behind the
+    marker stays for the next boundary with a watcher record.
     """
-    from hx import hook_stop
-    from hx.companion import config_for, seam_is_due
+    from hx import hook_stop, streams
     from hx.hook_log import seam_marker
+    from hx.streams import iter_records, stream_path
 
-    harness = instance / "config" / "partner" / "harness.json"
-    config = json.loads(harness.read_text())
-    config["companion"] = {"seam_min_context_tokens": 1, "seam_min_interval_s": 0}
-    harness.write_text(json.dumps(config))
-    from hx.streams import append_record
-
-    append_record(instance, "partner", "partner-main",
-                  {"event": "post_tool", "tool": "Bash", "context_tokens": 200000})
-    closed = {"closed_steps": [{"id": "st1", "outcome": "done"}], "subagents_open": []}
-    assert not seam_is_due(instance, config_for(instance, "partner"), closed)
-
+    streams.append_record(
+        instance, "partner", "partner-main",
+        {"event": "post_tool", "tool": "Bash", "input": "ls", "output": "a",
+         "context_tokens": 1000},
+    )
     marker = seam_marker(instance, "partner")
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
     code, line = hook_stop.handle({"session_id": "s"}, "partner", instance, env=None)
     assert (code, line) == (0, "")
-    assert not marker.exists(), "a stale Partner marker is dropped, not acted on"
+    assert marker.exists(), "not ready: the marker stays for the next boundary"
+    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
+    assert records[-1]["event"] == "seam_waiting"
+    assert records[-1]["ready"] == "behind"

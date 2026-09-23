@@ -28,7 +28,7 @@ OUTCOMES = {None, "done", "blocked", "decision", "exhausted"}
 BOARD_KEYS = {
     "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
     "open_subagents", "goal_ts", "session_alive", "needs_input", "context_tokens", "seams", "turn_ts",
-    "companion_pass", "companion_ts",
+    "companion_pass", "companion_ts", "scope",
 }
 
 

@@ -17,6 +17,9 @@ SPEC_08_COMMANDS = {
     "memory",
     # File memory (CONTRACTS.md `hx read` and `hx recall`), likewise post-spec-08.
     "recall",
+    # Template compiler: distributes config/CLAUDE.md + role persona into
+    # config/<id>/AGENTS.md on launch/restart; likewise post-spec-08.
+    "compile",
 }
 
 

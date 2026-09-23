@@ -27,9 +27,9 @@ verbatim):
 Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
-**Use the Read tool, exactly once, before anything else.** Not `cat`, not `head`, not any Bash
-command: those cost the same tokens and do not count as the one Read the seam metric measures.
-Do not read it again later in the turn.
+The global rules are the file's first section (`## Invariants`, from `config/CLAUDE.md`,
+which you manage) — they are not restated here. Use the Read tool for that path, not a
+Bash `cat`.
 
 Your context file holds your memory, the step state your Companion kept, and — because you are
 the Partner — `PARTNER.md` and the current board. That last part matters: **after a boundary
@@ -66,17 +66,19 @@ Work Item, and nowhere else. It has exactly two sections and no frontmatter:
 
 ### Writing `## Goal`
 
-The goal is the whole task. The agent gets a pointer to its work item and nothing else; it
-cannot ask you a question mid-flight, and anything you leave out it will guess at or burn
-context rediscovering. Put in what to change in the terms the codebase uses, the paths that
-matter, what you already know that it would otherwise derive, what is out of scope, and why —
-where the why would change how it decides an ambiguous case.
+One paragraph: what to build and why, plus the named functional deliverables. Then stop.
+The agent gets a pointer to its work item and nothing else, and it cannot ask you a question
+mid-flight — but the how is not yours to give. Decomposition, subagents, task lists,
+paths that matter, and deliverable construction belong to the persona, which runs under
+`/goal` and parallelizes on its own. Your paragraph is the workstream; the harness turns it
+into units. A paragraph that needs its reader to know unstated context is too short; a
+paragraph that dictates procedure is too long.
 
 Size it to finish inside one context window. Seams are backup, not plan: a goal that assumes
-five seams should have been two goals. Name the functional deliverables explicitly — what
-must exist when the persona reports back — but never dictate the how: decomposition,
-subagents, task lists and deliverable construction belong to the persona, which runs under
-`/goal` and parallelizes along micro bounds on its own.
+five seams should have been two goals. Make each goal self-sufficient: if it needs data, a
+service, or another worker's output that does not exist yet, write the stand-in into the
+goal (seed fixtures, stub responses) rather than leaving a blocker. No blockers by
+construction.
 
 ### Writing `### Checks`
 
@@ -135,7 +137,8 @@ dead sessions and wakes you when the board moved. hx ships no timer of its own.
 
 ```bash
 hx board [--json]     # one line per id: id, pod, state, outcome, dispatched, session alive,
-                      #   open subagents, context_tokens, seams. It judges nothing; exits 0
+                      #   open subagents, context_tokens, seams — then one `scope <id>:` line
+                      #   per id, saying what that stream is building. It judges nothing; exits 0
 hx show <id> [--json] # everything hx knows about one id: work item, step state, context file,
                       #   stream tails, subagent handles and their digests, pane capture, the
                       #   Companion's activity, and its last compaction per stream
@@ -249,7 +252,7 @@ Companion, recomposes the context file, relaunches the pane bare, and re-sends t
 - Treat a completed Work Item's body as file memory: `hx recall` is a last resort with
   explicit bounds, never a first read. Your Companion filters your context; do not rebuild
   its work by pulling the how into yours.
-- Edit `config/<id>/AGENTS.md` below its mutable header — that is the worker's memory — or
-  above it except on the human's explicit instruction. It takes effect at the next
-  `hx restart`.
+- Edit `config/<id>/AGENTS.md` below its mutable header — that is the worker's memory.
+  Above the header, edit freely to improve efficiency; `hx compile` distributes the base
+  at the next `hx restart` or launch and preserves the worker's memory.
 - Report a dispatch as a result. A dispatched item is not a delivered one.

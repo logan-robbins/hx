@@ -162,11 +162,14 @@ def assert_expected_board(
     """The checked-in file agrees with the state this step is in, column by column.
 
     `hx board` is a listing, not a verdict (spec 08): no invariants, no error lines, and one
-    row per *worker* id — the Partner has no work item and is never on it.
+    row per *worker* id — the Partner has no work item and is never on it — followed by
+    one machine-derived `scope <id>:` line per id that has a goal.
     """
     lines = (expected_dir / f"{stem}.txt").read_text().strip().splitlines()
-    assert len(lines) == len(states), f"{stem}: {len(lines)} lines for {len(states)} ids"
-    for line, item_id in zip(lines, sorted(states)):
+    rows = [line for line in lines if not line.startswith("scope ")]
+    scopes = [line for line in lines if line.startswith("scope ")]
+    assert len(rows) == len(states), f"{stem}: {len(rows)} rows for {len(states)} ids"
+    for line, item_id in zip(rows, sorted(states)):
         state, outcome, _ = states[item_id]
         columns = line.split()
         assert columns[0] == item_id, f"{stem}: {line!r} does not start with {item_id}"
@@ -174,6 +177,9 @@ def assert_expected_board(
         assert columns[2] == state, f"{stem}: {line!r} is not {state}"
         assert columns[3] == (outcome or "-"), f"{stem}: {line!r} outcome is not {outcome}"
         assert "partner" not in line, f"{stem}: the Partner is not a row on the board"
+    assert scopes == [
+        f"scope {item_id}: scenario fixture" for item_id in sorted(states)
+    ], f"{stem}: scope lines are one per id, derived from the pack goal"
 
 
 def assert_no_cut_features(steps: list[tuple[str, dict[str, State]]]) -> None:

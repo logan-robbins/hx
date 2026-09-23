@@ -15,6 +15,41 @@ as milestones are accepted.
 
 ### Added
 
+- Template compiler (`src/hx/compile.py`, `hx compile`): base rules live in two
+  Partner-managed sources — `config/CLAUDE.md` (global invariants) and
+  `personas/<role>/AGENTS.md` (role) — and are distributed into each worker's final
+  `config/<id>/AGENTS.md` as fenced regions on every `hx launch` and `hx restart`,
+  preserving the per-id text and the agent's below-header memory. Roles without a
+  persona file compile globals only; the Partner is exempt. The Partner may edit
+  above-header persona text and `config/CLAUDE.md` freely for efficiency.
+- `## Invariants` context-file section (spec 07.3 §0): `config/CLAUDE.md` whole, on
+  every stream including subagents — the hooks' live read, so a Partner edit lands at
+  the next boundary on every harness flavor. Skills and personas point here instead of
+  restating the rules.
+- Board scopes: `hx board --json` items carry `scope` (the goal's first content line
+  from `tasks.json`, else the work item, capped at 160 chars, `null` when goalless)
+  and the text form appends `scope <id>:` lines, so the Partner sees what each stream
+  is building without a read per worker.
+- Paragraph-goal contract: the Partner writes `## Goal` as one paragraph of what/why
+  plus deliverables and stops; the harness decomposes. Goals must be self-sufficient
+  (simulate missing data/services in-goal — no blockers by construction) and
+  independent work goes out in one `hx dispatch` call, with `waits on` tracked in
+  `PARTNER.md`.
+- `hx bench` clears `idle` items with outcome `done` and no live session (killed
+  sessions left finished work uncleared); live sessions and unfinished items are
+  still refused.
+- Board `needs_input`: `hx board --json` items carry true while a live pane tail
+  matches a known awaiting-human marker, with a needs-input column in the text
+  form — the stall nothing else reports.
+
+### Changed
+
+- The turn-end `stop` hook wakes the Companion batch-gated instead of forced; forced
+  wakes belong to `hx flush`, `hx seam`, and the Companion's own `stop` hook.
+- `test_the_partner_is_never_seamed` replaced by `test_a_pending_partner_seam_is_acted_on`
+  (spec 14 D14: the Partner takes seams; the old test contradicted the shipped behavior
+  and failed).
+
 - Episode memory (`src/hx/memory.py`, `docs/memory.md`): every Companion compaction (`pass`),
   seam, native compaction and Digest is kept as a time-stamped episode in an instance-global
   ChromaDB store under `state/memory/`, written by hooks as a queued JSON file and indexed under

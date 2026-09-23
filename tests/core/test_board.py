@@ -14,7 +14,7 @@ from hx.board import collect, render_text
 CONTRACT_ITEM_KEYS = {
     "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
     "open_subagents", "goal_ts", "session_alive", "needs_input", "context_tokens", "seams", "turn_ts",
-    "companion_pass", "companion_ts",
+    "companion_pass", "companion_ts", "scope",
 }
 
 
@@ -150,6 +150,26 @@ def test_open_subagents_are_counted(instance, work_item):
 
 
 # --- it judges nothing ----------------------------------------------------------------------
+
+
+def test_scope_is_the_goals_first_line_from_tasks_json(instance, work_item):
+    work_item("eng-001", "working")
+    write_tasks(instance, {"eng-001": {"goal": "Stream the importer.\n\nWhy: speed."}})
+    board = collect(instance)
+    item = {i["id"]: i for i in board["items"]}["eng-001"]
+    assert item["scope"] == "Stream the importer."
+    assert "scope eng-001: Stream the importer." in render_text(board).splitlines()
+
+
+def test_scope_falls_back_to_the_work_item(instance, work_item):
+    work_item("eng-001", "working")
+    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
+    assert item["scope"] == "Do it."
+
+
+def test_scope_is_null_with_no_goal(instance, work_item):
+    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
+    assert item["scope"] is None
 
 
 def test_a_malformed_work_item_is_listed_not_refused(instance, work_item):

@@ -30,12 +30,19 @@ One entry per worker id, by id.
       "seams": 2,
       "turn_ts": "2026-09-20T13:09:40Z",
       "companion_pass": false,
-      "companion_ts": "2026-09-20T13:09:35Z"
+      "companion_ts": "2026-09-20T13:09:35Z",
+      "scope": "Add a --json flag to hx doctor."
     }
   ],
   "memory": {"episodes": 12, "queued": 1, "indexed_ts": "2026-09-20T13:05:00Z"}
 }
 ```
+
+`scope` is the goal's first content line (from `tasks.json`, else the work item's
+`## Goal`), capped at 160 characters, `null` when the id has no goal. It is
+machine-derived so the Partner sees what each stream is building without spending a
+read per worker. The text form carries the same as trailing
+`scope <id>: <text>` lines after the status rows.
 
 `companion_pass` is true while a pass file sits in `run/<id>/companion/` (hx wrote it, the
 Companion has not yet answered); `companion_ts` is the newest `ts` on any of the id's step states,
