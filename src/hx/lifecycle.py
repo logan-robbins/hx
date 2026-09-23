@@ -128,6 +128,10 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     path = ensure_work_item(root, item_id)
     ensure_workdir(root, item_id)
 
+    from . import compile as compile_mod
+
+    compile_mod.compile_agent(root, item_id)
+
     already = tmux.has_session(item_id, env)
     result = {"id": item_id, "session": "existing" if already else "started", "goal": None}
     if not already:
@@ -213,6 +217,11 @@ def restart(root: Path, item_id: str, *, env=None) -> dict:
     """The fallback seam (spec 08, 02): flush, compose, relaunch bare, then the pointer."""
     require_partner_caller("restart", env)
     path = find_work_item(root, item_id)
+
+    from . import compile as compile_mod
+
+    compile_mod.compile_agent(root, item_id)
+
     flush_mod.flush(root, item_id, env=env)
     compose.compose(root, item_id, f"{item_id}-main", env=env)
 

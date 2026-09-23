@@ -90,15 +90,21 @@ def build_step(root: Path, pack: str, states: dict, worker_pod: str) -> Path:
     return root
 
 
-def expected_board(pack: str, stem: str) -> list[dict]:
-    """The gtm lane's checked-in `hx board` text, parsed into columns.
+def expected_board(pack: str, stem: str) -> tuple[list[dict], dict[str, str]]:
+    """The gtm lane's checked-in `hx board` text, parsed into columns and scopes.
 
     v1 cut (`hx.board.render_text`): `id  pod  state  outcome  <dispatched>
-    alive|dead  subagents=N  context=N  seams=N`, with `-` for an absent value.
-    No `after` column and no Partner row, because neither exists any more.
+    alive|dead  subagents=N  context=N  seams=N`, with `-` for an absent value,
+    then one `scope <id>: <text>` line per id that has a goal. No `after` column
+    and no Partner row, because neither exists any more.
     """
     rows = []
+    scopes = {}
     for line in (SCENARIOS / pack / "expected" / f"{stem}.txt").read_text().strip().splitlines():
+        if line.startswith("scope "):
+            scope_id, _, scope_text = line.partition(": ")
+            scopes[scope_id.removeprefix("scope ")] = scope_text
+            continue
         parts = line.split()
         fields = dict(part.split("=", 1) for part in parts if "=" in part)
         item_id, pod, state, outcome, dispatched, alive = parts[:6]
@@ -111,7 +117,7 @@ def expected_board(pack: str, stem: str) -> list[dict]:
             "session_alive": alive == "alive",
             "open_subagents": int(fields.get("subagents", 0)),
         })
-    return rows
+    return rows, scopes
 
 
 # -- every step of both packs --------------------------------------------
@@ -137,7 +143,7 @@ def step_roots(tmp_path_factory):
 def test_the_board_matches_the_packs_expected_board(step_roots, pack, stem, states, worker_pod):
     board = isolated(step_roots[(pack, stem)]).board()
     rows = {item["id"]: item for item in board["items"]}
-    expected = expected_board(pack, stem)
+    expected, scopes = expected_board(pack, stem)
 
     assert [item["id"] for item in board["items"]] == [row["id"] for row in expected], (
         "by id; the Partner is not an item (v1 cut)"
@@ -150,6 +156,9 @@ def test_the_board_matches_the_packs_expected_board(step_roots, pack, stem, stat
         assert item["open_subagents"] == row["open_subagents"]
         assert (item["dispatched"] is not None) is (row["dispatched"] is not None)
         assert item["session_alive"] is False, "the private tmux server has no sessions"
+    assert {i: rows[i]["scope"] for i in rows if rows[i]["scope"]} == scopes, (
+        "the checked-in scope lines are what the live board derives"
+    )
 
 
 @pytest.mark.parametrize("pack,stem,states,worker_pod", ALL_STEPS, ids=STEP_IDS)

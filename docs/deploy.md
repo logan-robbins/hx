@@ -206,7 +206,7 @@ line-by-line version.
 ```bash
 hx doctor        # tmux, git, the pinned binary and its version, the seed token and its mode,
                  # every agent home's settings, mirror reachability
-hx board         # one line per id, then invariant violations; exits 1 on any error
+hx board         # status rows plus scope lines; exits 0 always
 ```
 
 Both are safe to run yourself and neither changes anything. A board error is normally the

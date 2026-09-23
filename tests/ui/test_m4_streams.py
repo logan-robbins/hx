@@ -380,6 +380,7 @@ def test_the_v1_shapes_are_what_the_real_commands_return(companion_root):
     assert set(board["items"][0]) == {
         "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
         "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts", "companion_pass", "companion_ts",
+        "scope",
     }
 
     goals = source.goals()

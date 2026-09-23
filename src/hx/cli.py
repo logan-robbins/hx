@@ -19,6 +19,7 @@ from . import bench as bench_cmd
 from . import board as board_cmd
 from . import complete as complete_cmd
 from . import companion as companion_cmd
+from . import compile as compile_cmd
 from . import compose as compose_cmd
 from . import dispatch as dispatch_cmd
 from . import doctor as doctor_cmd
@@ -50,6 +51,7 @@ IMPLEMENTED = {
     "bench": bench_cmd.main,
     "board": board_cmd.main,
     "companion": companion_cmd.main,
+    "compile": compile_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
     # what they do arrives at M2 and M5 (spec 13).
@@ -94,6 +96,7 @@ the control plane:
   read ID [--detail|--full]      status; prose only with --detail, body with --full
   recall [QUERY] [--id ID]       last-resort file-memory search over completed items
   companion ID [--once]        the Companion loop, one per agent
+  compile ID                   distribute base rules into config/ID/AGENTS.md
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner

@@ -19,7 +19,7 @@ def test_board_matches_the_contract(ui):
         assert set(item) == {
             "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
             "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
-    "companion_pass", "companion_ts",
+    "companion_pass", "companion_ts", "scope",
         }
         assert item["state"] in {"idle", "working", "complete"}
         assert item["outcome"] in {None, "done", "blocked", "decision", "exhausted"}

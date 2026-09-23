@@ -1,2 +1,4 @@
 eng-001  engineers  complete  done  <ts>  <alive>  subagents=0  context=-  seams=-
 eng-002  engineers  complete  done  <ts>  <alive>  subagents=0  context=-  seams=-
+scope eng-001: scenario fixture
+scope eng-002: scenario fixture

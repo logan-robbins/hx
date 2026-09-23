@@ -17,6 +17,7 @@
       "context_tokens": 132880,
       "seams": 2,
       "turn_ts": "2026-09-20T11:58:12Z",
+      "scope": "Ship `hx board --json`.",
       "companion_pass": false,
       "companion_ts": "2026-09-20T13:09:35Z"
     },
@@ -35,6 +36,7 @@
       "context_tokens": 48211,
       "seams": 2,
       "turn_ts": "2026-09-20T13:09:40Z",
+      "scope": "Add `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a",
       "companion_pass": true,
       "companion_ts": "2026-09-20T13:09:35Z"
     },
@@ -53,6 +55,7 @@
       "context_tokens": null,
       "seams": null,
       "turn_ts": null,
+      "scope": null,
       "companion_pass": false,
       "companion_ts": null
     },
@@ -71,6 +74,7 @@
       "context_tokens": 74902,
       "seams": 1,
       "turn_ts": "2026-09-20T12:47:31Z",
+      "scope": "Decide where the seam threshold lives: per model in `config/models.json`, or per agent in",
       "companion_pass": false,
       "companion_ts": "2026-09-20T13:09:35Z"
     },
@@ -89,6 +93,7 @@
       "context_tokens": 20118,
       "seams": 0,
       "turn_ts": "2026-09-20T09:02:11Z",
+      "scope": null,
       "companion_pass": false,
       "companion_ts": "2026-09-20T13:09:35Z"
     }

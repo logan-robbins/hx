@@ -116,9 +116,12 @@ Then create workers from it exactly as in §1.
 
 ## 4. Updating a persona
 
-Edit `config/<id>/AGENTS.md` **above** the header, and **only on the human's explicit
-instruction**. It takes effect at that worker's next `hx restart` — not immediately, and not
-mid-task.
+Edit `config/<id>/AGENTS.md` **above** the header whenever efficiency calls for it —
+tighter persona lines, corrected facts about that id's scope. `hx compile` distributes the
+base (global invariants plus role persona) on the next `hx restart` or launch and preserves
+everything else, so an above-header edit takes effect there — not immediately, and not
+mid-task. `config/CLAUDE.md` edits land sooner: every agent re-reads them at its next
+boundary.
 
 **Never touch anything below the header.** That is the worker's own memory, written by it,
 about what it has learned. Editing it is writing false memories into a running agent.

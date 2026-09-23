@@ -7,6 +7,9 @@ and never a second file.
 
 Sections, in the order spec 07.3 fixes them:
 
+  0. Invariants    — `config/CLAUDE.md` whole: the global rules the Partner manages.
+                     One copy, read everywhere; personas, skills, and templates point
+                     here instead of restating them
   1. Memory        — `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream),
                      or `config/<id>/SUBAGENTS.md` whole (subagent streams)
   2. Task          — the `## Goal` section of the Work Item, with the addenda `hx resume`
@@ -71,6 +74,21 @@ def _section(title: str, source: str | None, body: str) -> str:
     """One section, carrying the path it came from (goal build-3 item 1)."""
     head = f"## {title}" if source is None else f"## {title}\n\n_source: `{source}`_"
     return f"{head}\n\n{body.rstrip() or NONE_YET}\n"
+
+
+def invariants(root: Path) -> tuple[str | None, str]:
+    """Section 0. The global invariants, whole, on every stream.
+
+    One copy lives at `config/CLAUDE.md`, managed only by the Partner; the
+    agent homes natively auto-read their installed copy at launch time, while
+    this section is the hooks' live read — a Partner edit lands at the next
+    boundary on every harness flavor, not at the next reinstall. Personas,
+    skills, and templates point here instead of restating the rules.
+    """
+    path = root / "config" / "CLAUDE.md"
+    if not path.is_file():
+        return _relative(root, path), ""
+    return _relative(root, path), path.read_text().strip("\n")
 
 
 def memory(root: Path, item_id: str, stream: str) -> tuple[str, str]:
@@ -399,6 +417,9 @@ def compose_text(
         "Read it once; you do not need to search for anything it contains.",
         "",
     ]
+
+    source, text = invariants(root)
+    parts.append(_section("Invariants", source, text))
 
     source, text = memory(root, item_id, stream)
     parts.append(_section("Memory" if main else "Who your subagents are", source, text))
