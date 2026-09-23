@@ -149,7 +149,7 @@ def load_script() -> list[dict]:
 #: The pinned version this fake claims to be. `hx install`, `hx upgrade` and `hx doctor` all
 #: read `claude --version` and compare against the package's tested list, so the fake has to
 #: answer it the way the real binary does: `<bare version> (Claude Code)`.
-DEFAULT_VERSION = "2.1.278"
+DEFAULT_VERSION = "2.1.280"
 
 
 def main() -> int:
