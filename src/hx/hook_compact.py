@@ -34,11 +34,14 @@ def stream_for(payload: dict, item_id: str, root: Path) -> tuple[str, bool]:
 
 
 def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """Record that compaction is about to happen, and get the Companion to the head first.
+    """Record that compaction is about to happen, and nudge the Companion to the head.
 
-    The flush is the whole value of this hook: whatever Claude Code is about to summarise
-    away, the Companion has already read and turned into step state, so the context file
-    stays the authority. It returns nothing — no decision output, ever (spec 02).
+    The nudge is the value of this hook: whatever Claude Code is about to summarise away,
+    the Companion is already reading toward step state, so the context file stays the
+    authority. It signals and returns — never blocks: holding compaction hostage for a
+    Companion pass trades a slow summary for a hung turn, and the pass still lands in the
+    state the `SessionStart(compact)` context file is composed from. It returns nothing —
+    no decision output, ever (spec 02).
     """
     stream, is_main = stream_for(payload, item_id, root)
     streams.append_record(root, item_id, stream, {
@@ -49,10 +52,10 @@ def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]
 
     from . import flush as flush_mod
 
-    # Only the main thread's Companion is worth waiting for; a subagent stream's pass comes
+    # Only the main thread's Companion is worth nudging; a subagent stream's pass comes
     # with its close (spec 09.1 `subagent-stop`).
     if is_main:
-        flush_mod.flush(root, item_id, env=env)
+        flush_mod.signal(root, item_id, env=env)
     return 0, ""
 
 

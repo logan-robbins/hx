@@ -223,6 +223,31 @@ def test_compose_of_an_unknown_id_is_not_found(instance, hx):
     assert result.returncode == 2 and "unknown id" in result.stderr
 
 
+def test_the_partner_handover_bounds_the_journal_sections(instance, hx):
+    """spec 07.3: the handover is a resume pointer — tails plus omitted counts."""
+    rows = "\n".join(f"| 2026-09-23 | d{i:03d} | why{i} |" for i in range(100))
+    done = "\n".join(f"| 2026-09-23 | w{i:03d} | outcome{i} |" for i in range(30))
+    notes = "\n".join(f"- note line {i}" for i in range(100))
+    (instance / "PARTNER.md").write_text(
+        "# PARTNER.md\n\nIntro.\n\n## The human\n\nLogan.\n\n"
+        f"## Decisions made\n\n| date | id | why |\n|---|---|---|\n{rows}\n\n"
+        f"## Completed work\n\n| date | id | outcome |\n|---|---|---|\n{done}\n\n"
+        f"## Notes\n\n{notes}\n"
+    )
+    result = hx("compose", "partner")
+    assert result.returncode == 0, result.stderr
+    text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
+    assert "Logan." in text, "small sections ride whole"
+    assert "d099" in text and "d000" not in text, "decisions keep the tail"
+    assert "85 older rows omitted" in text
+    assert "w029" in text and "w000" not in text, "completed keeps the tail"
+    assert "25 older rows omitted" in text
+    assert "note line 0" in text and "note line 99" not in text, "notes keep the head"
+    assert "42 further lines omitted" in text
+    bound = text.split("## PARTNER.md", 1)[1].split("## Board", 1)[0]
+    assert len(bound) < 20000, f"handover bounded, got {len(bound)}"
+
+
 # --- the context hook ----------------------------------------------------------------------------
 
 

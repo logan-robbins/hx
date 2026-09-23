@@ -32,6 +32,34 @@ SEAM_SOURCE = "clear"
 #: Returned by `seam()` when the turn left background work running (spec 09.2 step 2).
 DEFERRED = "deferred"
 TAKEN = "taken"
+#: Returned by `seam()` when the take is not ready yet: the Companion is behind, or a menu
+#: awaits the human. The marker stays and the next `stop` retries; each deferral appends a
+#: watcher record so the wait is visible instead of a silent hung turn. Nothing here blocks.
+WAITING = "waiting"
+
+#: Footer chrome of a TUI menu (AskUserQuestion or autocomplete) awaiting the human. A
+#: `/clear` pasted over it would nuke the pending question; the take waits instead.
+MENU_FOOTER = "Enter to select"
+
+
+def pane_ready(root: Path, item_id: str, *, env=None) -> bool:
+    """The pane exists and shows no menu awaiting the human: a `/clear` may land."""
+    try:
+        pane = goal_mod.capture_pane(item_id, env)
+    except Exception:
+        return False
+    return pane is not None and MENU_FOOTER not in pane
+
+
+def waiting_streams(root: Path, item_id: str) -> dict:
+    """Per-stream `[state_seq, log_head]` pairs: what the take is waiting on."""
+    from . import companion as companion_mod
+
+    return {
+        stream: [companion_mod.cursor(root, item_id, stream),
+                 companion_mod.head_seq(root, item_id, stream)]
+        for stream in companion_mod.open_streams(root, item_id)
+    }
 
 
 def background_tasks(root: Path, item_id: str) -> list:
@@ -95,10 +123,28 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     # The Partner has no work item and no goal: its seam is /clear + rehydrate from the
     # context file, and the `context` hook on `clear` sends no pointer for it.
 
-    # Sequence is spec 08's: the Companion reaches the head, the context file is composed from
-    # what it recorded, then the `/clear` is queued and the record written.
-    flush_mod.flush(root, item_id, env=env)
-    context_file = Path(compose_mod.compose(root, item_id, f"{item_id}-main", env=env))
+    # Readiness gate (spec 09.2): take only when the pane can receive `/clear` and the
+    # Companion is caught up. Otherwise signal once, append a watcher record, and leave
+    # the marker for the next boundary. Nothing here blocks — a hung turn is a worse
+    # failure than a late seam, and records the head gains meanwhile land in the next
+    # pass and the next seam's file.
+    stream = f"{item_id}-main"
+    if not pane_ready(root, item_id, env=env):
+        seq = streams.append_record(root, item_id, stream,
+                                    {"event": "seam_waiting", "ready": "menu"})
+        return {"id": item_id, "outcome": WAITING, "seq": seq, "background_tasks": []}
+    flush_mod.signal(root, item_id, env=env)
+    from . import companion as companion_mod
+
+    if not companion_mod.is_caught_up(root, item_id):
+        seq = streams.append_record(root, item_id, stream,
+                                    {"event": "seam_waiting", "ready": "behind",
+                                     "streams": waiting_streams(root, item_id)})
+        return {"id": item_id, "outcome": WAITING, "seq": seq, "background_tasks": []}
+
+    # Sequence is spec 08's: the context file is composed from what the Companion recorded,
+    # then the `/clear` is queued and the record written.
+    context_file = Path(compose_mod.compose(root, item_id, stream, env=env))
 
     goal_mod.paste(item_id, seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
@@ -127,6 +173,9 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             f"HX-SEAM {result['id']} deferred "
             f"background_tasks={len(result['background_tasks'])}"
         )
+        return 0
+    if result["outcome"] == WAITING:
+        print(f"HX-SEAM {result['id']} waiting seq={result['seq']}")
         return 0
     print(f"HX-SEAM {result['id']} taken seq={result['seq']}")
     return 0

@@ -1,9 +1,12 @@
 """`hx flush <id>` — wait until the Companion has caught up (spec 08, 10).
 
 Signal, then block until every stream's state `seq` equals its log head. No timeout: the
-callers — `hx complete`, `hx seam`, the `stop` hook — need the step state to be current before
-they compose or write a digest, and a flush that gave up early would hand the agent a context
-file missing its most recent work.
+remaining blocking callers — `hx complete` and `hx flush` itself, both deliberate acts at a
+known-quiet point — need the step state to be current before they compose or write a digest,
+and a flush that gave up early would hand the agent a context file missing its most recent
+work. The automatic paths never block: the `stop`-hook seam signals, checks readiness, and
+defers with a watcher record when the take is not ready, and `precompact` signals and
+returns.
 """
 
 from __future__ import annotations

@@ -331,6 +331,62 @@ def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
     return _relative(root, mapping_path), "\n".join(lines)
 
 
+#: The handover is a resume pointer, not an archive: PARTNER.md grows all day, so its
+#: append-only sections ride bounded while identity, rules, digest, fleet, pods and open
+#: questions ride whole. Tails win (newest last) except Notes, whose curated constants sit
+#: at the head. Counts are data rows kept, not lines.
+_PARTNER_TAIL_ROWS = {"## Decisions made": 15, "## Completed work": 5}
+_PARTNER_HEAD_LINES = {"## Notes": 60}
+
+
+def _is_separator(line: str) -> bool:
+    return line.startswith("|") and "-" in line and set(line.strip()) <= {"|", "-", ":", " "}
+
+
+def _tail_table(body: list[str], keep: int) -> list[str]:
+    sep = next((i for i, line in enumerate(body) if _is_separator(line)), None)
+    head = body[: sep + 1] if sep is not None else []
+    rows = [line for line in body[len(head):] if line.startswith("|")]
+    if len(rows) <= keep:
+        return body
+    return head + rows[-keep:] + ["", f"_{len(rows) - keep} older rows omitted — full text in PARTNER.md._"]
+
+
+def _head_lines(body: list[str], keep: int) -> list[str]:
+    if len(body) <= keep:
+        return body
+    return body[:keep] + ["", f"_{len(body) - keep} further lines omitted — full text in PARTNER.md._"]
+
+
+def _bound_partner_md(text: str) -> str:
+    """PARTNER.md with the append-only sections bounded (spec 07.3)."""
+    head: list[str] = []
+    chunks: list[tuple[str, list[str]]] = []
+    header: str | None = None
+    body: list[str] = []
+    for line in text.split("\n"):
+        if line.startswith("## "):
+            if header is None:
+                head = body
+            else:
+                chunks.append((header, body))
+            header, body = line.strip(), []
+        else:
+            body.append(line)
+    if header is None:
+        return text
+    chunks.append((header, body))
+    out = head
+    for name, section in chunks:
+        if name in _PARTNER_TAIL_ROWS:
+            section = _tail_table(section, _PARTNER_TAIL_ROWS[name])
+        elif name in _PARTNER_HEAD_LINES:
+            section = _head_lines(section, _PARTNER_HEAD_LINES[name])
+        out.append(name)
+        out.extend(section)
+    return "\n".join(out)
+
+
 def compose_text(
     root: Path, item_id: str, stream: str, *, subagent_prompt: str | None = None, env=None
 ) -> str:
@@ -372,7 +428,7 @@ def compose_text(
             _section(
                 "PARTNER.md",
                 _relative(root, partner_md),
-                partner_md.read_text() if partner_md.is_file() else "",
+                _bound_partner_md(partner_md.read_text()) if partner_md.is_file() else "",
             )
         )
         try:
