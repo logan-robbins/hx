@@ -562,6 +562,57 @@ def test_a_benched_id_can_be_dispatched_again(instance, hx, launched, goals):
     assert "The next order." in tasks_of(instance)["eng-001"]["goal"]
 
 
+def idle_rename(instance, item_id, pod="engineers"):
+    """A killed session leaves `<id>-idle.md`: replicate the reset, not the flow."""
+    from hx.workitems import rename_state
+
+    path = instance / "pods" / pod / f"{item_id}-complete.md"
+    if not path.is_file():
+        path = instance / "pods" / pod / f"{item_id}-working.md"
+    return rename_state(path, "idle")
+
+
+def test_bench_frees_an_idle_item_whose_session_died(
+    instance, hx, launched, goals, tmux_server
+):
+    """Kill the session the way a reset does. The id must clear."""
+    launched("eng-001")
+    dispatch_working(instance, hx, goals, goal="A very specific order.")
+    assert hx("complete", "done", harness_id="eng-001").returncode == 0
+    subprocess.run([*tmux_server, "kill-session", "-t", "=eng-001"], check=True)
+    idle_rename(instance, "eng-001")
+    before = (instance / "pods" / "engineers" / "eng-001-idle.md").read_text()
+
+    result = hx("bench", "eng-001")
+    assert result.returncode == 0, result.stderr
+    assert item_state(instance, "eng-001") == "idle"
+
+    archived = list((instance / "pods" / "engineers" / "archive").glob("eng-001-*.md"))
+    assert len(archived) == 1
+    assert archived[0].read_text() == before, "the body is archived exactly as it stood"
+    assert tasks_of(instance)["eng-001"]["outcome"] == "done"
+    launched("eng-001")
+    dispatch_working(instance, hx, goals, goal="The next order.")
+    assert item_state(instance, "eng-001") == "working"
+
+
+def test_bench_refuses_an_idle_item_with_no_done_outcome(instance, hx, launched, goals):
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    idle_rename(instance, "eng-001")
+    result = hx("bench", "eng-001")
+    assert result.returncode == 1 and "refuse" in result.stderr
+
+
+def test_bench_refuses_an_idle_item_with_a_live_session(instance, hx, launched, goals):
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    assert hx("complete", "done", harness_id="eng-001").returncode == 0
+    idle_rename(instance, "eng-001")
+    result = hx("bench", "eng-001")
+    assert result.returncode == 1 and "session is alive" in result.stderr
+
+
 # --- the Partner is never a work item (spec 12, spec 14 D25) --------------------------------
 
 

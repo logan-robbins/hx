@@ -13,7 +13,7 @@ from hx.board import collect, render_text
 
 CONTRACT_ITEM_KEYS = {
     "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
-    "open_subagents", "goal_ts", "session_alive", "context_tokens", "seams", "turn_ts",
+    "open_subagents", "goal_ts", "session_alive", "needs_input", "context_tokens", "seams", "turn_ts",
     "companion_pass", "companion_ts",
 }
 
@@ -73,9 +73,31 @@ def test_text_form_is_the_spec_08_columns(instance, work_item):
                                        "dispatched": "2026-09-20T12:00:00Z", "completed": None}})
     line = render_text(collect(instance)).splitlines()[0]
     assert line.split("  ") == [
-        "eng-001", "engineers", "working", "-", "2026-09-20T12:00:00Z", "dead",
+        "eng-001", "engineers", "working", "-", "2026-09-20T12:00:00Z", "dead", "-",
         "subagents=0", "context=-", "seams=-",
     ]
+
+
+def test_needs_input_matches_known_awaiting_human_markers():
+    from hx.board import pane_awaits_input
+
+    billing = [
+        "Fable 5.1 now uses usage credits",
+        "  ❯ Switch to Sonnet 5 and continue",
+        "    Continue with Fable 5.1",
+        "  Enter to confirm · Esc to cancel",
+    ]
+    assert pane_awaits_input(billing) is True
+    assert pane_awaits_input(["❯ Try something", "bypass permissions on"]) is False
+    assert pane_awaits_input([]) is False
+    assert pane_awaits_input(["Do you want to proceed? (y/n)"]) is True
+
+
+def test_needs_input_is_false_without_a_live_session(instance, work_item):
+    work_item("eng-001", "working")
+    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
+    assert item["session_alive"] is False
+    assert item["needs_input"] is False
 
 
 def test_the_state_is_whatever_the_suffix_says(instance, work_item):

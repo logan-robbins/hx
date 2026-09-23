@@ -25,6 +25,7 @@ One entry per worker id, by id.
       "open_subagents": 1,
       "goal_ts": "2026-09-20T12:00:03Z",
       "session_alive": true,
+      "needs_input": false,
       "context_tokens": 48211,
       "seams": 2,
       "turn_ts": "2026-09-20T13:09:40Z",
@@ -48,6 +49,10 @@ work item. `state` is one of `idle|working|complete`, read from the work item's 
 by the agent itself; nothing validates or polices it).
 `outcome` is one of `done|blocked|decision|exhausted` or `null`. `seams` counts seam records in `logs/<id>/<id>-main.jsonl` since
 `dispatched`. `context_tokens` is from the last main-stream record, `null` if none.
+`needs_input` is true while a live session's pane tail carries a known awaiting-human marker
+(approval, billing, login — `INPUT_PATTERNS` in `src/hx/board.py`); false for dead sessions.
+An item can be `idle` with a non-null `outcome`: a killed session leaves its file, and `hx bench`
+clears such an item when the outcome is `done` and the session is dead.
 
 ## `hx show <id> --json`
 

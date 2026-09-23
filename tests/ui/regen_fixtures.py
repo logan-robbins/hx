@@ -88,6 +88,7 @@ for _item in BOARD_ITEMS:
     # Companion activity (CONTRACTS.md): eng-001's Companion is mid-pass in the fixture.
     _item.setdefault("companion_pass", _item["id"] == "eng-001")
     _item.setdefault("companion_ts", "2026-09-20T13:09:35Z" if _item.get("turn_ts") else None)
+    _item.setdefault("needs_input", False)
 BOARD = {
     "root_abs": ROOT_ABS, "ts": TS, "items": BOARD_ITEMS,
     "memory": {"episodes": 12, "queued": 1, "indexed_ts": "2026-09-20T13:05:00Z"},

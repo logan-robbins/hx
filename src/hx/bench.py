@@ -4,6 +4,11 @@ The completed body is archived to `pods/<pod>/archive/<id>-<ts>.md` before the w
 reset from `templates/work-item.md` and renamed `complete → idle`. `tasks.json` is not
 touched: the record of what that id did stays until the id is dispatched again. It touches
 neither git nor the workdir — the body archive is the whole of it (spec 14 D25).
+
+A killed session leaves an `idle` file whose outcome is `done`: finished, but never benched,
+and `bench` used to refuse it forever. Such an item benches like a complete one — archive
+whatever body stands, reset to the template — provided its session is dead. Anything else
+that is not `complete` is still refused.
 """
 
 from __future__ import annotations
@@ -11,9 +16,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from . import archive as archive_mod, store, timestamps
+from . import archive as archive_mod, store, timestamps, tmux
 from .caller import require_partner_caller
-from .errors import Refused
+from .errors import Refused, ValidationError
+from .tasks import load_tasks
 from .workitems import (
     parse_work_item,
     render,
@@ -24,16 +30,35 @@ from .workitems import (
 )
 
 
+def _abandoned_finished(root: Path, item_id: str, state: str | None, fallback_outcome) -> bool:
+    """An `idle` item whose outcome is `done` is finished: its session died (killed,
+    reset) before it was benched, and the id is already free of live work."""
+    if state != "idle":
+        return False
+    try:
+        tasks = load_tasks(root)
+    except ValidationError:
+        tasks = {}
+    outcome = (tasks.get(item_id) or {}).get("outcome") or fallback_outcome
+    return outcome == "done"
+
+
 def bench(root: Path, item_id: str, *, env=None) -> dict:
     require_partner_caller("bench", env)
 
     path = require_work_item(root, item_id)
     item = parse_work_item(path)
     if item.state != "complete":
-        raise Refused(
-            f"refuse: {item_id} is `{item.state}`, not `complete`; a benched item is one that "
-            f"finished and whose digest has been read (spec 06)"
-        )
+        if not _abandoned_finished(root, item_id, item.state, item.outcome):
+            raise Refused(
+                f"refuse: {item_id} is `{item.state}`, not `complete`; a benched item is one that "
+                f"finished and whose digest has been read (spec 06)"
+            )
+        if tmux.has_session(item_id, env):
+            raise Refused(
+                f"refuse: {item_id} is `idle` with outcome `done` but its session is alive; "
+                f"kill the session first, then bench"
+            )
 
     ts = timestamps.now()
     # Archive the body before the reset, never after (spec 13 M1).

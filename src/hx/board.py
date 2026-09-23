@@ -46,6 +46,22 @@ def _marker_ts(path: Path) -> str | None:
     return timestamps.from_mtime(path)
 
 
+#: Markers of a live pane waiting on a human (approval, billing, login). Observed live,
+#: extended when new ones appear — a marker here is a pane that will never advance alone.
+INPUT_PATTERNS = (
+    "Enter to confirm",
+    "Esc to cancel",
+    "Do you want to proceed?",
+    "Would you like to proceed?",
+    "Yes, and don't ask again",
+)
+
+
+def pane_awaits_input(lines) -> bool:
+    """True when a pane tail carries a known awaiting-human marker."""
+    return any(marker in line for line in lines for marker in INPUT_PATTERNS)
+
+
 def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
     """Build the `hx board --json` object (CONTRACTS.md). Nothing here can fail a board."""
     by_id = find_work_items(root)
@@ -92,6 +108,15 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
         dispatched = task.get("dispatched") or (work_item.dispatched if work_item else None)
 
         activity = companion_mod.activity(root, item_id)
+        alive = item_id in sessions
+        needs_input = False
+        if alive:
+            # One capture per live session: a pane awaiting a human is the only
+            # stall nothing else reports, so the board carries it (CONTRACTS.md).
+            from .goal import capture_pane
+
+            captured = capture_pane(item_id, env, lines=30) or ""
+            needs_input = pane_awaits_input(captured.splitlines())
         items.append(
             {
                 "id": item_id,
@@ -104,7 +129,8 @@ def collect(root: Path, *, env: dict[str, str] | None = None) -> dict:
                 "completed": task.get("completed"),
                 "open_subagents": streams.open_subagents(root, item_id),
                 "goal_ts": _marker_ts(root / "run" / item_id / "goal"),
-                "session_alive": item_id in sessions,
+                "session_alive": alive,
+                "needs_input": needs_input,
                 "context_tokens": streams.last_context_tokens(root, item_id),
                 "seams": streams.count_seams(root, item_id, dispatched),
                 "turn_ts": _marker_ts(root / "run" / item_id / "turn"),
@@ -136,6 +162,7 @@ def render_text(board: dict) -> str:
                     item["outcome"] or "-",
                     item["dispatched"] or "-",
                     "alive" if item["session_alive"] else "dead",
+                    "needs-input" if item.get("needs_input") else "-",
                     f"subagents={item['open_subagents']}",
                     f"context={item['context_tokens'] if item['context_tokens'] is not None else '-'}",
                     f"seams={item['seams'] if item['seams'] is not None else '-'}",

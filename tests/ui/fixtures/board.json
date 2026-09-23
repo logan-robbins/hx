@@ -18,7 +18,8 @@
       "seams": 2,
       "turn_ts": "2026-09-20T11:58:12Z",
       "companion_pass": false,
-      "companion_ts": "2026-09-20T13:09:35Z"
+      "companion_ts": "2026-09-20T13:09:35Z",
+      "needs_input": false
     },
     {
       "id": "eng-001",
@@ -36,7 +37,8 @@
       "seams": 2,
       "turn_ts": "2026-09-20T13:09:40Z",
       "companion_pass": true,
-      "companion_ts": "2026-09-20T13:09:35Z"
+      "companion_ts": "2026-09-20T13:09:35Z",
+      "needs_input": false
     },
     {
       "id": "eng-002",
@@ -54,7 +56,8 @@
       "seams": null,
       "turn_ts": null,
       "companion_pass": false,
-      "companion_ts": null
+      "companion_ts": null,
+      "needs_input": false
     },
     {
       "id": "eng-003",
@@ -72,7 +75,8 @@
       "seams": 1,
       "turn_ts": "2026-09-20T12:47:31Z",
       "companion_pass": false,
-      "companion_ts": "2026-09-20T13:09:35Z"
+      "companion_ts": "2026-09-20T13:09:35Z",
+      "needs_input": false
     },
     {
       "id": "res-001",
@@ -90,7 +94,8 @@
       "seams": 0,
       "turn_ts": "2026-09-20T09:02:11Z",
       "companion_pass": false,
-      "companion_ts": "2026-09-20T13:09:35Z"
+      "companion_ts": "2026-09-20T13:09:35Z",
+      "needs_input": false
     }
   ],
   "memory": {
