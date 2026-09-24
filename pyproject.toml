@@ -26,4 +26,4 @@ hx = ["skeleton/**/*", "skills/**/*", "ui/static/**/*", "packaging/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = ""

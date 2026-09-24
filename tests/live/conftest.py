@@ -59,12 +59,18 @@ def _why_skipped() -> str | None:
     return None
 
 
+LIVE_DIR = Path(__file__).resolve().parent
+
+
 def pytest_collection_modifyitems(config, items):
+    # A conftest hook sees every item in the session, not just this directory's: without
+    # the filter, `pytest tests` skipped the whole suite whenever HX_LIVE was unset.
     reason = _why_skipped()
     if reason:
         skip = pytest.mark.skip(reason=reason)
         for item in items:
-            item.add_marker(skip)
+            if Path(str(item.path)).resolve().is_relative_to(LIVE_DIR):
+                item.add_marker(skip)
 
 
 MODELS = {
