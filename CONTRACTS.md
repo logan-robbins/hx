@@ -151,6 +151,46 @@ successful dispatch; the text then lives in exactly two places, `tasks.json` and
 Required `## Goal`; required `## Definition of done` containing a fenced ```bash block under
 `### Checks`. No frontmatter. Spec 06.
 
+Before the goal is sent, `hx dispatch` runs that block with `bash -e` in the id's workdir
+(`HARNESS_ID` set to the id, 120 s budget) and prints one line per id ahead of `HX-DISPATCH`:
+
+| Result | stdout | Dispatch |
+|---|---|---|
+| exit 0 | `HX-GATE-EMPTY <id>` and why, exit 1 | refused for every id; nothing written, goal files kept |
+| non-zero exit `n` | `gate preflight: exit <n> [<id>], first FAIL line: <line>` (`no FAIL line in the output` when there is none) | proceeds |
+| budget spent | `gate preflight: not judged after 120s [<id>]`; the block's process group is killed | proceeds |
+
+## Addenda (input files)
+
+`hx resume <id> <file>` and `hx amend <id> <file>` take an addendum file and delete it after a
+successful run. Its text is appended as `### Goal addendum <ts>` under the work item's
+`## Goal` and as `{"ts", "text"}` to `tasks.json[<id>].addenda`. An addendum that carries its own
+`### Checks` heading (outside a fence) with a fenced ```bash block replaces the Checks fence, fence
+markers included, in `tasks.json[<id>].goal` and in the work item's `## Definition of done`,
+once the amended goal passes the goal parser; a heading with no usable block, a comment-only
+block, or two such headings is refused with nothing written. `hx amend` works on a `working` or
+`complete` item, changes no state and pastes nothing, and prints
+`HX-AMEND <id> checks=replaced|kept addenda=<n>` (`n` = addenda recorded after it). `hx resume`
+prints the same line ahead of its `HX-RESUME` line.
+
+## `config/partner/guard.json`
+
+Read on every call by the Partner's `guard` hook (`hx-hook --id partner guard`, Claude Code
+`PreToolUse`, matcher `Bash|Read|Edit|Write|Grep|Glob`; spec 09.1). Written by the human or the
+Partner, never by hx:
+
+```json
+{"deny_paths": ["/abs/product/tree"],
+ "deny_commands": ["\\bdotnet\\b", "\\bpytest\\b", "\\bgit\\s+grep\\b"],
+ "allow_commands": ["^hx "]}
+```
+
+All three keys are optional lists of strings; `deny_paths` entries are absolute (`~` expands);
+the other two are Python regexes, `re.search`ed against each simple command of a `Bash` call.
+Exit 2 with one `hx guard: denied: …` line on stderr denies; exit 0 with no output allows. An
+absent or invalid file (not JSON, not an object, an unknown key, a bad regex, a relative root)
+means the guard is inactive; that, and every denial, is appended to `logs/partner/guard.log`.
+
 ## `config/hx.json`
 
 Written by `hx install` (also with `--skeleton-only`), read by `adapters/claude/install.sh` when rendering hook commands and by `start.sh` for its JSON reads:

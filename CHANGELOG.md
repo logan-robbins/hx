@@ -15,6 +15,19 @@ as milestones are accepted.
 
 ### Added
 
+- `hx amend <id> <addendum-file>` (Partner, `working` or `complete`): appends the addendum as
+  `hx resume` does, and when it carries a `### Checks` block, replaces the Checks fence in
+  `tasks.json[<id>].goal` and the work item once the amended goal parses; otherwise nothing is
+  written. No state change, no paste. Prints `HX-AMEND <id> checks=replaced|kept addenda=<n>`.
+  `hx resume` applies the same replacement and prints the same line before `HX-RESUME`.
+- Gate preflight in `hx dispatch`: each goal's Checks run in its workdir (120 s budget) before
+  anything is written. Exit 0 refuses with `HX-GATE-EMPTY <id>`; a failure prints its exit code
+  and first `FAIL` line; a timeout prints `gate preflight: not judged after 120s` and proceeds.
+- The Partner's `guard` hook (`hx-hook --id partner guard`, `PreToolUse`), installed by the
+  Claude adapter for the Partner only, over `config/partner/guard.json`: denies with exit 2 a
+  Bash simple command matching `deny_commands` and no `allow_commands`, and any Bash, Read,
+  Edit, Write, Grep or Glob call that names a path under `deny_paths`. Absent or invalid file:
+  inactive, logged in `logs/partner/guard.log`.
 - Template compiler (`src/hx/compile.py`, `hx compile`): base rules live in two
   Partner-managed sources — `config/CLAUDE.md` (global invariants) and
   `personas/<role>/AGENTS.md` (role) — and are distributed into each worker's final
@@ -48,6 +61,13 @@ as milestones are accepted.
 
 ### Changed
 
+- **`hx dispatch` refuses a goal whose `### Checks` already exit 0 in the workdir.** An
+  existing goal whose gate is `true`, or passes on the untouched tree, must be rewritten to fail
+  before the work exists. The 120 s budget is the one timeout in hx.
+- A closing fence under `### Checks` must be at least as long as the one it closes, so a
+  four-backtick bash block may hold a three-backtick line; before, the block was cut short there.
+- `pytest tests` runs the suite: `tests/live/conftest.py` had marked every collected item
+  skipped when `HX_LIVE` was unset, and `addopts = "-q"` hid the count.
 - The turn-end `stop` hook wakes the Companion batch-gated instead of forced; forced
   wakes belong to `hx flush`, `hx seam`, and the Companion's own `stop` hook.
 - `test_the_partner_is_never_seamed` replaced by `test_a_pending_partner_seam_is_acted_on`

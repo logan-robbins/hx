@@ -114,6 +114,20 @@ own Companion and its own memory file, and it is the only one you talk to.
 
 You run no hx command at any point.
 
+What the Partner runs, and what stops it running anything else:
+
+| Command | What it does |
+|---|---|
+| `hx dispatch <id> <goal-file>` | Starts an item. The goal's `### Checks` run first in the worker's workdir: a block that already passes is refused with `HX-GATE-EMPTY`, because it gates nothing |
+| `hx amend <id> <addendum-file>` | Adds to a `working` or `complete` goal without pausing it; a `### Checks` block in the addendum replaces the gate `hx complete done` will run |
+| `hx resume <id> <addendum-file>` | Continues a `blocked` or `decision` item with its step state, the same addendum rules |
+| `hx read <id>` · `hx board` | The digest of a finished item; what is on disk, one line per id |
+| `hx bench <id>` | Archives a finished item and frees the id |
+
+The Partner's own Claude home carries one `PreToolUse` hook, `guard`, over
+`config/partner/guard.json`: the test runs, oracle tools and product-tree reads it names are
+denied, because verification belongs to QA and the engineers. Workers are never guarded.
+
 ## Shape of an instance
 
 ```
