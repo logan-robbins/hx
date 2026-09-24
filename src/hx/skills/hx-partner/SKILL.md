@@ -102,8 +102,9 @@ A fresh instance has one agent: you. Every other id is one you make.
    refused. Set `workdir` to the **absolute path of a directory that already exists**: a
    checkout the human named, or one you create. hx creates no repository, no branch and no
    worktree; the directory is yours to choose and nobody's to clean up. Set `flavor` to
-   `claude` or `pi`. Leave it out and the worker is Claude. Dispatch, the goal file, the
-   board, and `hx complete` are the same either way. The Partner stays `claude`.
+   `claude`, `pi`, `grok`, `meta`, or `codex` — each non-claude flavor authenticates from
+   its own `seed/` token file and runs the same dispatch/goal/board/complete flow.
+   Leave it out and the worker is Claude. The Partner stays `claude`.
 3. Copy `personas/<role>/AGENTS.md` over `config/<id>/AGENTS.md`, then edit the paragraph that
    says what this particular id is for. Leave everything below `## UPDATES BELOW ONLY` empty —
    that section is the worker's own memory.
