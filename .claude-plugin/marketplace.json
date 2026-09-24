@@ -1,1 +1,1 @@
-{"name": "hx-marketplace", "owner": {"name": "logan-robbins"}, "plugins": [{"description": "HarnessAgent Runtime: a control plane for a fleet of coding-agent sessions.", "name": "hx", "source": "./", "version": "0.1.0"}]}
+{"name": "hx-marketplace", "owner": {"name": "logan-robbins"}, "plugins": [{"description": "HarnessAgent Runtime: a control plane for a fleet of agent harnesses.", "name": "hx", "source": "./", "version": "0.1.0"}]}

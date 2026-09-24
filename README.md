@@ -1,9 +1,9 @@
 # hx — Game of Harnesses
 
-A control plane for a fleet of coding-agent sessions that keeps working when you are not
+A control plane for a fleet of agent harnesses that keeps working when you are not
 watching.
 
-Each agent is a **full session in its vendor CLI** — Claude Code, Pi, Grok, Muse, or Codex,
+Each agent is a **full instance of an agent harness in its native vendor flavor** — Claude Code, Pi, Grok, Muse, or Codex,
 subagents, hooks, skills, all of it — in its own tmux session, running under a `/goal`. hx
 gives it a task, keeps its context coherent across every boundary, checks its work by running
 commands rather than by believing it, and tells the Partner when it is done.
@@ -34,7 +34,7 @@ the goal it points at can be as long as it needs to be.
 
 **An agent forgets when its context is cut.** So hx never lets Claude's compaction summarizer
 decide what survives. Each agent is paired one-to-one with a small **Companion** — another
-Claude Code session in the next tmux window, with two tools and nothing else — that reads the
+Claude Code harness in the next tmux window, with two tools and nothing else — that reads the
 agent's tool-call stream and keeps a bounded, structured *step state*: open steps with their
 next action, closed steps with their commit shas, decisions with reasons, dead ends, and the
 facts the agent had to read a file to learn. At a boundary, hx composes that plus the agent's
@@ -69,7 +69,7 @@ flowchart TB
 
     subgraph TMUXW["tmux session: id"]
         direction TB
-        W_MAIN["id:main<br/>any vendor CLI + hx hooks, /goal"]
+        W_MAIN["id:main<br/>any vendor flavor + hx hooks, /goal"]
         W_COMP["id:companion<br/>worker step state"]
         GOALEV["/goal evaluator<br/>hx goal pastes pointer<br/>met · not yet · impossible"]
     end
@@ -85,7 +85,7 @@ flowchart TB
     P_MAIN -->|"hx read digest"| CHECKS
 ```
 
-Why a harness of harnesses: every vendor CLI already runs a session, but none was built
+Why a harness of harnesses: every vendor flavor already runs an agent harness, but none was built
 for a fleet. hx adds the four things fleet work needs and vendors never will — **custom
 compaction** (planned seams, never the vendor summarizer), **custom memory** (a Companion's
 bounded step state, not chat history), **separation of specialties** (Partner supervises,
@@ -94,7 +94,7 @@ hooks, and isolated homes, so the fleet outlives any single CLI).
 
 ## How work flows
 
-You talk to the **Partner**, in `tmux attach -t partner`. It is a Claude Code session with its
+You talk to the **Partner**, in `tmux attach -t partner`. It is a Claude Code harness with its
 own Companion and its own memory file, and it is the only one you talk to.
 
 1. You tell it what you want, in chat. That is its goal — there is no goal file for the
@@ -160,7 +160,7 @@ that judge them. That needs a live Claude Code, not a packaging script.
 
 - [docs/getting-started.md](docs/getting-started.md) — a fresh machine to a working Partner
 - [src/hx/skills/hx-setup/SKILL.md](src/hx/skills/hx-setup/SKILL.md) — the same, as a skill for
-  a coding agent or another harness doing the setup for you (the token step stays yours)
+  an agent harness or another harness doing the setup for you (the token step stays yours)
 - [docs/operating.md](docs/operating.md) — what you see and do day to day
 - [docs/two-worlds.md](docs/two-worlds.md) — how your own Claude stays untouched
 - [docs/companion-eval.md](docs/companion-eval.md) — how the Companion gets measured

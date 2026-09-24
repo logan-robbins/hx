@@ -1,1 +1,1 @@
-{"author": {"name": "logan-robbins"}, "description": "Run a fleet of coding-agent sessions under hx: install, status, doctor, and talking to the Partner.", "name": "hx", "version": "0.1.0"}
+{"author": {"name": "logan-robbins"}, "description": "Run a fleet of agent harnesses under hx: install, status, doctor, and talking to the Partner.", "name": "hx", "version": "0.1.0"}
