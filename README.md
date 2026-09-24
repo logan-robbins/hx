@@ -42,6 +42,41 @@ be clean if it is a git repository, and no subagent stream may be open. Any fail
 fixes it and retries. Only success prints `HX-COMPLETE <id> done`, and that line, in the
 transcript, is what the goal evaluator reads. Not a claim; a result.
 
+## Architecture
+
+```mermaid
+flowchart TB
+    YOU(["You"]) -->|"chat"| PARTNER["Partner<br/>Claude Code + Companion"]
+    PARTNER -->|"dispatch"| PAIRS["eng / qa pairs"]
+
+    subgraph HX["hx provides"]
+        direction LR
+        GOALS["goal files + runnable Checks"]
+        PLANE["tasks · pods · board · wake"]
+        SEAMS["planned seams → one context file"]
+        VERIFY["hx complete runs the Checks"]
+    end
+
+    subgraph VENDOR["vendors provide"]
+        direction LR
+        CLI["full sessions, any flavor<br/>claude · pi · grok · muse · codex"]
+        COMP["Companions keep step state"]
+    end
+
+    GOALS --> PAIRS
+    PLANE <--> PAIRS
+    SEAMS --> PAIRS
+    PAIRS --> VERIFY
+    PAIRS --- CLI
+    CLI --- COMP
+```
+
+Each vendor CLI is already a harness — a goal loop with tools and sessions — but a
+single-player one: no fleet, no planned memory across its own compaction, no independent
+verification of its claims. hx is the multiplayer layer over them: many such sessions,
+supervised, seamed, and check-run, without forking any of them — an adapter is config,
+hooks, and an isolated home, so the fleet outlives any single CLI.
+
 ## How work flows
 
 You talk to the **Partner**, in `tmux attach -t partner`. It is a Claude Code session with its
