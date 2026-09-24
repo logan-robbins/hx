@@ -41,6 +41,10 @@ as milestones are accepted.
 - Board `needs_input`: `hx board --json` items carry true while a live pane tail
   matches a known awaiting-human marker, with a needs-input column in the text
   form — the stall nothing else reports.
+- Codex adapter (`flavor: codex`): unattended Codex sessions with the Claude hook
+  set (SessionStart, PostToolUse, Stop, Pre/PostCompact, SubagentStart/Stop),
+  auth provisioned from `seed/codex-token` via codex's own login, home isolated
+  through `CODEX_HOME`. The Partner stays on claude.
 
 ### Changed
 

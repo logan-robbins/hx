@@ -44,6 +44,8 @@ GROK_HOME_WIPE = ("sessions",)
 #: Muse Code keeps sessions, traces, and the skill index under `home/data/`.
 #: A new goal is a new session; the config in `home/muse/` survives.
 META_HOME_WIPE = ("data",)
+#: Codex keeps the conversation in `home/sessions/`. A new goal is a new session.
+CODEX_HOME_WIPE = ("sessions",)
 #: Kept in `run/<id>/` across a dispatch; everything else there is cleared (spec 08).
 #: The Companion's home and system prompt are kept for the same reason the agent's home is:
 #: its session is continuous and serves the same agent across dispatches, and deleting its
@@ -150,6 +152,7 @@ def _reset_run_dir(root: Path, item_id: str) -> None:
         wipe = HOME_WIPE + (PI_HOME_WIPE if flavor == "pi" else ())
         wipe = wipe + (GROK_HOME_WIPE if flavor == "grok" else ())
         wipe = wipe + (META_HOME_WIPE if flavor == "meta" else ())
+        wipe = wipe + (CODEX_HOME_WIPE if flavor == "codex" else ())
         for name in wipe:
             target = home / name
             if target.is_dir() and not target.is_symlink():

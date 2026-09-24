@@ -99,6 +99,17 @@ def test_the_partner_cannot_be_meta():
     assert "messaging socket" in str(exc.value)
 
 
+def test_flavor_codex_is_accepted():
+    config = validate_harness({**WORKER, "flavor": "codex"}, "config/eng-001/harness.json", dir_name="eng-001")
+    assert config.flavor == "codex"
+
+
+def test_the_partner_cannot_be_codex():
+    with pytest.raises(ValidationError) as exc:
+        validate_harness({**PARTNER, "flavor": "codex"}, "config/partner/harness.json", dir_name="partner")
+    assert "messaging socket" in str(exc.value)
+
+
 def test_good_partner():
     config = validate_harness(PARTNER, "config/partner/harness.json", dir_name="partner")
     assert config.is_partner and config.workdir is None

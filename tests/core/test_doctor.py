@@ -182,3 +182,49 @@ def test_doctor_passes_a_properly_seeded_home(instance):
         projects={"/w": {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True}},
     )
     assert [c for c in home_checks(instance) if c[0] == FAIL] == []
+
+
+def _codex_home(instance, config_text):
+    from hx.doctor import _codex_home
+
+    home = instance / "run" / "eng-001" / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text(config_text)
+    return _codex_home(instance, home, "eng-001")
+
+
+def test_codex_instance_without_a_token_fails(instance):
+    from hx.doctor import _codex_instance
+
+    assert ("codex-token", FAIL) in statuses(_codex_instance(instance))
+
+
+def test_codex_instance_with_token_and_pin_passes(instance, tmp_path):
+    from hx.doctor import _codex_instance
+
+    token = instance / "seed" / "codex-token"
+    token.parent.mkdir(parents=True, exist_ok=True)
+    token.write_text("sk-test\n")
+    token.chmod(0o600)
+    probe = tmp_path / "codex"
+    probe.write_text("#!/bin/sh\nexit 0\n")
+    probe.chmod(0o755)
+    (instance / "config" / "codex.json").write_text(
+        json.dumps({"bin": str(probe), "version": "0.156.1"})
+    )
+    assert ("codex-token", OK) in statuses(_codex_instance(instance))
+    assert ("codex", OK) in statuses(_codex_instance(instance))
+
+
+def test_codex_home_checks_posture_and_hooks(instance):
+    good = _codex_home(
+        instance,
+        'approval_policy = "never"\n'
+        'sandbox_mode = "danger-full-access"\n'
+        "[[hooks.SessionStart]]\n"
+        "[[hooks.PostToolUse]]\n"
+        "[[hooks.Stop]]\n",
+    )
+    assert not [c for c in good if c[0] == FAIL]
+    bad = _codex_home(instance, 'approval_policy = "never"\n')
+    assert [c for c in bad if c[0] == FAIL]

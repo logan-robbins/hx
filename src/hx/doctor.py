@@ -359,6 +359,68 @@ def _meta_instance(root: Path) -> list[tuple[str, str, str]]:
     return found
 
 
+def _codex_home(root: Path, home: Path, item_id: str) -> list[tuple[str, str, str]]:
+    """A Codex home is config.toml: unattended posture and hx hooks."""
+    label = f"home:{item_id}"
+    found: list[tuple[str, str, str]] = []
+    config_path = home / "config.toml"
+    try:
+        config = tomllib.loads(config_path.read_text())
+    except (OSError, ValueError):
+        config = None
+    if not isinstance(config, dict):
+        found.append((FAIL, label, "config.toml is missing or not valid TOML"))
+        return found
+    if config.get("approval_policy") == "never":
+        found.append((OK, label, "approval_policy never"))
+    else:
+        found.append((FAIL, label, "config.toml `approval_policy` is not `never`"))
+    if config.get("sandbox_mode") == "danger-full-access":
+        found.append((OK, label, "sandbox_mode danger-full-access"))
+    else:
+        found.append((FAIL, label, "config.toml `sandbox_mode` is not `danger-full-access`"))
+    hooks = config.get("hooks") if isinstance(config.get("hooks"), dict) else {}
+    if hooks and all(
+        isinstance(hooks.get(event), list) and hooks[event] for event in ("SessionStart", "PostToolUse", "Stop")
+    ):
+        found.append((OK, label, "hx hooks wired"))
+    else:
+        found.append((FAIL, label, "config.toml hooks are missing SessionStart/PostToolUse/Stop"))
+    return found
+
+
+def _codex_instance(root: Path) -> list[tuple[str, str, str]]:
+    found: list[tuple[str, str, str]] = []
+    token = root / "seed" / "codex-token"
+    if not token.is_file():
+        found.append((
+            FAIL, "codex-token",
+            "seed/codex-token absent; a Codex worker authenticates from that file, mode 0600",
+        ))
+    elif token.stat().st_mode & 0o77:
+        found.append((FAIL, "codex-token", "seed/codex-token is readable by group or other; it must be mode 0600"))
+    elif not token.read_text().strip():
+        found.append((FAIL, "codex-token", "seed/codex-token is empty"))
+    else:
+        found.append((OK, "codex-token", "seed/codex-token present, mode 0600"))
+
+    recorded = root / "config" / "codex.json"
+    if not recorded.is_file():
+        found.append((WARN, "codex", "config/codex.json absent; record {bin, version} of the codex binary"))
+    else:
+        try:
+            body = json.loads(recorded.read_text())
+        except json.JSONDecodeError as exc:
+            found.append((FAIL, "codex", f"config/codex.json is not valid JSON: {exc}"))
+        else:
+            binary = body.get("bin") if isinstance(body, dict) else None
+            if binary and os.access(binary, os.X_OK):
+                found.append((OK, "codex", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+            else:
+                found.append((FAIL, "codex", f"config/codex.json bin {binary!r} is missing or not executable"))
+    return found
+
+
 def live_meta_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]]:
     """A live meta session uses its own XDG home and runs unattended."""
     found: list[tuple[str, str]] = []
@@ -381,6 +443,31 @@ def live_meta_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]
         found.append((WARN, f"{item_id} is still launching (start.sh has not exec'd yet)"))
     else:
         found.append((FAIL, f"{item_id} is running without --yolo"))
+    return found
+
+
+def live_codex_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]]:
+    """A live Codex session uses its own CODEX_HOME and runs unattended."""
+    found: list[tuple[str, str]] = []
+    environment = session_environment(item_id, env)
+    expected = str(root / "run" / item_id / "home")
+    actual = environment.get("CODEX_HOME")
+    if actual == expected:
+        found.append((OK, f"CODEX_HOME {expected}"))
+    else:
+        found.append((
+            FAIL,
+            f"CODEX_HOME is {actual!r} on session {item_id}, not {expected!r}",
+        ))
+    command = pane_command(item_id, env)
+    if not command:
+        found.append((WARN, f"could not read the pane's command line for {item_id}"))
+    elif "--dangerously-bypass-approvals-and-sandbox" in command:
+        found.append((OK, "--dangerously-bypass-approvals-and-sandbox in the pane's argv"))
+    elif "start.sh" in command:
+        found.append((WARN, f"{item_id} is still launching (start.sh has not exec'd yet)"))
+    else:
+        found.append((FAIL, f"{item_id} is running without --dangerously-bypass-approvals-and-sandbox"))
     return found
 
 
@@ -592,7 +679,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     for item_id in ids:
         home = root / "run" / item_id / "home"
         flavor = flavor_of(root, item_id)
-        if flavor in ("pi", "grok", "meta") and item_id == "partner":
+        if flavor in ("pi", "grok", "meta", "codex") and item_id == "partner":
             checks.append((
                 FAIL, f"flavor:{item_id}",
                 "the Partner stays on claude; hx wake uses its messaging socket",
@@ -604,10 +691,11 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             ))
             continue
         # Homes hold no credentials: auth is the instance token (spec 11 Auth).
-        # A grok home carries config.toml and a meta home muse/settings.json
+        # Grok and codex homes carry config.toml and a meta home muse/settings.json
         # instead of settings.json.
         target = home / {
             "grok": "config.toml",
+            "codex": "config.toml",
             "meta": "muse/settings.json",
         }.get(flavor, "settings.json")
         checks.append(
@@ -621,6 +709,8 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             checks.extend(_grok_home(root, home, item_id))
         elif flavor == "meta":
             checks.extend(_meta_home(root, home, item_id))
+        elif flavor == "codex":
+            checks.extend(_codex_home(root, home, item_id))
         else:
             # The pre-seeded first-launch state (spec 08): without it the pane stops at the
             # onboarding wizard or the workspace-trust dialog and nothing about launch is
@@ -636,6 +726,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     meta_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "meta"]
     if meta_ids:
         checks.extend(_meta_instance(root))
+    codex_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "codex"]
+    if codex_ids:
+        checks.extend(_codex_instance(root))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the
@@ -653,6 +746,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         elif flavor_of(root, item_id) == "meta":
             for status, detail in live_meta_checks(root, item_id, env):
                 checks.append((status, f"meta:{item_id}", detail))
+        elif flavor_of(root, item_id) == "codex":
+            for status, detail in live_codex_checks(root, item_id, env):
+                checks.append((status, f"codex:{item_id}", detail))
         else:
             for status, detail in live_agent_checks(item_id, env):
                 checks.append((status, f"sandbox:{item_id}", detail))
