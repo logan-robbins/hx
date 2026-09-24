@@ -1,12 +1,12 @@
 # hx — HarnessAgent Runtime
 
-A control plane for a fleet of Claude Code sessions that keeps working when you are not
+A control plane for a fleet of coding-agent sessions that keeps working when you are not
 watching.
 
-Each agent is a **full Claude Code instance** — subagents, hooks, skills, all of it — in its
-own tmux session, running under a `/goal`. hx gives it a task, keeps its context coherent
-across every boundary, checks its work by running commands rather than by believing it, and
-tells the Partner when it is done.
+Each agent is a **full session in its vendor CLI** — Claude Code, Pi, Grok, Muse, or Codex,
+subagents, hooks, skills, all of it — in its own tmux session, running under a `/goal`. hx
+gives it a task, keeps its context coherent across every boundary, checks its work by running
+commands rather than by believing it, and tells the Partner when it is done.
 
 You talk to one of them. The rest is theirs.
 
@@ -46,36 +46,41 @@ transcript, is what the goal evaluator reads. Not a claim; a result.
 
 ```mermaid
 flowchart TB
-    YOU(["You"]) -->|"chat"| PARTNER["Partner<br/>Claude Code + Companion"]
-    PARTNER -->|"dispatch"| PAIRS["eng / qa pairs"]
+    YOU(["You"]) -->|"chat"| P_MAIN
 
-    subgraph HX["hx provides"]
-        direction LR
-        GOALS["goal files + runnable Checks"]
-        PLANE["tasks · pods · board · wake"]
-        SEAMS["planned seams → one context file"]
-        VERIFY["hx complete runs the Checks"]
+    subgraph TMUXP["tmux session: partner"]
+        direction TB
+        P_MAIN["partner:main<br/>Claude Code"]
+        P_COMP["partner:companion<br/>Partner step state"]
     end
 
-    subgraph VENDOR["vendors provide"]
-        direction LR
-        CLI["full sessions, any flavor<br/>claude · pi · grok · muse · codex"]
-        COMP["Companions keep step state"]
+    P_MAIN -->|"hx dispatch id goal"| PODS["pods/pod/id-working.md<br/>tasks.json"]
+    PODS -->|"hx launch id"| W_MAIN
+
+    subgraph TMUXW["tmux session: id"]
+        direction TB
+        W_MAIN["id:main<br/>any vendor CLI + hx hooks, /goal"]
+        W_COMP["id:companion<br/>worker step state"]
+        GOALEV["/goal evaluator<br/>hx goal pastes pointer<br/>met · not yet · impossible"]
     end
 
-    GOALS --> PAIRS
-    PLANE <--> PAIRS
-    SEAMS --> PAIRS
-    PAIRS --> VERIFY
-    PAIRS --- CLI
-    CLI --- COMP
+    W_MAIN -->|"hook events via hx-hook"| STREAMS["logs/id streams<br/>main + subagents"]
+    STREAMS --> W_COMP
+    W_COMP -->|"state/id"| CTX["context file<br/>memory + goal + state + tasks"]
+    CTX -->|"/new + rehydrate"| W_MAIN
+    W_MAIN -->|"hx complete"| CHECKS["HX-COMPLETE id outcome<br/>wake partner"]
+    CHECKS --> P_MAIN
+    W_MAIN -->|"precompact flush"| CTX
+    P_MAIN -->|"hx resume + addendum"| W_MAIN
+    P_MAIN -->|"hx read digest"| CHECKS
 ```
 
-Each vendor CLI is already a harness — a goal loop with tools and sessions — but a
-single-player one: no fleet, no planned memory across its own compaction, no independent
-verification of its claims. hx is the multiplayer layer over them: many such sessions,
-supervised, seamed, and check-run, without forking any of them — an adapter is config,
-hooks, and an isolated home, so the fleet outlives any single CLI.
+Why a harness of harnesses: every vendor CLI already runs a session, but none was built
+for a fleet. hx adds the four things fleet work needs and vendors never will — **custom
+compaction** (planned seams, never the vendor summarizer), **custom memory** (a Companion's
+bounded step state, not chat history), **separation of specialties** (Partner supervises,
+workers build, Companions remember, Checks verify), and **no fork** (adapters are config,
+hooks, and isolated homes, so the fleet outlives any single CLI).
 
 ## How work flows
 
@@ -98,23 +103,6 @@ own Companion and its own memory file, and it is the only one you talk to.
 6. When the ask is met, the Partner tells you in chat. Nothing completes the Partner; you do.
 
 You run no hx command at any point.
-
-## What it will not do
-
-hx never writes to your `~/.claude` — not your credentials file, not the macOS Keychain, on any
-platform. It authenticates with one long-lived token of its own that you generate in one
-command.
-
-It also does not manage your source control. A worker's `workdir` is a directory somebody
-chose; hx creates no repository, no branch and no worktree, and pushes nothing anywhere. The
-only git it ever runs is `git status --porcelain` inside `hx complete done`, and only when the
-directory is a git repository.
-
-This is enforced, not promised: a guard test records your Claude configuration surface before
-the suite runs and fails on any difference, hx refuses a `HARNESS_ROOT` that resolves inside
-`~/.claude`, and `packaging/e2e-deploy.sh` installs into a throwaway `HOME` containing a
-planted `~/.claude` whose every string must be absent afterwards.
-[docs/two-worlds.md](docs/two-worlds.md) has the line-by-line account.
 
 ## Shape of an instance
 
