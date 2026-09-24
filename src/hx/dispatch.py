@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import signal
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,6 +55,15 @@ CODEX_HOME_WIPE = ("sessions",)
 #: `CLAUDE_CONFIG_DIR` out from under a running process breaks it quietly (spec 10).
 RUN_KEEP = ("home", "persona.md", "companion-home", "companion-system.md")
 
+GATE_EMPTY = "HX-GATE-EMPTY"
+#: Seconds the gate preflight gives a goal's Checks before it stops judging them. The one
+#: timeout in hx: a gate that has not answered in this long is not refused, it is reported.
+PREFLIGHT_BUDGET = 120
+
+
+class GateEmpty(Refused):
+    """A goal whose Checks already pass on the untouched tree. Nothing was written."""
+
 
 @dataclass
 class Plan:
@@ -63,6 +75,7 @@ class Plan:
     goal_text: str
     work_item: Path
     already_applied: bool = False
+    preflight: str | None = None
 
 
 def _pod_of(root: Path, item_id: str, work_item: Path) -> str:
@@ -129,7 +142,74 @@ def _validate(root: Path, pairs: list[tuple[str, str]], existing: dict[str, dict
                 already_applied=already,
             )
         )
+
+    # The gate preflight, last and for every id, so that it runs only for goals that are
+    # otherwise dispatchable and so that one empty gate refuses the whole dispatch before
+    # anything is written. An already-applied id's worker may have started; it is not re-judged.
+    for plan in plans:
+        if not plan.already_applied:
+            checks = parse_goal_text(plan.goal_text, f"{plan.id} goal").checks
+            plan.preflight = gate_preflight(root, plan.id, checks, env=env)
     return plans
+
+
+def _first_fail_line(output: str) -> str:
+    for line in output.splitlines():
+        if "FAIL" in line:
+            return line.strip()
+    return "no FAIL line in the output"
+
+
+def gate_preflight(root: Path, item_id: str, checks: str, *, env=None, budget: float | None = None) -> str:
+    """Run a goal's Checks in the id's workdir before the work exists (spec 08).
+
+    Exit 0 means the block gates nothing, and raises `GateEmpty`. A non-zero exit is the
+    direction a gate must fail in before the work is done, and returns the line that says so.
+    Running out of budget judges nothing either way: the dispatch goes ahead and says so.
+
+    The block runs as `hx complete done` will run it, with `bash -e` and `HARNESS_ID` set to
+    the id, in its own process group so a timeout kills everything it started.
+    """
+    from .complete import workdir_for
+
+    budget = PREFLIGHT_BUDGET if budget is None else budget
+    workdir = workdir_for(root, item_id)
+    if not workdir.is_dir():
+        return f"gate preflight: not judged: the workdir {workdir} does not exist [{item_id}]"
+
+    child = dict(os.environ if env is None else env)
+    child["HARNESS_ID"] = item_id
+    child.setdefault("HARNESS_ROOT", str(workdir))
+    process = subprocess.Popen(
+        ["bash", "-e", "-c", checks],
+        cwd=str(workdir),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=child,
+        start_new_session=True,
+    )
+    try:
+        output, _ = process.communicate(timeout=budget)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        return f"gate preflight: not judged after {budget:g}s [{item_id}]"
+
+    if process.returncode == 0:
+        raise GateEmpty(
+            f"{GATE_EMPTY} {item_id}\nits `### Checks` exit 0 in {workdir} before any work "
+            f"exists: a block that passes before the work exists gates nothing. Make it fail on "
+            f"the untouched tree, then dispatch again. Nothing was written"
+        )
+    return (
+        f"gate preflight: exit {process.returncode} [{item_id}], "
+        f"first FAIL line: {_first_fail_line(output)}"
+    )
 
 
 def _reset_run_dir(root: Path, item_id: str) -> None:
@@ -165,7 +245,7 @@ def _reset_run_dir(root: Path, item_id: str) -> None:
 
 def apply_plan(root: Path, plan: Plan, entries: dict[str, dict], ts: str, env) -> dict:
     """Archive, reset, render, rename, goal — for one id."""
-    result = {"id": plan.id, "archived": None, "state": None, "goal": None}
+    result = {"id": plan.id, "archived": None, "state": None, "goal": None, "preflight": plan.preflight}
     if plan.already_applied:
         result["state"] = state_of(plan.work_item)
         result["goal"] = "already"
@@ -229,11 +309,18 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             "`hx dispatch eng-001 /tmp/eng-001.md eng-002 /tmp/eng-002.md`"
         )
     pairs = list(zip(args.pairs[0::2], args.pairs[1::2]))
-    results = dispatch(root, pairs, env=env)
+    try:
+        results = dispatch(root, pairs, env=env)
+    except GateEmpty as exc:
+        # The refusal is the answer the Partner reads, like `HX-CHECK-FAILED`.
+        print(exc.message)
+        return exc.exit_code
 
     if args.json:
         print(json.dumps(results, indent=2))
     else:
         for result in results:
+            if result.get("preflight"):
+                print(result["preflight"])
             print(f"HX-DISPATCH {result['id']} {result['state']} goal={result['goal'] or 'none'}")
     return 0

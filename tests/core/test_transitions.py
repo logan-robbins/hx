@@ -265,7 +265,7 @@ def dispatch_working(instance, hx, goals, item_id="eng-001", **goal_kwargs):
 
 def test_working_to_complete_done(instance, hx, launched, goals):
     launched("eng-001")
-    dispatch_working(instance, hx, goals, checks="test -f README.md")
+    dispatch_working(instance, hx, goals)
 
     result = hx("complete", "done", harness_id="eng-001")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -284,7 +284,7 @@ def test_complete_without_companion_state_digests_the_agents_own_deliverables(in
     """No Companion step state at completion: the Digest is what the agent left in
     `## Deliverables`, not `pending companion` forever (live rehearsal 2026-09-21)."""
     launched("eng-001")
-    dispatch_working(instance, hx, goals, checks="test -f README.md")
+    dispatch_working(instance, hx, goals)
     path = instance / "pods" / "engineers" / "eng-001-working.md"
     body = path.read_text()
     body = body.replace("## Deliverables\n", "## Deliverables\n- `lib/x.py` — added `x()`; committed as `abc1234`\n", 1)

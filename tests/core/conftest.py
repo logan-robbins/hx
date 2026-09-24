@@ -173,7 +173,16 @@ GOAL = """## Goal
 """
 
 
-def write_goal(root: Path, item_id: str, *, goal="Do the thing.", checks="true") -> Path:
+#: A gate that fails before the dispatch and passes after it: `hx dispatch` refuses a block
+#: that already exits 0 on the untouched tree (`HX-GATE-EMPTY`, spec 08), and `hx complete
+#: done` runs the same block once the item is `working`. Both set `HARNESS_ID` to the id.
+DISPATCHED_CHECKS = (
+    'test -f "$HARNESS_ROOT"/pods/*/"$HARNESS_ID"-working.md '
+    '|| { echo "FAIL: $HARNESS_ID is not working yet"; exit 1; }'
+)
+
+
+def write_goal(root: Path, item_id: str, *, goal="Do the thing.", checks=DISPATCHED_CHECKS) -> Path:
     """A goal file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
     path = root / "run" / f"goal-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
