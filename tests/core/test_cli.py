@@ -10,7 +10,7 @@ from hx.cli import COMMANDS, IMPLEMENTED, NOT_IMPLEMENTED
 #: removed `repo`, `push` and `upgrade`.
 SPEC_08_COMMANDS = {
     "launch", "install", "doctor", "show", "ui", "up",
-    "dispatch", "goal", "task", "compose", "seam", "restart", "complete", "resume",
+    "dispatch", "goal", "task", "compose", "seam", "restart", "complete", "resume", "amend",
     "read", "bench", "board", "flush", "companion", "wake", "heartbeat", "metrics",
     "goals", "archive",
     # Episode memory (docs/memory.md), not in spec 08's own table.

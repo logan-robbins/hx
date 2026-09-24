@@ -298,9 +298,8 @@ def goal_text(body: str) -> str | None:
     return section_text(body, SECTION_GOAL)
 
 
-def append_to_section(path: Path, heading: str, text: str) -> None:
-    """Insert `text` at the end of a section, before the next heading of the same level."""
-    front, body = split_frontmatter_text(path.read_text())
+def append_to_section_text(body: str, heading: str, text: str, *, path: Path | str = "work item") -> str:
+    """`body` with `text` inserted at the end of a section, before the next same-level heading."""
     bounds = section_bounds(body, heading)
     if bounds is None:
         raise ValidationError(f"{path}: no `{heading}` section to append to (spec 06)")
@@ -309,8 +308,13 @@ def append_to_section(path: Path, heading: str, text: str) -> None:
     block = text.rstrip("\n").split("\n")
     while end > 0 and lines[end - 1].strip() == "":
         end -= 1
-    updated = lines[:end] + ["", *block, ""] + lines[end:]
-    store.atomic_write_text(path, front + "\n".join(updated))
+    return "\n".join(lines[:end] + ["", *block, ""] + lines[end:])
+
+
+def append_to_section(path: Path, heading: str, text: str) -> None:
+    """Insert `text` at the end of a section, before the next heading of the same level."""
+    front, body = split_frontmatter_text(path.read_text())
+    store.atomic_write_text(path, front + append_to_section_text(body, heading, text, path=path))
 
 
 def replace_section(path: Path, heading: str, text: str) -> None:

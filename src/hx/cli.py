@@ -14,6 +14,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from . import amend as amend_cmd
 from . import archive as archive_cmd
 from . import bench as bench_cmd
 from . import board as board_cmd
@@ -47,6 +48,7 @@ NOT_IMPLEMENTED = {
 }
 
 IMPLEMENTED = {
+    "amend": amend_cmd.main,
     "archive": archive_cmd.main,
     "bench": bench_cmd.main,
     "board": board_cmd.main,
@@ -91,6 +93,7 @@ the control plane:
   task                         print your own goal and its addenda
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
+  amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate
   bench ID                     archive the body and free the id
   seam ID                      flush, recompose, and cut the conversation
   read ID [--detail|--full]      status; prose only with --detail, body with --full

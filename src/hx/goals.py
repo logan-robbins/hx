@@ -85,7 +85,10 @@ def _fenced_bash(lines: list[str], path: str) -> str:
                 fence_indent = match.group(1)
                 block = []
             continue
-        if match and match.group(2)[0] == fence_marker[0] and match.group(3) == "":
+        # A closing fence is at least as long as the one it closes (CommonMark), so a
+        # ````bash block may hold a ``` line without being cut short there.
+        if (match and match.group(2)[0] == fence_marker[0]
+                and len(match.group(2)) >= len(fence_marker) and match.group(3) == ""):
             break
         assert block is not None
         block.append(line[len(fence_indent) :] if line.startswith(fence_indent) else line)
@@ -180,6 +183,97 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
         checks=checks,
         text=body.strip("\n") + "\n",
     )
+
+
+def checks_fence_span(lines: list[str], path: str) -> tuple[int, int]:
+    """(open, close) line indexes of the ```bash fence under `### Checks` in `## Definition of done`.
+
+    `lines` is a whole goal or Work Item body. `close` is the closing fence line itself.
+    """
+    try:
+        sections = _sections("\n".join(lines))
+    except ValidationError as exc:
+        heading = str(exc).split("DUPLICATE:", 1)[1]
+        raise ValidationError(f"{path}: `## {heading}` appears more than once (spec 06)") from None
+    bounds = sections.get(DOD_HEADING.removeprefix("## "))
+    if bounds is None:
+        raise ValidationError(f"{path}: no `{DOD_HEADING}` section to carry `{CHECKS_HEADING}` (spec 06)")
+    start, end = bounds
+    heading_at = None
+    in_fence: str | None = None
+    for i in range(start + 1, end):
+        fence = _FENCE_RE.match(lines[i])
+        if fence:
+            marker = fence.group(2)[0]
+            in_fence = marker if in_fence is None else (None if in_fence == marker else in_fence)
+            continue
+        if in_fence is None:
+            match = _H3_RE.match(lines[i])
+            if match and match.group(1) == CHECKS_HEADING.removeprefix("### "):
+                heading_at = i
+                break
+    if heading_at is None:
+        raise ValidationError(f"{path}: `{DOD_HEADING}` has no `{CHECKS_HEADING}` heading (spec 06)")
+    return _bash_fence_after(lines, heading_at + 1, end, path)
+
+
+def _bash_fence_after(lines: list[str], start: int, end: int, path: str) -> tuple[int, int]:
+    """The first ```bash fence in `lines[start:end]`, as (open, close) line indexes."""
+    opened = None
+    marker = ""
+    for i in range(start, end):
+        match = _FENCE_RE.match(lines[i])
+        if opened is None:
+            if match and match.group(3).lower() in ("bash", "sh", "shell"):
+                opened, marker = i, match.group(2)
+            continue
+        if match and match.group(2)[0] == marker[0] and len(match.group(2)) >= len(marker) \
+                and match.group(3) == "":
+            return opened, i
+    if opened is None:
+        raise ValidationError(f"{path}: `{CHECKS_HEADING}` has no fenced ```bash block (spec 06)")
+    raise ValidationError(f"{path}: the ```bash block under `{CHECKS_HEADING}` is never closed (spec 06)")
+
+
+def addendum_checks(text: str, path: str | Path) -> list[str] | None:
+    """The `### Checks` fence an addendum carries, as its lines (fences included), or None.
+
+    An addendum that names `### Checks` outside a fence means to replace the block, so a
+    heading with no usable ```bash block under it is an error, not a quiet `kept`.
+    """
+    path_str = str(path)
+    lines = text.split("\n")
+    in_fence: str | None = None
+    heading_at = None
+    for i, line in enumerate(lines):
+        fence = _FENCE_RE.match(line)
+        if fence:
+            marker = fence.group(2)[0]
+            in_fence = marker if in_fence is None else (None if in_fence == marker else in_fence)
+            continue
+        if in_fence is None:
+            match = _H3_RE.match(line)
+            if match and match.group(1) == CHECKS_HEADING.removeprefix("### "):
+                if heading_at is not None:
+                    raise ValidationError(f"{path_str}: `{CHECKS_HEADING}` appears more than once (spec 08 `hx amend`)")
+                heading_at = i
+    if heading_at is None:
+        return None
+    # The same emptiness rule dispatch applies, before anything is spliced anywhere.
+    _fenced_bash(lines[heading_at + 1 :], path_str)
+    opened, closed = _bash_fence_after(lines, heading_at + 1, len(lines), path_str)
+    return lines[opened : closed + 1]
+
+
+def replace_checks(body: str, fence_lines: list[str], path: str | Path) -> str:
+    """`body` with its `### Checks` fence replaced by `fence_lines`, fences and all.
+
+    The addendum's own fence markers travel with the block, so a block that itself contains
+    a shorter fence cannot close early inside the target.
+    """
+    lines = body.split("\n")
+    opened, closed = checks_fence_span(lines, str(path))
+    return "\n".join(lines[:opened] + list(fence_lines) + lines[closed + 1 :])
 
 
 def parse_goal(path: str | Path) -> Goal:

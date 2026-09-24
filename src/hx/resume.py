@@ -12,13 +12,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from . import compose, goal, tasks as tasks_mod, timestamps
+from . import amend as amend_mod, compose, goal, tasks as tasks_mod
 from .caller import require_partner_caller
-from .errors import NotFound, Refused
+from .errors import Refused
 from .ids import PARTNER
 from .workitems import (
-    SECTION_GOAL,
-    append_to_section,
     parse_work_item,
     rename_state,
     require_work_item,
@@ -26,7 +24,7 @@ from .workitems import (
 )
 
 #: Spec 06: `hx resume` appends `## Goal addendum <ts>` beneath `## Goal`.
-ADDENDUM_HEADING = "### Goal addendum"
+ADDENDUM_HEADING = amend_mod.ADDENDUM_HEADING
 
 #: Only a paused item resumes; `done` and `exhausted` are ended, not paused (spec 06).
 RESUMABLE = ("blocked", "decision")
@@ -40,12 +38,7 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
             "it in chat (spec 12, spec 14 D25)"
         )
 
-    addendum_path = Path(addendum_file)
-    if not addendum_path.is_file():
-        raise NotFound(f"{addendum_path}: no addendum file; the addendum is always a file (spec 06)")
-    addendum = addendum_path.read_text().strip("\n")
-    if not addendum.strip():
-        raise Refused(f"refuse: {addendum_path} is empty; an addendum says what changed (spec 06)")
+    addendum_path, addendum = amend_mod.read_addendum(addendum_file, "resume")
 
     path = require_work_item(root, item_id)
     item = parse_work_item(path)
@@ -59,13 +52,16 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
             f"only `{'` or `'.join(RESUMABLE)}` resumes. `hx bench {item_id}` starts it over (spec 06)"
         )
 
-    ts = timestamps.now()
-    append_to_section(path, SECTION_GOAL, f"{ADDENDUM_HEADING} {ts}\n\n{addendum}")
+    # The addendum, and the `### Checks` replacement when it carries one, are computed and
+    # validated in full before anything is written: `hx amend`'s path exactly (spec 08).
+    entries = tasks_mod.load_tasks(root)
+    recorded = (entries.get(item_id) or {}).get("goal")
+    amendment = amend_mod.plan(root, item_id, addendum, addendum_path, recorded)
+    ts = amendment.ts
+    entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))
+    amend_mod.write(root, item_id, amendment, entries, entry)
     set_frontmatter(path, outcome=None)
 
-    entries = tasks_mod.load_tasks(root)
-    entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))
-    entry.setdefault("addenda", []).append({"ts": ts, "text": addendum})
     entry["outcome"] = None
     entry["completed"] = None
     tasks_mod.write_tasks(root, entries)
@@ -77,7 +73,14 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
     # Consumed, like the goal file at dispatch (spec 06).
     addendum_path.unlink(missing_ok=True)
 
-    return {"id": item_id, "ts": ts, "file": str(final.relative_to(root)), "goal": sent}
+    return {
+        "id": item_id,
+        "ts": ts,
+        "file": str(final.relative_to(root)),
+        "goal": sent,
+        "checks": "replaced" if amendment.replaced else "kept",
+        "addenda": len(entry["addenda"]),
+    }
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
@@ -88,5 +91,6 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     args = parser.parse_args(argv)
 
     result = resume(root, args.id, args.addendum_file, env=env)
+    print(amend_mod.line(result))
     print(f"HX-RESUME {result['id']} working goal={result['goal']}")
     return 0
