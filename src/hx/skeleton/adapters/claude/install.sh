@@ -4,7 +4,8 @@
 # Writes $HARNESS_ROOT/run/<id>/home/settings.json with:
 #   - the hx hooks of spec 09.1, each carrying `--id <id>`, pointed at the hook binary
 #     recorded in config/hx.json (CONTRACTS.md), falling back to $HARNESS_ROOT/bin/hx-hook.
-#     There is no `guard` PreToolUse hook: no hook enforces anything (spec 09.1, 14 D25)
+#     The Partner alone also gets the `guard` PreToolUse hook over config/partner/guard.json;
+#     no worker and no Companion is ever guarded (spec 09.1)
 #   - instruction-files mode `claude-md`, so no AGENTS.md is ever discovered
 #   - claudeMdExcludes for the agent's own workdir
 #   - the bypass-permissions acceptance, so no launch is ever interactive
@@ -133,7 +134,12 @@ hooks = {
     "PreCompact": [entry("precompact", "*")],
     "PostCompact": [entry("postcompact", "*")],
 }
-if not is_partner:
+# The guard is the one hook that enforces anything, and it is the Partner's alone: it
+# directs by status and dispatch, and config/partner/guard.json names what it must not run or
+# read (spec 09.1). The matcher is `hook_guard.MATCHER`.
+if is_partner:
+    hooks["PreToolUse"] = [entry("guard", "Bash|Read|Edit|Write|Grep|Glob")]
+else:
     hooks["PostToolUse"].append(entry("subagent-result", "Agent"))
     hooks["SubagentStart"] = [entry("subagent-start", "*")]
     hooks["SubagentStop"] = [entry("subagent-stop", "*")]
@@ -149,7 +155,7 @@ settings = {
         f"{cwd}/**/AGENTS.md",
         f"{cwd}/**/.claude/AGENTS.md",
     ],
-    # Bypass permissions, always. Nothing enforces anything (spec 05, 09.1, 14 D25).
+    # Bypass permissions, always. The Partner's guard is a hook, not a permission rule (spec 05, 09.1).
     "skipDangerousModePermissionPrompt": True,
 }
 if is_partner:
@@ -239,7 +245,7 @@ def companion_hook(event):
 
 
 # The Companion gets one hook and no others: its own `stop`, which validates what it wrote
-# and installs it. There is no guard hook anywhere (spec 09.1, 14 D25). No product skills and
+# and installs it. It is never guarded: the guard is the Partner's (spec 09.1). No product skills and
 # no CLAUDE.md: it reads the files each pass names and nothing else (spec 10).
 settings = {
     "hooks": {

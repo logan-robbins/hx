@@ -68,9 +68,10 @@ def test_hook_entrypoint_knows_the_spec_09_events():
     from hx.hooks import EVENTS
 
     assert set(EVENTS) == {
-        # No `guard`: there is no PreToolUse hook at all (spec 09.1, spec 14 D25).
         "context", "log", "subagent-start", "subagent-stop",
         "subagent-result", "stop", "precompact", "postcompact",
+        # The Partner's PreToolUse guard over config/partner/guard.json (spec 09.1).
+        "guard",
         # The Companion's own `stop`, in its own home — the other half of the pass protocol
         # (spec 10), not one of the agent's own.
         "companion-stop",

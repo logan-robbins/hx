@@ -7,8 +7,9 @@ down with it.
 
 **Failure policy.** A hook that crashes must not break the agent. A malformed payload, a
 missing file, an unexpected exception: logged to `logs/<id>/hook-errors.log` and **allowed**
-(exit 0), with no exception. There is no `PreToolUse` guard and no hook that enforces
-anything (spec 09.1, spec 14 D25). No timeouts, no network.
+(exit 0). The one hook that enforces anything is the Partner's `guard` (`PreToolUse`,
+`hook_guard.py`): it keeps this policy for its own crashes, but a rule it matches is never
+allowed — it exits 2 with its reason on stderr (spec 09.1). No timeouts, no network.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import hook_compact, hook_context, hook_log, hook_stop, hook_subagent
+from . import hook_compact, hook_context, hook_guard, hook_log, hook_stop, hook_subagent
 from .errors import HxError
 from .ids import is_id
 from .root import resolve_root
@@ -39,11 +40,15 @@ EVENTS = {
     "stop": 5,
     # The Companion's own `Stop`, in its own home: it installs what the pass produced.
     "companion-stop": 6,
+    # The Partner's `PreToolUse` guard over `config/partner/guard.json`. It shipped with
+    # goal eng-008, not a build-lane goal; the number only feeds the never-shown
+    # "not implemented" message.
+    "guard": 9,
 }
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
-    "precompact", "postcompact", "companion-stop",
+    "precompact", "postcompact", "companion-stop", "guard",
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
@@ -60,6 +65,8 @@ _HANDLERS = {
     "precompact": hook_compact.pre,
     "postcompact": hook_compact.post,
     "companion-stop": hook_stop.companion_handle,
+    # Exit 2 blocks the call; its line goes to stderr, which is what the model is shown.
+    "guard": hook_guard.handle,
 }
 
 ERROR_LOG = "hook-errors.log"
@@ -130,7 +137,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
         if event in _HANDLERS:
             code, line = _HANDLERS[event](payload, item_id, root, env=env)
             if line:
-                print(line)
+                print(line, file=sys.stderr if code == hook_guard.DENY else sys.stdout)
             return code
 
         print(

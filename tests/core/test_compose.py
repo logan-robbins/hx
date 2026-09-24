@@ -394,18 +394,23 @@ def test_a_malformed_payload_is_logged_and_allowed(instance, hx, launched, tmux_
     assert log.is_file() and "context" in log.read_text()
 
 
-def test_a_malformed_payload_denies_for_guard(instance, hx, launched):
-    """The one exception: hx could not prove the call was safe (spec 09.2)."""
+def test_a_malformed_payload_allows_for_guard(instance, hx, launched):
+    """The guard keeps the module's failure policy for its own crashes: log and allow
+    (spec 09.1). Until `guard` was an event this test asserted exit 2, which only ever came
+    from argparse rejecting the unknown event name."""
     launched("eng-001")
-    result = subprocess.run(
-        [sys.executable, "-m", "hx.hooks", "--id", "eng-001", "guard"],
-        input="{not json",
-        env=clean_env(HARNESS_ROOT=str(instance)),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 2
-    assert result.stdout == ""
+    for item_id in ("eng-001", "partner"):
+        result = subprocess.run(
+            [sys.executable, "-m", "hx.hooks", "--id", item_id, "guard"],
+            input="{not json",
+            env=clean_env(HARNESS_ROOT=str(instance)),
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+        log = instance / "logs" / item_id / "hook-errors.log"
+        assert log.is_file() and "guard: JSONDecodeError" in log.read_text()
 
 
 def test_the_id_must_match_harness_id(instance, hx, launched, tmux_server):

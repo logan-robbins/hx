@@ -17,13 +17,12 @@ import pytest
 
 from .conftest import SRC, clean_env
 
-#: spec 09.1, `<hx-hook> --id <id> <event>`.
-#: No `guard`: there is no PreToolUse hook at all (spec 09.1, spec 14 D25).
+#: spec 09.1, `<hx-hook> --id <id> <event>`, for a worker: no `guard`, which is the Partner's.
 HX_EVENTS = {
     "context", "log", "subagent-start", "subagent-stop",
     "subagent-result", "stop", "precompact", "postcompact",
 }
-PARTNER_EVENTS = HX_EVENTS - {"subagent-start", "subagent-stop", "subagent-result"}
+PARTNER_EVENTS = HX_EVENTS - {"subagent-start", "subagent-stop", "subagent-result"} | {"guard"}
 
 
 def run_install(instance, item_id, **env_extra):
@@ -134,7 +133,7 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
                 by_event[hook["command"].rsplit(" ", 1)[1]] = (claude_event, entry.get("matcher"))
 
     assert by_event["context"] == ("SessionStart", "startup|resume|clear|compact")
-    assert "PreToolUse" not in settings["hooks"], "no guard hook (spec 09.1, spec 14 D25)"
+    assert "PreToolUse" not in settings["hooks"], "a worker is never guarded (spec 09.1)"
     assert by_event["log"] == ("PostToolUse", "*")
     assert by_event["subagent-result"] == ("PostToolUse", "Agent")
     assert by_event["subagent-start"][0] == "SubagentStart"
@@ -142,6 +141,28 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
     assert by_event["stop"] == ("Stop", None), "Stop takes no matcher (docs/en/hooks)"
     assert by_event["precompact"][0] == "PreCompact"
     assert by_event["postcompact"][0] == "PostCompact"
+
+
+def test_guard_is_installed_for_the_partner_alone(instance):
+    """Spec 09.1: `guard` is a PreToolUse entry in the Partner's settings.json, and in no
+    worker's and no Companion's."""
+    from hx.hook_guard import MATCHER
+
+    assert run_install(instance, "partner").returncode == 0
+    assert run_install(instance, "eng-001").returncode == 0
+    partner = settings_for(instance, "partner")["hooks"]
+    assert partner["PreToolUse"] == [
+        {"matcher": MATCHER, "hooks": [{"type": "command", "command": partner["PreToolUse"][0]["hooks"][0]["command"]}]}
+    ]
+    assert partner["PreToolUse"][0]["hooks"][0]["command"].endswith(" --id partner guard")
+
+    worker = settings_for(instance, "eng-001")["hooks"]
+    assert "PreToolUse" not in worker
+    assert not any(c.endswith(" guard") for c in hook_commands({"hooks": worker}))
+    for item_id in ("partner", "eng-001"):
+        companion = json.loads((instance / "run" / item_id / "companion-home" / "settings.json").read_text())
+        assert "PreToolUse" not in companion["hooks"], item_id
+        assert not any(c.endswith(" guard") for c in hook_commands(companion)), item_id
 
 
 def test_the_partner_gets_no_subagent_hooks(instance):
