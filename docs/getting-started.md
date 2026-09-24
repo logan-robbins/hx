@@ -56,7 +56,8 @@ the working project and set its `watch` option to the Partner's Claude home:
 ```
 
 This is a field inside the project's `smartypants.config.json`; its `envFile` can
-provide model keys. Start or restart the Smartypants canvas server to watch new
+provide model keys. `watch.host` names the transcript format, while `flavor` names
+the Smartypants builder. Start or restart the Smartypants canvas server to watch new
 Partner turns, including tmux prompts and hx UI chat. hx needs no Smartypants setting.
 
 The first run stops with exit 4 and prints two steps. Do them:
