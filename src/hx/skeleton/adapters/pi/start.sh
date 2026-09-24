@@ -104,6 +104,7 @@ pi_args+=(
 )
 
 if [ "$mode" = exec ]; then
+  . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/sessions"
   awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
   cp "$persona" "$home/APPEND_SYSTEM.md"

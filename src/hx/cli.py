@@ -108,7 +108,8 @@ read-only views:
   goals [--json] / archive [--json]       the goal records, and what has been archived
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
-  install --root PATH [--claude B]        create the instance (spec 17.2)
+  install --root PATH [--env-file PATH] [--ignore-claude-version]
+                                        create the instance (spec 17.2)
 
 every command of spec 08:
   {chr(10) + '  '}{'  '.join(COMMANDS)}

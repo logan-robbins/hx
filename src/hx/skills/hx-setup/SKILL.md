@@ -26,10 +26,11 @@ there, on any platform — every agent has its own home under `<root>/run/<id>/h
 to the same line: do not edit `~/.claude/settings.json`, `~/.claude/skills`, credentials or
 `.claude.json`, and never put the instance root inside `~/.claude` (`hx install` refuses it).
 
-**The token step is the human's.** `hx install` stops once and asks for a long-lived token
-from `claude setup-token`. That command opens a browser for consent on their subscription. You
-never run it for them, never read, print or paste the token, and never write `seed/token`
-yourself. You relay the two lines `hx install` prints, verbatim, and wait.
+**The OAuth token step is the human's.** Without an existing token or a supplied env file,
+`hx install` stops and asks for a long-lived token from `claude setup-token`. You never run
+that command for them, never read or paste the OAuth token, and never write it yourself.
+An explicitly supplied env file is the authorized fallback; hx imports missing provider
+keys from it without printing their values.
 
 ## 1. Prerequisites
 
@@ -44,10 +45,12 @@ claude --version              # must be a version hx has been tested with
 ```
 
 The tested Claude Code versions are in the repository at
-`src/hx/packaging/tested-claude-versions.json` (also inside the installed package). If the
-installed `claude` is another version, say so; `hx install` will refuse to pin it, and you do
-not work around that. The human needs a Claude subscription (Max or Pro). **No API key is
-used anywhere**; the Companion runs on the same subscription token as the agents.
+`src/hx/packaging/tested-claude-versions.json` (also inside the installed package). A
+newer version can be used when the human requests it with `--ignore-claude-version`.
+The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
+missing credentials fall back to that file: `ANTHROPIC_API_KEY` (also the legacy typo
+`ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
+credentials under `seed/` take precedence.
 
 ## 2. Install the package
 
@@ -76,7 +79,17 @@ directory outside `~/.claude`; it need not exist.
 hx install --root ~/hx
 ```
 
-**The first run stops with exit code 4** and prints:
+For a supplied dotenv fallback:
+
+```bash
+hx install --root ~/hx --env-file /absolute/path/to/.env
+```
+
+Add `--ignore-claude-version` only when the human explicitly asks to bypass the tested
+version list. The env path is stored in the instance; later launches read it again.
+
+Without an existing OAuth token or a usable `--env-file`, the first run stops with exit
+code 4 and prints:
 
 ```
 hx needs one long-lived token for this instance. Two steps, both yours:

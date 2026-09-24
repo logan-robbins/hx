@@ -147,7 +147,9 @@ machine-readable shapes; [`docs/`](docs/) is the operator read.
   imports it, and nothing in hx fails when it is missing.
 - Requires `tmux`, `git`, and a `claude` binary at a version in
   [`src/hx/packaging/tested-claude-versions.json`](src/hx/packaging/tested-claude-versions.json).
-- A Claude subscription. No API key: the Companion runs on the same token as the agents.
+- A Claude subscription with an hx OAuth token, or an Anthropic API key in a supplied
+  `.env` file. An existing OAuth token takes precedence. The same file can supply
+  OpenAI and Grok keys for those worker flavors.
 - Tested on macOS and Linux.
 
 The install path works end to end — `packaging/e2e-deploy.sh` builds the wheel, installs it as

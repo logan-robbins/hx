@@ -4,14 +4,14 @@ Four steps, in order:
 
   1. refuse root; check tmux, git, Python; find `claude` and pin a tested version
   2. create the instance from the package skeleton
-  3. the seed token — the one thing only a human can do
+  3. an existing OAuth token, or API keys from a supplied dotenv file
   4. `hx launch partner` and `hx ui`, then print `tmux attach -t partner` and the URL
 
 That is the whole of deployment (spec 14 D25): no mirror, no worktrees, no unit files. After
 this the human types nothing but chat.
 
 hx reads nothing from the user's `~/.claude` at any point, on any platform: auth is the
-instance token at `seed/token` (spec 11 Auth). `--skeleton-only` stops after step 2, which is
+instance credential at `seed/token` (spec 11 Auth). `--skeleton-only` stops after step 2, which is
 what the test suites use.
 """
 
@@ -59,6 +59,7 @@ EXPECTED_SKELETON_FILES = (
     "adapters/claude/install.sh",
     "adapters/claude/start.sh",
     "adapters/claude/seam-command",
+    "adapters/load-env.sh",
     "adapters/pi/install.sh",
     "adapters/pi/start.sh",
     "adapters/pi/seam-command",
@@ -217,7 +218,7 @@ def install_skeleton(root: Path) -> dict:
 TOKEN_WAIT_EXIT = 4
 
 
-def preflight(root: Path, claude: str | None, env=None) -> dict:
+def preflight(root: Path, claude: str | None, env=None, *, ignore_claude_version: bool = False) -> dict:
     """Step 1: refuse root, check the tools, pin a tested `claude` (spec 17.2 step 1)."""
     import shutil
     import subprocess
@@ -243,7 +244,8 @@ def preflight(root: Path, claude: str | None, env=None) -> dict:
 
     binary = claude_bin.find_binary(claude)
     pinned = claude_bin.probe(binary)
-    claude_bin.require_tested(pinned)
+    if not ignore_claude_version:
+        claude_bin.require_tested(pinned)
     return {"bin": binary, "version": pinned}
 
 
@@ -280,6 +282,8 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     parser = argparse.ArgumentParser(prog="hx install", add_help=True)
     parser.add_argument("--root", help="HARNESS_ROOT to create (default: $HARNESS_ROOT, else ~/hx)")
     parser.add_argument("--claude", default=None, help="the claude binary to pin (default: PATH)")
+    parser.add_argument("--env-file", help="load provider API keys from this dotenv file at startup")
+    parser.add_argument("--ignore-claude-version", action="store_true", help="skip the tested-version gate")
     parser.add_argument(
         "--skeleton-only",
         action="store_true",
@@ -293,7 +297,7 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     # --- step 1 ------------------------------------------------------------------------
     pin = None
     if not args.skeleton_only:
-        pin = preflight(root, args.claude, env)
+        pin = preflight(root, args.claude, env, ignore_claude_version=args.ignore_claude_version)
         print(f"1. claude {pin['version']} at {pin['bin']}")
 
     # --- step 2 ------------------------------------------------------------------------
@@ -305,6 +309,11 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
         print(f"   kept     {name}")
     for name in result["missing"]:
         print(f"   missing  {name}")
+
+    from . import envfile
+    if args.env_file:
+        envfile.configure(root, args.env_file)
+    envfile.sync_seed(root)
 
     if pin is not None:
         from . import claude_bin

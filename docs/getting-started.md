@@ -9,7 +9,12 @@ procedure, and it leaves the token step (§2) to you.
 - macOS or Linux, `tmux`, `git`, Python 3.14, and `uv`.
 - Claude Code installed and on your `PATH` at a version hx has been tested with (`claude
   --version`; the list is `src/hx/packaging/tested-claude-versions.json`, currently `2.1.278`).
-- A Claude subscription (Max or Pro). No API key.
+- A Claude subscription (Max or Pro), or an Anthropic API key supplied below.
+
+Alternatively, supply an Anthropic API key in a dotenv file. `hx` uses an existing
+`seed/token` OAuth credential first and falls back to the file when that token is absent.
+`OPENAI_API_KEY` and `GROK_API_KEY` (or `XAI_API_KEY`) in the same file can seed Codex and
+Grok workers. Other variables in the file are available to agents at startup.
 
 ## 1. Install hx
 
@@ -32,6 +37,11 @@ Pick a directory for the instance. It must not be inside `~/.claude` (hx refuses
 ```bash
 hx install --root ~/hx
 ```
+
+To use a local dotenv fallback, pass `--env-file /absolute/path/to/.env`. If your Claude
+Code version is newer than hx's tested list, add `--ignore-claude-version`. The env file
+path is saved in the instance, so later `hx up` runs use it automatically. Existing
+credentials under `seed/` always take precedence over the env file.
 
 The first run stops with exit 4 and prints two steps. Do them:
 

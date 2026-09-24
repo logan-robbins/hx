@@ -21,8 +21,8 @@
 # code.claude.com/docs/en/cli-reference ("Comma-separated list of setting sources to load
 # (`user`, `project`, `local`)"). Managed settings are a separate level and still apply.
 #
-# Auth is the instance token at $HARNESS_ROOT/seed/token (spec 11 Auth, CONTRACTS.md), read
-# from the file by the launcher itself and exported as CLAUDE_CODE_OAUTH_TOKEN. It is never an
+# Auth is the instance credential at $HARNESS_ROOT/seed/token, read by the launcher itself.
+# OAuth tokens use CLAUDE_CODE_OAUTH_TOKEN; an API key fallback uses ANTHROPIC_API_KEY. It is never an
 # argument to anything — not to `env`, not to `tmux -e` — so it cannot appear in `ps` output,
 # and it is never written under run/. Refuses a home without settings, or an instance without
 # a 0600 token.
@@ -92,8 +92,7 @@ fi
 
 token_file=$root/seed/token
 [ -f "$token_file" ] || die \
-  "refuse: no $token_file; the human runs \`claude setup-token\` once and pastes the token
-  there, mode 0600 (spec 11 Auth). Without it a launch would stop at a login prompt"
+  "refuse: no $token_file; use claude setup-token for OAuth or configure --env-file with ANTHROPIC_API_KEY"
 token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it holds a year-long credential and must
@@ -157,6 +156,7 @@ ACEOF
 )
 
 if [ "$mode" = exec ]; then
+  . "$root/adapters/load-env.sh"
   # Regenerated immediately before exec, so a persona edit takes effect at the next launch
   # and never leaks the agent's own memory below the header into the system prompt.
   mkdir -p "$root/run/$id"
@@ -193,8 +193,14 @@ if [ "$mode" = exec ]; then
   # Every agent runs sandboxed and with permissions bypassed, always (spec 11). The
   # `.claude.json` pre-seed stays too: both mechanisms, so no dialog can ever appear.
   export IS_SANDBOX=1
-  CLAUDE_CODE_OAUTH_TOKEN=$(cat "$token_file")
-  export CLAUDE_CODE_OAUTH_TOKEN
+  credential=$(cat "$token_file")
+  if [[ "$credential" == sk-ant-api* ]]; then
+    export ANTHROPIC_API_KEY="$credential"
+    unset CLAUDE_CODE_OAUTH_TOKEN
+  else
+    export CLAUDE_CODE_OAUTH_TOKEN="$credential"
+    unset ANTHROPIC_API_KEY
+  fi
 
   # Spec 17.4, exactly. No prompt argument, ever.
   exec "$bin" \
