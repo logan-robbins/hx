@@ -1,4 +1,4 @@
-# hx — HarnessAgent Runtime
+# hx — Game of Harnesses
 
 A control plane for a fleet of coding-agent sessions that keeps working when you are not
 watching.
@@ -12,6 +12,16 @@ You talk to one of them. The rest is theirs.
 
 **→ [docs/getting-started.md](docs/getting-started.md)** takes you from a fresh machine to a
 working Partner. After that, [docs/operating.md](docs/operating.md) is the day-to-day.
+
+Inside Claude Code, the fastest path is the plugin — install, status, doctor, and talking
+to the Partner as slash commands:
+
+```
+/plugin marketplace add logan-robbins/hx
+/plugin install hx
+```
+
+then `/hx:setup` walks the same getting-started procedure for you.
 
 ## The idea
 
