@@ -74,7 +74,8 @@ project, then write `<instance>/config/smartypants.json` with absolute
 `smartypants/bin/smartypants-hook.mjs`). This installs a Partner prompt hook on
 the next `hx launch partner`. The project `smartypants.config.json` may use
 `"envFile"` for model keys. Serve Smartypants from `project_root`; if port 4173
-is occupied, choose a free port with `SMARTPANTS_PORT` and report its URL.
+is occupied, choose a free port with `SMARTPANTS_PORT` and report its URL. Both
+tmux prompts and accepted hx UI chat messages will reach the project diagram.
 
 Without an OAuth token or a usable env fallback, the first run stops with exit 4 and
 prints two steps. Relay them verbatim and wait: the human runs `claude setup-token`

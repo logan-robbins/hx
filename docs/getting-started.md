@@ -52,7 +52,8 @@ To let Smartypants document prompts sent to the Partner for a project, create
 
 Install Smartypants in the project and configure its `envFile` there. The Partner's
 isolated Claude home gets a prompt hook on its next launch; the diagram stays in the
-project, not in the hx instance.
+project, not in the hx instance. The hx UI chat also forwards accepted human messages
+to the same hook; internal worker status wakes do not enter the diagram.
 
 The first run stops with exit 4 and prints two steps. Do them:
 

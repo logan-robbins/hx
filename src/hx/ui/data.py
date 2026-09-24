@@ -409,9 +409,12 @@ class InstanceSource(Source):
         never a goal — goals are files (spec 08).
         """
         status = self.bound("wake")
-        if status is None:
-            return self._wake_by_subprocess(text)
-        return self._translate(lambda: status(self.root, text))
+        delivered = self._wake_by_subprocess(text) if status is None else self._translate(lambda: status(self.root, text))
+        if delivered == WAKE_ACCEPTED:
+            from hx.smartypants_bridge import submit
+
+            submit(self.root, text)
+        return delivered
 
     def _wake_by_subprocess(self, text: str) -> str:
         """The fallback. `hx wake` exits 0 only for `accepted`, 3 otherwise."""
