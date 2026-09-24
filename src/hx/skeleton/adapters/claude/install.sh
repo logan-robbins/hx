@@ -154,17 +154,6 @@ settings = {
 if is_partner:
     # The human and hx wake the Partner through the messaging socket (spec 11, 12).
     settings["crossSessionInbound"] = "accept"
-    smartypants_file = os.path.join(root, "config", "smartypants.json")
-    if os.path.isfile(smartypants_file):
-        with open(smartypants_file) as handle:
-            smartypants = json.load(handle)
-        project_root = smartypants["project_root"]
-        hook_script = smartypants["hook_script"]
-        if not os.path.isabs(project_root) or not os.path.isfile(hook_script):
-            raise ValueError("config/smartypants.json needs an absolute project_root and existing hook_script")
-        command = f"SMARTPANTS_ROOT={shlex.quote(project_root)} node {shlex.quote(hook_script)}"
-        settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": command, "timeout": 20}]}]
-
 settings["theme"] = "dark"
 
 with open(target, "w") as handle:

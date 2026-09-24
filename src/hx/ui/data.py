@@ -410,10 +410,6 @@ class InstanceSource(Source):
         """
         status = self.bound("wake")
         delivered = self._wake_by_subprocess(text) if status is None else self._translate(lambda: status(self.root, text))
-        if delivered == WAKE_ACCEPTED:
-            from hx.smartypants_bridge import submit
-
-            submit(self.root, text)
         return delivered
 
     def _wake_by_subprocess(self, text: str) -> str:

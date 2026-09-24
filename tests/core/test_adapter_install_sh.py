@@ -151,19 +151,6 @@ def test_the_partner_gets_no_subagent_hooks(instance):
     assert {c.rsplit(" ", 1)[1] for c in commands} == PARTNER_EVENTS
 
 
-def test_optional_smartypants_hook_receives_partner_prompts(instance):
-    script = instance / "smartypants-hook.mjs"
-    script.write_text("// hook fixture\n")
-    (instance / "config" / "smartypants.json").write_text(
-        json.dumps({"project_root": str(instance), "hook_script": str(script)})
-    )
-    result = run_install(instance, "partner")
-    assert result.returncode == 0, result.stderr
-    command = settings_for(instance, "partner")["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
-    assert "SMARTPANTS_ROOT=" in command
-    assert str(script) in command
-
-
 # --- instruction files, excludes, permissions, messaging --------------------------------------
 
 

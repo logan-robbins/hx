@@ -43,17 +43,21 @@ Code version is newer than hx's tested list, add `--ignore-claude-version`. The 
 path is saved in the instance, so later `hx up` runs use it automatically. Existing
 credentials under `seed/` always take precedence over the env file.
 
-To let Smartypants document prompts sent to the Partner for a project, create
-`<instance>/config/smartypants.json` with absolute paths:
+To let Smartypants document prompts sent to the Partner, configure Smartypants in
+the working project and set its `watch` option to the Partner's Claude home:
 
 ```json
-{"project_root":"/absolute/path/to/project","hook_script":"/absolute/path/to/smartypants/bin/smartypants-hook.mjs"}
+{
+  "flavor": "codex",
+  "depth": "module",
+  "seed": false,
+  "watch": {"host":"claude","home":"/absolute/path/to/instance/run/partner/home"}
+}
 ```
 
-Install Smartypants in the project and configure its `envFile` there. The Partner's
-isolated Claude home gets a prompt hook on its next launch; the diagram stays in the
-project, not in the hx instance. The hx UI chat also forwards accepted human messages
-to the same hook; internal worker status wakes do not enter the diagram.
+This is a field inside the project's `smartypants.config.json`; its `envFile` can
+provide model keys. Start or restart the Smartypants canvas server to watch new
+Partner turns, including tmux prompts and hx UI chat. hx needs no Smartypants setting.
 
 The first run stops with exit 4 and prints two steps. Do them:
 

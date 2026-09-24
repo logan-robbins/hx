@@ -68,14 +68,11 @@ contain `ANTHROPIC_API_KEY` (or `ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `GRO
 (or `XAI_API_KEY`), plus other environment variables agents need. Use
 `--ignore-claude-version` if the human authorized it.
 
-If the user also requested Smartypants for the same project, configure it in that
-project, then write `<instance>/config/smartypants.json` with absolute
-`project_root` (the project, not the hx instance) and `hook_script` (the local
-`smartypants/bin/smartypants-hook.mjs`). This installs a Partner prompt hook on
-the next `hx launch partner`. The project `smartypants.config.json` may use
-`"envFile"` for model keys. Serve Smartypants from `project_root`; if port 4173
-is occupied, choose a free port with `SMARTPANTS_PORT` and report its URL. Both
-tmux prompts and accepted hx UI chat messages will reach the project diagram.
+If the user also requested Smartypants, configure it in the working project with
+`"watch": {"host":"claude","home":"<instance>/run/partner/home"}` using an
+absolute home path. Smartypants owns the watcher; hx needs no plugin setting.
+Serve Smartypants from the project. If port 4173 is occupied, choose a free port
+with `SMARTPANTS_PORT` and report its URL.
 
 Without an OAuth token or a usable env fallback, the first run stops with exit 4 and
 prints two steps. Relay them verbatim and wait: the human runs `claude setup-token`
@@ -92,9 +89,15 @@ tmux session `partner`, and starts the UI at `http://127.0.0.1:8765/`.
 ## 4. Verify
 
 ```bash
-hx board          # the Partner, idle, in its tmux session
-tmux ls           # sessions: partner, ui
+HARNESS_ROOT=<instance> hx doctor
+tmux list-windows -t '=partner'   # main and companion
+tmux ls                            # sessions: partner, ui
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/   # 200
 ```
+
+If paired with Smartypants, verify its canvas URL returns 200, its server reports
+the watched Claude home, and the Partner knows the project path. A greeting can
+reach the watcher while leaving the canvas empty. Avoid printing env values.
 
 Done. Tell the human to attach with `tmux attach -t partner` and talk to the Partner.
 Point them at `docs/operating.md` in the repository for day-to-day use.

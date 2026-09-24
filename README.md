@@ -22,6 +22,9 @@ to the Partner as slash commands:
 ```
 
 then `/hx:setup` walks the same getting-started procedure for you.
+For a local checkout, add its absolute path as the marketplace source and install
+`hx@hx-marketplace`. Installing that Claude plugin is separate from creating an hx
+instance; the instance keeps its own isolated Claude homes.
 
 ## The idea
 
@@ -114,6 +117,11 @@ own Companion and its own memory file, and it is the only one you talk to.
 
 You run no hx command at any point.
 
+If a project uses Smartypants, set its `watch` option to the Partner's Claude home
+(`run/partner/home`). Smartypants watches that session independently; hx needs no plugin
+setting. Tell the Partner the project path so it can choose worker directories. See
+[getting started](docs/getting-started.md).
+
 ## Shape of an instance
 
 ```
@@ -131,7 +139,8 @@ $HARNESS_ROOT/
   logs/<id>/<id>-sNNN-*.jsonl one stream per subagent, open until it stops
   state/<id>/…                step state, written only by the Companion
   run/<id>/…                  context files, per-agent Claude home, turn and goal markers
-  seed/token                  the one credential, mode 0600
+  seed/token                  OAuth credential or Anthropic API fallback, mode 0600
+  seed/*-token                optional provider credentials for other worker flavors
 ```
 
 `config/` is the part worth committing to your own git. Everything else is runtime state.
@@ -145,8 +154,9 @@ machine-readable shapes; [`docs/`](docs/) is the operator read.
 - Python 3.14, standard library only but for one runtime dependency: `chromadb`, the local
   embedding store behind `hx memory` ([`docs/memory.md`](docs/memory.md)). Nothing else in hx
   imports it, and nothing in hx fails when it is missing.
-- Requires `tmux`, `git`, and a `claude` binary at a version in
-  [`src/hx/packaging/tested-claude-versions.json`](src/hx/packaging/tested-claude-versions.json).
+- Requires `tmux`, `git`, and `claude`. Installation checks the
+  [tested versions](src/hx/packaging/tested-claude-versions.json) unless
+  `--ignore-claude-version` is supplied.
 - A Claude subscription with an hx OAuth token, or an Anthropic API key in a supplied
   `.env` file. An existing OAuth token takes precedence. The same file can supply
   OpenAI and Grok keys for those worker flavors.

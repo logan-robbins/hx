@@ -14,7 +14,8 @@ the steps in order; each one says how to check it worked.
 hx runs a small fleet of Claude Code sessions in tmux: one **Partner** that the human talks
 to, N **workers** the Partner creates and dispatches, and a **Companion** beside every one of
 them that keeps its state so it survives context cuts. Everything lives under one directory,
-the instance root (`HARNESS_ROOT`, default `~/hx`), with one credential in `seed/token`. After
+the instance root (`HARNESS_ROOT`, default `~/hx`), with its Claude credential in `seed/token`
+and optional provider keys under `seed/`. After
 setup **the human only ever talks to the Partner** (`tmux attach -t partner`) and watches the
 UI. You do the one-time machine setup below and then stop. You are not the Partner, you do
 not create workers, and you do not dispatch work.
@@ -25,6 +26,8 @@ not create workers, and you do not dispatch work.
 there, on any platform — every agent has its own home under `<root>/run/<id>/home`. You hold
 to the same line: do not edit `~/.claude/settings.json`, `~/.claude/skills`, credentials or
 `.claude.json`, and never put the instance root inside `~/.claude` (`hx install` refuses it).
+An explicit request to install the Claude plugin may use `claude plugin`; that operation is
+separate from hx's runtime and does not authorize changing personal credentials or settings.
 
 **The OAuth token step is the human's.** Without an existing token or a supplied env file,
 `hx install` stops and asks for a long-lived token from `claude setup-token`. You never run
@@ -57,7 +60,7 @@ credentials under `seed/` take precedence.
 From a checkout of the repository:
 
 ```bash
-cd <checkout> && uv build && uv tool install --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd <checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
 ```
 
 (Once published: `uv tool install --python 3.14 hx-harness`.) Check:
@@ -74,6 +77,9 @@ lines are `ok`, `warn` or `fail`, each naming the step that clears it.
 
 Choose the root with the human: `--root <dir>`, else `$HARNESS_ROOT`, else `~/hx`. Any
 directory outside `~/.claude`; it need not exist.
+If the requested project already has an hx instance, reuse it. Run `hx up` with
+`HARNESS_ROOT` set to that instance, then verify the Partner and UI. Do not create a second
+instance merely because the default path differs.
 
 ```bash
 hx install --root ~/hx
@@ -116,11 +122,26 @@ hx install --root ~/hx
 This time it pins the `claude` binary and version it found, lays out the instance (`config/`,
 `templates/`, `personas/`, `companion/`, `pods/`, `run/`, `state/`, `logs/`, `seed/`), launches
 the Partner in tmux session `partner`, and starts the UI in tmux session `ui`. It is
-idempotent: running it again re-copies the package skeleton without touching anything written
-under `config/<id>/`, `PARTNER.md` or the token.
+idempotent: running it again adds missing skeleton files and keeps existing files, including
+adapters, `config/<id>/`, `PARTNER.md`, and credentials. When upgrading source code, check
+whether the instance's adapter scripts need the new package versions; refresh those files
+only while the affected agents are idle, then restart those sessions. Restart the `ui`
+session separately when UI code changes.
 
 Non-interactive callers (another harness) get the same contract: exit 4 means "seed token
 missing"; write the token file by your own means, then call again. Nothing else is asked.
+
+### Pairing with Smartypants
+
+When both are requested for one project, install Smartypants in the working project. In
+that project's `smartypants.config.json`, set `"watch"` to
+`{"host":"claude","home":"/absolute/instance/run/partner/home"}`. Configure `envFile`
+there when a dotenv file is supplied. Serve the canvas from the project; Smartypants
+reads the Partner's Claude session itself, including tmux prompts and hx UI chat.
+There is no hx plugin setting or Partner reload for this connection. Tell the Partner
+the project path so it records a default work location. Prefer an instance outside
+the project so Smartypants seed scans focus on product files. A greeting may be
+observed without adding nodes.
 
 ## 4. Verify, do not assume
 
@@ -170,7 +191,7 @@ harness is what a trial exercises, not the model's judgement; Sonnet at medium i
 
 ## 6. Hand over
 
-Tell the human two things and nothing else:
+Give the human the Partner attachment command and the live UI URL:
 
 ```bash
 tmux attach -t partner
@@ -182,6 +203,8 @@ describes what they want and where the code is. **The human never runs hx**, and
 you after this point. Do not create `config/<id>/` directories, do not write goal files, do
 not run `hx launch` or `hx dispatch`: an agent that starts making agents is a bug, and the
 Partner has the skills (`hx-partner`, `hx-fleet`, `hx-memory`) for all of it.
+When paired with Smartypants, include its actual canvas URL, which may use a port other than
+4173 if that port belongs to another project.
 
 What the UI shows, so you can describe it: the fleet graph with the Partner at the root and
 each worker with its Companion beside it (pulsing while a pass runs); a worker's drawer, which
