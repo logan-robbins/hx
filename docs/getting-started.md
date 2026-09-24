@@ -43,6 +43,17 @@ Code version is newer than hx's tested list, add `--ignore-claude-version`. The 
 path is saved in the instance, so later `hx up` runs use it automatically. Existing
 credentials under `seed/` always take precedence over the env file.
 
+To let Smartypants document prompts sent to the Partner for a project, create
+`<instance>/config/smartypants.json` with absolute paths:
+
+```json
+{"project_root":"/absolute/path/to/project","hook_script":"/absolute/path/to/smartypants/bin/smartypants-hook.mjs"}
+```
+
+Install Smartypants in the project and configure its `envFile` there. The Partner's
+isolated Claude home gets a prompt hook on its next launch; the diagram stays in the
+project, not in the hx instance.
+
 The first run stops with exit 4 and prints two steps. Do them:
 
 ```bash

@@ -15,10 +15,10 @@ nothing there — every agent has its own home under `<root>/run/<id>/home`. Hol
 line: do not edit `~/.claude/settings.json`, credentials, or skills, and never put the
 instance root inside `~/.claude` (`hx install` refuses it).
 
-**The token step is the human's.** `hx install` stops once and asks for a long-lived token
-from `claude setup-token`. You never run it for them, never read, print, or paste the
-token, and never write `seed/token` yourself. Relay the two lines `hx install` prints,
-verbatim, and wait.
+**OAuth stays the default.** An existing `seed/token` credential wins. If the user supplies
+an env file, `hx` fills missing provider credentials from it at startup. Never print a
+credential. If neither source is present, relay the `claude setup-token` steps that
+`hx install` prints and wait for the human to complete them.
 
 ## 1. Prerequisites
 
@@ -32,16 +32,19 @@ uv python find 3.14        # or: python3.14 --version
 claude --version           # must be a version hx has been tested with
 ```
 
-The tested Claude Code versions are listed in `src/hx/packaging/tested-claude-versions.json`
-in the repository. If the installed `claude` is another version, say so; `hx install` will
-refuse to pin it, and you do not work around that. The human needs a Claude subscription
-(Max or Pro). No API key is used anywhere.
+The tested Claude Code versions are listed in `src/hx/packaging/tested-claude-versions.json`.
+Use `--ignore-claude-version` only when the human has asked to bypass this check. Auth may
+come from an OAuth token or an Anthropic API key in a supplied env file.
 
 ## 2. Install the hx CLI
 
+If the user supplied a local `hx/` checkout, build and install that checkout:
+
 ```bash
-uv tool install git+https://github.com/logan-robbins/hx
+cd <local-hx-checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
 ```
+
+Otherwise use `uv tool install git+https://github.com/logan-robbins/hx`.
 
 Check it:
 
@@ -51,15 +54,32 @@ hx doctor
 
 ## 3. Create the instance
 
-Pick a directory for the instance. It must not be inside `~/.claude`.
+Pick a directory for the instance. It must not be inside `~/.claude`. If the requested
+project already has an hx instance, reuse it and run `hx up` with `HARNESS_ROOT` set to
+that path.
 
 ```bash
 hx install --root ~/hx
 ```
 
-The first run stops with exit 4 and prints two steps. Relay them verbatim and wait: the
-human runs `claude setup-token` (a browser consent on their subscription) and pastes the
-token into the file hx named. Then run the install again:
+When the user supplies a dotenv file, add `--env-file /absolute/path/to/.env`. It is saved
+in the instance. Existing OAuth and provider seed tokens take precedence. The file can
+contain `ANTHROPIC_API_KEY` (or `ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `GROK_API_KEY`
+(or `XAI_API_KEY`), plus other environment variables agents need. Use
+`--ignore-claude-version` if the human authorized it.
+
+If the user also requested Smartypants for the same project, configure it in that
+project, then write `<instance>/config/smartypants.json` with absolute
+`project_root` (the project, not the hx instance) and `hook_script` (the local
+`smartypants/bin/smartypants-hook.mjs`). This installs a Partner prompt hook on
+the next `hx launch partner`. The project `smartypants.config.json` may use
+`"envFile"` for model keys. Serve Smartypants from `project_root`; if port 4173
+is occupied, choose a free port with `SMARTPANTS_PORT` and report its URL.
+
+Without an OAuth token or a usable env fallback, the first run stops with exit 4 and
+prints two steps. Relay them verbatim and wait: the human runs `claude setup-token`
+(a browser consent on their subscription) and pastes the token into the file hx named.
+Then run the install again:
 
 ```bash
 hx install --root ~/hx
