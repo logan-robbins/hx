@@ -32,6 +32,79 @@ def _touch_marker(instance):
     return marker
 
 
+def _meta_payload(session_id="test-session-1"):
+    """A usage-less PostToolUse payload, as meta/codex rows arrive: no counts."""
+    return {
+        "tool_name": "Bash",
+        "tool_input": {"command": "ls"},
+        "tool_response": {"exit_code": 0},
+        "session_id": session_id,
+    }
+
+
+def _session_file(xdg, session_id, size):
+    path = xdg / "muse" / "sessions" / "2026" / "01" / "02" / session_id / "session.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"0" * size)
+    return path
+
+
+def _no_companion(instance, monkeypatch):
+    from hx import goal as goal_mod
+
+    monkeypatch.setattr(goal_mod, "capture_pane", lambda *a, **k: None)
+
+
+def test_transcript_size_triggers_the_seam_without_usage_counts(instance, tmp_path, monkeypatch):
+    """The meta/codex hard trigger: transcript bytes//4 against the model threshold."""
+    from hx.hook_log import handle, seam_marker
+
+    _no_companion(instance, monkeypatch)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    _session_file(tmp_path / "xdg", "test-session-1", 300000 * 4)
+    code, _ = handle(_meta_payload(), "eng-001", instance, env={})
+    assert code == 0
+    assert seam_marker(instance, "eng-001").is_file()
+
+
+def test_small_transcript_leaves_no_marker(instance, tmp_path, monkeypatch):
+    from hx.hook_log import handle, seam_marker
+
+    _no_companion(instance, monkeypatch)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    _session_file(tmp_path / "xdg", "test-session-1", 1024)
+    code, _ = handle(_meta_payload(), "eng-001", instance, env={})
+    assert code == 0
+    assert not seam_marker(instance, "eng-001").exists()
+
+
+def test_missing_transcript_stays_silent(instance, tmp_path, monkeypatch):
+    """No session on disk: no estimate, no marker, still exit 0."""
+    from hx.hook_log import handle, seam_marker
+    from hx.streams import iter_records, stream_path
+
+    _no_companion(instance, monkeypatch)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-empty"))
+    code, _ = handle(_meta_payload(session_id="never-existed"), "eng-001", instance, env={})
+    assert code == 0
+    assert not seam_marker(instance, "eng-001").exists()
+    records = list(iter_records(stream_path(instance, "eng-001", "eng-001-main")))
+    assert records[-1]["context_tokens"] is None
+
+
+def test_malicious_session_id_is_not_a_glob(instance, tmp_path, monkeypatch):
+    from hx.hook_log import handle, seam_marker, transcript_tokens
+
+    assert transcript_tokens("../../etc") is None
+    assert transcript_tokens("") is None
+    assert transcript_tokens(None) is None
+    _no_companion(instance, monkeypatch)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    code, _ = handle(_meta_payload(session_id="*"), "eng-001", instance, env={})
+    assert code == 0
+    assert not seam_marker(instance, "eng-001").exists()
+
+
 def test_stop_defers_while_companion_behind(instance, monkeypatch):
     """Marker stays, a watcher record lands, nothing is pasted, hook returns."""
     from hx import goal as goal_mod
