@@ -139,6 +139,38 @@ def test_no_persona_section_where_the_cli_injects_it(instance, hx, launched, goa
     assert "\n## Persona\n" not in context_file(instance, "eng-001").read_text()
 
 
+def test_persona_section_strips_the_stamped_globals(instance, hx, launched, goals):
+    """The Invariants section already carries config/CLAUDE.md from source: loading
+    the stamped copy too would spend the same tokens twice per boundary."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", "meta")
+    (instance / "config" / "eng-001" / "AGENTS.md").write_text(
+        "<!-- hx:global begin (from config/CLAUDE.md — edit the source, not this copy) -->\n"
+        "GLOBAL BODY\n"
+        "<!-- hx:global end -->\n"
+        "\n"
+        "<!-- hx:role begin (from personas/engineer/AGENTS.md — edit the source, not this copy) -->\n"
+        "ROLE BODY\n"
+        "<!-- hx:role end -->\n"
+        "\n"
+        "Per-id line.\n"
+        "\n"
+        "## UPDATES BELOW ONLY\n"
+        "\n"
+        "Things I learned: nothing yet.\n"
+    )
+    assert hx("compose", "eng-001").returncode == 0
+    text = context_file(instance, "eng-001").read_text()
+    persona = text.split("## Persona\n", 1)[1].split("## Memory\n", 1)[0]
+    assert "GLOBAL BODY" not in persona
+    assert "ROLE BODY" in persona
+    assert "Per-id line." in persona
+    assert "## UPDATES BELOW ONLY" not in persona
+
+
 def test_no_persona_text_without_the_header(instance, hx, launched, goals):
     """Without the header hx cannot tell persona from memory: carry neither text.
 

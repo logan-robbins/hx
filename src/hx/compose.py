@@ -14,7 +14,9 @@ Sections, in the order spec 07.3 fixes them:
                      only, and only on flavors whose CLI takes no system prompt
                      (`NO_SYSTEM_PROMPT_FLAVORS`): everywhere else the persona is
                      injected at launch and carrying it here too would spend context
-                     for nothing
+                     for nothing. The stamped `hx:global` region is stripped (the
+                     Invariants section carries that source); `hx:role` and per-id
+                     text stay
   1. Memory        — `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream),
                      or `config/<id>/SUBAGENTS.md` whole (subagent streams)
   2. Task          — the `## Goal` section of the Work Item, with the addenda `hx resume`
@@ -36,9 +38,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
-from . import board as board_mod, store, streams
+from . import board as board_mod, compile as compile_mod, store, streams
 from .config_harness import NO_SYSTEM_PROMPT_FLAVORS, flavor_of
 from .errors import NotFound
 from .ids import PARTNER
@@ -137,7 +140,22 @@ def persona(root: Path, item_id: str) -> tuple[str | None, str]:
     text = path.read_text()
     if HEADER not in text:
         return _relative(root, path), ""
-    return _relative(root, path), text.split(HEADER, 1)[0].strip("\n")
+    upper = _strip_global_region(text.split(HEADER, 1)[0])
+    return _relative(root, path), upper
+
+
+def _strip_global_region(upper: str) -> str:
+    """Drop the stamped `hx:global` region from a persona section.
+
+    The Invariants section already carries `config/CLAUDE.md` from source, so
+    carrying the stamped copy too would load the same ~3k tokens twice per
+    boundary. The `hx:role` region and the per-id text stay: they live nowhere
+    else.
+    """
+    kept = compile_mod.REGION_RE.sub(
+        lambda match: match.group(0) if match.group("kind") == "role" else "", upper
+    )
+    return re.sub(r"\n{3,}", "\n\n", kept).strip("\n")
 
 
 #: What a subagent gets in place of the goal. Spec 07.3 says "the subagent prompt", but the
