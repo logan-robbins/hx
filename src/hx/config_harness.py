@@ -39,7 +39,7 @@ _COMPANION_INT_FIELDS = (
 #: Zero is meaningful here: no minimum interval between seams, and `memory_inject_k: 0`
 #: is how an agent turns the "Memory episodes" section of its context file off entirely.
 _COMPANION_NON_NEGATIVE_FIELDS = ("seam_min_interval_s", "memory_inject_k")
-_COMPANION_STR_FIELDS = ("provider", "model", "cache_ttl")
+_COMPANION_STR_FIELDS = ("provider", "model", "cache_ttl", "effort")
 
 #: Spec 05: `claude-cli` goes through the pinned binary with the seed token and is the only one
 #: built; `anthropic` is the Messages API with an API key, for instances that have one.
@@ -182,6 +182,12 @@ def validate_harness(
                 raise ValidationError(
                     f"{path}: `companion.{key}` must be a non-empty string, got `{value!r}`"
                 )
+    companion_effort = companion.get("effort")
+    if companion_effort is not None and companion_effort not in EFFORT_LEVELS:
+        raise ValidationError(
+            f"{path}: `companion.effort` must be one of {', '.join(EFFORT_LEVELS)} "
+            f"(spec 11), got `{companion_effort}`"
+        )
     provider = companion.get("provider")
     if provider is not None and provider not in COMPANION_PROVIDERS:
         raise ValidationError(

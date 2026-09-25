@@ -10,6 +10,7 @@
   },
   "companion": {
     "model": "claude-haiku-4-5-20251001",
+    "effort": "low",
     "batch_records": 20,
     "cache_ttl": "1h",
     "state_budget_tokens": 10000,

@@ -20,6 +20,9 @@ SPEC_08_COMMANDS = {
     # Template compiler: distributes config/CLAUDE.md + role persona into
     # config/<id>/AGENTS.md on launch/restart; likewise post-spec-08.
     "compile",
+    # Addenda distillation: shrinks the Work Item and tasks.json record back
+    # down after resumes and amends accumulate; likewise post-spec-08.
+    "distill",
 }
 
 

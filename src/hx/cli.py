@@ -23,6 +23,7 @@ from . import companion as companion_cmd
 from . import compile as compile_cmd
 from . import compose as compose_cmd
 from . import dispatch as dispatch_cmd
+from . import distill as distill_cmd
 from . import doctor as doctor_cmd
 from . import flush as flush_cmd
 from . import goal as goal_cmd
@@ -59,6 +60,7 @@ IMPLEMENTED = {
     # what they do arrives at M2 and M5 (spec 13).
     "compose": compose_cmd.main,
     "dispatch": dispatch_cmd.main,
+    "distill": distill_cmd.main,
     "doctor": doctor_cmd.main,
     "flush": flush_cmd.main,
     "goal": goal_cmd.main,
@@ -94,6 +96,7 @@ the control plane:
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate
+  distill ID FILE [--memory]   shrink goal addenda into distilled directives above the header
   bench ID                     archive the body and free the id
   seam ID                      flush, recompose, and cut the conversation
   read ID [--detail|--full]      status; prose only with --detail, body with --full

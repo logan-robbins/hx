@@ -254,6 +254,23 @@ def test_the_model_and_effort_come_from_harness_json(ready, tmux_server):
     assert "claude-sonnet-5" in record["argv"] and "max" in record["argv"]
 
 
+def test_the_companion_runs_at_its_own_effort(ready, tmux_server):
+    """The Companion extracts step state; it must not burn the agent's effort."""
+    path = ready / "config" / "eng-001" / "harness.json"
+    body = json.loads(path.read_text())
+    body["effort"] = "max"
+    body.setdefault("companion", {})["effort"] = "low"
+    path.write_text(json.dumps(body))
+    (ready / "run" / "eng-001").mkdir(parents=True, exist_ok=True)
+    (ready / "run" / "eng-001" / "companion-system.md").write_text("You are a Companion.\n")
+    assert start(ready, "eng-001", "--companion", tmux=tmux_server).returncode == 0
+    record_path = ready / "run" / "eng-001" / "fake-argv-companion.json"
+    wait_for(record_path.is_file, what="the Companion to record its argv")
+    argv = json.loads(record_path.read_text())["argv"]
+    assert argv[argv.index("--effort") + 1] == "low", "companion.effort wins"
+    assert "max" not in argv, "the agent's effort must not leak into the Companion"
+
+
 def test_the_board_sees_the_launched_session(ready, tmux_server, work_item):
     from hx.board import collect
 

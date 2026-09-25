@@ -289,7 +289,7 @@ def test_harness_json_matches_spec_05(path):
     assert "-" in cfg["model"] and not cfg["model"].endswith("-latest"), cfg["model"]
     comp = cfg["companion"]
     for key in (
-        "provider", "model", "batch_records", "cache_ttl",
+        "provider", "model", "effort", "batch_records", "cache_ttl",
         "state_budget_tokens", "seam_min_context_tokens", "seam_min_interval_s",
     ):
         assert key in comp, f"{path}: companion is missing `{key}`"

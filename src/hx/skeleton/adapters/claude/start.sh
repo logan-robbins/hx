@@ -130,7 +130,9 @@ fi
 
 if [ "$role" = companion ]; then
   model=$("$python" -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("companion") or {}).get("model") or d["model"])' "$harness")
-  effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("effort","low"))' "$harness")
+  # The Companion extracts step state; it runs at its own effort, not the agent's.
+  # Unset means the agent's: existing configs keep working.
+  effort=$("$python" -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("companion") or {}).get("effort") or d.get("effort","low"))' "$harness")
 else
   model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
   effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")

@@ -57,6 +57,8 @@ def malformed():
         "companion negative interval": {**WORKER, "companion": {"seam_min_interval_s": -1}},
         "companion unknown provider": {**WORKER, "companion": {"provider": "openai"}},
         "unknown companion field": {**WORKER, "companion": {"temperature": 1}},
+        "companion bad effort": {**WORKER, "companion": {"effort": "ludicrous"}},
+        "companion empty effort": {**WORKER, "companion": {"effort": ""}},
     }
 
 
@@ -64,6 +66,18 @@ def test_good_worker():
     config = validate_harness(WORKER, "config/eng-001/harness.json", dir_name="eng-001")
     assert config.role == "engineer" and not config.is_partner
     assert config.flavor == "claude"
+
+
+def test_companion_effort_overrides_the_agents():
+    """The Companion extracts step state at its own effort, not the agent's."""
+    config = validate_harness(
+        {**WORKER, "companion": {**WORKER["companion"], "effort": "low"}},
+        "config/eng-001/harness.json",
+        dir_name="eng-001",
+    )
+    assert config.companion["effort"] == "low"
+    absent = validate_harness(WORKER, "config/eng-001/harness.json", dir_name="eng-001")
+    assert "effort" not in absent.companion, "unset means the agent's effort"
 
 
 def test_flavor_pi_is_accepted():
