@@ -25,6 +25,13 @@ _OPTIONAL = ("workdir", "harness", "companion", "flavor")
 #: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
 FLAVORS = ("claude", "pi", "grok", "meta", "codex")
 
+#: Flavors whose CLI takes no system prompt, verified per adapter: `muse` exposes no
+#: such flag (the persona file is derived for inspection only) and neither does `codex`
+#: (launched bare, persona derived and unused). Claude, Pi and Grok inject the persona
+#: at launch. Agents on these flavors get the persona in the context file instead
+#: (`compose.persona`, spec 02 Identity).
+NO_SYSTEM_PROMPT_FLAVORS = ("meta", "codex")
+
 #: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
 #: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no
 #: wake path at all (spec 12).

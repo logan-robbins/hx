@@ -56,8 +56,9 @@ The raw stream exists for one reader: the Companion. The HarnessAgent never read
 
 ### 7.3 Context file (hx-composed)
 
-At every boundary (start, resume, clear, compaction, subagent start) hx composes `run/<id>/<stream>.context.md` and the hook hands the agent its path. The persona is not in this file: it is in the system prompt (`02-decisions.md` Identity). Sections in order:
+At every boundary (start, resume, clear, compaction, subagent start) hx composes `run/<id>/<stream>.context.md` and the hook hands the agent its path. The persona is not in this file wherever the CLI takes a system prompt: it is in the system prompt (`02-decisions.md` Identity). On flavors whose CLI takes none (meta, codex) the persona rides as section 0 below. Sections in order:
 
+0. Persona: the part of `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY` — main stream only, and only on flavors without system-prompt injection
 1. Memory: the part of `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream); `config/<id>/SUBAGENTS.md` whole (subagent streams)
 2. Task: the verbatim `## Goal` and every addendum from the work item (the live copy the agent edits; `tasks.json` before the first render). For a subagent stream this section says only that the task is the message it was spawned with, already in its conversation: `SubagentStart` carries no prompt (verified live 2026-09-20) and hx does not guess a pairing from the parent's `PreToolUse(Agent)` payload, which cannot be correlated when two spawns are in flight. The Partner has no work item and no goal: its sections 2 and 3 are `PARTNER.md` and the current `hx board` output. `PARTNER.md` rides bounded — identity, rules, digest, fleet, pods and open questions whole; decisions/completed tails plus omitted counts; notes head plus pointer — because the handover is a resume pointer and an unbounded journal re-fills the window it just freed
 3. Work item `## Tasks` section (main stream only)

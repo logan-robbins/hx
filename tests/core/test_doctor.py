@@ -39,7 +39,14 @@ def test_reports_the_pinned_binary(instance):
     assert ("claude", OK) in statuses(checks), [c for c in checks if c[1] == "claude"]
 
 
-def test_an_unpinned_instance_only_warns(instance):
+def _no_live_server(monkeypatch):
+    """Live tmux sessions are environmental noise: these tests assert on a scratch
+    instance, so point tmux at a server that cannot exist."""
+    monkeypatch.setenv("HX_TMUX", "tmux -L hx-doctor-no-server")
+
+
+def test_an_unpinned_instance_only_warns(instance, monkeypatch):
+    _no_live_server(monkeypatch)
     (instance / "config" / "claude.json").unlink()
     checks = run_checks(instance)
     assert ("claude", WARN) in statuses(checks)
@@ -52,8 +59,9 @@ def test_a_pinned_binary_that_is_gone_fails(instance):
     assert ("claude", FAIL) in statuses(checks)
 
 
-def test_missing_skeleton_files_are_warnings_not_failures(instance):
+def test_missing_skeleton_files_are_warnings_not_failures(instance, monkeypatch):
     """The gtm lane owns these; doctor reports each missing one (goal build-1 item 2)."""
+    _no_live_server(monkeypatch)
     (instance / "PARTNER.md").unlink()
     (instance / "templates" / "work-item.md").unlink()
     checks = run_checks(instance)
@@ -88,8 +96,9 @@ def test_a_home_without_settings_fails(instance):
     assert ("home:eng-001", FAIL) in statuses(run_checks(instance))
 
 
-def test_it_does_not_inspect_work_items(instance, work_item):
+def test_it_does_not_inspect_work_items(instance, work_item, monkeypatch):
     """spec 14 D25: `hx doctor` polices no work item; the board is a listing."""
+    _no_live_server(monkeypatch)
     work_item("eng-001", "working", outcome="done")
     (instance / "pods" / "engineers" / "eng-001-extra.md").write_text("---\nid: nope\n---\n")
     assert [c for c in run_checks(instance) if c[0] == FAIL] == []

@@ -10,6 +10,11 @@ Sections, in the order spec 07.3 fixes them:
   0. Invariants    — `config/CLAUDE.md` whole: the global rules the Partner manages.
                      One copy, read everywhere; personas, skills, and templates point
                      here instead of restating them
+  0. Persona       — `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`, main stream
+                     only, and only on flavors whose CLI takes no system prompt
+                     (`NO_SYSTEM_PROMPT_FLAVORS`): everywhere else the persona is
+                     injected at launch and carrying it here too would spend context
+                     for nothing
   1. Memory        — `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream),
                      or `config/<id>/SUBAGENTS.md` whole (subagent streams)
   2. Task          — the `## Goal` section of the Work Item, with the addenda `hx resume`
@@ -20,10 +25,11 @@ Sections, in the order spec 07.3 fixes them:
                      omitted when `companion.memory_inject_k` is 0
   5. Open handles  — `run/<id>/subagents.json` and every `-open` stream
 
-The persona is never here: it is in the system prompt, via `--append-system-prompt-file`
-(spec 02 Identity, 11). For `partner` the file also carries `PARTNER.md` and the `hx board`
-text, which is what it supervises from (spec 09.1). No size cap applies, because nothing is
-injected: the agent reads the file with a tool call (spec 02).
+Everywhere else the persona is never here: it is in the system prompt, via
+`--append-system-prompt-file` (spec 02 Identity, 11). For `partner` the file also
+carries `PARTNER.md` and the `hx board` text, which is what it supervises from
+(spec 09.1). No size cap applies, because nothing is injected: the agent reads the
+file with a tool call (spec 02).
 """
 
 from __future__ import annotations
@@ -33,6 +39,7 @@ import json
 from pathlib import Path
 
 from . import board as board_mod, store, streams
+from .config_harness import NO_SYSTEM_PROMPT_FLAVORS, flavor_of
 from .errors import NotFound
 from .ids import PARTNER
 from .workitems import (
@@ -108,6 +115,29 @@ def memory(root: Path, item_id: str, stream: str) -> tuple[str, str]:
     if not path.is_file():
         return _relative(root, path), ""
     return _relative(root, path), path.read_text().strip("\n")
+
+
+def persona(root: Path, item_id: str) -> tuple[str | None, str]:
+    """The persona section: `config/<id>/AGENTS.md` above the header.
+
+    Only for flavors whose CLI takes no system prompt (`NO_SYSTEM_PROMPT_FLAVORS`):
+    everywhere else the persona is injected at launch, and carrying it here too would
+    spend context on every boundary for nothing. Main stream only — subagent streams
+    already carry `SUBAGENTS.md` whole as their identity.
+
+    Returns `(None, "")` when the section must be omitted. An empty body with a source
+    means the file or the header is missing: without the header hx cannot tell persona
+    from memory, and the persona must never be guessed at.
+    """
+    if flavor_of(root, item_id) not in NO_SYSTEM_PROMPT_FLAVORS:
+        return None, ""
+    path = root / "config" / item_id / "AGENTS.md"
+    if not path.is_file():
+        return _relative(root, path), ""
+    text = path.read_text()
+    if HEADER not in text:
+        return _relative(root, path), ""
+    return _relative(root, path), text.split(HEADER, 1)[0].strip("\n")
 
 
 #: What a subagent gets in place of the goal. Spec 07.3 says "the subagent prompt", but the
@@ -410,16 +440,30 @@ def compose_text(
 ) -> str:
     """The whole context file, sections in the order spec 07.3 fixes."""
     main = is_main_stream(item_id, stream)
+    persona_source, persona_text = persona(root, item_id)
+    if main and persona_source is not None:
+        intro = (
+            "Your persona is the first section of this file. The rest is everything "
+            "else hx has for you. Read it once; you do not need to search for "
+            "anything it contains."
+        )
+    else:
+        intro = (
+            "This file is everything hx has for you that is not already in your system prompt. "
+            "Read it once; you do not need to search for anything it contains."
+        )
     parts = [
         f"# Context for {stream}",
         "",
-        "This file is everything hx has for you that is not already in your system prompt. "
-        "Read it once; you do not need to search for anything it contains.",
+        intro,
         "",
     ]
 
     source, text = invariants(root)
     parts.append(_section("Invariants", source, text))
+
+    if main and persona_source is not None:
+        parts.append(_section("Persona", persona_source, persona_text))
 
     source, text = memory(root, item_id, stream)
     parts.append(_section("Memory" if main else "Who your subagents are", source, text))

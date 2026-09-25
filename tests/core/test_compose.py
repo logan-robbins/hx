@@ -2,7 +2,8 @@
 
 M2 pass criteria: on `startup`, `resume`, `clear` and `compact` the hook prints one path line;
 the file holds memory, task, `## Tasks`, step state and open handles, in that order, and no
-persona; the Partner's file also holds `PARTNER.md` and board output.
+persona on flavors whose CLI injects one (the persona rides section 0 everywhere else);
+the Partner's file also holds `PARTNER.md` and board output.
 """
 
 from __future__ import annotations
@@ -27,6 +28,13 @@ SECTION_GOAL = [
 ]
 
 SOURCES = ["startup", "resume", "clear", "compact"]
+
+
+def _set_flavor(instance, item_id, flavor):
+    harness = instance / "config" / item_id / "harness.json"
+    body = json.loads(harness.read_text())
+    body["flavor"] = flavor
+    harness.write_text(json.dumps(body))
 
 
 def run_hook(instance, item_id, event, payload=None, *, tmux=None, harness_id=None, **env_extra):
@@ -99,6 +107,78 @@ def test_the_persona_is_never_in_the_context_file(instance, hx, launched, goals)
     assert persona_first_line not in text, "the persona leaked into the context file"
     assert "## UPDATES BELOW ONLY" not in text
     assert "Things I learned: nothing yet." in text, "the memory below the header is carried"
+
+
+@pytest.mark.parametrize("flavor", ["meta", "codex"])
+def test_the_persona_rides_the_context_file_without_system_prompt_injection(
+    instance, hx, launched, goals, flavor
+):
+    """spec 02 Identity: flavors whose CLI takes no system prompt get the persona as
+    section 0, recomposed at every boundary like everything else in the file."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", flavor)
+    assert hx("compose", "eng-001").returncode == 0
+    text = context_file(instance, "eng-001").read_text()
+    assert "\n## Persona\n" in text
+    assert "_source: `config/eng-001/AGENTS.md`_" in text
+    assert PERSONA.strip().split("\n")[0] in text
+    assert "Things I learned: nothing yet." in text, "memory still rides below it"
+    assert text.index("## Persona\n") < text.index("## Memory\n"), "persona reads first"
+
+
+def test_no_persona_section_where_the_cli_injects_it(instance, hx, launched, goals):
+    """The default flavor injects at launch: carrying it here too would spend context."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    assert hx("compose", "eng-001").returncode == 0
+    assert "\n## Persona\n" not in context_file(instance, "eng-001").read_text()
+
+
+def test_no_persona_text_without_the_header(instance, hx, launched, goals):
+    """Without the header hx cannot tell persona from memory: carry neither text.
+
+    The heading still renders (every section does when its source is missing),
+    with the `_none yet_` body.
+    """
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", "meta")
+    (instance / "config" / "eng-001" / "AGENTS.md").write_text("You are eng-001.\n")
+    assert hx("compose", "eng-001").returncode == 0
+    text = context_file(instance, "eng-001").read_text()
+    assert "You are eng-001." not in text
+    assert "## UPDATES BELOW ONLY" not in text
+
+
+def test_no_persona_section_on_a_subagent_stream(instance, hx, launched, goals):
+    """Subagent streams already carry SUBAGENTS.md whole as their identity."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", "codex")
+    (instance / "config" / "eng-001" / "SUBAGENTS.md").write_text("You are a subagent of eng-001.\n")
+    assert hx("compose", "eng-001", "eng-001-s001").returncode == 0
+    text = (instance / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
+    assert "\n## Persona\n" not in text
+    assert "You are a subagent of eng-001." in text
+
+
+def test_the_partner_file_carries_the_persona_on_codex(instance, hx, launched):
+    """The Codex Partner has no system prompt either: same section 0."""
+    launched("partner")
+    _set_flavor(instance, "partner", "codex")
+    assert hx("compose", "partner").returncode == 0
+    text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
+    assert "\n## Persona\n" in text
+    assert "You are the Partner." in text
 
 
 def test_each_section_names_the_file_it_came_from(instance, hx, launched, goals):

@@ -221,6 +221,8 @@ def test_codex_install_writes_home_and_provisions_auth(instance, tmp_path):
     ):
         assert config["hooks"][event], event
     assert "--id eng-001" in (home / "config.toml").read_text()
+    workdir = json.loads((instance / "config" / "eng-001" / "harness.json").read_text())["workdir"]
+    assert config["projects"][workdir]["trust_level"] == "trusted"
     assert (home / "auth.json").is_file(), "login --with-api-key provisions the home auth"
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
@@ -256,6 +258,7 @@ def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_pat
     guards = config["hooks"].get("PreToolUse", [])
     assert len(guards) == 1 and guards[0]["matcher"] == "Bash|apply_patch|Edit|Write"
     assert "guard" in guards[0]["hooks"][0]["command"]
+    assert config["projects"][str(instance)]["trust_level"] == "trusted"
 
 
 def test_codex_worker_has_no_pre_tool_use_hook(instance, tmp_path):
@@ -306,6 +309,7 @@ def test_codex_start_exec_runs_the_partner_in_the_root(instance, tmp_path):
     )
     assert result.returncode == 0, result.stderr
     body = json.loads(recorded.read_text())
+    assert "-a" not in body["argv"], "the CLI rejects -a with the bypass flag (0.157)"
     assert body["env"]["CODEX_HOME"] == str(instance / "run" / "partner" / "home")
     assert body["env"]["HARNESS_ID"] == "partner"
     assert body["cwd"] == str(instance)
@@ -352,11 +356,10 @@ def test_codex_start_exec_is_bare_unattended_and_isolated(instance, tmp_path):
     assert argv == [
         "--dangerously-bypass-approvals-and-sandbox",
         "--dangerously-bypass-hook-trust",
-        "-a", "never",
         "-s", "danger-full-access",
         "-m", "gpt-6-sol",
         "-c", 'model_reasoning_effort="xhigh"',
-    ], "bare: no prompt argument, flags only"
+    ], "bare: no prompt argument, flags only (no -a: the CLI rejects it with the bypass flag)"
     assert body["env"]["CODEX_HOME"] == str(instance / "run" / "eng-001" / "home")
     assert body["env"]["HARNESS_ID"] == "eng-001"
     assert body["cwd"] == str(instance / "wt" / "eng-001")
