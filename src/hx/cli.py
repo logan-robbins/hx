@@ -30,6 +30,8 @@ from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
 from . import memory as memory_cmd
+from . import observer as observer_cmd
+from . import evidence as evidence_cmd
 from . import goals as goals_cmd
 from . import read as read_cmd
 from . import recall as recall_cmd
@@ -68,6 +70,8 @@ IMPLEMENTED = {
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
     "memory": memory_cmd.main,
+    "observe": observer_cmd.main,
+    "evidence": evidence_cmd.main,
     "goals": goals_cmd.main,
     "read": read_cmd.main,
     "recall": recall_cmd.main,
@@ -107,6 +111,8 @@ the control plane:
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
   memory search QUERY          what other agents already learned; see `hx memory --help`
+  observe register/drain/serve/status  incremental continuity source capture
+  evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
 
 read-only views:
   board [--json]                          a plain listing of what is on disk

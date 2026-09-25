@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from hx.continuity_store import Conflict, ContinuityStore, canonical
+from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION, canonical
 from hx.errors import ValidationError
 
 
@@ -56,6 +56,18 @@ def test_newer_schema_refused_without_rewrite(tmp_path):
         ContinuityStore(tmp_path)
     with sqlite3.connect(tmp_path / "state" / "continuity.sqlite") as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 999
+
+
+def test_schema_one_migrates_without_losing_existing_tasks(ledger):
+    store, _ = ledger
+    store.db.execute("DROP TABLE event_origins")
+    store.db.execute("DROP TABLE artifact_chunks")
+    store.db.execute("PRAGMA user_version=1")
+    with ContinuityStore(store.root) as upgraded:
+        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        with upgraded.transaction() as tx:
+            assert tx.task("T1")["payload"]["goal"] == "preserve late events"
+        assert upgraded.db.execute("SELECT count(*) FROM event_origins").fetchone()[0] == 0
 
 
 def test_atomic_rollback_covers_records_cursor_outbox_and_artifacts(ledger):

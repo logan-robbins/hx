@@ -23,6 +23,9 @@ SPEC_08_COMMANDS = {
     # Addenda distillation: shrinks the Work Item and tasks.json record back
     # down after resumes and amends accumulate; likewise post-spec-08.
     "distill",
+    # Continuity v2: registered incremental capture and its resident observer.
+    "observe",
+    "evidence",
 }
 
 

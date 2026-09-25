@@ -1,0 +1,194 @@
+"""Versioned public-event decoders. Private reasoning is never persisted.
+
+Hook normalization is shared by all five adapters. Native decoders are separate
+contracts: an unknown record is a visible capture gap, not a silently lost event.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .continuity_store import EVENT_KINDS
+from .errors import ValidationError
+
+
+class DecodeGap(ValidationError):
+    pass
+
+
+@dataclass(frozen=True)
+class Event:
+    kind: str
+    data: dict
+    native_id: str | None = None
+    usage: dict | None = None
+
+
+def public_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "\n".join(
+        block["text"] for block in content
+        if isinstance(block, dict) and block.get("type") in {"text", "input_text", "output_text"}
+        and isinstance(block.get("text"), str)
+    )
+
+
+def _usage(value) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    # Keep provider names; interpretation belongs to capability-specific accounting.
+    allowed = {"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
+               "input", "output", "cacheRead", "cacheWrite", "total_tokens"}
+    result = {key: item for key, item in value.items() if key in allowed and type(item) is int and item >= 0}
+    return result or None
+
+
+def hook_v1(body: dict) -> list[Event]:
+    aliases = {"toolName": "tool_name", "toolInput": "tool_input", "toolResult": "tool_response",
+               "tool_result": "tool_response", "toolUseId": "tool_use_id", "sessionId": "session_id",
+               "hookEventName": "hook_event_name"}
+    p = dict(body)
+    for source, target in aliases.items():
+        if source in p and target not in p:
+            p[target] = p[source]
+    event = p.get("hook_event_name") or p.get("event")
+    if not isinstance(event, str):
+        raise DecodeGap("hook event has no event name")
+    key = event.replace("_", "").replace("-", "").lower()
+    identifier = p.get("native_event_id") or p.get("event_id")
+    identifier = identifier if isinstance(identifier, str) and identifier else None
+    if key in {"posttooluse", "posttoolusefailure", "log", "toolresult"}:
+        call = p.get("tool_use_id")
+        native = f"tool:{call}" if isinstance(call, str) and call else identifier
+        data = {name: p[name] for name in ("tool_name", "tool_use_id", "tool_input", "tool_response",
+                                          "agent_id", "source_fingerprints", "cwd") if name in p}
+        if key == "posttoolusefailure":
+            data["is_error"] = True
+            if "error" in p:
+                data["error"] = p["error"]
+        return [Event("tool_result", data, native, _usage(p.get("usage")))]
+    if key in {"userpromptsubmit", "request", "correction"}:
+        text = p.get("prompt", p.get("text"))
+        if not isinstance(text, str):
+            raise DecodeGap("request hook lacks prompt text")
+        return [Event("correction" if key == "correction" else "request", {"text": text}, identifier)]
+    if key in {"stop", "subagentstop", "finish"}:
+        result = []
+        message = p.get("last_assistant_message")
+        if isinstance(message, str) and message:
+            # Stop has no guaranteed message ID; never merge by matching text.
+            result.append(Event("assistant_message", {"text": message, "claim": True},
+                                p.get("assistant_message_id")))
+        result.append(Event("finish", {name: p[name] for name in ("agent_id", "background_tasks", "turn_id") if name in p}, identifier))
+        return result
+    if key in {"sessionstart", "context", "precompact", "postcompact", "boundary"}:
+        return [Event("boundary", {name: p[name] for name in ("source", "trigger", "turn_id", "compact_summary") if name in p}, identifier)]
+    if key in {"subagentstart", "spawn"}:
+        return [Event("spawn", {name: p[name] for name in ("agent_id", "agent_type", "tool_input") if name in p}, identifier)]
+    raise DecodeGap(f"unsupported hook event {event}")
+
+
+def claude_v1(body: dict) -> list[Event]:
+    kind = body.get("type")
+    if kind in {"progress", "file-history-snapshot", "queue-operation", "summary", "system"}:
+        # Lifecycle hooks retain the boundary; these rows are provider bookkeeping.
+        return []
+    if kind not in {"user", "assistant"} or not isinstance(body.get("message"), dict):
+        raise DecodeGap(f"unsupported Claude transcript record {kind}")
+    message = body["message"]
+    content = message.get("content")
+    native = body.get("uuid")
+    native = native if isinstance(native, str) and native else None
+    results = []
+    text = public_text(content)
+    usage = _usage(message.get("usage"))
+    if text or usage:
+        results.append(Event("assistant_message" if kind == "assistant" else "request",
+                             {"text": text, "claim": kind == "assistant"}, native, usage))
+    if isinstance(content, list):
+        for index, block in enumerate(content):
+            if not isinstance(block, dict):
+                raise DecodeGap("invalid Claude content block")
+            block_type = block.get("type")
+            if block_type == "tool_result":
+                call = block.get("tool_use_id")
+                results.append(Event("tool_result", {"tool_use_id": call,
+                    "tool_response": block.get("content"), "is_error": bool(block.get("is_error"))},
+                    f"tool:{call}" if isinstance(call, str) and call else f"{native}:result:{index}" if native else None))
+            elif block_type == "tool_use":
+                # Calls are observable execution requests, not successful outcomes.
+                results.append(Event("assistant_message", {"tool_use_id": block.get("id"),
+                    "tool_name": block.get("name"), "tool_input": block.get("input"), "claim": True},
+                    f"call:{block['id']}" if isinstance(block.get("id"), str) else None))
+            elif block_type not in {"text", "thinking", "redacted_thinking", "image", "document"}:
+                raise DecodeGap(f"unsupported Claude content block {block_type}")
+            elif block_type in {"image", "document"}:
+                results.append(Event("request", {"attachment_type": block_type, "content_available": False},
+                                     f"{native}:attachment:{index}" if native else None))
+    return results
+
+
+def pi_v1(body: dict) -> list[Event]:
+    kind = body.get("type")
+    if kind in {"session", "model_change", "thinking_level_change", "custom", "label", "session_info",
+                "message_start", "message_update", "tool_execution_update"}:
+        # Streaming updates can contain private thinking. message_end and
+        # tool_execution_end supply the authoritative public content.
+        return []
+    if kind in {"agent_start", "turn_start", "compaction_start", "queue_update"}:
+        return [Event("boundary", {"source": kind, "turn_complete": False})]
+    if kind in {"agent_end", "turn_end", "agent_settled", "compaction_end"}:
+        return [Event("finish" if kind != "compaction_end" else "boundary",
+                      {"source": kind, "settled": kind == "agent_settled"})]
+    if kind in {"compaction", "branch_summary"}:
+        return [Event("boundary", {"source": kind, "summary": body.get("summary"), "claim": True}, body.get("id"))]
+    if kind == "tool_execution_start":
+        call = body.get("toolCallId")
+        return [Event("assistant_message", {"tool_use_id": call, "tool_name": body.get("toolName"),
+                     "tool_input": body.get("args"), "claim": True, "status": "started"},
+                     f"call:{call}" if isinstance(call, str) and call else None)]
+    if kind == "tool_execution_end":
+        call = body.get("toolCallId")
+        return [Event("tool_result", {"tool_use_id": call, "tool_name": body.get("toolName"),
+                     "tool_input": body.get("args"), "tool_response": body.get("result"), "is_error": bool(body.get("isError"))},
+                     f"tool:{call}" if isinstance(call, str) and call else None)]
+    if kind not in {"message", "message_end"} or not isinstance(body.get("message"), dict):
+        raise DecodeGap(f"unsupported Pi record {kind}")
+    message = body["message"]
+    role = message.get("role")
+    native = body.get("id")
+    if role == "toolResult":
+        call = message.get("toolCallId")
+        return [Event("tool_result", {"tool_use_id": call, "tool_name": message.get("toolName"),
+                     "tool_response": message.get("content"), "is_error": bool(message.get("isError"))},
+                     f"tool:{call}" if isinstance(call, str) and call else native)]
+    if role not in {"user", "assistant"}:
+        raise DecodeGap(f"unsupported Pi message role {role}")
+    return [Event("assistant_message" if role == "assistant" else "request",
+                  {"text": public_text(message.get("content")), "claim": role == "assistant"}, native,
+                  _usage(message.get("usage")))]
+
+
+def normalized_v1(body: dict) -> list[Event]:
+    if body.get("schema_version") != 1 or body.get("kind") not in EVENT_KINDS or not isinstance(body.get("data"), dict):
+        raise DecodeGap("normalized event requires schema_version=1, a known kind, and data")
+    return [Event(body["kind"], body["data"], body.get("native_event_id"), _usage(body.get("usage")))]
+
+
+DECODERS = {"hook-v1": hook_v1, "claude-v1": claude_v1, "pi-v1": pi_v1, "normalized-v1": normalized_v1}
+
+
+def decode(version: str, body: dict) -> list[Event]:
+    if version not in DECODERS or not isinstance(body, dict):
+        raise DecodeGap("unregistered decoder or non-object source record")
+    try:
+        events = DECODERS[version](body)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DecodeGap(f"invalid {version} record structure") from exc
+    for event in events:
+        if event.native_id is not None and (not isinstance(event.native_id, str) or not event.native_id or len(event.native_id) > 512):
+            raise DecodeGap("invalid native event identity")
+    return events

@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 1).
+"""Transactional authority for current-task continuity (schema 3).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,8 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
+ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
 EVENT_KINDS = {
@@ -177,6 +178,25 @@ CREATE TABLE IF NOT EXISTS outbox (
 CREATE INDEX IF NOT EXISTS outbox_ready ON outbox(status,available_at,lease_until);
 """
 
+MIGRATION_2 = """
+CREATE TABLE IF NOT EXISTS event_origins (
+    event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL REFERENCES capture_sources(source_id),
+    generation TEXT NOT NULL, byte_offset INTEGER NOT NULL,
+    decoder_version TEXT NOT NULL,
+    PRIMARY KEY(event_id,source_id,generation,byte_offset)
+);
+CREATE INDEX IF NOT EXISTS origin_source ON event_origins(source_id,generation,byte_offset);
+"""
+
+MIGRATION_3 = """
+CREATE TABLE IF NOT EXISTS artifact_chunks (
+    hash TEXT NOT NULL REFERENCES artifacts(hash) ON DELETE CASCADE,
+    offset INTEGER NOT NULL, size INTEGER NOT NULL, chunk_hash TEXT NOT NULL,
+    PRIMARY KEY(hash,offset)
+);
+"""
+
 
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
@@ -193,16 +213,39 @@ class ContinuityStore:
             self.db.execute("PRAGMA foreign_keys=ON")
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=FULL")
+            # Per-connection page cache, not a total process RSS limit. Keep large
+            # temporary sorts on disk instead of growing alongside worker count.
+            self.db.execute("PRAGMA cache_size=-2048")
+            self.db.execute("PRAGMA temp_store=FILE")
+            self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, SCHEMA_VERSION):
+            if version not in (0, 1, 2, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
                 for statement in SCHEMA.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
-                self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            if version < 2:
+                for statement in MIGRATION_2.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 3:
+                self.db.execute(MIGRATION_3)
+                # One explicit schema-upgrade batch, never a normal capture read.
+                for row in self.db.execute("SELECT hash FROM artifacts"):
+                    with (self.artifacts / row[0]).open("rb") as handle:
+                        offset = 0
+                        hasher = hashlib.sha256()
+                        while chunk := handle.read(ARTIFACT_CHUNK_BYTES):
+                            hasher.update(chunk)
+                            self.db.execute("INSERT INTO artifact_chunks VALUES(?,?,?,?)",
+                                            (row[0], offset, len(chunk), hashlib.sha256(chunk).hexdigest()))
+                            offset += len(chunk)
+                        if hasher.hexdigest() != row[0]:
+                            raise ValidationError(f"corrupt artifact {row[0]} during schema upgrade")
+            self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.commit()
         except BaseException:
             self.db.rollback()
@@ -351,7 +394,11 @@ class Transaction:
         sha = hashlib.sha256(data).hexdigest()
         path = self.store.artifacts / sha
         if path.exists():
-            if hashlib.sha256(path.read_bytes()).hexdigest() != sha:
+            hasher = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(ARTIFACT_CHUNK_BYTES), b""):
+                    hasher.update(chunk)
+            if hasher.hexdigest() != sha:
                 raise ValidationError(f"corrupt artifact {sha}")
         else:
             fd, name = tempfile.mkstemp(prefix=".pending-", dir=self.store.artifacts)
@@ -366,6 +413,12 @@ class Transaction:
                 Path(name).unlink(missing_ok=True)
         self._change()
         self.db.execute("INSERT OR IGNORE INTO artifacts VALUES(?,?,?)", (sha, len(data), time.time()))
+        view = memoryview(data)
+        self.db.executemany("INSERT OR IGNORE INTO artifact_chunks VALUES(?,?,?,?)", (
+            (sha, offset, min(ARTIFACT_CHUNK_BYTES, len(data) - offset),
+             hashlib.sha256(view[offset:offset + ARTIFACT_CHUNK_BYTES]).hexdigest())
+            for offset in range(0, len(data), ARTIFACT_CHUNK_BYTES)
+        ))
         self.db.execute(
             "INSERT INTO artifact_refs VALUES(?,?,?,?) ON CONFLICT(owner_type,owner_id,slot) "
             "DO UPDATE SET hash=excluded.hash", (owner_type, owner_id, slot, sha),
@@ -385,6 +438,36 @@ class Transaction:
         self._change()
         self.db.execute("DELETE FROM artifact_refs WHERE owner_type=? AND owner_id=?", (owner_type, owner_id))
 
+    def read_artifact_slice(self, sha: str, *, offset: int = 0, limit: int = 8000) -> tuple[bytes, int]:
+        """Verify and read only overlapping chunks; return (bytes, full byte length)."""
+        self._check()
+        if type(offset) is not int or type(limit) is not int or offset < 0 or not 1 <= limit <= 262144:
+            raise ValidationError("artifact slice requires offset>=0 and 1<=limit<=262144 bytes")
+        if not isinstance(sha, str) or not HASH.fullmatch(sha):
+            raise ValidationError("invalid artifact hash")
+        row = self.db.execute("SELECT size FROM artifacts WHERE hash=?", (sha,)).fetchone()
+        if row is None:
+            raise ValidationError(f"unknown artifact {sha}")
+        size = row[0]
+        if offset > size:
+            raise ValidationError("artifact offset is past the end")
+        end = min(size, offset + limit)
+        pieces = []
+        with (self.store.artifacts / sha).open("rb") as handle:
+            if os.fstat(handle.fileno()).st_size != size:
+                raise ValidationError(f"artifact size changed: {sha}")
+            for chunk_offset in range(offset // ARTIFACT_CHUNK_BYTES * ARTIFACT_CHUNK_BYTES, end, ARTIFACT_CHUNK_BYTES):
+                chunk_row = self.db.execute("SELECT size,chunk_hash FROM artifact_chunks WHERE hash=? AND offset=?",
+                                            (sha, chunk_offset)).fetchone()
+                if chunk_row is None:
+                    raise ValidationError(f"artifact chunk index missing: {sha}")
+                handle.seek(chunk_offset)
+                chunk = handle.read(chunk_row[0])
+                if hashlib.sha256(chunk).hexdigest() != chunk_row[1]:
+                    raise ValidationError(f"corrupt artifact chunk: {sha}")
+                pieces.append(chunk[max(0, offset - chunk_offset):end - chunk_offset])
+        return b"".join(pieces), size
+
     def append_event(self, run_id: str, stream_id: str, capture_key: str, kind: str, payload: dict) -> dict:
         self._check()
         for value in (stream_id, capture_key):
@@ -392,7 +475,7 @@ class Transaction:
         if kind not in EVENT_KINDS:
             raise ValidationError(f"unknown event kind {kind}")
         body = canonical(payload)
-        payload_hash = digest(payload)
+        payload_hash = hashlib.sha256(body.encode()).hexdigest()
         existing = self.db.execute("SELECT * FROM events WHERE run_id=? AND capture_key=?", (run_id, capture_key)).fetchone()
         if existing:
             if existing["payload_hash"] != payload_hash or existing["kind"] != kind or existing["stream_id"] != stream_id:
