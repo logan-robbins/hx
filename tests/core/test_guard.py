@@ -54,6 +54,20 @@ def tool(name, **tool_input):
     return {"tool_name": name, "tool_input": tool_input, "cwd": "/somewhere"}
 
 
+PATCH_UNDER_ROOT = (
+    "*** Begin Patch ***\n"
+    "*** Update File: /deny/tree/a.cs\n"
+    "@@\n"
+    "-old\n"
+    "+new\n"
+    "*** End Patch ***"
+)
+
+
+def patch(command):
+    return {"tool_name": "apply_patch", "tool_input": {"command": command}, "cwd": "/somewhere"}
+
+
 DENIED = {
     "bash-deny-regex": bash("dotnet test app/tests"),
     "bash-deny-in-a-later-segment": bash("hx board && dotnet test"),
@@ -74,6 +88,8 @@ DENIED = {
     "grep-path-above-root": tool("Grep", pattern="foo", path="/deny"),
     "glob-absolute-pattern": tool("Glob", pattern="/deny/tree/**/*.cs"),
     "glob-path-under-root": tool("Glob", pattern="**/*.cs", path="/deny/tree/src"),
+    "patch-names-the-root": patch(PATCH_UNDER_ROOT),
+    "patch-home-relative-root": patch("*** Update File: ~/product/src/a.cs ***"),
 }
 
 ALLOWED = {
@@ -89,6 +105,9 @@ ALLOWED = {
     "another-tool": tool("Agent", prompt="dotnet test /deny/tree"),
     "no-tool-input": {"tool_name": "Bash"},
     "empty-payload": "",
+    "patch-without-a-root": patch("*** Update File: /allowed/a.cs ***"),
+    "patch-mentioning-a-denied-word-is-not-a-command": patch("*** Update File: /allowed/a.cs ***\n// run dotnet test here"),
+    "patch-without-command": tool("apply_patch"),
 }
 
 

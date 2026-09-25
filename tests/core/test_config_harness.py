@@ -89,7 +89,7 @@ def test_flavor_pi_is_accepted():
 def test_the_partner_cannot_be_pi():
     with pytest.raises(ValidationError) as exc:
         validate_harness({**PARTNER, "flavor": "pi"}, "config/partner/harness.json", dir_name="partner")
-    assert "messaging socket" in str(exc.value)
+    assert "claude or codex" in str(exc.value)
 
 
 def test_flavor_grok_is_accepted():
@@ -100,7 +100,7 @@ def test_flavor_grok_is_accepted():
 def test_the_partner_cannot_be_grok():
     with pytest.raises(ValidationError) as exc:
         validate_harness({**PARTNER, "flavor": "grok"}, "config/partner/harness.json", dir_name="partner")
-    assert "messaging socket" in str(exc.value)
+    assert "claude or codex" in str(exc.value)
 
 
 def test_companion_disabled_is_accepted():
@@ -133,7 +133,7 @@ def test_flavor_meta_is_accepted():
 def test_the_partner_cannot_be_meta():
     with pytest.raises(ValidationError) as exc:
         validate_harness({**PARTNER, "flavor": "meta"}, "config/partner/harness.json", dir_name="partner")
-    assert "messaging socket" in str(exc.value)
+    assert "claude or codex" in str(exc.value)
 
 
 def test_flavor_codex_is_accepted():
@@ -141,10 +141,10 @@ def test_flavor_codex_is_accepted():
     assert config.flavor == "codex"
 
 
-def test_the_partner_cannot_be_codex():
-    with pytest.raises(ValidationError) as exc:
-        validate_harness({**PARTNER, "flavor": "codex"}, "config/partner/harness.json", dir_name="partner")
-    assert "messaging socket" in str(exc.value)
+def test_the_partner_can_be_codex():
+    """The Partner runs on Claude or Codex (spec 12)."""
+    config = validate_harness({**PARTNER, "flavor": "codex"}, "config/partner/harness.json", dir_name="partner")
+    assert config.flavor == "codex" and config.is_partner
 
 
 def test_good_partner():

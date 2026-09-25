@@ -2,12 +2,13 @@
 # adapters/codex/install.sh <id> — write the per-agent Codex home.
 #
 # The home is CODEX_HOME for this agent. It holds config.toml (unattended
-# posture, the hx hooks) and skills. Auth is an OpenAI API key provisioned
-# with codex's own machinery: `codex login --with-api-key` reads the key from
-# seed/codex-token and writes the home's auth file, so install.sh never learns
-# the auth schema. Nothing is read from ~/.codex. A ChatGPT-plan login cannot
-# be provisioned headless (it needs the device flow), so the API key is the
-# automation route.
+# posture, the hx hooks) and skills. Auth is the invoker's ChatGPT login,
+# copied from $HOME/.codex/auth.json into the agent home — the CLI refreshes
+# those tokens itself under CODEX_HOME, so no device flow ever runs
+# unattended. Only when the invoker has no login does install fall back to an
+# OpenAI API key provisioned with codex's own machinery: `codex login
+# --with-api-key` reads the key from seed/codex-token and writes the home's
+# auth file, so install.sh never learns the auth schema.
 #
 # Hook trust is bypassed at launch (--dangerously-bypass-hook-trust), which the
 # CLI documents for automation that already vets hook sources: every hook
@@ -29,8 +30,8 @@ case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
   *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
-[ "$id" != partner ] || die \
-  "refuse: the Partner stays on claude; hx wake uses its messaging socket"
+# The Partner may run on Codex (spec 12): `hx wake` reaches it by pasting into
+# its pane, and the guard rides `PreToolUse` exactly as on Claude.
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
@@ -45,11 +46,17 @@ fi
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 token_file=$root/seed/codex-token
-[ -f "$token_file" ] || die \
-  "refuse: no $token_file; paste the OpenAI API key there, mode 0600"
-token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
-[ "$token_mode" = 0 ] || die \
-  "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
+user_auth=""
+[ -n "${HOME:-}" ] && user_auth="$HOME/.codex/auth.json"
+use_login=0
+[ -n "$user_auth" ] && [ -f "$user_auth" ] && use_login=1
+if [ "$use_login" = 0 ]; then
+  [ -f "$token_file" ] || die \
+    "refuse: no $user_auth (ChatGPT login) and no $token_file; log in with codex once, or paste the OpenAI API key there, mode 0600"
+  token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
+  [ "$token_mode" = 0 ] || die \
+    "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
+fi
 
 claude_token=$root/seed/token
 [ -f "$claude_token" ] || die \
@@ -92,7 +99,9 @@ root = os.environ["HX_ROOT"]
 # official reference: SessionStart filters the start source, PostToolUse and
 # the compaction events match every occurrence when matcher is omitted, and
 # the Agent matcher catches subagent tool calls for the subagent-result hook.
-events = (
+# PreToolUse matchers filter tool names (`Bash`, `apply_patch` with its `Edit`
+# and `Write` aliases); the guard below is the Partner's alone, like Claude's.
+events = [
     ("SessionStart", "startup|resume|clear|compact", "context"),
     ("PostToolUse", None, "log"),
     ("PostToolUse", "Agent|spawn_agent", "subagent-result"),
@@ -101,7 +110,9 @@ events = (
     ("PostCompact", None, "postcompact"),
     ("SubagentStart", None, "subagent-start"),
     ("SubagentStop", None, "subagent-stop"),
-)
+]
+if item_id == "partner":
+    events.append(("PreToolUse", "Bash|apply_patch|Edit|Write", "guard"))
 blocks = []
 for codex_event, matcher, hx_event in events:
     # hook_bin can be a command with arguments (`python -m hx.hooks` in
@@ -129,17 +140,28 @@ with open(os.path.join(home, "config.toml"), "w") as handle:
     handle.write(config)
 PYEOF
 
-# Provision auth with codex's own login so install.sh never learns the schema.
-# --with-api-key reads the key from stdin; CODEX_HOME scopes everything it
-# writes to this agent's home.
-CODEX_HOME="$home" "$bin" login --with-api-key < "$token_file" \
-  || die "refuse: codex login --with-api-key failed; is $token_file an OpenAI API key?"
+# Provision auth: the invoker's login wins; the API key is the fallback.
+if [ "$use_login" = 1 ]; then
+  cp "$user_auth" "$home/auth.json"
+  chmod 600 "$home/auth.json"
+  printf 'install.sh: copied ChatGPT login from %s (API key not used)\n' "$user_auth"
+else
+  # Provision auth with codex's own login so install.sh never learns the schema.
+  # --with-api-key reads the key from stdin; CODEX_HOME scopes everything it
+  # writes to this agent's home.
+  CODEX_HOME="$home" "$bin" login --with-api-key < "$token_file" \
+    || die "refuse: codex login --with-api-key failed; is $token_file an OpenAI API key?"
+fi
 [ -f "$home/auth.json" ] || die \
-  "refuse: codex login wrote no $home/auth.json; not authenticated"
+  "refuse: no $home/auth.json; not authenticated"
 
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
-  for want in hx-worker hx-memory; do
+  # The Partner gets hx-partner and hx-fleet, a worker gets hx-worker, like the
+  # Claude adapter (spec 11, 12).
+  wants="hx-worker hx-memory"
+  [ "$id" = partner ] && wants="hx-partner hx-fleet hx-memory"
+  for want in $wants; do
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"
@@ -149,4 +171,8 @@ fi
 HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
 
 printf 'install.sh: wrote %s (Codex home, unattended, hx hooks)\n' "$home/config.toml"
-printf 'install.sh: auth provisioned from %s via codex login\n' "$token_file"
+if [ "$use_login" = 1 ]; then
+  printf 'install.sh: auth is the copied ChatGPT login at %s\n' "$home/auth.json"
+else
+  printf 'install.sh: auth provisioned from %s via codex login\n' "$token_file"
+fi

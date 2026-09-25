@@ -22,7 +22,7 @@ import tomllib
 from pathlib import Path
 
 from . import tmux
-from .config_harness import flavor_of
+from .config_harness import PARTNER_FLAVORS, flavor_of
 from .config_models import load_models
 from .errors import ValidationError
 from .ids import ID_RE
@@ -389,14 +389,21 @@ def _codex_home(root: Path, home: Path, item_id: str) -> list[tuple[str, str, st
     return found
 
 
-def _codex_instance(root: Path) -> list[tuple[str, str, str]]:
+def _codex_instance(root: Path, ids: list[str]) -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
     token = root / "seed" / "codex-token"
     if not token.is_file():
-        found.append((
-            FAIL, "codex-token",
-            "seed/codex-token absent; a Codex worker authenticates from that file, mode 0600",
-        ))
+        homes = [root / "run" / item_id / "home" / "auth.json" for item_id in ids]
+        if ids and all(path.is_file() for path in homes):
+            found.append((
+                OK, "codex-token",
+                "seed/codex-token absent; every Codex home carries the ChatGPT login",
+            ))
+        else:
+            found.append((
+                FAIL, "codex-token",
+                "seed/codex-token absent; a Codex worker authenticates from that file, mode 0600",
+            ))
     elif token.stat().st_mode & 0o77:
         found.append((FAIL, "codex-token", "seed/codex-token is readable by group or other; it must be mode 0600"))
     elif not token.read_text().strip():
@@ -679,10 +686,10 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     for item_id in ids:
         home = root / "run" / item_id / "home"
         flavor = flavor_of(root, item_id)
-        if flavor in ("pi", "grok", "meta", "codex") and item_id == "partner":
+        if item_id == "partner" and flavor not in PARTNER_FLAVORS:
             checks.append((
                 FAIL, f"flavor:{item_id}",
-                "the Partner stays on claude; hx wake uses its messaging socket",
+                "the Partner runs on claude or codex (spec 12)",
             ))
         if not home.is_dir():
             checks.append((
@@ -728,7 +735,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         checks.extend(_meta_instance(root))
     codex_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "codex"]
     if codex_ids:
-        checks.extend(_codex_instance(root))
+        checks.extend(_codex_instance(root, codex_ids))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the

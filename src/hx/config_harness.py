@@ -25,6 +25,11 @@ _OPTIONAL = ("workdir", "harness", "companion", "flavor")
 #: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
 FLAVORS = ("claude", "pi", "grok", "meta", "codex")
 
+#: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
+#: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no
+#: wake path at all (spec 12).
+PARTNER_FLAVORS = ("claude", "codex")
+
 _COMPANION_INT_FIELDS = (
     "batch_records",
     "state_budget_tokens",
@@ -149,9 +154,9 @@ def validate_harness(
         raise ValidationError(
             f"{path}: `flavor` must be one of {', '.join(FLAVORS)}, got `{flavor!r}`"
         )
-    if item_id == PARTNER and flavor != "claude":
+    if item_id == PARTNER and flavor not in PARTNER_FLAVORS:
         raise ValidationError(
-            f"{path}: the Partner stays on claude; `hx wake` uses its messaging socket, "
+            f"{path}: the Partner runs on claude or codex (spec 12), "
             f"got `flavor` `{flavor}`"
         )
 

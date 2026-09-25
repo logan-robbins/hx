@@ -18,6 +18,11 @@ hx-hook ignores what it does not read. Two deliberate gaps, not oversights:
   the persona file is derived for inspection and identity arrives through the
   context file and the pasted goal pointer.
 
+A `guard` denial (exit 2, reason on stderr) is additionally translated into
+Codex's `permissionDecision` deny JSON on stdout: exit 2 alone is a documented
+deny, but the JSON form is what every version honors, and stdout JSON is
+consumed rather than shown.
+
 Hook commands run with the session cwd as their working directory, so
 everything the hook needs (--hook-bin, --root) is baked into the command line
 at install time; nothing is read from the environment.
@@ -80,6 +85,13 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.buffer.write(proc.stdout)
     if proc.stderr:
         sys.stderr.buffer.write(proc.stderr)
+    if args.event == "guard" and proc.returncode == 2:
+        reason = (proc.stderr or b"").decode("utf-8", "replace").strip()
+        sys.stdout.write(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason or "denied by hx guard",
+        }}) + "\n")
     return proc.returncode
 
 

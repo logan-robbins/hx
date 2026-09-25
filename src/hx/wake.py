@@ -1,9 +1,9 @@
 """`hx wake partner "<text>"` — the one way anything reaches the Partner (spec 08, 12).
 
-Cross-session messaging is on by default and the Partner's home sets
-`crossSessionInbound: accept`, so an inbound message is delivered with no approval hold in any
-permission mode: an idle Partner starts a turn, a busy one reads it between tool calls
-(spec 01.1, verified against code.claude.com/docs/en/cross-session-messaging).
+A Claude Partner is reached over cross-session messaging, which is on by default and
+delivered with no approval hold in any permission mode: an idle Partner starts a turn, a
+busy one reads it between tool calls (spec 01.1, verified against
+code.claude.com/docs/en/cross-session-messaging).
 
 The socket and token are per process and are recorded to `run/partner/socket.json` by the
 `context` hook at every `SessionStart`, so they survive `/clear` (spec 09, 12). That hook is
@@ -11,6 +11,10 @@ M2; until then the file is written by hand in tests.
 
 The wire format is an auth line then the message, each newline-terminated; the socket answers
 nothing (spec 08, live-verified E6).
+
+A Codex Partner has no messaging socket, so the wake is pasted into its tmux pane instead —
+the same paste `hx goal` uses, which never blocks: the polls that watch the input box are
+bounded and a missing pane reports `no-socket`.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import subprocess
 from pathlib import Path
 
 from .errors import Refused
@@ -65,6 +70,37 @@ ACCEPTED, NO_SOCKET, REFUSED = "accepted", "no-socket", "refused"
 NOT_REACHED_EXIT = 3
 
 
+def _partner_flavor(root: Path) -> str:
+    """This instance's Partner flavor; `claude` when nothing says otherwise."""
+    from .config_harness import flavor_of
+
+    try:
+        return flavor_of(root, PARTNER)
+    except Exception:
+        return "claude"
+
+
+def _paste_to_partner(text: str) -> str:
+    """The non-Claude wake path: paste the text into the Partner's pane (spec 12).
+
+    `no-socket` when there is no pane to paste into, `refused` when the paste
+    itself failed, `accepted` once the text left this process for the pane.
+    """
+    from . import goal as goal_mod
+
+    try:
+        if goal_mod.capture_pane(PARTNER) is None:
+            return NO_SOCKET
+        goal_mod.paste(PARTNER, text)
+    except FileNotFoundError:
+        return NO_SOCKET  # no tmux at all, so no Partner session either
+    except subprocess.CalledProcessError:
+        return NO_SOCKET  # the pane went away between the capture and the paste
+    except Exception:
+        return REFUSED
+    return ACCEPTED
+
+
 def wake_partner_status(root: Path, text: str) -> str:
     """`accepted`, `no-socket`, or `refused`. Never blocks and never retries.
 
@@ -72,10 +108,15 @@ def wake_partner_status(root: Path, text: str) -> str:
     started a session yet, so nothing has recorded a socket. `refused` means the file named a
     socket and the connection or the write failed: a stale file from a dead session, or a
     Partner that is not listening.
+
+    A Partner that does not run on Claude has no socket to record, so a wake that the
+    socket path does not accept falls back to pasting into its pane.
     """
     found = read_socket(Path(root))
     if found is None:
-        return NO_SOCKET
+        if _partner_flavor(Path(root)) == "claude":
+            return NO_SOCKET
+        return _paste_to_partner(text)
     address, token = found
     payloads = [
         json.dumps({"type": "auth", "token": token}),
@@ -88,7 +129,9 @@ def wake_partner_status(root: Path, text: str) -> str:
             client.sendall(("\n".join(payloads) + "\n").encode())
         return ACCEPTED
     except (OSError, ValueError):
-        return REFUSED
+        if _partner_flavor(Path(root)) == "claude":
+            return REFUSED
+        return _paste_to_partner(text)
 
 
 def wake_partner(root: Path, text: str) -> bool:

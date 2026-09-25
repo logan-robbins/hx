@@ -142,7 +142,9 @@ A stream whose state file is unreadable is left out. The UI's Compaction page
 
 The UI calls the same function the CLI uses (`hx.wake.wake_partner(root, text)`), which
 returns `True` when the socket accepted the message and `False` when no socket file exists or
-the connection was refused. It never blocks and never retries.
+the connection was refused. It never blocks and never retries. A Partner that does not run
+on Claude has no socket: the wake is pasted into its tmux pane instead, and `False` means
+there was no pane to paste into or the paste failed.
 
 ## Goals (input files)
 

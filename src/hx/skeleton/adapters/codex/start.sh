@@ -28,7 +28,8 @@ case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
   *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
-[ "$id" != partner ] || die "refuse: the Partner stays on claude"
+# The Partner may run on Codex (spec 12). Its harness has no workdir, so the
+# workdir lookup below falls back to HARNESS_ROOT, where the Partner runs.
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
@@ -54,10 +55,14 @@ grep -qxF "$HEADER" "$agents" || die \
 [ -f "$home/config.toml" ] || die "refuse: no $home/config.toml; run adapters/codex/install.sh $id first"
 [ -f "$home/auth.json" ] || die "refuse: no $home/auth.json; run adapters/codex/install.sh $id first"
 
+# Auth lives in the home (`auth.json`, required above): a copied ChatGPT login
+# or a provisioned API key. The seed token is only needed at install time, so
+# it is optional here — but when present it must still be mode 0600.
 token_file=$root/seed/codex-token
-[ -f "$token_file" ] || die "refuse: no $token_file"
-token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
-[ "$token_mode" = 0 ] || die "refuse: $token_file must be mode 0600"
+if [ -f "$token_file" ]; then
+  token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
+  [ "$token_mode" = 0 ] || die "refuse: $token_file must be mode 0600"
+fi
 
 cwd=$("$python" - "$harness" "$root" <<'CWDEOF'
 import json, os, sys

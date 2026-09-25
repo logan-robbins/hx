@@ -8,7 +8,9 @@ The rules live in `config/partner/guard.json`, written by the human or the Partn
      "deny_commands": ["\\\\bdotnet\\\\b", ...],
      "allow_commands": ["^hx ", ...]}
 
-A call is denied (exit 2, one line on stderr, which Claude Code shows the model) when
+A call is denied (exit 2, one line on stderr, which Claude Code shows the model; the
+Codex adapter additionally translates the denial into Codex's `permissionDecision` JSON)
+when
 
   - a `Bash` command has a segment — the command split at `;`, `&`, `|`, `(`, `)`, `<`, `>` and
     newlines outside quotes — that matches a `deny_commands` regex and no `allow_commands`
@@ -16,7 +18,10 @@ A call is denied (exit 2, one line on stderr, which Claude Code shows the model)
   - a `Bash` command names a path under a `deny_paths` root (as an absolute path, `~/…` or
     `$HOME/…`); or a `Read`, `Edit` or `Write` `file_path`, a `Grep` or `Glob` `path`, or an
     absolute `Glob` `pattern`, is under a deny root — or, for `Grep` and `Glob`, which
-    recurse, contains one.
+    recurse, contains one; or
+  - a Codex `apply_patch` names a path under a `deny_paths` root anywhere in its
+    `tool_input.command` patch text. Command regexes are not applied to patch text: a
+    patch does not execute, so a denied word inside it is not a denied act.
 
 Everything else exits 0 with no output. An absent or invalid `guard.json` leaves the guard
 inactive, and says so in `logs/<id>/guard.log`, as does every denial. The module's failure
@@ -202,6 +207,20 @@ def _path_denial(tool: str, tool_input: dict, rules: Rules, cwd: str | None) -> 
     return None
 
 
+def _patch_denial(command: object, rules: Rules) -> str | None:
+    """Deny a Codex `apply_patch` whose patch text names a deny root.
+
+    Only the path half applies: the patch is text to write, not a command to run,
+    so `deny_commands` regexes are never matched against it.
+    """
+    if not isinstance(command, str) or not command:
+        return None
+    for root in rules.deny_paths:
+        if command_names_root(command, root):
+            return f"apply_patch names the deny root {root}"
+    return None
+
+
 def _bash_denial(command: str, rules: Rules) -> str | None:
     for segment in segments(command):
         deny = next((p for p in rules.deny_commands if p.search(segment)), None)
@@ -222,6 +241,8 @@ def judge(payload: dict, rules: Rules) -> str | None:
     if tool == "Bash":
         command = tool_input.get("command")
         return _bash_denial(command, rules) if isinstance(command, str) and command else None
+    if tool == "apply_patch":
+        return _patch_denial(tool_input.get("command"), rules)
     if tool in PATH_KEYS:
         cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
         return _path_denial(tool, tool_input, rules, cwd)

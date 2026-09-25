@@ -196,7 +196,7 @@ def _codex_home(instance, config_text):
 def test_codex_instance_without_a_token_fails(instance):
     from hx.doctor import _codex_instance
 
-    assert ("codex-token", FAIL) in statuses(_codex_instance(instance))
+    assert ("codex-token", FAIL) in statuses(_codex_instance(instance, []))
 
 
 def test_codex_instance_with_token_and_pin_passes(instance, tmp_path):
@@ -212,8 +212,18 @@ def test_codex_instance_with_token_and_pin_passes(instance, tmp_path):
     (instance / "config" / "codex.json").write_text(
         json.dumps({"bin": str(probe), "version": "0.156.1"})
     )
-    assert ("codex-token", OK) in statuses(_codex_instance(instance))
-    assert ("codex", OK) in statuses(_codex_instance(instance))
+    assert ("codex-token", OK) in statuses(_codex_instance(instance, []))
+    assert ("codex", OK) in statuses(_codex_instance(instance, []))
+
+
+def test_codex_instance_accepts_login_homes_without_a_token(instance):
+    """ChatGPT-login homes need no seed token (spec 11)."""
+    from hx.doctor import _codex_instance
+
+    home = instance / "run" / "eng-001" / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "auth.json").write_text('{"auth_mode": "chatgpt"}\n')
+    assert ("codex-token", OK) in statuses(_codex_instance(instance, ["eng-001"]))
 
 
 def test_codex_home_checks_posture_and_hooks(instance):
