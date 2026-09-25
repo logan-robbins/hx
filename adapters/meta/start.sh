@@ -1,0 +1,1 @@
+../../src/hx/skeleton/adapters/meta/start.sh

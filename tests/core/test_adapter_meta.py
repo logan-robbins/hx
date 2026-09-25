@@ -216,6 +216,48 @@ def test_meta_start_exec_is_yolo_bare_and_isolated(instance, tmp_path):
     assert "Things I learned" not in persona.read_text()
 
 
+def test_meta_start_exec_uses_the_long_model_option(instance, tmp_path):
+    """Muse 1.4.0 accepts `--model` and rejects `-m` ("invalid TUI options:
+    unexpected argument '-m' found"); the launch argv must use the long form."""
+    import json as _json
+
+    _meta_token(instance)
+    install = subprocess.run(
+        ["bash", str(instance / "adapters" / "meta" / "install.sh"), "eng-001"],
+        env=clean_env(HARNESS_ROOT=str(instance)),
+        capture_output=True,
+        text=True,
+    )
+    assert install.returncode == 0, install.stderr
+
+    recorded = tmp_path / "argv.json"
+    fake = tmp_path / "muse"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "json.dump({'argv': sys.argv[1:]},\n"
+        "          open(os.environ['HX_ARGV_FILE'], 'w'))\n"
+    )
+    fake.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(instance / "adapters" / "meta" / "start.sh"), "--exec", "eng-001"],
+        env=clean_env(
+            HARNESS_ROOT=str(instance),
+            HX_META_BIN=str(fake),
+            HX_ARGV_FILE=str(recorded),
+        ),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    argv = _json.loads(recorded.read_text())["argv"]
+    expected_model = _json.loads(
+        (instance / "config" / "eng-001" / "harness.json").read_text()
+    )["model"]
+    assert argv[argv.index("--model") + 1] == expected_model
+    assert "-m" not in argv
+
+
 def test_dispatch_wipes_meta_data(instance):
     from hx.config_harness import flavor_of
     from hx.dispatch import _reset_run_dir

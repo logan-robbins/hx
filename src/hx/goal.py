@@ -97,7 +97,14 @@ def pointer_text(root: Path, item_id: str) -> str:
             "refuse: the Partner is never sent a `/goal`; the human tells it what to do in "
             "chat (spec 06, 12, spec 14 D25)"
         )
-    return POINTER.format(id=item_id, path=require_work_item(root, item_id).resolve())
+    pointer = POINTER.format(id=item_id, path=require_work_item(root, item_id).resolve())
+    # Muse 1.4 owns `/goal` as a native command. Send an ordinary prompt so it
+    # reads the hx work item instead of trying to write Muse's goals.db.
+    import json
+    harness = root / "config" / item_id / "harness.json"
+    if harness.is_file() and json.loads(harness.read_text()).get("flavor") == "meta":
+        return pointer.removeprefix("/goal ")
+    return pointer
 
 
 def pane_is_idle(pane_text: str) -> bool:
@@ -291,6 +298,21 @@ def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False
         wait_for_prompt(item_id, env)
 
     paste(item_id, text, env)
+    # Muse 1.4 can redraw the composer after the first Enter, leaving the
+    # pointer unsent even though paste() saw the box clear briefly.
+    import json
+    import time
+    harness = root / "config" / item_id / "harness.json"
+    if harness.is_file() and json.loads(harness.read_text()).get("flavor") == "meta":
+        probe = _squash(text)[:40]
+        for _ in range(4):
+            time.sleep(0.75)
+            pane = capture_pane(item_id, env)
+            if pane is not None and probe not in _squash(input_box(pane)):
+                break
+            submit(item_id, text, env)
+        else:
+            raise HxError(f"{item_id}: Muse goal pointer remains in the input box")
     marker(root, item_id).write_text(timestamps.now() + "\n")
     return "pasted"
 
