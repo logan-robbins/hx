@@ -41,6 +41,12 @@ The shipped defaults accept a 250k working context: the seam fires at 200k, comp
 - `companion.effort` is the Companion's own effort level. Unset means the agent's; set it
   `low` — the Companion extracts step state from records, it does not do the task, so agent
   effort is wasted on it.
+- `companion.disabled` (boolean, default false) runs the agent with no Companion at all:
+  no Companion window, no pass files, no step state. Dispatch, goal, board, show, flush,
+  seam and complete all work without one; the completion digest falls back to the agent's
+  own `## Deliverables`/`## Tasks`. There are no threshold seams without usage counts to
+  fire them, so a Meta worker on `disabled` compacts natively and is re-seamed by hand
+  (`hx seam`) when needed.
 - `workdir` is any absolute directory the Partner chooses as this worker's working directory: it creates one, or points the agent at an existing checkout. hx does not manage git for it: it creates nothing, resets nothing, and pushes nothing. It only requires the directory to exist at launch, and `hx complete done` requires `git status --porcelain` to be empty there when the directory is a git repository.
 - `companion.state_budget_tokens` bounds the step state and therefore the context file. Target is roughly 10k tokens: the hypothesis under test is that one intelligently constructed file holding the complete useful memory of the task fits in context and yields maximum quality, so this number is a tuning knob, not a ceiling.
 - `companion.memory_*` govern episode memory in the context file (`docs/memory.md`): `memory_inject_k` is how many recency-weighted episodes from other agents `hx compose` puts in the **Memory episodes** section (0 removes the section), `memory_episode_chars` how much of each episode the line carries, `memory_half_life_h` the recency half-life. The store itself is instance-global and needs no configuration.

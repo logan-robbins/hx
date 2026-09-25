@@ -141,6 +141,22 @@ def test_meta_install_writes_an_xdg_home_and_the_companion(instance):
     assert "companion-stop" in companion.read_text()
 
 
+def test_meta_install_no_companion_needs_no_claude_token(instance):
+    """`--no-companion` is the `companion.disabled` install path: Muse home only."""
+    (instance / "seed" / "token").unlink()
+    _meta_token(instance)
+    script = instance / "adapters" / "meta" / "install.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--no-companion", "eng-001"],
+        env=clean_env(HARNESS_ROOT=str(instance)),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (instance / "run" / "eng-001" / "home" / "muse" / "settings.json").is_file()
+    assert not (instance / "run" / "eng-001" / "companion-home").exists()
+
+
 def test_meta_install_refuses_the_partner(instance):
     _meta_token(instance)
     script = instance / "adapters" / "meta" / "install.sh"

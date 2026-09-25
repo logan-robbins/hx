@@ -57,6 +57,7 @@ def malformed():
         "companion negative interval": {**WORKER, "companion": {"seam_min_interval_s": -1}},
         "companion unknown provider": {**WORKER, "companion": {"provider": "openai"}},
         "unknown companion field": {**WORKER, "companion": {"temperature": 1}},
+        "companion disabled not a boolean": {**WORKER, "companion": {"disabled": "yes"}},
         "companion bad effort": {**WORKER, "companion": {"effort": "ludicrous"}},
         "companion empty effort": {**WORKER, "companion": {"effort": ""}},
     }
@@ -100,6 +101,28 @@ def test_the_partner_cannot_be_grok():
     with pytest.raises(ValidationError) as exc:
         validate_harness({**PARTNER, "flavor": "grok"}, "config/partner/harness.json", dir_name="partner")
     assert "messaging socket" in str(exc.value)
+
+
+def test_companion_disabled_is_accepted():
+    """`companion.disabled` runs the agent with no Companion window at all (spec 05)."""
+    for value in (True, False):
+        config = validate_harness(
+            {**WORKER, "companion": {**WORKER["companion"], "disabled": value}},
+            "config/eng-001/harness.json",
+            dir_name="eng-001",
+        )
+        assert config.companion["disabled"] is value
+
+
+def test_companion_disabled_must_be_a_boolean():
+    for bad in ("yes", 1, 0, None):
+        with pytest.raises(ValidationError) as exc:
+            validate_harness(
+                {**WORKER, "companion": {**WORKER["companion"], "disabled": bad}},
+                "config/eng-001/harness.json",
+                dir_name="eng-001",
+            )
+        assert "`companion.disabled` must be a boolean" in str(exc.value)
 
 
 def test_flavor_meta_is_accepted():

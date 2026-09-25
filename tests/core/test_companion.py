@@ -100,6 +100,37 @@ def test_no_companion_leaves_the_window_out(instance, hx, tmux_server):
     assert windows == ["main"]
 
 
+def _disable_companion(instance, item_id="eng-001"):
+    harness = instance / "config" / item_id / "harness.json"
+    body = json.loads(harness.read_text())
+    body["companion"] = {**body.get("companion", {}), "disabled": True}
+    harness.write_text(json.dumps(body))
+
+
+def test_disabled_companion_takes_no_pass_and_stays_caught_up(instance):
+    """`companion.disabled`: hooks wake nothing, no pass file lands, seams stay takeable."""
+    from hx.companion import is_caught_up, is_disabled, wake_due
+    from hx.streams import append_record
+
+    _disable_companion(instance)
+    assert is_disabled(instance, "eng-001") is True
+    append_record(instance, "eng-001", "eng-001-main", {"event": "post_tool", "tool": "Bash"})
+    assert wake_due(instance, "eng-001", force=True) == []
+    assert list((instance / "run" / "eng-001" / "companion").glob("*.pass.md")) == []
+    assert is_caught_up(instance, "eng-001") is True
+
+
+def test_launch_skips_a_disabled_companion(instance, hx, tmux_server):
+    """The harness flag does what `--no-companion` does, without the flag."""
+    _disable_companion(instance)
+    assert hx("launch", "eng-001").returncode == 0
+    windows = subprocess.run(
+        [*tmux_server, "list-windows", "-t", "=eng-001", "-F", "#{window_name}"],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    assert windows == ["main"]
+
+
 def test_the_system_prompt_is_composed_before_launch(instance, hx):
     """spec 10: BASE.md, the role file, and the harness facts — the cached prefix."""
     assert hx("launch", "eng-001").returncode == 0

@@ -137,15 +137,21 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
 
     already = tmux.has_session(item_id, env)
     result = {"id": item_id, "session": "existing" if already else "started", "goal": None}
+    no_companion = not companion or _companion_disabled(root, item_id)
     if not already:
-        installed = _run_adapter(root, "install.sh", item_id, env)
+        install_extra = (
+            ["--no-companion"]
+            if no_companion and flavor_of(root, item_id) == "meta"
+            else None
+        )
+        installed = _run_adapter(root, "install.sh", item_id, env, extra=install_extra)
         if installed.returncode != 0:
             raise HxError(f"launch {item_id}: install.sh failed:\n{installed.stdout}{installed.stderr}")
         started = _run_adapter(root, "start.sh", item_id, env)
         if started.returncode != 0:
             raise HxError(f"launch {item_id}: start.sh failed:\n{started.stdout}{started.stderr}")
 
-    if not already and companion:
+    if not already and not no_companion:
         start_companion(root, item_id, env=env)
 
     if path is not None and path.name.endswith("-working.md"):
@@ -193,6 +199,13 @@ def start_ui(root: Path, *, env=None) -> bool:
         capture_output=True, text=True, check=False,
     )
     return True
+
+
+def _companion_disabled(root: Path, item_id: str) -> bool:
+    """Best-effort read of `companion.disabled`. Unknown means enabled, as today."""
+    from . import companion as companion_mod
+
+    return companion_mod.is_disabled(root, item_id)
 
 
 def start_companion(root: Path, item_id: str, *, env=None) -> bool:

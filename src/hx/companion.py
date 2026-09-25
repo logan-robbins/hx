@@ -106,6 +106,18 @@ def config_for(root: Path, item_id: str) -> HarnessConfig:
     return load_harness(harness, check_cross_file=False)
 
 
+def is_disabled(root: Path, item_id: str) -> bool:
+    """True when this agent runs without a Companion (`companion.disabled`, spec 05).
+
+    Never raises: an unreadable config means the caller is already failing
+    elsewhere, and a disabled check must not be what takes it down.
+    """
+    try:
+        return bool((config_for(root, item_id).companion or {}).get("disabled", False))
+    except Exception:
+        return False
+
+
 def compose_system_prompt(root: Path, config: HarnessConfig) -> Path:
     """`BASE.md` + the role file + the harness facts, composed once at start (spec 10, 05).
 
@@ -211,7 +223,13 @@ def cursor(root: Path, item_id: str, stream: str) -> int:
 
 
 def is_caught_up(root: Path, item_id: str) -> bool:
-    """True when every stream's state `seq` equals its log head — what `hx flush` waits for."""
+    """True when every stream's state `seq` equals its log head — what `hx flush` waits for.
+
+    Vacuously true with no Companion: there is no cursor that could be behind,
+    so a manual `hx seam` takes instead of waiting forever.
+    """
+    if is_disabled(root, item_id):
+        return True
     return all(
         cursor(root, item_id, stream) >= head_seq(root, item_id, stream)
         for stream in open_streams(root, item_id)
@@ -294,6 +312,8 @@ def ingest(root: Path, item_id: str, stream: str, *, env=None) -> dict | None:
     prior state standing, which is the rule that matters: a corrupted step state is worse
     than a stale one (spec 10).
     """
+    if is_disabled(root, item_id):
+        return None
     out = out_path(root, item_id, stream)
     if not out.is_file():
         return None
@@ -445,6 +465,8 @@ def seam_is_due(root: Path, config: HarnessConfig, state: dict) -> bool:
     if not state.get("closed_steps") or state.get("subagents_open"):
         return False
 
+    if companion.get("disabled", False):
+        return False
     tokens = streams.last_context_tokens(root, config.id)
     if tokens is None or tokens < companion.get("seam_min_context_tokens", 60000):
         return False
@@ -468,7 +490,13 @@ def streams_needing_a_pass(root: Path, item_id: str, batch: int) -> list[str]:
 
 
 def wake_due(root: Path, item_id: str, *, force: bool = False, env=None) -> list[str]:
-    """Wake the Companion for every stream that needs a pass. Called from the agent's hooks."""
+    """Wake the Companion for every stream that needs a pass. Called from the agent's hooks.
+
+    A no-op with no Companion: writing a pass file nobody will take would leave
+    the board showing a pass in flight forever.
+    """
+    if is_disabled(root, item_id):
+        return []
     try:
         config = config_for(root, item_id)
     except NotFound:

@@ -104,7 +104,10 @@ A fresh instance has one agent: you. Every other id is one you make.
    worktree; the directory is yours to choose and nobody's to clean up. Set `flavor` to
    `claude`, `pi`, `grok`, `meta`, or `codex` — each non-claude flavor authenticates from
    its own `seed/` token file and runs the same dispatch/goal/board/complete flow.
-   Leave it out and the worker is Claude. The Partner stays `claude`.
+   Leave it out and the worker is Claude. The Partner stays `claude`. For a Meta worker
+   with no Claude Companion, add `"disabled": true` to its `companion` block: launch then
+   skips the Companion install and window, and the completion digest falls back to the
+   agent's own `## Deliverables`.
 3. Copy `personas/<role>/AGENTS.md` over `config/<id>/AGENTS.md`, then edit the paragraph that
    says what this particular id is for. Leave everything below `## UPDATES BELOW ONLY` empty —
    that section is the worker's own memory.

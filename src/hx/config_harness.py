@@ -41,6 +41,11 @@ _COMPANION_INT_FIELDS = (
 _COMPANION_NON_NEGATIVE_FIELDS = ("seam_min_interval_s", "memory_inject_k")
 _COMPANION_STR_FIELDS = ("provider", "model", "cache_ttl", "effort")
 
+#: `disabled` is the only boolean: no Companion window, no passes, no step state.
+#: Dispatch, goal, board, show, flush and complete all work without one; the
+#: completion digest falls back to the agent's own Deliverables/Tasks section.
+_COMPANION_BOOL_FIELDS = ("disabled",)
+
 #: Spec 05: `claude-cli` goes through the pinned binary with the seed token and is the only one
 #: built; `anthropic` is the Messages API with an API key, for instances that have one.
 COMPANION_PROVIDERS = ("claude-cli", "anthropic")
@@ -182,6 +187,13 @@ def validate_harness(
                 raise ValidationError(
                     f"{path}: `companion.{key}` must be a non-empty string, got `{value!r}`"
                 )
+    for key in _COMPANION_BOOL_FIELDS:
+        if key in companion:
+            value = companion[key]
+            if not isinstance(value, bool):
+                raise ValidationError(
+                    f"{path}: `companion.{key}` must be a boolean, got `{value!r}`"
+                )
     companion_effort = companion.get("effort")
     if companion_effort is not None and companion_effort not in EFFORT_LEVELS:
         raise ValidationError(
@@ -197,7 +209,7 @@ def validate_harness(
 
     unknown_companion = sorted(
         set(companion) - set(_COMPANION_INT_FIELDS) - set(_COMPANION_NON_NEGATIVE_FIELDS)
-        - set(_COMPANION_STR_FIELDS)
+        - set(_COMPANION_STR_FIELDS) - set(_COMPANION_BOOL_FIELDS)
     )
     if unknown_companion:
         raise ValidationError(
