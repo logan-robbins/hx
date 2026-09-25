@@ -6,11 +6,11 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 3; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 4; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
-| P02b adapter capture/control | Pending | Shared hook normalization covers all five adapters; automatic registration, durable native enqueue, lifecycle integration, and live-version verification remain. |
+| P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Shared hook normalization covers all five adapters; automatic registration, producer retry storage, lifecycle wiring, and live-version verification remain. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
-| P04 typed progress/facts | In progress | `src/hx/facts.py` validates versioned payloads; compact rendering tested. Progress CLI and companion patches remain. |
+| P04 typed progress/facts | In progress | Typed facts and `hx progress --file/--run` implemented: bounded sparse updates, field provenance, task/run ownership, CAS, idempotency, deterministic cursor reduction, and projection outbox. Native prompt deployment and projection consumers remain. |
 | P05 check receipts | Pending | Input/environment identity and completion integration. |
 | P06a–P06c shared application map | Pending | Portable records, validated edges, CAS overlays, export/check. |
 | P07 context compiler | In progress | Whole-fact budget selection and required-fact overflow implemented; checkpoint/map/pending-tail integration remains. |
@@ -35,7 +35,10 @@ stable IDs. The examples are non-exhaustive. The [language guide](continuity-lan
 complete propositions, conditions, causes, dependencies, verification, uncertainty, and
 remaining obligations; findings retain ordinary concise prose for other relationships. Required text must never be blindly truncated.
 
-Verification: `.venv/bin/python -m pytest tests/core/test_observer.py tests/core/test_evidence.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 103 passed. No live adapter capture/companion path has been cut over or certified yet.
+Verification: `.venv/bin/python -m pytest tests/core/test_native_capture.py tests/core/test_progress.py tests/core/test_observer.py tests/core/test_evidence.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 139 passed. No live adapter capture/companion path has been cut over or certified yet.
+
+The [runtime contracts](continuity-runtime.md) document native binding/enqueue and typed
+progress, including retry identities, bounded input, sparse updates, and remaining wiring.
 
 ## Current capture and evidence commands
 

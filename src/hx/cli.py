@@ -31,6 +31,8 @@ from . import install as install_cmd
 from . import lifecycle
 from . import memory as memory_cmd
 from . import observer as observer_cmd
+from . import native_capture as capture_cmd
+from . import progress as progress_cmd
 from . import evidence as evidence_cmd
 from . import goals as goals_cmd
 from . import read as read_cmd
@@ -56,6 +58,7 @@ IMPLEMENTED = {
     "bench": bench_cmd.main,
     "board": board_cmd.main,
     "companion": companion_cmd.main,
+    "capture": capture_cmd.main,
     "compile": compile_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
@@ -71,6 +74,7 @@ IMPLEMENTED = {
     "launch": lifecycle.main_launch,
     "memory": memory_cmd.main,
     "observe": observer_cmd.main,
+    "progress": progress_cmd.main,
     "evidence": evidence_cmd.main,
     "goals": goals_cmd.main,
     "read": read_cmd.main,
@@ -97,6 +101,9 @@ the control plane:
   dispatch ID GOAL [ID GOAL]   validate the goals, then working; the files are consumed
   goal ID [--now]              paste the pointer into a worker's pane
   task                         print your own goal and its addenda
+  progress --file JSON         commit a sparse typed progress update
+  progress --run RUN           read the progress revision and current cursor
+  capture bind/enqueue         bind and durably capture native execution events
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate

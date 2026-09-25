@@ -49,7 +49,8 @@ def _usage(value) -> dict | None:
 def hook_v1(body: dict) -> list[Event]:
     aliases = {"toolName": "tool_name", "toolInput": "tool_input", "toolResult": "tool_response",
                "tool_result": "tool_response", "toolUseId": "tool_use_id", "sessionId": "session_id",
-               "hookEventName": "hook_event_name"}
+               "hookEventName": "hook_event_name", "backgroundTasks": "background_tasks",
+               "lastAssistantMessage": "last_assistant_message", "agentId": "agent_id", "turnId": "turn_id"}
     p = dict(body)
     for source, target in aliases.items():
         if source in p and target not in p:

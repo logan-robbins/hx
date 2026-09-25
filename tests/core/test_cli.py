@@ -25,6 +25,8 @@ SPEC_08_COMMANDS = {
     "distill",
     # Continuity v2: registered incremental capture and its resident observer.
     "observe",
+    "capture",
+    "progress",
     "evidence",
 }
 

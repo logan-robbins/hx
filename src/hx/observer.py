@@ -43,6 +43,8 @@ def _source_io(operation, *args):
 
 def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
              decoder: str, session_id: str, branch_ids: list[str] | None = None) -> str:
+    if stream_id == "progress":
+        raise ValidationError("progress is reserved for validated hx progress updates")
     if decoder not in DECODERS or not isinstance(session_id, str) or not session_id or len(session_id) > 512 or not stream_id:
         raise ValidationError("source needs a registered decoder, session, and stream")
     path = Path(path).absolute()
@@ -118,9 +120,9 @@ def spool_size(store: ContinuityStore) -> int:
     return inline + artifacts
 
 
-def _capture(tx, source: dict, state: dict, event: Event, offset: int, index: int) -> dict:
-    identity = ("native", state["session_id"], event.kind, event.native_id) if event.native_id else (
-        "offset", source["source_id"], source["generation"], offset, index)
+def encode_observation(*, session_id: str, event: Event, fallback_identity: tuple) -> tuple[str, dict, bytes]:
+    """Shared native/log identity and artifact representation for a public event."""
+    identity = ("native", session_id, event.kind, event.native_id) if event.native_id else fallback_identity
     # The immutable observation includes the decoder's public data only. Hook and
     # transcript observations with complementary fields keep distinct payloads,
     # linked by logical_id; reducers merge their evidence without guessing equality.
@@ -131,18 +133,32 @@ def _capture(tx, source: dict, state: dict, event: Event, offset: int, index: in
     capture_key = f"{logical_id}:{observation_hash}"
     payload = {"schema_version": 1, "logical_id": logical_id, "observation_hash": observation_hash,
                "identity_certain": event.native_id is not None,
-               "session_id": state["session_id"], "native_id": event.native_id}
+               "session_id": session_id, "native_id": event.native_id}
     if len(encoded) <= 4096:
         payload["observation"] = observation
     else:
         payload["artifact_hash"] = observation_hash
         payload["bytes"] = len(encoded)
-    captured = tx.append_event(source["run_id"], source["stream_id"], capture_key, event.kind, payload)
+    return capture_key, payload, encoded
+
+
+def append_observation(tx, *, run_id: str, stream_id: str, session_id: str,
+                       event: Event, fallback_identity: tuple) -> dict:
+    capture_key, payload, encoded = encode_observation(session_id=session_id, event=event,
+                                                      fallback_identity=fallback_identity)
+    captured = tx.append_event(run_id, stream_id, capture_key, event.kind, payload)
+    if "artifact_hash" in payload:
+        tx.put_artifact(encoded, owner_type="event", owner_id=captured["event_id"], slot="observation")
+    return captured
+
+
+def _capture(tx, source: dict, state: dict, event: Event, offset: int, index: int) -> dict:
+    captured = append_observation(tx, run_id=source["run_id"], stream_id=source["stream_id"],
+        session_id=state["session_id"], event=event,
+        fallback_identity=("offset", source["source_id"], source["generation"], offset, index))
     tx._change()
     tx.db.execute("INSERT OR IGNORE INTO event_origins VALUES(?,?,?,?,?)",
                   (captured["event_id"], source["source_id"], source["generation"], offset, source["decoder_version"]))
-    if "artifact_hash" in payload:
-        tx.put_artifact(encoded, owner_type="event", owner_id=captured["event_id"], slot="observation")
     if event.usage is not None:
         state["latest_usage"] = event.usage
     return captured

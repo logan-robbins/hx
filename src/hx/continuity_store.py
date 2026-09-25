@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 3).
+"""Transactional authority for current-task continuity (schema 4).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -197,6 +197,44 @@ CREATE TABLE IF NOT EXISTS artifact_chunks (
 );
 """
 
+MIGRATION_4 = """
+CREATE TABLE IF NOT EXISTS native_bindings (
+    binding_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
+    stream_id TEXT NOT NULL, adapter TEXT NOT NULL, session_id TEXT NOT NULL,
+    decoder_version TEXT NOT NULL, latest_usage TEXT,
+    UNIQUE(adapter,session_id,stream_id),
+    FOREIGN KEY(run_id,stream_id) REFERENCES cursors(run_id,stream_id)
+);
+CREATE TABLE IF NOT EXISTS native_deliveries (
+    binding_id TEXT NOT NULL REFERENCES native_bindings(binding_id),
+    delivery_id TEXT NOT NULL, payload_hash TEXT NOT NULL, event_ids TEXT NOT NULL,
+    PRIMARY KEY(binding_id,delivery_id)
+);
+CREATE TABLE IF NOT EXISTS native_event_origins (
+    binding_id TEXT NOT NULL, delivery_id TEXT NOT NULL,
+    event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
+    PRIMARY KEY(binding_id,delivery_id,event_id),
+    FOREIGN KEY(binding_id,delivery_id) REFERENCES native_deliveries(binding_id,delivery_id)
+);
+CREATE TABLE IF NOT EXISTS progress_heads (
+    task_id TEXT PRIMARY KEY REFERENCES task_heads(task_id), revision INTEGER NOT NULL,
+    run_id TEXT NOT NULL REFERENCES runs(run_id), cursor_id TEXT NOT NULL REFERENCES record_heads(record_id)
+);
+CREATE TABLE IF NOT EXISTS progress_steps (
+    task_id TEXT NOT NULL REFERENCES task_heads(task_id), step_id TEXT NOT NULL,
+    status TEXT NOT NULL, payload TEXT NOT NULL, evidence TEXT NOT NULL,
+    PRIMARY KEY(task_id,step_id)
+);
+CREATE TABLE IF NOT EXISTS progress_deliverables (
+    task_id TEXT NOT NULL REFERENCES task_heads(task_id), path TEXT NOT NULL,
+    payload TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(task_id,path)
+);
+CREATE TABLE IF NOT EXISTS progress_updates (
+    run_id TEXT NOT NULL REFERENCES runs(run_id), request_hash TEXT NOT NULL,
+    payload TEXT NOT NULL, PRIMARY KEY(run_id,request_hash)
+);
+"""
+
 
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
@@ -220,7 +258,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -245,6 +283,10 @@ class ContinuityStore:
                             offset += len(chunk)
                         if hasher.hexdigest() != row[0]:
                             raise ValidationError(f"corrupt artifact {row[0]} during schema upgrade")
+            if version < 4:
+                for statement in MIGRATION_4.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.commit()
         except BaseException:
