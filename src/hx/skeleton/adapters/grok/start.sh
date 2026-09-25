@@ -81,6 +81,7 @@ effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effor
 [ "$effort" = max ] && effort=xhigh
 
 if [ "$mode" = exec ]; then
+  . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/sessions"
   awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
 

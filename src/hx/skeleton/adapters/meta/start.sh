@@ -79,6 +79,7 @@ effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effor
 [ -n "$effort" ] || die "refuse: $harness has no \`effort\`"
 
 if [ "$mode" = exec ]; then
+  . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/data"
   awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
 

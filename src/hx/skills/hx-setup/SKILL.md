@@ -14,7 +14,8 @@ the steps in order; each one says how to check it worked.
 hx runs a small fleet of Claude Code sessions in tmux: one **Partner** that the human talks
 to, N **workers** the Partner creates and dispatches, and a **Companion** beside every one of
 them that keeps its state so it survives context cuts. Everything lives under one directory,
-the instance root (`HARNESS_ROOT`, default `~/hx`), with one credential in `seed/token`. After
+the instance root (`HARNESS_ROOT`, default `~/hx`), with its Claude credential in `seed/token`
+and optional provider keys under `seed/`. After
 setup **the human only ever talks to the Partner** (`tmux attach -t partner`) and watches the
 UI. You do the one-time machine setup below and then stop. You are not the Partner, you do
 not create workers, and you do not dispatch work.
@@ -25,11 +26,14 @@ not create workers, and you do not dispatch work.
 there, on any platform — every agent has its own home under `<root>/run/<id>/home`. You hold
 to the same line: do not edit `~/.claude/settings.json`, `~/.claude/skills`, credentials or
 `.claude.json`, and never put the instance root inside `~/.claude` (`hx install` refuses it).
+An explicit request to install the Claude plugin may use `claude plugin`; that operation is
+separate from hx's runtime and does not authorize changing personal credentials or settings.
 
-**The token step is the human's.** `hx install` stops once and asks for a long-lived token
-from `claude setup-token`. That command opens a browser for consent on their subscription. You
-never run it for them, never read, print or paste the token, and never write `seed/token`
-yourself. You relay the two lines `hx install` prints, verbatim, and wait.
+**The OAuth token step is the human's.** Without an existing token or a supplied env file,
+`hx install` stops and asks for a long-lived token from `claude setup-token`. You never run it for them,
+never read or paste the OAuth token, and never write it yourself.
+An explicitly supplied env file is the authorized fallback; hx imports missing provider
+keys from it without printing their values.
 
 ## 1. Prerequisites
 
@@ -44,17 +48,19 @@ claude --version              # must be a version hx has been tested with
 ```
 
 The tested Claude Code versions are in the repository at
-`src/hx/packaging/tested-claude-versions.json` (also inside the installed package). If the
-installed `claude` is another version, say so; `hx install` will refuse to pin it, and you do
-not work around that. The human needs a Claude subscription (Max or Pro). **No API key is
-used anywhere**; the Companion runs on the same subscription token as the agents.
+`src/hx/packaging/tested-claude-versions.json` (also inside the installed package). A
+newer version can be used when the human requests it with `--ignore-claude-version`.
+The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
+missing credentials fall back to that file: `ANTHROPIC_API_KEY` (also the legacy typo
+`ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
+credentials under `seed/` take precedence.
 
 ## 2. Install the package
 
 From a checkout of the repository:
 
 ```bash
-cd <checkout> && uv build && uv tool install --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd <checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
 ```
 
 (Once published: `uv tool install --python 3.14 hx-harness`.) Check:
@@ -71,12 +77,25 @@ lines are `ok`, `warn` or `fail`, each naming the step that clears it.
 
 Choose the root with the human: `--root <dir>`, else `$HARNESS_ROOT`, else `~/hx`. Any
 directory outside `~/.claude`; it need not exist.
+If the requested project already has an hx instance, reuse it. Run `hx up` with
+`HARNESS_ROOT` set to that instance, then verify the Partner and UI. Do not create a second
+instance merely because the default path differs.
 
 ```bash
 hx install --root ~/hx
 ```
 
-**The first run stops with exit code 4** and prints:
+For a supplied dotenv fallback:
+
+```bash
+hx install --root ~/hx --env-file /absolute/path/to/.env
+```
+
+Add `--ignore-claude-version` only when the human explicitly asks to bypass the tested
+version list. The env path is stored in the instance; later launches read it again.
+
+Without an existing OAuth token or a usable `--env-file`, the first run stops with exit
+code 4 and prints:
 
 ```
 hx needs one long-lived token for this instance. Two steps, both yours:
@@ -103,10 +122,13 @@ hx install --root ~/hx
 This time it pins the `claude` binary and version it found, lays out the instance (`config/`,
 `templates/`, `personas/`, `companion/`, `pods/`, `run/`, `state/`, `logs/`, `seed/`), launches
 the Partner in tmux session `partner`, and starts the UI in tmux session `ui`. It is
-idempotent: running it again re-copies the package skeleton without touching anything written
-under `config/<id>/`, `PARTNER.md` or the token.
+idempotent: running it again adds missing skeleton files and keeps existing files, including
+adapters, `config/<id>/`, `PARTNER.md`, and credentials. When upgrading source code, check
+whether the instance's adapter scripts need the new package versions; refresh those files
+only while the affected agents are idle, then restart those sessions. Restart the `ui`
+session separately when UI code changes.
 
-Non-interactive callers (another harness) get the same contract: exit 4 means "seed token
+Non-interactive callers (another harness) get the same contract: exit code 4 means "seed token
 missing"; write the token file by your own means, then call again. Nothing else is asked.
 
 ## 4. Verify, do not assume
@@ -157,7 +179,7 @@ harness is what a trial exercises, not the model's judgement; Sonnet at medium i
 
 ## 6. Hand over
 
-Tell the human two things and nothing else:
+Give the human the Partner attachment command and the live UI URL:
 
 ```bash
 tmux attach -t partner

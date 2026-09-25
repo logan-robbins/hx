@@ -125,6 +125,9 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     about the Companion does not run one.
     """
     require_partner_caller("launch", env)
+    from . import envfile
+
+    envfile.sync_seed(root)
     path = ensure_work_item(root, item_id)
     ensure_workdir(root, item_id)
 

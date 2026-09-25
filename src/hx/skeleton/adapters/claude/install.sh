@@ -10,9 +10,8 @@
 #   - claudeMdExcludes for the agent's own workdir
 #   - the bypass-permissions acceptance, so no launch is ever interactive
 #   - crossSessionInbound: accept, for the Partner only (spec 05, 11, 17.3)
-# Agent homes hold no credentials at all. Auth is one long-lived OAuth token per instance,
-# at $HARNESS_ROOT/seed/token (spec 11 Auth, CONTRACTS.md): the human runs `claude setup-token`
-# once and pastes the result there, and start.sh exports it as CLAUDE_CODE_OAUTH_TOKEN. hx
+# Agent homes hold no full credentials. The instance's OAuth token, or API key fallback,
+# is at $HARNESS_ROOT/seed/token. start.sh selects the matching environment variable. hx
 # never reads the user's ~/.claude, any .credentials.json, or the macOS Keychain.
 #
 # Refuses when seed/token is missing or readable by anyone but its owner.
@@ -43,8 +42,7 @@ command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 
 
 token_file=$root/seed/token
 [ -f "$token_file" ] || die \
-  "refuse: no $token_file; the human runs \`claude setup-token\` once and pastes the token
-  there, mode 0600 (spec 11 Auth, 17.2 step 3). Without it a launch would stop at a login prompt"
+  "refuse: no $token_file; use claude setup-token for OAuth or configure --env-file with ANTHROPIC_API_KEY"
 token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it holds a year-long credential and must
@@ -105,6 +103,7 @@ HX_CONFIG_JSON=$home/.claude.json HX_CWD=$cwd \
 import json
 import os
 import shlex
+from pathlib import Path
 
 item_id = os.environ["HX_ID"]
 root = os.environ["HX_ROOT"]
@@ -161,7 +160,6 @@ settings = {
 if is_partner:
     # The human and hx wake the Partner through the messaging socket (spec 11, 12).
     settings["crossSessionInbound"] = "accept"
-
 settings["theme"] = "dark"
 
 with open(target, "w") as handle:
@@ -183,6 +181,11 @@ if os.path.exists(config_json):
         existing = {}
 existing["hasCompletedOnboarding"] = True
 existing.setdefault("theme", "dark")
+credential = (Path(root) / "seed" / "token").read_text().strip()
+if credential.startswith("sk-ant-api"):
+    responses = existing.setdefault("customApiKeyResponses", {"approved": [], "rejected": []})
+    if credential[-20:] not in responses["approved"]:
+        responses["approved"].append(credential[-20:])
 
 # Claude Code also asks, once per working directory, whether the folder is trusted. An
 # agent has no one to ask, and the directory is one hx created, so the answer is recorded
@@ -228,11 +231,12 @@ fi
 companion_home=$root/run/$id/companion-home
 mkdir -p "$companion_home"
 copy_skills "$companion_home/skills" hx-companion
-HX_COMPANION_HOME=$companion_home HX_CWD=$root HX_HOOK_BIN=$hook_bin HX_ID=$id \
+HX_COMPANION_HOME=$companion_home HX_CWD=$root HX_HOOK_BIN=$hook_bin HX_ID=$id HX_ROOT=$root \
 "$python" - <<'COMPANIONEOF'
 import json
 import os
 import shlex
+from pathlib import Path
 
 home = os.environ["HX_COMPANION_HOME"]
 hook = os.environ["HX_HOOK_BIN"]
@@ -270,6 +274,11 @@ if os.path.exists(config_json):
         existing = {}
 existing["hasCompletedOnboarding"] = True
 existing.setdefault("theme", "dark")
+credential = (Path(os.environ["HX_ROOT"]) / "seed" / "token").read_text().strip()
+if credential.startswith("sk-ant-api"):
+    responses = existing.setdefault("customApiKeyResponses", {"approved": [], "rejected": []})
+    if credential[-20:] not in responses["approved"]:
+        responses["approved"].append(credential[-20:])
 projects = existing.get("projects")
 if not isinstance(projects, dict):
     projects = {}
@@ -290,4 +299,4 @@ if [ "$companion_only" != 1 ]; then
   printf 'install.sh: wrote %s\n' "$home/settings.json"
 fi
 printf 'install.sh: wrote %s (stop hook + hx-companion, no CLAUDE.md)\n' "$companion_home/settings.json"
-printf 'install.sh: auth is %s, exported by start.sh as CLAUDE_CODE_OAUTH_TOKEN\n' "$token_file"
+printf 'install.sh: auth is %s, exported by start.sh for the credential type\n' "$token_file"

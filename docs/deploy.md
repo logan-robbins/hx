@@ -225,6 +225,7 @@ ok    skeleton         PARTNER.md
 ok    skeleton         adapters/claude/install.sh
 ok    skeleton         adapters/claude/start.sh
 ok    skeleton         adapters/claude/seam-command
+ok    skeleton         adapters/load-env.sh
 ok    skeleton         adapters/pi/install.sh
 ok    skeleton         adapters/pi/start.sh
 ok    skeleton         adapters/pi/seam-command

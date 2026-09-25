@@ -385,6 +385,20 @@ def test_the_setup_skill_keeps_the_token_step_the_humans():
         assert cut not in text.replace("Use `claude -p`", ""), cut
 
 
+def test_no_smartypants_references_ship_in_hx():
+    """Smartypants lives outside hx: no docs, commands, or skills may name it, so no
+    setup path can send a user or an agent configuring a second product."""
+    surfaces = [
+        REPO / "README.md",
+        REPO / "docs" / "getting-started.md",
+        REPO / "docs" / "operating.md",
+        REPO / "commands" / "setup.md",
+        *(SKILLS.rglob("SKILL.md")),
+    ]
+    offenders = [p for p in surfaces if p.is_file() and "smartypants" in p.read_text().lower()]
+    assert not offenders, f"Smartypants references in: {[str(p) for p in offenders]}"
+
+
 FLEET_SKILL = SKILLS / "hx-fleet" / "SKILL.md"
 
 
