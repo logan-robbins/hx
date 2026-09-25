@@ -1,6 +1,6 @@
 """Meta goal delivery on Muse 1.4: a plain-text pointer, verified as submitted.
 
-Two defects, both found live on Muse 1.4.0:
+Three defects, all found live on Muse 1.4.0:
 
 1. Muse owns `/goal` as a native command and tries to write its own
    `goals.db`, so the hx pointer must arrive as ordinary text for Meta
@@ -9,6 +9,9 @@ Two defects, both found live on Muse 1.4.0:
    `goal=pasted` while the pointer was still sitting unsent in the input
    box. For Meta, `send_goal` re-checks the box after a delay and
    resubmits, and refuses to report `pasted` when the box never clears.
+3. The redraw passes through a transient empty composer, so a single clear
+   observation is not a submission either. A clear counts only when a
+   confirmation capture still sees the box clear; anything else resubmits.
 """
 
 from __future__ import annotations
@@ -67,14 +70,49 @@ def test_meta_send_goal_resubmits_until_the_box_clears(instance, work_item, monk
     monkeypatch.setattr(goal_mod, "paste", lambda *args, **kwargs: None)
     text = goal_mod.pointer_text(instance, "eng-001")
     # One capture for the pre-paste pane-exists check, then two loop polls that
-    # still see the pointer (one resubmit each) and a third that sees it gone.
-    panes = iter([_boxed(text), _boxed(text), _boxed(text), _idle()])
+    # still see the pointer (one resubmit each) and a third that sees it gone,
+    # plus the confirmation capture that proves the clear held.
+    panes = iter([_boxed(text), _boxed(text), _boxed(text), _idle(), _idle()])
     monkeypatch.setattr(goal_mod, "capture_pane", lambda *args, **kwargs: next(panes))
     submits = []
     monkeypatch.setattr(goal_mod, "submit", lambda *args, **kwargs: submits.append(args))
 
     assert goal_mod.send_goal(instance, "eng-001") == "pasted"
     assert len(submits) == 2
+    assert (instance / "run" / "eng-001" / "goal").is_file()
+
+
+def test_meta_send_goal_ignores_a_transient_clear_before_the_redraw(
+    instance, work_item, monkeypatch
+):
+    """The old single-clear check reported `pasted` at the transient empty
+    composer; the repair resubmits when the confirmation capture redraws the
+    pointer and succeeds only on a held clear."""
+    work_item("eng-001", "working")
+    _set_flavor(instance, "eng-001", "meta")
+    _quiet(monkeypatch)
+    monkeypatch.setattr(goal_mod, "paste", lambda *args, **kwargs: None)
+    text = goal_mod.pointer_text(instance, "eng-001")
+    # Pre-paste pane-exists check, then: box holds text (resubmit), a
+    # transient clear whose confirmation redraws the pointer (resubmit), box
+    # holds text again (resubmit), and finally a clear that holds.
+    panes = iter(
+        [
+            _boxed(text),
+            _boxed(text),
+            _idle(),
+            _boxed(text),
+            _boxed(text),
+            _idle(),
+            _idle(),
+        ]
+    )
+    monkeypatch.setattr(goal_mod, "capture_pane", lambda *args, **kwargs: next(panes))
+    submits = []
+    monkeypatch.setattr(goal_mod, "submit", lambda *args, **kwargs: submits.append(args))
+
+    assert goal_mod.send_goal(instance, "eng-001") == "pasted"
+    assert len(submits) == 3
     assert (instance / "run" / "eng-001" / "goal").is_file()
 
 

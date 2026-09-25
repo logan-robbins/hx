@@ -298,8 +298,10 @@ def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False
         wait_for_prompt(item_id, env)
 
     paste(item_id, text, env)
-    # Muse 1.4 can redraw the composer after the first Enter, leaving the
-    # pointer unsent even though paste() saw the box clear briefly.
+    # Muse 1.4 redraws the composer after the first Enter: the box can read
+    # empty transiently and then redraw the still-unsent pointer, so a single
+    # clear observation is not a submission. A clear counts only when a second
+    # capture still sees the box clear; anything else resubmits.
     import json
     import time
     harness = root / "config" / item_id / "harness.json"
@@ -309,7 +311,10 @@ def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False
             time.sleep(0.75)
             pane = capture_pane(item_id, env)
             if pane is not None and probe not in _squash(input_box(pane)):
-                break
+                time.sleep(0.75)
+                confirm = capture_pane(item_id, env)
+                if confirm is not None and probe not in _squash(input_box(confirm)):
+                    break
             submit(item_id, text, env)
         else:
             raise HxError(f"{item_id}: Muse goal pointer remains in the input box")
