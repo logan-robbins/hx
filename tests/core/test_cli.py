@@ -27,6 +27,7 @@ SPEC_08_COMMANDS = {
     "observe",
     "capture",
     "progress",
+    "check",
     "evidence",
 }
 

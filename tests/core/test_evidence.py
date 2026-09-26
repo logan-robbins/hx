@@ -121,3 +121,48 @@ def test_existing_artifact_verification_streams_bounded_chunks(evidence, monkeyp
         assert tx.put_artifact(data, owner_type="test", owner_id="second-owner", slot="proof") == sha
     assert sum(reads) == len(data)
     assert max(reads) == ARTIFACT_CHUNK_BYTES
+
+
+def test_file_artifact_install_and_slice_do_not_load_whole_output(evidence, monkeypatch):
+    store, _, _, data = evidence
+    source = store.root / "check-output.txt"
+    source.write_bytes(data)
+    original = Path.open
+    reads = []
+
+    class Reader:
+        def __init__(self, handle):
+            self.handle = handle
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            self.handle.close()
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+        def read(self, size=-1):
+            assert 0 < size <= ARTIFACT_CHUNK_BYTES
+            result = self.handle.read(size)
+            reads.append(len(result))
+            return result
+
+    def open_file(path, *args, **kwargs):
+        handle = original(path, *args, **kwargs)
+        return Reader(handle) if args and args[0] == "rb" else handle
+
+    monkeypatch.setattr(Path, "open", open_file)
+    with store.transaction() as tx:
+        sha = tx.put_artifact_file(source, owner_type="check", owner_id="receipt", slot="output")
+        part, size = tx.read_artifact_slice(sha, offset=10, limit=20)
+    assert part == data[10:30] and size == len(data)
+    assert max(reads) == ARTIFACT_CHUNK_BYTES
+
+
+def test_file_artifact_overflow_leaves_no_pending_file(evidence):
+    store, _, _, _ = evidence
+    source = store.root / "too-large.txt"
+    source.write_bytes(b"x" * 100)
+    before = set(store.artifacts.iterdir())
+    with pytest.raises(ValidationError, match="byte bound"), store.transaction() as tx:
+        tx.put_artifact_file(source, owner_type="check", owner_id="overflow", slot="output", max_bytes=10)
+    assert set(store.artifacts.iterdir()) == before
+    assert not store.db.execute("SELECT 1 FROM artifact_refs WHERE owner_id='overflow'").fetchone()

@@ -116,3 +116,70 @@ deterministically, so routine progress does not trigger a companion model pass.
 Native lifecycle wiring, producer retry storage, controller scheduling, projection
 consumers, prompt deployment, and coordinated activation remain tracked in
 [the build status](continuity-build-status.md).
+
+## Check receipts
+
+`hx check CHECK_ID` executes the assigned recipe for the caller's active run. Supply
+`--run RUN` when no `HARNESS_ID` is set. The task's `checks` object maps check IDs to
+versioned recipes. `--definition FILE` permits an explicit exploratory recipe but cannot
+replace an assigned acceptance check with different content.
+
+```json
+{
+  "schema_version": 1,
+  "id": "cursor-regression",
+  "argv": ["python", "-m", "pytest", "tests/test_cursor.py", "-q"],
+  "cwd": ".",
+  "inputs": [],
+  "environment": {
+    "complete": false,
+    "executables": [],
+    "inputs": [],
+    "external_versions": {}
+  },
+  "timeout_s": 120,
+  "max_output_bytes": 1048576
+}
+```
+
+`cwd` resolves inside the task workdir. Commands are argument arrays; a shell script
+must explicitly name its shell and arguments. Preserve executable invocation paths,
+including virtual-environment symlinks. Recipe content determines its check version.
+
+Source identity includes tracked contents and nonignored untracked inputs across the
+repository. `inputs` adds declared ignored fixtures or other required files/directories;
+relative paths resolve from the check cwd. A non-Git workdir needs explicit inputs.
+Environment identity hashes the passed environment, OS identity, resolved executables,
+and declared environment files. Include runtime/dependency manifests and other actual
+environment inputs; a lockfile alone does not establish the installed environment.
+`external_versions` maps each external dependency to its authoritative version file,
+or `null` when no version is observable. Only a complete declared environment with
+known external versions permits reuse. Environment values are not stored in receipts.
+
+Fingerprinting streams file contents in 64 KiB chunks. Before/after content and metadata
+identities reject source/environment changes, including writes that restore original
+bytes. Watcher-backed input-generation validation remains part of the final admission
+transaction; these snapshots alone do not eliminate every possible concurrent-write race.
+
+Output streams to a temporary disk file, then into a content-addressed artifact without
+a whole-output RAM buffer. Timeout, output overflow, nonzero exit, unresolved background
+processes, incomplete source identity, and changed assignment invalidate the result.
+`hx evidence EVENT --offset N --limit N` reads exact output pages. Output overflow remains
+an explicit incomplete result; a retained prefix cannot establish a passing check.
+
+A receipt binds exact argv/cwd, check version, source/environment fingerprints, exit,
+duration, and output artifact. Check events reduce deterministically without waking the
+companion. Reuse requires identical inputs/version/environment and intact retained output.
+Unknown environment or external state permits recording an execution but disables reuse.
+`--fresh` explicitly executes again. `--request ID` makes an uncertain acknowledgement
+retry idempotent; a previously unresolved execution is never silently restarted.
+
+`hx check CHECK_ID --receipt RECEIPT_ID` revalidates a receipt against current inputs
+without executing its command. A successful execution or replayed acknowledgement is
+not a claim that the inputs can never change. Completion must consume current proof.
+Ledger completion, recovery of interrupted executions, input-generation guards, and
+shared retention/admission quotas remain part of the remaining runtime integration.
+
+The legacy completion path now checks source stability and Git cleanliness after checks
+and after the companion flush. It also rejects changed acceptance/assignment before
+writing completion metadata. Repository inspection failures are not treated as clean.

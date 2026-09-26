@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 4).
+"""Transactional authority for current-task continuity (schema 5).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -236,6 +236,17 @@ CREATE TABLE IF NOT EXISTS progress_updates (
 """
 
 
+MIGRATION_5 = """
+CREATE TABLE IF NOT EXISTS check_executions (
+    execution_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
+    request_id TEXT NOT NULL, check_id TEXT NOT NULL, check_version TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('running','finished')),
+    payload TEXT NOT NULL, UNIQUE(run_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS reusable_receipts ON receipts(run_id,check_id,check_version,inputs_hash,environment_hash,valid);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -258,7 +269,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -285,6 +296,10 @@ class ContinuityStore:
                             raise ValidationError(f"corrupt artifact {row[0]} during schema upgrade")
             if version < 4:
                 for statement in MIGRATION_4.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 5:
+                for statement in MIGRATION_5.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -475,6 +490,54 @@ class Transaction:
         if hashlib.sha256(data).hexdigest() != sha:
             raise ValidationError(f"corrupt artifact {sha}")
         return data
+
+    def put_artifact_file(self, source: Path, *, owner_type: str, owner_id: str, slot: str,
+                          max_bytes: int = 64 * 1024 * 1024) -> str:
+        """Install output from disk without loading it into memory."""
+        self._check()
+        for value in (owner_type, owner_id, slot):
+            _id(value)
+        if type(max_bytes) is not int or max_bytes < 1:
+            raise ValidationError("artifact file requires a positive byte bound")
+        fd, name = tempfile.mkstemp(prefix=".pending-", dir=self.store.artifacts)
+        pending = Path(name)
+        try:
+            hasher = hashlib.sha256()
+            size = 0
+            with os.fdopen(fd, "wb") as target, Path(source).open("rb") as handle:
+                for chunk in iter(lambda: handle.read(ARTIFACT_CHUNK_BYTES), b""):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValidationError("artifact file exceeds its byte bound")
+                    hasher.update(chunk)
+                    target.write(chunk)
+                target.flush()
+                os.fsync(target.fileno())
+            sha = hasher.hexdigest()
+            path = self.store.artifacts / sha
+            if path.exists():
+                existing = hashlib.sha256()
+                with path.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(ARTIFACT_CHUNK_BYTES), b""):
+                        existing.update(chunk)
+                if existing.hexdigest() != sha:
+                    raise ValidationError(f"corrupt artifact {sha}")
+            else:
+                os.replace(pending, path)
+                _sync_directory(self.store.artifacts)
+            self._change()
+            self.db.execute("INSERT OR IGNORE INTO artifacts VALUES(?,?,?)", (sha, size, time.time()))
+            with path.open("rb") as handle:
+                offset = 0
+                while chunk := handle.read(ARTIFACT_CHUNK_BYTES):
+                    self.db.execute("INSERT OR IGNORE INTO artifact_chunks VALUES(?,?,?,?)",
+                                    (sha, offset, len(chunk), hashlib.sha256(chunk).hexdigest()))
+                    offset += len(chunk)
+            self.db.execute("INSERT INTO artifact_refs VALUES(?,?,?,?) ON CONFLICT(owner_type,owner_id,slot) DO UPDATE SET hash=excluded.hash",
+                            (owner_type, owner_id, slot, sha))
+            return sha
+        finally:
+            pending.unlink(missing_ok=True)
 
     def release_artifacts(self, owner_type: str, owner_id: str) -> None:
         self._change()

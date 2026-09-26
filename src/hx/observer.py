@@ -43,8 +43,8 @@ def _source_io(operation, *args):
 
 def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
              decoder: str, session_id: str, branch_ids: list[str] | None = None) -> str:
-    if stream_id == "progress":
-        raise ValidationError("progress is reserved for validated hx progress updates")
+    if stream_id in {"progress", "checks"}:
+        raise ValidationError("progress/checks streams are reserved for validated hx commands")
     if decoder not in DECODERS or not isinstance(session_id, str) or not session_id or len(session_id) > 512 or not stream_id:
         raise ValidationError("source needs a registered decoder, session, and stream")
     path = Path(path).absolute()

@@ -40,8 +40,8 @@ def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
          session_id: str, decoder: str = "hook-v1", worker_id: str | None = None) -> str:
     for value in (run_id, stream_id, session_id):
         _id(value)
-    if stream_id == "progress":
-        raise ValidationError("progress is reserved for validated hx progress updates")
+    if stream_id in {"progress", "checks"}:
+        raise ValidationError("progress/checks streams are reserved for validated hx commands")
     if adapter not in TRANSPORTS or decoder not in TRANSPORTS[adapter]:
         raise ValidationError("native capture requires a supported adapter/transport pair")
     binding_id = digest([run_id, stream_id, adapter, session_id, decoder])
