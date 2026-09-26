@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 5).
+"""Transactional authority for current-task continuity (schema 6).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -247,6 +247,20 @@ CREATE INDEX IF NOT EXISTS reusable_receipts ON receipts(run_id,check_id,check_v
 """
 
 
+MIGRATION_6 = """
+CREATE TABLE IF NOT EXISTS map_snapshots (
+    repository TEXT NOT NULL, snapshot TEXT NOT NULL, base_commit TEXT NOT NULL,
+    import_path TEXT NOT NULL, kind TEXT NOT NULL, map_hash TEXT NOT NULL,
+    PRIMARY KEY(repository,snapshot)
+);
+CREATE TABLE IF NOT EXISTS map_anchor_cache (
+    repository TEXT NOT NULL, worktree TEXT NOT NULL, path TEXT NOT NULL,
+    symbol TEXT NOT NULL, source_stamp TEXT NOT NULL, payload TEXT NOT NULL,
+    PRIMARY KEY(repository,worktree,path,symbol)
+);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -269,7 +283,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -300,6 +314,10 @@ class ContinuityStore:
                         self.db.execute(statement)
             if version < 5:
                 for statement in MIGRATION_5.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 6:
+                for statement in MIGRATION_6.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

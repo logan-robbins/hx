@@ -5,6 +5,9 @@ The legacy fleet remains authoritative until the coordinated migration in
 [the implementation specification](continuity-implementation.md). Command availability
 does not mean the installed native adapters have switched to this runtime.
 
+The [application-map contract](application-map.md) covers `hx map`, portable repository
+records, source validation, selected reads, and remaining shared-update integration.
+
 ## Native capture
 
 The lifecycle controller creates a task/run, then binds each native execution stream:

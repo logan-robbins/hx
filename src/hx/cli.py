@@ -34,6 +34,7 @@ from . import observer as observer_cmd
 from . import native_capture as capture_cmd
 from . import progress as progress_cmd
 from . import checks as checks_cmd
+from . import appmap as map_cmd
 from . import evidence as evidence_cmd
 from . import goals as goals_cmd
 from . import read as read_cmd
@@ -61,6 +62,7 @@ IMPLEMENTED = {
     "companion": companion_cmd.main,
     "capture": capture_cmd.main,
     "check": checks_cmd.main,
+    "map": map_cmd.main,
     "compile": compile_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
@@ -106,6 +108,7 @@ the control plane:
   progress --file JSON         commit a sparse typed progress update
   progress --run RUN           read the progress revision and current cursor
   check CHECK [--run RUN]      execute or reuse an input-bound verification receipt
+  map init/check/anchor/import/export/get  manage a portable semantic application map
   capture bind/enqueue         bind and durably capture native execution events
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item

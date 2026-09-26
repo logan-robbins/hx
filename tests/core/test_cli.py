@@ -28,6 +28,7 @@ SPEC_08_COMMANDS = {
     "capture",
     "progress",
     "check",
+    "map",
     "evidence",
 }
 

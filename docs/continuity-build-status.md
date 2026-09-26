@@ -6,13 +6,15 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 5; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 6; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
 | P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Shared hook normalization covers all five adapters; automatic registration, producer retry storage, lifecycle wiring, and live-version verification remain. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
 | P04 typed progress/facts | In progress | Typed facts and `hx progress --file/--run` implemented: bounded sparse updates, field provenance, task/run ownership, CAS, idempotency, deterministic cursor reduction, and projection outbox. Native prompt deployment and projection consumers remain. |
 | P05 check receipts | In progress | `checks.py`/`fingerprints.py`: exact recipes, streamed identities/output, receipt reuse/revalidation, uncertain-request deduplication, timeout/output/background-process failure handling. Legacy completion rechecks source, cleanliness, and acceptance after verification/flush. Ledger completion, interrupted-execution recovery, watcher generation guards, and quota integration remain. |
-| P06a–P06c shared application map | Pending | Portable records, validated edges, CAS overlays, export/check. |
+| P06a portable application map | In progress | `appmap.py`: semantic schema, stable responsibility IDs, portable Git baseline import/export, typed relationships, source anchors, selected reads/cache, and disk-backed batch validation. Fresh-clone reconstruction, stack replacement, stale anchors, and branch provenance tested. Dependent-fact invalidation remains. |
+| P06b shared map updates | Pending | CAS proposals/read sets, coalescing, atomic multi-record updates, isolated dirty overlays, incident-edge invalidation, and affected-task replanning. |
+| P06c map integration | In progress | `hx map check` and deterministic shard export implemented. Concurrent publication protection, merged-source reconciliation, and crash recovery remain. |
 | P07 context compiler | In progress | Whole-fact budget selection and required-fact overflow implemented; checkpoint/map/pending-tail integration remains. |
 | P08 task planning | Pending | Stable task identity, ownership, prerequisites, acceptance. |
 | P09 budgets | Pending | Entire request accounting, capability gates, shared parent reserve. |
@@ -35,11 +37,13 @@ stable IDs. The examples are non-exhaustive. The [language guide](continuity-lan
 complete propositions, conditions, causes, dependencies, verification, uncertainty, and
 remaining obligations; findings retain ordinary concise prose for other relationships. Required text must never be blindly truncated.
 
-Verification: `.venv/bin/python -m pytest tests/core/test_completion_inputs.py tests/core/test_checks.py tests/core/test_evidence.py tests/core/test_native_capture.py tests/core/test_progress.py tests/core/test_observer.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 177 passed. No live adapter capture/companion path has been cut over or certified yet.
+Verification: `.venv/bin/python -m pytest tests/core/test_appmap.py tests/core/test_completion_inputs.py tests/core/test_checks.py tests/core/test_evidence.py tests/core/test_native_capture.py tests/core/test_progress.py tests/core/test_observer.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 201 passed. No live adapter capture/companion path has been cut over or certified yet.
 
 The [runtime contracts](continuity-runtime.md) document native binding/enqueue, typed
 progress, and check receipts, including retry identities, bounded input/output, sparse
 updates, source/environment applicability, and remaining wiring.
+The [application-map contract](application-map.md) documents portable records, source
+validation, selected lookup, import/export, and remaining shared-write requirements.
 
 ## Current capture and evidence commands
 
@@ -83,7 +87,8 @@ RSS was 27.05 MiB; the largest child-process peak was 15.00 MiB. These are separ
 `getrusage` measurements, not a combined fleet-memory bound. Streamed artifact installation
 and source fingerprinting have tests that reject reads larger than 64 KiB.
 
-Next: integrate automatic source registration and native enqueue with the five adapters,
-then connect the resident controller and native companion to the frozen-pass API. Preserve
+Next: implement map proposal CAS, worktree overlays, and targeted invalidation; integrate
+automatic source registration and native enqueue with the five adapters, then connect
+the resident controller and native companion to the frozen-pass API. Preserve
 the legacy authority until the coordinated P12 migration; library tests alone do not prove
 end-to-end adapter compatibility.
