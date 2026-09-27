@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 7).
+"""Transactional authority for current-task continuity (schema 8).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -294,6 +294,39 @@ CREATE TABLE IF NOT EXISTS map_evidence (
 """
 
 
+MIGRATION_8 = """
+CREATE TABLE IF NOT EXISTS map_sources (
+    repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,
+    path TEXT NOT NULL,symbol TEXT NOT NULL,sha256 TEXT NOT NULL,
+    PRIMARY KEY(repository,snapshot,record_id,path,symbol)
+);
+CREATE INDEX IF NOT EXISTS map_source_paths ON map_sources(repository,snapshot,path,record_id);
+INSERT OR IGNORE INTO map_sources
+    SELECT r.repository,r.snapshot,r.record_id,json_extract(a.value,'$.path'),
+           coalesce(json_extract(a.value,'$.symbol'),''),json_extract(a.value,'$.sha256')
+    FROM map_records r JOIN map_heads h USING(repository,snapshot,record_id,version),json_each(r.payload,'$.anchors') a;
+CREATE TABLE IF NOT EXISTS map_refresh_queue (
+    repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,generation INTEGER NOT NULL,
+    PRIMARY KEY(repository,snapshot,record_id)
+);
+CREATE INDEX IF NOT EXISTS entity_consumers ON record_entities(repository,snapshot,entity_id,entity_version);
+CREATE TABLE IF NOT EXISTS task_map_inputs (
+    task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,repository TEXT NOT NULL,
+    snapshot TEXT NOT NULL,entity_id TEXT NOT NULL,entity_version INTEGER NOT NULL,
+    PRIMARY KEY(task_id,task_revision,repository,snapshot,entity_id),
+    FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision),
+    FOREIGN KEY(repository,snapshot,entity_id,entity_version) REFERENCES map_records(repository,snapshot,record_id,version)
+);
+CREATE INDEX IF NOT EXISTS task_entity_consumers ON task_map_inputs(repository,snapshot,entity_id,entity_version);
+CREATE TABLE IF NOT EXISTS task_replan_queue (
+    task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,repository TEXT NOT NULL,
+    snapshot TEXT NOT NULL,entity_id TEXT NOT NULL,entity_version INTEGER NOT NULL,reason TEXT NOT NULL,
+    PRIMARY KEY(task_id,task_revision,repository,snapshot,entity_id),
+    FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
+);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -316,7 +349,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -355,6 +388,10 @@ class ContinuityStore:
                         self.db.execute(statement)
             if version < 7:
                 for statement in MIGRATION_7.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 8:
+                for statement in MIGRATION_8.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -459,6 +496,9 @@ class Transaction:
             raise ValidationError(f"task {task_id}: parent is immutable")
         if task_id == parent_id:
             raise ValidationError("task cannot parent itself")
+        if "map_inputs" in payload:
+            from .map_dependencies import validate_refs
+            validate_refs(self, payload["map_inputs"], payload)
         body = canonical(payload)
         self._change()
         revision = actual + 1
@@ -467,6 +507,9 @@ class Transaction:
             "INSERT INTO task_heads VALUES(?,?) ON CONFLICT(task_id) DO UPDATE SET revision=excluded.revision",
             (task_id, revision),
         )
+        if "map_inputs" in payload:
+            from .map_dependencies import bind_task
+            bind_task(self, task_id, revision, payload)
         return revision
 
     def start_run(self, task_id: str, task_revision: int, worker_id: str, *, map_revision: int = 0) -> str:
@@ -474,6 +517,8 @@ class Transaction:
         task = self.task(task_id)
         if task is None or task["revision"] != task_revision:
             raise Conflict(f"task {task_id}: dispatch requires current revision {task_revision}")
+        from .map_dependencies import validate_task
+        validate_task(self, task)
         _id(worker_id)
         if self.db.execute("SELECT 1 FROM runs WHERE worker_id=? AND ended_at IS NULL", (worker_id,)).fetchone():
             raise Conflict(f"worker {worker_id}: already assigned")
@@ -712,6 +757,9 @@ class Transaction:
             ).fetchone()
             if not found or found[0] != task_id:
                 raise ValidationError(f"evidence {event_id} is absent or belongs to another task")
+        if "map" in inputs:
+            from .map_dependencies import validate_record_refs
+            validate_record_refs(self, task_id, kind, inputs, validity)
         body, refs, fingerprints = canonical(payload), canonical(evidence), canonical(inputs)
         size = len((body + refs + fingerprints + reason + expires_when + (consuming_step or "")).encode("utf-8"))
         self._change()
@@ -725,6 +773,9 @@ class Transaction:
             "INSERT INTO record_heads VALUES(?,?) ON CONFLICT(record_id) DO UPDATE SET version=excluded.version",
             (record_id, version),
         )
+        if "map" in inputs:
+            from .map_dependencies import bind_record
+            bind_record(self, record_id, version, inputs)
         return version
 
     def enqueue(self, kind: str, key: str, payload: dict) -> str:

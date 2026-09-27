@@ -7,9 +7,9 @@ namespaced attributes while preserving IDs whose responsibilities remain the sam
 
 This implements the portable baseline and transactional update portions of the
 [continuity specification](continuity-implementation.md). Committed baselines, selected
-reads, isolated dirty-worktree overlays, proposal collisions, and explicit incident-edge
-invalidation work. Source-watcher invalidation, dependent-fact/receipt invalidation,
-task replanning, write-lease integration, and coordinated export recovery remain.
+reads, isolated dirty-worktree overlays, proposal collisions, indexed source refresh,
+and invalidation of declared map consumers work. Source-watcher registration, downstream
+task-graph replanning, write-lease integration, and coordinated export recovery remain.
 The native fleet has not switched to this map.
 
 ## Repository format
@@ -79,6 +79,7 @@ hx map get context-compiler --snapshot git:COMMIT --repo /path/to/product
 hx map export --snapshot git:COMMIT --repo /path/to/product
 hx map overlay --snapshot git:COMMIT --repo /path/to/product
 hx map propose --file patch.json --repo /path/to/product
+hx map refresh --snapshot worktree:HASH --path build.cfg --limit 16 --repo /path/to/product
 ```
 
 `init` creates a stable repository identity; competing initializers publish one complete
@@ -168,13 +169,62 @@ explicitly revalidated in the same patch. Invalidating a node marks its incident
 validated edges stale. Reads expose those statuses; a prior relationship does not
 silently remain validated. Line-hint changes alone preserve semantic identity. Added
 nodes are reported separately from changed existing nodes through a transactional
-`map_changed` outbox notification. The future task planner consumes affected IDs;
-this endpoint does not restart tasks or manufacture verification receipts.
+`map_changed` outbox notification. Declared consumers are invalidated in that transaction;
+the future task planner consumes the replan queue. This endpoint does not restart tasks
+or manufacture verification receipts.
 
 Each patch is bounded to 256 KiB, 16 operations, 64 read versions, and 64 evidence IDs.
 Evidence is stored as individual relational references, so coalescing does not grow a
 record's JSON indefinitely. Native companions will use this same envelope once their
 map operations join the frozen-pass transaction; that routing is not activated yet.
+
+## Source refresh and consumer bindings
+
+Task payloads declare `map_inputs`; continuation records declare `inputs.map`. Both
+contain at most 64 references of this form:
+
+```json
+{"repository":"REPO_UUID","snapshot":"worktree:HASH","id":"context-compiler","version":2}
+```
+
+Creating a task revision or current fact validates the exact versions, current source
+anchors, and ownership of the worktree overlay. A delayed watcher cannot admit an
+already stale source: selected-input validation checks current metadata and hashes on
+cache misses. Task dispatch and check admission revalidate these bindings. Goals,
+constraints, and active cursors cannot carry expiring map dependencies; their obligations
+remain intact when application facts become obsolete.
+
+`refresh --path PATH` queues records anchored to that exact relative source/configuration
+path, then drains one bounded batch. Repeat `--path` for up to 128 paths. With no `--path`,
+the command continues the durable queue. The default batch is 16 records; `--limit` accepts
+1–32. The result lists refreshed and invalidated IDs and `more`, indicating remaining work.
+Queueing uses the source-path index. A batch fetches only record headers first, then
+processes one body at a time. The controller will call these APIs from registered source
+watchers; that automatic registration is not wired yet.
+
+Queued records are pending and cannot provide validated relationships or new dependency
+bindings. Each drain checks source outside the writer transaction, then compares the
+record version, queue generation, worktree identity, and observed file metadata before
+committing. A newer notification or intervening source write leaves the item pending.
+Process exit leaves unfinished items durable. Unchanged sources use the cache; unchanged
+symbol content with moved lines refreshes display hints without changing semantic versions.
+
+A changed or missing anchor creates a stale map version. The same transaction marks
+incident validated edges stale, creates invalid versions of bound continuation facts,
+invalidates receipts for affected task revisions, and queues exact consuming tasks for
+replanning. Map proposals use the same consumer invalidation path. Unrelated facts and
+tasks retain their state. A check that finishes after its map inputs change cannot create
+valid proof; retrying an invalidated receipt returns that invalid status without executing
+again. Receipts without declared map dependencies still require the source/environment
+revalidation described in the check contract; this index does not infer their dependency
+coverage from test success.
+
+Restoring old file bytes does not revive invalidated facts, receipts, or task bindings.
+Reconcile the map, amend the task with current input versions, and explicitly bind a new
+run. Old replan entries belong to the old task revision. Downstream prerequisite expansion
+and replan scheduling remain part of P08. Direct `inputs.files` facts still use their
+existing source checks; automatic indexing of those file-only consumers is not provided
+by the map-source queue.
 
 ## Memory and context bounds
 

@@ -108,7 +108,7 @@ the control plane:
   progress --file JSON         commit a sparse typed progress update
   progress --run RUN           read the progress revision and current cursor
   check CHECK [--run RUN]      execute or reuse an input-bound verification receipt
-  map init/check/anchor/import/export/get/overlay/propose  manage the semantic application map
+  map init/check/anchor/import/export/get/overlay/propose/refresh  manage the semantic application map
   capture bind/enqueue         bind and durably capture native execution events
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item

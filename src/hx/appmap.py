@@ -441,6 +441,9 @@ def index_relations(db, repository, snapshot, record):
                (repository, snapshot, record["id"]))
     db.executemany("INSERT INTO map_relations VALUES(?,?,?,?,?,?)",
         ((repository, snapshot, record["id"], edge["kind"], edge["to"], edge["status"]) for edge in record["edges"]))
+    db.execute("DELETE FROM map_sources WHERE repository=? AND snapshot=? AND record_id=?", (repository, snapshot, record["id"]))
+    db.executemany("INSERT OR REPLACE INTO map_sources VALUES(?,?,?,?,?,?)",
+        ((repository, snapshot, record["id"], anchor["path"], anchor["symbol"] or "", anchor["sha256"]) for anchor in record["anchors"]))
 
 
 def import_baseline(store: ContinuityStore, repository: Path) -> dict:
@@ -510,6 +513,9 @@ def get_record(store: ContinuityStore, repository: Path, snapshot: str, record_i
         edge["status"] = statuses.get((edge["kind"], edge["to"]), "stale")
     applicability = row["applicability"]
     issues = []
+    if store.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (info["repo_id"], snapshot, record_id)).fetchone():
+        applicability = "pending"
+        issues.append("Source refresh is pending.")
     for anchor in record["anchors"]:
         try:
             worktree = str(repository.resolve())
@@ -594,15 +600,18 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx map")
     parser.add_argument("--root")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "check", "anchor", "import", "export", "get", "overlay", "propose"):
+    for name in ("init", "check", "anchor", "import", "export", "get", "overlay", "propose", "refresh"):
         command = commands.add_parser(name)
         command.add_argument("--repo", required=True)
         command.add_argument("--root", default=argparse.SUPPRESS)
         if name == "anchor":
             command.add_argument("path")
             command.add_argument("--symbol")
-        if name in {"export", "get", "overlay"}:
+        if name in {"export", "get", "overlay", "refresh"}:
             command.add_argument("--snapshot", required=True)
+        if name == "refresh":
+            command.add_argument("--path", action="append", default=[])
+            command.add_argument("--limit", type=int, default=16)
         if name == "propose":
             command.add_argument("--file", required=True)
         if name == "get":
@@ -628,6 +637,11 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
                 from .map_updates import PATCH_BYTES, propose
                 result = propose(store, repository, read_json(Path(args.file), PATCH_BYTES),
                                  worker_id=(os.environ if env is None else env).get("HARNESS_ID"))
+            elif args.command == "refresh":
+                from .map_refresh import queue_sources, drain
+                if args.path:
+                    queue_sources(store, repository, args.snapshot, args.path)
+                result = drain(store, repository, args.snapshot, limit=args.limit)
             else:
                 result = export_snapshot(store, repository, args.snapshot)
     print(canonical(result))

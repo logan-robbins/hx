@@ -59,6 +59,8 @@ def _assignment(tx, run_id, check_id, recipe, worker_id=None):
     task = tx.task(run["task_id"])
     if run["ended_at"] is not None or task["revision"] != run["task_revision"]:
         raise Conflict("check requires an active run pinned to the current task revision")
+    from .map_dependencies import validate_task
+    validate_task(tx, task)
     assigned = task["payload"].get("checks", {}).get(check_id)
     if recipe is None:
         if assigned is None:
@@ -207,6 +209,11 @@ def current(store: ContinuityStore, run_id: str, receipt_id: str, *,
         reasons.append("check_version_changed")
     if not _artifact_intact(store, row["artifact_hash"]):
         reasons.append("output_missing_or_corrupt")
+    with store.transaction() as tx:
+        _assignment(tx, run_id, row["check_id"], payload["recipe"], worker_id)
+        if not tx.db.execute("SELECT valid FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()[0]:
+            if "receipt_not_reusable" not in reasons:
+                reasons.append("receipt_not_reusable")
     return {"receipt_id": receipt_id, "current": not reasons, "reasons": reasons,
             "inputs_hash": source["hash"], "environment_hash": environment["hash"]}
 
@@ -227,7 +234,12 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
                 raise Conflict("check request ID belongs to a different command/version")
             if existing["status"] != "finished":
                 raise Conflict("check request has an unresolved execution; inspect it before choosing a new request ID")
-            return json.loads(existing["payload"])["result"]
+            result = json.loads(existing["payload"])["result"]
+            receipt = tx.db.execute("SELECT valid FROM receipts WHERE receipt_id=?", (result["receipt_id"],)).fetchone()
+            if result["valid"] and (receipt is None or not receipt[0]):
+                result = {**result, "valid": False, "reusable": False,
+                          "reasons": list(dict.fromkeys([*result["reasons"], "receipt_invalidated"]))}
+            return result
         run, recipe, version, cwd = _assignment(tx, run_id, check_id, recipe, worker_id)
         execution_id = str(uuid.uuid4())
         output = store.root / "state" / "check-output" / execution_id

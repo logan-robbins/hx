@@ -62,6 +62,8 @@ def create_overlay(store: ContinuityStore, repository: Path, baseline: str) -> d
                           (snapshot, info["repo_id"], baseline))
             tx.db.execute("INSERT INTO map_relations SELECT repository,?,source,kind,target,status FROM map_relations WHERE repository=? AND snapshot=?",
                           (snapshot, info["repo_id"], baseline))
+            tx.db.execute("INSERT INTO map_sources SELECT repository,?,record_id,path,symbol,sha256 FROM map_sources WHERE repository=? AND snapshot=?",
+                          (snapshot, info["repo_id"], baseline))
         require_worktree(tx.db, repository, *key)
     return {"repo_id": info["repo_id"], "snapshot": snapshot, "baseline": baseline}
 
@@ -157,6 +159,8 @@ def _preflight(store, repository, key, body, operations):
             continue
         if not op and row["applicability"] != "current":
             raise Conflict(f"map read dependency is not current: {record_id}")
+        if not op and store.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id)).fetchone():
+            raise Conflict(f"map read dependency awaits source refresh: {record_id}")
         for anchor in record["anchors"]:
             anchor_key = (anchor["path"], anchor["symbol"] or "")
             stamp = appmap._source_stamp(repository, anchor["path"])
@@ -215,6 +219,8 @@ def propose(store: ContinuityStore, repository: Path, body: dict, *, worker_id=N
             current = _record(tx.db, key, record_id)
             actual = current["version"] if current else 0
             op = operations.get(record_id)
+            if not op and tx.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id)).fetchone():
+                raise Conflict(f"map read dependency awaits source refresh: {record_id}")
             proposed = op.get("record") if op else None
             identical = (proposed is not None and current is not None and current["applicability"] == "current"
                          and appmap.semantic_identity(json.loads(current["payload"])) == appmap.semantic_identity(proposed))
@@ -259,6 +265,7 @@ def propose(store: ContinuityStore, repository: Path, body: dict, *, worker_id=N
             tx.db.executemany("INSERT OR IGNORE INTO map_evidence VALUES(?,?,?,?,?)",
                              ((*key, record_id, version, event_id) for event_id in body["evidence_ids"]))
             results[record_id] = {"version": version, "coalesced": record_id in coalesced}
+            tx.db.execute("DELETE FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id))
         # Validate every affected incident edge under the same writer lock. The
         # unchanged remainder was validated on import or an earlier transaction.
         for record_id in operations:
@@ -283,6 +290,8 @@ def propose(store: ContinuityStore, repository: Path, body: dict, *, worker_id=N
                     tx.db.execute("UPDATE map_relations SET status='stale' WHERE repository=? AND snapshot=? AND source=? AND kind=? AND target=?",
                                   (*key, edge["source"], edge["kind"], edge["target"]))
         for record_id in changed:
+            from .map_dependencies import invalidate_consumers
+            invalidate_consumers(tx, key, record_id, results[record_id]["version"], "A required map input changed.")
             # A source rewritten by this same patch explicitly revalidates its
             # outgoing declarations against the resulting graph and read set.
             for edge in tx.db.execute("SELECT source,kind FROM map_relations WHERE repository=? AND snapshot=? AND target=? AND status='validated'", (*key, record_id)):

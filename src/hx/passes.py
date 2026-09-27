@@ -76,7 +76,7 @@ def prepare(store: ContinuityStore, run_id: str, stream_id: str, *,
             record = tx.record(record_id)
             if not record or record["task_id"] != run["task_id"] or record["validity"] != "current":
                 raise Conflict(f"selected record {record_id} is absent, stale, or outside this task")
-            _check_sources(record["inputs"], tx.task(run["task_id"])["payload"])
+            _check_sources(record["inputs"], tx.task(run["task_id"])["payload"], tx)
             selected[record_id] = record
         pass_id = str(uuid.uuid4())
         body = {"schema_version": 1, "pass_id": pass_id, "run_id": run_id, "stream_id": stream_id,
@@ -113,10 +113,15 @@ def prepare(store: ContinuityStore, run_id: str, stream_id: str, *,
         return body
 
 
-def _check_sources(inputs: dict, task: dict) -> None:
+def _check_sources(inputs: dict, task: dict, tx=None) -> None:
     """Recheck declared files in bounded chunks; hashes never enter the model packet."""
-    if not isinstance(inputs, dict) or inputs.keys() - {"files"}:
+    if not isinstance(inputs, dict) or inputs.keys() - {"files", "map"}:
         raise ValidationError("record inputs must contain declared file fingerprints")
+    if "map" in inputs:
+        from .map_dependencies import validate_refs
+        if tx is None:
+            raise ValidationError("map inputs require a ledger transaction")
+        validate_refs(tx, inputs["map"], task)
     files = inputs.get("files", {})
     if not isinstance(files, dict):
         raise ValidationError("inputs.files must map exact paths to SHA-256 values")
@@ -202,7 +207,8 @@ def _write_operation(tx, operation: dict, frozen: dict, run: dict, allowed_evide
                      "cursor": ("step", "phase", "next", "blocker", "children")}.get(old["kind"], ())
         if any(record["payload"].get(key) != old["payload"].get(key) for key in protected):
             raise ValidationError("compression changes protected applicability or executable fields")
-    _check_sources(record["inputs"], frozen["task"])
+    if record["validity"] == "current":
+        _check_sources(record["inputs"], frozen["task"], tx)
     tx.put_record(record_id, expected_version=version, task_id=run["task_id"], **record)
     return record_id
 
@@ -255,7 +261,7 @@ def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
             record = tx.record(record_id)
             if not record or record["version"] != version or record["validity"] != "current":
                 raise Conflict(f"selected record {record_id} changed during extraction")
-            _check_sources(record["inputs"], frozen["task"])
+            _check_sources(record["inputs"], frozen["task"], tx)
             allowed.update(record["evidence"])
         changed = []
         seen = set()
