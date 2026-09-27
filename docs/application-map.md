@@ -5,10 +5,12 @@ locations, and declared checks. Stable IDs describe responsibilities independent
 language, framework, path, and worker. A stack replacement changes source anchors and
 namespaced attributes while preserving IDs whose responsibilities remain the same.
 
-This is the P06a foundation of the [continuity specification](continuity-implementation.md).
-Committed baselines and selected-record reads work. Shared proposal transactions, dirty
-worktree overlays, incident-edge invalidation, task replanning, and coordinated export
-recovery remain P06b/P06c work. The native fleet has not switched to this map.
+This implements the portable baseline and transactional update portions of the
+[continuity specification](continuity-implementation.md). Committed baselines, selected
+reads, isolated dirty-worktree overlays, proposal collisions, and explicit incident-edge
+invalidation work. Source-watcher invalidation, dependent-fact/receipt invalidation,
+task replanning, write-lease integration, and coordinated export recovery remain.
+The native fleet has not switched to this map.
 
 ## Repository format
 
@@ -75,6 +77,8 @@ hx map check --repo /path/to/product
 hx map import --repo /path/to/product
 hx map get context-compiler --snapshot git:COMMIT --repo /path/to/product
 hx map export --snapshot git:COMMIT --repo /path/to/product
+hx map overlay --snapshot git:COMMIT --repo /path/to/product
+hx map propose --file patch.json --repo /path/to/product
 ```
 
 `init` creates a stable repository identity; competing initializers publish one complete
@@ -96,6 +100,81 @@ proof for every destination record or consuming task.
 uncommitted map edits, and writes deterministic JSON shards. Individual file writes are
 atomic. Whole-export coordination, concurrent-edit protection during publication, and
 crash recovery remain P06c requirements; do not enable shared worker export yet.
+
+## Shared proposals and collisions
+
+`overlay` creates an isolated ledger snapshot from an imported baseline. This explicit
+batch copies the baseline through SQLite without loading the graph into Python memory.
+The returned `worktree:HASH` is pinned to the repository ID, baseline, absolute worktree,
+Git metadata directory, branch, and HEAD. Repeated creation returns the same overlay.
+A branch switch, worktree change, or new commit requires a new overlay; reconciliation
+and promotion across those snapshots remain integration work. Dirty source changes
+within the pinned checkout can be described by proposals with current source anchors.
+Committed baselines remain immutable and visible to other workers.
+
+`propose` accepts this envelope:
+
+```json
+{
+  "schema_version": 1,
+  "patch_id": "discover-packet-contract",
+  "task_id": "TASK",
+  "run_id": "RUN",
+  "snapshot": "worktree:HASH",
+  "read_versions": {"packet-contract": 0},
+  "operations": [{
+    "op": "put",
+    "record": {
+      "schema_version": 1,
+      "id": "packet-contract",
+      "version": 1,
+      "kind": "interface",
+      "claim": "required",
+      "summary": "Every continuation packet identifies its current goal.",
+      "data": {"contract": "Packet(goal: string)", "invariants": ["The goal retains its conditions."]},
+      "anchors": [], "edges": [], "attributes": {}, "replaces": []
+    }
+  }],
+  "evidence_ids": ["EVENT_ID"]
+}
+```
+
+The assigned task's absolute `workdir` must match the repository. The run must be active
+and bound to the current task revision. `HARNESS_ID`, when supplied, must own the run.
+Evidence events must exist and belong to the same task. A patch cites every record it
+read or changed, including each referenced edge endpoint. Version zero means absent.
+A `put` supplies a complete record with expected version plus one. An `invalidate`
+operation uses `{"op":"invalidate","id":"RECORD_ID","reason":"Contradictory evidence."}`
+and preserves the record as stale. These operations grant no permission to edit source.
+
+Record versions, source fingerprints, evidence, endpoint existence, and incident edge
+types are checked before committing all operations together. Source bodies are checked
+outside the writer transaction; unchanged sources use the existing cache. File metadata
+and worktree identity are checked again before commit. Proposals read selected records
+and indexed incident relationships, not the entire graph. A failed check rolls back
+record changes, evidence, the patch receipt, and its notification.
+
+| Collision | Result |
+|---|---|
+| Different records with unchanged read dependencies | Both patches commit. No global map revision causes a retry. |
+| Identical resulting content for the same record | One version survives; both event references remain in the evidence table. |
+| Changed record or read dependency | Reject with structured base/current/proposed values. The worker reconciles from evidence. |
+| Repeated patch ID and identical request | Return the original result, including after its run closes. |
+| Reused patch ID with different content | Reject. |
+| Different worktrees, branches, or HEADs | Retain separate overlays; reject use of the wrong overlay. |
+
+Changing an existing node marks incoming validated edges stale unless their source is
+explicitly revalidated in the same patch. Invalidating a node marks its incident
+validated edges stale. Reads expose those statuses; a prior relationship does not
+silently remain validated. Line-hint changes alone preserve semantic identity. Added
+nodes are reported separately from changed existing nodes through a transactional
+`map_changed` outbox notification. The future task planner consumes affected IDs;
+this endpoint does not restart tasks or manufacture verification receipts.
+
+Each patch is bounded to 256 KiB, 16 operations, 64 read versions, and 64 evidence IDs.
+Evidence is stored as individual relational references, so coalescing does not grow a
+record's JSON indefinitely. Native companions will use this same envelope once their
+map operations join the frozen-pass transaction; that routing is not activated yet.
 
 ## Memory and context bounds
 

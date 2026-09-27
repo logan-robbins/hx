@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 6).
+"""Transactional authority for current-task continuity (schema 7).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -261,6 +261,39 @@ CREATE TABLE IF NOT EXISTS map_anchor_cache (
 """
 
 
+MIGRATION_7 = """
+CREATE TABLE IF NOT EXISTS map_overlays (
+    repository TEXT NOT NULL, snapshot TEXT NOT NULL, baseline TEXT NOT NULL,
+    head_commit TEXT NOT NULL, branch TEXT NOT NULL, git_dir TEXT NOT NULL,
+    PRIMARY KEY(repository,snapshot),
+    FOREIGN KEY(repository,snapshot) REFERENCES map_snapshots(repository,snapshot)
+);
+CREATE TABLE IF NOT EXISTS map_relations (
+    repository TEXT NOT NULL, snapshot TEXT NOT NULL, source TEXT NOT NULL,
+    kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL,
+    PRIMARY KEY(repository,snapshot,source,kind,target)
+);
+CREATE INDEX IF NOT EXISTS map_incoming ON map_relations(repository,snapshot,target,source);
+INSERT OR IGNORE INTO map_relations
+    SELECT r.repository,r.snapshot,r.record_id,json_extract(e.value,'$.kind'),
+           json_extract(e.value,'$.to'),json_extract(e.value,'$.status')
+    FROM map_records r JOIN map_heads h USING(repository,snapshot,record_id,version),
+         json_each(r.payload,'$.edges') e;
+CREATE TABLE IF NOT EXISTS map_patches (
+    repository TEXT NOT NULL, patch_id TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES runs(run_id),
+    request_hash TEXT NOT NULL, result TEXT NOT NULL,
+    PRIMARY KEY(repository,patch_id)
+);
+CREATE TABLE IF NOT EXISTS map_evidence (
+    repository TEXT NOT NULL, snapshot TEXT NOT NULL, record_id TEXT NOT NULL,
+    version INTEGER NOT NULL, event_id TEXT NOT NULL REFERENCES events(event_id),
+    PRIMARY KEY(repository,snapshot,record_id,version,event_id),
+    FOREIGN KEY(repository,snapshot,record_id,version)
+        REFERENCES map_records(repository,snapshot,record_id,version)
+);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -283,7 +316,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -318,6 +351,10 @@ class ContinuityStore:
                         self.db.execute(statement)
             if version < 6:
                 for statement in MIGRATION_6.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 7:
+                for statement in MIGRATION_7.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

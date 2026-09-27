@@ -436,6 +436,13 @@ def _committed_json(repository, commit, path, expected):
             raise Conflict(f"map file differs from its committed contents: {path}")
 
 
+def index_relations(db, repository, snapshot, record):
+    db.execute("DELETE FROM map_relations WHERE repository=? AND snapshot=? AND source=?",
+               (repository, snapshot, record["id"]))
+    db.executemany("INSERT INTO map_relations VALUES(?,?,?,?,?,?)",
+        ((repository, snapshot, record["id"], edge["kind"], edge["to"], edge["status"]) for edge in record["edges"]))
+
+
 def import_baseline(store: ContinuityStore, repository: Path) -> dict:
     """Import one immutable committed baseline; dirty overlays use proposal APIs."""
     commit = _git(repository, "rev-parse", "HEAD")
@@ -468,6 +475,7 @@ def import_baseline(store: ContinuityStore, repository: Path) -> dict:
                     (result["repo_id"], snapshot, record["id"], record["version"], record["kind"], row[2], "[]",
                      canonical({"anchors": record["anchors"]}), "current"))
                 tx.db.execute("INSERT INTO map_heads VALUES(?,?,?,?)", (result["repo_id"], snapshot, record["id"], record["version"]))
+                index_relations(tx.db, result["repo_id"], snapshot, record)
             if _git(repository, "rev-parse", "HEAD") != commit or _dirty(repository):
                 raise Conflict("repository changed while importing its map")
     return {**result, "snapshot": snapshot}
@@ -478,6 +486,9 @@ def _snapshot(store, repository, snapshot):
     row = store.db.execute("SELECT * FROM map_snapshots WHERE repository=? AND snapshot=?", (info["repo_id"], snapshot)).fetchone()
     if row is None:
         raise ValidationError("unknown map snapshot for this repository")
+    if row["kind"] == "overlay":
+        from .map_updates import require_worktree
+        require_worktree(store.db, repository, info["repo_id"], snapshot)
     ancestor = subprocess.run(["git", "-C", str(repository), "merge-base", "--is-ancestor", row["base_commit"], "HEAD"], capture_output=True)
     if ancestor.returncode != 0:
         raise Conflict("map baseline is not an ancestor of this worktree; import its branch baseline")
@@ -492,6 +503,11 @@ def get_record(store: ContinuityStore, repository: Path, snapshot: str, record_i
     if row is None:
         raise ValidationError(f"unknown map record {record_id}")
     record = json.loads(row["payload"])
+    statuses = {(item["kind"], item["target"]): item["status"] for item in store.db.execute(
+        "SELECT kind,target,status FROM map_relations WHERE repository=? AND snapshot=? AND source=?",
+        (info["repo_id"], snapshot, record_id))}
+    for edge in record["edges"]:
+        edge["status"] = statuses.get((edge["kind"], edge["to"]), "stale")
     applicability = row["applicability"]
     issues = []
     for anchor in record["anchors"]:
@@ -578,15 +594,17 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx map")
     parser.add_argument("--root")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "check", "anchor", "import", "export", "get"):
+    for name in ("init", "check", "anchor", "import", "export", "get", "overlay", "propose"):
         command = commands.add_parser(name)
         command.add_argument("--repo", required=True)
         command.add_argument("--root", default=argparse.SUPPRESS)
         if name == "anchor":
             command.add_argument("path")
             command.add_argument("--symbol")
-        if name in {"export", "get"}:
+        if name in {"export", "get", "overlay"}:
             command.add_argument("--snapshot", required=True)
+        if name == "propose":
+            command.add_argument("--file", required=True)
         if name == "get":
             command.add_argument("record_id")
     args = parser.parse_args(argv)
@@ -603,6 +621,13 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
                 result = import_baseline(store, repository)
             elif args.command == "get":
                 result = get_record(store, repository, args.snapshot, args.record_id)
+            elif args.command == "overlay":
+                from .map_updates import create_overlay
+                result = create_overlay(store, repository, args.snapshot)
+            elif args.command == "propose":
+                from .map_updates import PATCH_BYTES, propose
+                result = propose(store, repository, read_json(Path(args.file), PATCH_BYTES),
+                                 worker_id=(os.environ if env is None else env).get("HARNESS_ID"))
             else:
                 result = export_snapshot(store, repository, args.snapshot)
     print(canonical(result))
