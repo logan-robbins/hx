@@ -29,6 +29,7 @@ SPEC_08_COMMANDS = {
     "progress",
     "check",
     "map",
+    "plan",
     "evidence",
 }
 

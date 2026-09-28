@@ -444,6 +444,10 @@ def index_relations(db, repository, snapshot, record):
     db.execute("DELETE FROM map_sources WHERE repository=? AND snapshot=? AND record_id=?", (repository, snapshot, record["id"]))
     db.executemany("INSERT OR REPLACE INTO map_sources VALUES(?,?,?,?,?,?)",
         ((repository, snapshot, record["id"], anchor["path"], anchor["symbol"] or "", anchor["sha256"]) for anchor in record["anchors"]))
+    db.execute("INSERT OR IGNORE INTO map_search_keys(repository,snapshot,record_id) VALUES(?,?,?)", (repository, snapshot, record["id"]))
+    key = db.execute("SELECT rowid FROM map_search_keys WHERE repository=? AND snapshot=? AND record_id=?", (repository, snapshot, record["id"])).fetchone()[0]
+    db.execute("INSERT OR REPLACE INTO map_search(rowid,summary,semantic) VALUES(?,?,?)",
+        (key, record["summary"], record["id"] + " " + canonical(record["data"]) + " " + canonical(record["anchors"]) + " " + canonical(record["attributes"])))
 
 
 def import_baseline(store: ContinuityStore, repository: Path) -> dict:
@@ -600,18 +604,22 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx map")
     parser.add_argument("--root")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "check", "anchor", "import", "export", "get", "overlay", "propose", "refresh"):
+    for name in ("init", "check", "anchor", "import", "export", "get", "overlay", "propose", "refresh", "plan-context"):
         command = commands.add_parser(name)
         command.add_argument("--repo", required=True)
         command.add_argument("--root", default=argparse.SUPPRESS)
         if name == "anchor":
             command.add_argument("path")
             command.add_argument("--symbol")
-        if name in {"export", "get", "overlay", "refresh"}:
+        if name in {"export", "get", "overlay", "refresh", "plan-context"}:
             command.add_argument("--snapshot", required=True)
         if name == "refresh":
             command.add_argument("--path", action="append", default=[])
             command.add_argument("--limit", type=int, default=16)
+        if name == "plan-context":
+            command.add_argument("--goal", required=True)
+            command.add_argument("--require", action="append", default=[])
+            command.add_argument("--max-bytes", type=int, default=16000)
         if name == "propose":
             command.add_argument("--file", required=True)
         if name == "get":
@@ -642,6 +650,17 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
                 if args.path:
                     queue_sources(store, repository, args.snapshot, args.path)
                 result = drain(store, repository, args.snapshot, limit=args.limit)
+            elif args.command == "plan-context":
+                from .retrieval import plan_context
+                with Path(args.goal).open("rb") as handle:
+                    raw = handle.read(16001)
+                if len(raw) > 16000:
+                    raise ValidationError("planning goal exceeds 16 KiB; use a focused goal")
+                try:
+                    goal = raw.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValidationError("planning goal must be UTF-8") from exc
+                result = plan_context(store, repository, args.snapshot, goal, required=args.require, max_bytes=args.max_bytes)
             else:
                 result = export_snapshot(store, repository, args.snapshot)
     print(canonical(result))

@@ -64,6 +64,12 @@ def create_overlay(store: ContinuityStore, repository: Path, baseline: str) -> d
                           (snapshot, info["repo_id"], baseline))
             tx.db.execute("INSERT INTO map_sources SELECT repository,?,record_id,path,symbol,sha256 FROM map_sources WHERE repository=? AND snapshot=?",
                           (snapshot, info["repo_id"], baseline))
+            tx.db.execute("INSERT INTO map_search_keys(repository,snapshot,record_id) SELECT repository,?,record_id FROM map_heads WHERE repository=? AND snapshot=?", (snapshot, info["repo_id"], baseline))
+            tx.db.execute("""INSERT INTO map_search(rowid,summary,semantic)
+                SELECT dest.rowid,s.summary,s.semantic FROM map_search_keys src
+                JOIN map_search s ON s.rowid=src.rowid
+                JOIN map_search_keys dest ON dest.repository=src.repository AND dest.record_id=src.record_id AND dest.snapshot=?
+                WHERE src.repository=? AND src.snapshot=?""", (snapshot, info["repo_id"], baseline))
         require_worktree(tx.db, repository, *key)
     return {"repo_id": info["repo_id"], "snapshot": snapshot, "baseline": baseline}
 

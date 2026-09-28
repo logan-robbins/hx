@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 8).
+"""Transactional authority for current-task continuity (schema 9).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -327,6 +327,54 @@ CREATE TABLE IF NOT EXISTS task_replan_queue (
 """
 
 
+MIGRATION_9 = """
+CREATE TABLE IF NOT EXISTS map_search_keys (
+    rowid INTEGER PRIMARY KEY, repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,
+    UNIQUE(repository,snapshot,record_id)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS map_search USING fts5(summary,semantic);
+INSERT OR IGNORE INTO map_search_keys(repository,snapshot,record_id) SELECT repository,snapshot,record_id FROM map_heads;
+INSERT OR REPLACE INTO map_search(rowid,summary,semantic)
+    SELECT k.rowid,json_extract(r.payload,'$.summary'),
+           r.record_id || ' ' || json_extract(r.payload,'$.data') || ' ' || json_extract(r.payload,'$.anchors') || ' ' || json_extract(r.payload,'$.attributes')
+    FROM map_records r JOIN map_heads h USING(repository,snapshot,record_id,version)
+    JOIN map_search_keys k USING(repository,snapshot,record_id);
+CREATE TABLE IF NOT EXISTS plan_heads(plan_id TEXT PRIMARY KEY,revision INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS plans (
+    plan_id TEXT NOT NULL,revision INTEGER NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,
+    PRIMARY KEY(plan_id,revision)
+);
+CREATE TABLE IF NOT EXISTS plan_units (
+    plan_id TEXT NOT NULL,plan_revision INTEGER NOT NULL,task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,
+    PRIMARY KEY(plan_id,plan_revision,task_id),
+    FOREIGN KEY(plan_id,plan_revision) REFERENCES plans(plan_id,revision),
+    FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
+);
+CREATE TABLE IF NOT EXISTS plan_prerequisites (
+    task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,producer TEXT NOT NULL,output_id TEXT NOT NULL,output_version INTEGER NOT NULL,
+    PRIMARY KEY(task_id,task_revision,producer,output_id),
+    FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
+);
+CREATE TABLE IF NOT EXISTS unit_runs (
+    run_id TEXT PRIMARY KEY REFERENCES runs(run_id),workdir TEXT NOT NULL,payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS unit_completions (
+    task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,run_id TEXT NOT NULL UNIQUE REFERENCES runs(run_id),payload TEXT NOT NULL,
+    PRIMARY KEY(task_id,task_revision),FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
+);
+CREATE TABLE IF NOT EXISTS unit_outputs (
+    task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,output_id TEXT NOT NULL,version INTEGER NOT NULL,payload TEXT NOT NULL,
+    PRIMARY KEY(task_id,task_revision,output_id),
+    FOREIGN KEY(task_id,task_revision) REFERENCES unit_completions(task_id,task_revision)
+);
+CREATE TABLE IF NOT EXISTS unit_materializations (
+    task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,producer TEXT NOT NULL,output_id TEXT NOT NULL,
+    integration_run TEXT NOT NULL REFERENCES runs(run_id),payload TEXT NOT NULL,
+    PRIMARY KEY(task_id,task_revision,producer,output_id),FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
+);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -349,7 +397,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -392,6 +440,10 @@ class ContinuityStore:
                         self.db.execute(statement)
             if version < 8:
                 for statement in MIGRATION_8.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 9:
+                for statement in MIGRATION_9.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -496,6 +548,9 @@ class Transaction:
             raise ValidationError(f"task {task_id}: parent is immutable")
         if task_id == parent_id:
             raise ValidationError("task cannot parent itself")
+        if previous and "plan_id" in previous["payload"]:
+            from .unit_execution import guard_revision
+            guard_revision(self, previous, payload)
         if "map_inputs" in payload:
             from .map_dependencies import validate_refs
             validate_refs(self, payload["map_inputs"], payload)
@@ -522,12 +577,22 @@ class Transaction:
         _id(worker_id)
         if self.db.execute("SELECT 1 FROM runs WHERE worker_id=? AND ended_at IS NULL", (worker_id,)).fetchone():
             raise Conflict(f"worker {worker_id}: already assigned")
+        admission = None
+        if "plan_id" in task["payload"]:
+            from .unit_execution import admit
+            admission = admit(self, task)
+        else:
+            from .unit_execution import guard_legacy_admission
+            guard_legacy_admission(self, task)
         run_id = str(uuid.uuid4())
         self._change()
         self.db.execute(
             "INSERT INTO runs VALUES(?,?,?,?,?,?,NULL,NULL,?,NULL)",
             (run_id, task_id, task_revision, worker_id, map_revision, "assigned", time.time()),
         )
+        if admission is not None:
+            from .unit_execution import bind
+            bind(self, task, run_id, admission)
         return run_id
 
     def finish_run(self, run_id: str, outcome: str) -> None:
@@ -540,8 +605,14 @@ class Transaction:
             if row["outcome"] != outcome:
                 raise Conflict(f"run {run_id}: already finished as {row['outcome']}")
             return
+        planned = self.db.execute("SELECT 1 FROM unit_runs WHERE run_id=?", (run_id,)).fetchone()
+        if planned and outcome not in {"stopped", "failed", "completed"}:
+            raise ValidationError("planned runs stop, fail, or finish through the verified completion gate")
+        if planned and outcome == "completed" and not self.db.execute("SELECT 1 FROM unit_completions WHERE run_id=?", (run_id,)).fetchone():
+            raise Conflict("planned completion requires verified checks and output proofs")
         self._change()
         self.db.execute("UPDATE runs SET outcome=?,ended_at=? WHERE run_id=?", (outcome, time.time(), run_id))
+        self.db.execute("DELETE FROM leases WHERE run_id=?", (run_id,))
 
     def put_artifact(self, data: bytes, *, owner_type: str, owner_id: str, slot: str) -> str:
         """Install and reference bytes in this same transaction; rollback leaves only an orphan."""

@@ -8,8 +8,10 @@ namespaced attributes while preserving IDs whose responsibilities remain the sam
 This implements the portable baseline and transactional update portions of the
 [continuity specification](continuity-implementation.md). Committed baselines, selected
 reads, isolated dirty-worktree overlays, proposal collisions, indexed source refresh,
-and invalidation of declared map consumers work. Source-watcher registration, downstream
-task-graph replanning, write-lease integration, and coordinated export recovery remain.
+and invalidation of declared map consumers work. Indexed assignment briefs include
+bounded neighboring contracts/consumers, checks, and current write owners; planned
+assignments acquire repository-wide leases. Source-watcher registration, automatic
+task-graph replanning, native lease enforcement, and coordinated export recovery remain.
 The native fleet has not switched to this map.
 
 ## Repository format

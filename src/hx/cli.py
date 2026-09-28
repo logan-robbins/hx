@@ -35,6 +35,7 @@ from . import native_capture as capture_cmd
 from . import progress as progress_cmd
 from . import checks as checks_cmd
 from . import appmap as map_cmd
+from . import planning as planning_cmd
 from . import evidence as evidence_cmd
 from . import goals as goals_cmd
 from . import read as read_cmd
@@ -63,6 +64,7 @@ IMPLEMENTED = {
     "capture": capture_cmd.main,
     "check": checks_cmd.main,
     "map": map_cmd.main,
+    "plan": planning_cmd.main,
     "compile": compile_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
@@ -107,8 +109,12 @@ the control plane:
   task                         print your own goal and its addenda
   progress --file JSON         commit a sparse typed progress update
   progress --run RUN           read the progress revision and current cursor
+  plan validate/apply/unit     validate behavior units and inspect their assignments
+  plan ready/assign            admit ready units with prerequisites and write leases
+  plan audit/finish/materialize/stop  verify scope, outputs, and integration
   check CHECK [--run RUN]      execute or reuse an input-bound verification receipt
   map init/check/anchor/import/export/get/overlay/propose/refresh  manage the semantic application map
+  map plan-context            retrieve a bounded assignment brief for a goal
   capture bind/enqueue         bind and durably capture native execution events
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
