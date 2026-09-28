@@ -43,7 +43,7 @@ from pathlib import Path
 
 from . import board as board_mod, compile as compile_mod, store, streams
 from .config_harness import NO_SYSTEM_PROMPT_FLAVORS, flavor_of
-from .errors import NotFound
+from .errors import NotFound, Refused, ValidationError
 from .ids import PARTNER
 from .workitems import (
     SECTION_GOAL,
@@ -542,7 +542,57 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx compose", add_help=True)
     parser.add_argument("id")
     parser.add_argument("stream", nargs="?", default=None, help="default: <id>-main")
+    parser.add_argument("--run", help="compose an immutable packet for a planned ledger assignment")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--request", help="stable checkpoint request ID; required when issuing ledger context")
+    action.add_argument("--checkpoint", help="read a retained immutable checkpoint")
+    parser.add_argument("--ack", action="store_true", help="acknowledge the current --checkpoint after rehydration")
+    parser.add_argument("--planned", action="store_true", help="require extraction/capture readiness before issuing")
+    parser.add_argument("--record", action="append", default=[])
+    parser.add_argument("--require", action="append", default=[])
+    parser.add_argument("--instructions", help="explicit resolved instruction file to include and charge once")
+    parser.add_argument("--max-tokens", type=int, default=8000)
+    parser.add_argument("--optional-tokens", type=int, default=1000)
+    parser.add_argument("--json", action="store_true", help="return checkpoint identity, artifact path, and coverage")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    ledger_options = args.request or args.checkpoint or args.ack or args.planned or args.record or args.require or args.instructions or args.json or args.max_tokens != 8000 or args.optional_tokens != 1000
+    if not args.run and ledger_options:
+        raise ValidationError("ledger context options require --run")
+    if args.run:
+        from . import context_packets
+        from .caller import caller
+        from .continuity_store import ContinuityStore, canonical
+        if args.stream is not None or not (args.request or args.checkpoint) or (args.ack and not args.checkpoint):
+            raise ValidationError("ledger context requires --request or --checkpoint, and scopes all run streams together")
+        if args.checkpoint and (args.record or args.require or args.instructions or args.planned or args.max_tokens != 8000 or args.optional_tokens != 1000):
+            raise ValidationError("checkpoint replay cannot change its frozen selection or budget")
+        who = caller(env)
+        if who not in {None, "partner", args.id}:
+            raise Refused("worker may compose only its own assignment")
+        with ContinuityStore(root) as ledger:
+            row = ledger.db.execute("SELECT worker_id FROM runs WHERE run_id=?", (args.run,)).fetchone()
+            if row is None or row[0] != args.id:
+                raise Refused("context run does not belong to the named worker")
+            if args.checkpoint:
+                result = context_packets.acknowledge(ledger, args.checkpoint, args.run) if args.ack else context_packets.read(ledger, args.checkpoint, args.run)
+            else:
+                instructions = ""
+                if args.instructions:
+                    with Path(args.instructions).open("rb") as handle:
+                        raw = handle.read(262145)
+                    if len(raw) > 262144:
+                        raise ValidationError("resolved instructions exceed the context input bound")
+                    try:
+                        instructions = raw.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise ValidationError("resolved instructions must be UTF-8") from exc
+                result = context_packets.issue(ledger, args.run, request_id=args.request,
+                    record_ids=tuple(args.record), required_ids=tuple(args.require),
+                    mode="planned" if args.planned else "forced", instructions=instructions,
+                    max_tokens=args.max_tokens, optional_tokens=args.optional_tokens)
+            path = ledger.artifacts / result["packet_hash"]
+            print(canonical({key: value for key, value in {**result, "path": str(path)}.items() if key != "text"}) if args.json or args.ack else path)
+        return 0
     print(compose(root, args.id, args.stream, env=env))
     return 0

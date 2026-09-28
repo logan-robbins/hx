@@ -8,6 +8,78 @@ does not mean the installed native adapters have switched to this runtime.
 The [application-map contract](application-map.md) covers `hx map`, portable repository
 records, source validation, selected reads, and remaining shared-update integration.
 
+## Planned-assignment context
+
+The explicit ledger path of `hx compose` produces one immutable packet for an active
+planned run. It never reads the legacy work item, personal memory region, episode
+store, or another worker's task facts:
+
+```sh
+hx compose eng-001 --run RUN --request BOUNDARY_ID --json
+hx compose eng-001 --run RUN --checkpoint CHECKPOINT
+hx compose eng-001 --run RUN --checkpoint CHECKPOINT --ack
+```
+
+The first command returns the checkpoint ID, content-addressed packet path, selected
+fact versions, omitted optional IDs/reasons, stream boundaries, capture state, and
+charged size. Without `--json`, composition/replay prints only the immutable artifact
+path for one native file read. Workers can compose only their own assignment;
+Partner/operator callers may prepare context for a named worker.
+
+The packet carries the task/version, parent goal, exact current constraints and
+acceptance, run phase, cursor, writes and prerequisites, required map records,
+lossless check recipes, recorded check evidence, and ordered unresolved events per
+stream. A recorded receipt is explicitly evidence for its recorded inputs; it is
+not an unqualified assertion that the present source still passes. Its event ID
+provides bounded `hx evidence` recovery. Scope pauses remain binding even if a worker
+reports another progress phase; paused packets explicitly prohibit further mutation.
+Verbose fingerprints and proof hashes stay behind pinned record/receipt IDs in the
+checkpoint metadata. A map check identical to an assigned recipe references that
+recipe once; commands, conditions, and current semantic claims remain lossless.
+
+Current goal, constraint, and cursor facts are mandatory, along with `--require ID`
+facts. `--record ID` chooses optional current-task facts. Without that option, the
+compiler considers up to 16 current context-retained facts, prioritizing the current
+step's declared consumers. It validates each selected fact's source applicability,
+skips stale optional facts, and refuses stale required facts. Selection uses headers
+and sizes before loading bodies. Pending bodies up to 768 bytes appear intact;
+larger bodies stay behind exact event addresses. No transcript scan or map search
+runs during packet construction. Required map versions were selected by the plan.
+
+The default packet limit is 8,000 tokens with at most 1,000 for optional facts.
+Until a versioned adapter tokenizer is supplied, each UTF-8 byte costs one token.
+`--max-tokens` and `--optional-tokens` set the explicit packet budgets. There is also
+a 256 KiB decoded-packet ceiling. Mandatory overflow refuses the next packet rather
+than truncating commands, negation, constraints, or pending obligations. A checkpoint
+supports at most 64 required facts, 32 streams, 16 registered log sources, and 32
+unresolved events; larger unresolved sets require reduction or task decomposition.
+
+`--instructions FILE` includes already-resolved operator/role instructions exactly
+once and charges them to the packet. The new persona compiler, provider placement,
+remaining conversation, tool schemas, and reserved output accounting still need
+integration; packet size alone is not full-request admission.
+
+Forced mode, the default, retains pending extraction, explicit capture gaps, and
+lag detected by comparing registered file identity/size with committed offsets.
+`--planned` refuses while known lag or unresolved evidence remains. This establishes
+extraction readiness only: a packet always reports `native_reset_ready: false`
+because the adapter's final-message/background-work barrier is not wired yet. No
+composition command resets a native model or blocks native compaction.
+
+Issuance freezes its stream vector and pending IDs without classifying events.
+Reusing the same retained boundary request returns the same bytes; changed request
+inputs conflict. Rehydration refuses changed required facts, selected versions,
+source applicability, or assignment phase. Late arrivals remain eligible for the
+next packet. Acknowledgement names the current checkpoint and does not advance any
+event cursor. Retain the current packet and its immediate predecessor; acknowledgement
+retires the predecessor. Retired artifact references become eligible for the existing
+GC. Compact request keys prevent a retired request from being silently reissued;
+closed-task key cleanup remains part of the retention lifecycle implementation.
+
+The existing compose route without `--run` remains legacy. Native dispatch, hooks,
+seams, personas, and controller replay must switch together; this explicit interface
+does not activate a partial fleet migration.
+
 ## Native capture
 
 The lifecycle controller creates a task/run, then binds each native execution stream:

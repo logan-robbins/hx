@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (schema 9).
+"""Transactional authority for current-task continuity (schema 10).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -375,6 +375,15 @@ CREATE TABLE IF NOT EXISTS unit_materializations (
 """
 
 
+MIGRATION_10 = """
+CREATE TABLE IF NOT EXISTS context_requests (
+    run_id TEXT NOT NULL REFERENCES runs(run_id),request_id TEXT NOT NULL,
+    checkpoint_id TEXT NOT NULL,request_hash TEXT NOT NULL,
+    PRIMARY KEY(run_id,request_id)
+);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -397,7 +406,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -444,6 +453,10 @@ class ContinuityStore:
                         self.db.execute(statement)
             if version < 9:
                 for statement in MIGRATION_9.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 10:
+                for statement in MIGRATION_10.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

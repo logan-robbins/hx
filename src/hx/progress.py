@@ -138,7 +138,10 @@ def update(store: ContinuityStore, body: dict, *, worker_id: str | None = None) 
         tx.db.execute("INSERT INTO progress_heads VALUES(?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET revision=excluded.revision,run_id=excluded.run_id,cursor_id=excluded.cursor_id",
                       (task_id, revision, run_id, cursor_id))
         tx.db.execute("INSERT INTO progress_updates VALUES(?,?,?)", (run_id, request_hash, canonical(result)))
-        tx.db.execute("UPDATE runs SET phase=? WHERE run_id=?", (body["phase"], run_id))
+        # Worker-reported progress cannot clear a controller scope pause.
+        tx.db.execute("""UPDATE runs SET phase=CASE
+            WHEN phase='paused' AND EXISTS(SELECT 1 FROM unit_runs u WHERE u.run_id=runs.run_id) THEN phase
+            ELSE ? END WHERE run_id=?""", (body["phase"], run_id))
         cursor_row = tx.db.execute("SELECT * FROM cursors WHERE run_id=? AND stream_id='progress'", (run_id,)).fetchone()
         tx.classify(run_id, "progress", expected_revision=cursor_row["revision"], through=event["seq"],
                     dispositions={event["seq"]: "reduced"})
