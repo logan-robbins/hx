@@ -294,10 +294,12 @@ def notify(root: Path, source_id: str = "*") -> bool:
 
 
 def reconcile(store: ContinuityStore) -> list[dict]:
+    from .native_producer import retry
+    deliveries = retry(store)
     sources = store.db.execute(
         "SELECT source_id FROM capture_sources JOIN runs USING(run_id) WHERE runs.ended_at IS NULL ORDER BY source_id"
     ).fetchall()
-    return [drain(store, row[0]) for row in sources]
+    return [*deliveries, *(drain(store, row[0]) for row in sources)]
 
 
 class FileNotifications:

@@ -58,11 +58,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        body = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        body = {}
+        raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError("oversized hook input")
+        body = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        body = {"_hx_capture_error": True}
     if not isinstance(body, dict):
-        body = {}
+        body = {"_hx_capture_error": True}
 
     payload = json.dumps(translate(body)).encode()
     # --hook-bin can be a bare path or a command with arguments.

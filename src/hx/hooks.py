@@ -44,11 +44,13 @@ EVENTS = {
     # goal eng-008, not a build-lane goal; the number only feeds the never-shown
     # "not implemented" message.
     "guard": 9,
+    "request": 9,
+    "log-failure": 9,
 }
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
-    "precompact", "postcompact", "companion-stop", "guard",
+    "precompact", "postcompact", "companion-stop", "guard", "request", "log-failure",
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
@@ -92,7 +94,12 @@ def log_error(root: Path, item_id: str, event: str, message: str) -> None:
 
 def read_payload(stream=None) -> dict:
     """The hook payload from stdin. An empty or malformed body is an error the caller logs."""
-    text = (stream or sys.stdin).read()
+    from .observer import MAX_RECORD_BYTES
+    source = stream or sys.stdin
+    raw = getattr(source, "buffer", source).read(MAX_RECORD_BYTES + 1)
+    if (len(raw) if isinstance(raw, bytes) else len(raw.encode("utf-8"))) > MAX_RECORD_BYTES:
+        raise ValueError("hook payload exceeds 8 MiB; original source requires reconciliation")
+    text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
     if not text.strip():
         return {}
     data = json.loads(text)
@@ -134,6 +141,27 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
         check_id(item_id, env)
         payload = read_payload(stdin)
 
+        if env.get("HX_CONTINUITY_RUN") and event != "guard":
+            from .continuity_store import ContinuityStore
+            from .config_harness import flavor_of
+            from .native_producer import hook
+            launch_id = env.get("HX_CONTINUITY_LAUNCH")
+            adapter = env.get("HX_CONTINUITY_ADAPTER")
+            if not launch_id or adapter != flavor_of(root, item_id):
+                raise HxError("planned hooks require the original launch identity and configured adapter")
+            if event == "companion-stop":
+                raise HxError("planned executor capture cannot run a legacy companion handler")
+            with ContinuityStore(root) as ledger:
+                hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
+                     adapter=adapter, launch_id=launch_id, event=event, payload=payload)
+            return 0
+
+        # These extra observation routes are consumed by the planned runtime.
+        # Legacy configurations continue to use their existing event handlers.
+        if event == "request":
+            return 0
+        if event == "log-failure":
+            event = "log"
         if event in _HANDLERS:
             code, line = _HANDLERS[event](payload, item_id, root, env=env)
             if line:
@@ -152,6 +180,14 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
         detail = f"{type(exc).__name__}: {exc}"
         if root is not None:
             log_error(root, item_id, event, detail + "\n" + traceback.format_exc())
+            if env.get("HX_CONTINUITY_RUN"):
+                try:
+                    from .continuity_store import ContinuityStore
+                    from .native_producer import gap
+                    with ContinuityStore(root) as ledger:
+                        gap(ledger, env["HX_CONTINUITY_RUN"], item_id, "planned hook observation failed: " + event)
+                except Exception:
+                    pass  # Storage failure is still reported to the native hook.
         print(f"hx-hook: {event}: {detail}", file=sys.stderr)
         return 0
 

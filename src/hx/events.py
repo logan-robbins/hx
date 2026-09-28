@@ -179,7 +179,20 @@ def normalized_v1(body: dict) -> list[Event]:
     return [Event(body["kind"], body["data"], body.get("native_event_id"), _usage(body.get("usage")))]
 
 
-DECODERS = {"hook-v1": hook_v1, "claude-v1": claude_v1, "pi-v1": pi_v1, "normalized-v1": normalized_v1}
+def public_batch_v1(body: dict) -> list[Event]:
+    records = body.get("events")
+    if body.get("schema_version") != 1 or not isinstance(records, list) or len(records) > 16:
+        raise DecodeGap("public hook batch requires schema_version=1 and at most 16 observations")
+    result = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise DecodeGap("public hook batch contains a non-object observation")
+        result.extend(normalized_v1(record))
+    return result
+
+
+DECODERS = {"hook-v1": hook_v1, "claude-v1": claude_v1, "pi-v1": pi_v1, "normalized-v1": normalized_v1,
+            "public-batch-v1": public_batch_v1}
 
 
 def decode(version: str, body: dict) -> list[Event]:

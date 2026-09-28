@@ -6,12 +6,12 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 10; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 11; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
-| P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Shared hook normalization covers all five adapters; automatic registration, producer retry storage, lifecycle wiring, and live-version verification remain. |
+| P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Explicit planned-hook routing now binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Automatic launch environment setup, full native event/source coverage, late/gap reconciliation, lifecycle barriers, and live-version verification remain. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
 | P04 typed progress/facts | In progress | Typed facts and `hx progress --file/--run` implemented: bounded sparse updates, field provenance, task/run ownership, CAS, idempotency, deterministic cursor reduction, and projection outbox. Native prompt deployment and projection consumers remain. |
-| P05 check receipts | In progress | `checks.py`/`fingerprints.py`: exact recipes, streamed identities/output, receipt reuse/revalidation, uncertain-request deduplication, timeout/output/background-process failure handling. Planned-unit ledger completion rechecks all assigned receipts and publishes exact outputs atomically. Interrupted-execution recovery, watcher generation guards, native completion wiring, and quota integration remain. |
+| P05 check receipts | In progress | `checks.py`/`fingerprints.py`: exact recipes, streamed identities/output, receipt reuse/revalidation, uncertain-request deduplication, timeout/output/background-process failure handling. Planned-unit ledger completion rechecks all assigned receipts and native delivery/gap readiness, then publishes exact outputs atomically. Interrupted-execution recovery, watcher generation guards, native completion wiring, and quota integration remain. |
 | P06a portable application map | In progress | `appmap.py`: semantic schema, stable responsibility IDs, portable Git baseline import/export, typed relationships, source anchors, selected reads/cache, and disk-backed batch validation. Fresh-clone reconstruction, stack replacement, stale anchors, branch provenance, and declared config-dependent fact invalidation tested. Automatic source/config watcher wiring remains. |
 | P06b shared map updates | In progress | `map_updates.py`, `map_refresh.py`, `map_dependencies.py`: proposal CAS/coalescing, atomic graph changes, isolated overlays, durable bounded source refresh, exact task/fact input bindings, incident-edge/fact/receipt invalidation, and direct-consumer replan queue. Planned source leases are implemented. Remaining: watcher registration, automatic downstream replan scheduling, file-only consumer indexing, native companion transaction integration. |
 | P06c map integration | In progress | `hx map check` and deterministic shard export implemented. Concurrent publication protection, merged-source reconciliation, and crash recovery remain. |
@@ -38,7 +38,16 @@ stable IDs. The examples are non-exhaustive. The [language guide](continuity-lan
 complete propositions, conditions, causes, dependencies, verification, uncertainty, and
 remaining obligations; findings retain ordinary concise prose for other relationships. Required text must never be blindly truncated.
 
-Verification: `.venv/bin/python -m pytest tests/core/test_prompt_compiler.py tests/core/test_compile.py tests/core/test_context_packets.py tests/core/test_unit_execution.py tests/core/test_planning.py tests/core/test_map_refresh.py tests/core/test_map_updates.py tests/core/test_appmap.py tests/core/test_completion_inputs.py tests/core/test_checks.py tests/core/test_evidence.py tests/core/test_native_capture.py tests/core/test_progress.py tests/core/test_observer.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 352 passed. A separate serial 199-test run covered prompt/context compilation, configuration, installation, and isolated fake launch adapters for Claude, Codex, Meta, Grok, and Pi. No live model or fleet was started. Native installation acknowledgement and capture/companion cutover remain unverified.
+Verification: the native producer/capture, packet, unit execution, planning, observer,
+ledger migration, and five launch-adapter suites with CLI stand-ins passed 215 tests serially.
+A separate 99-test producer/CLI/legacy-compose/installation run and an 81-test final
+producer/capture/context/completion run passed. The final 25-test producer suite also
+passed after handling empty session IDs. These checks
+cover persisted retries, uncertain acknowledgement, ordering, late evidence,
+original-run isolation, capture readiness, and native wrapper routing. The previous
+prompt/core regression run passed 352 tests. No live model or fleet was started;
+native launch environment setup, full source coverage, prompt installation
+acknowledgement, and capture/companion cutover remain unverified.
 
 The [runtime contracts](continuity-runtime.md) document native binding/enqueue, typed
 progress, and check receipts, including retry identities, bounded input/output, sparse
@@ -81,7 +90,9 @@ Decoded records are released before the next read. Pass preparation fetches at m
 event headers and loads only bodies small enough for the remaining packet budget.
 Artifact verification streams 64 KiB chunks; chunk indexing uses views instead of
 copying the full artifact. SQLite uses a 2 MiB page-cache target per connection,
-disk-backed temporary storage, and no database memory mapping. The 64 MiB spool is disk storage.
+disk-backed temporary storage, and no database memory mapping. The 64 MiB capture spool and
+additional 64 MiB/1,024-record producer retry queue are disk storage. The observer retries
+at most 16 binding heads per quantum; blocked bindings do not monopolize another worker's capture. Queue bodies are loaded one at a time.
 
 An isolated macOS Python process captured 64 records from a 1,058,934-byte fixture in
 four batches and prepared a 5,910-byte context packet. Its measured peak RSS was

@@ -19,8 +19,8 @@ from .errors import ValidationError
 from .events import decode
 from .observer import MAX_RECORD_BYTES, SPOOL_BYTES, append_observation, encode_observation, notify, spool_size
 
-TRANSPORTS = {name: {"hook-v1"} for name in ("codex", "claude", "meta", "grok", "pi")}
-TRANSPORTS["pi"] = {"hook-v1", "pi-v1"}
+TRANSPORTS = {name: {"hook-v1", "public-batch-v1"} for name in ("codex", "claude", "meta", "grok", "pi")}
+TRANSPORTS["pi"].add("pi-v1")
 
 
 def _run(tx, run_id: str, worker_id: str | None = None):
@@ -37,7 +37,8 @@ def _run(tx, run_id: str, worker_id: str | None = None):
 
 
 def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
-         session_id: str, decoder: str = "hook-v1", worker_id: str | None = None) -> str:
+         session_id: str, decoder: str = "hook-v1", worker_id: str | None = None,
+         retain_late: bool = False) -> str:
     for value in (run_id, stream_id, session_id):
         _id(value)
     if stream_id in {"progress", "checks"}:
@@ -46,7 +47,14 @@ def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
         raise ValidationError("native capture requires a supported adapter/transport pair")
     binding_id = digest([run_id, stream_id, adapter, session_id, decoder])
     with store.transaction() as tx:
-        _run(tx, run_id, worker_id)
+        if retain_late:
+            # The producer may retain a late observation for reconciliation, but
+            # enqueue still refuses to apply new evidence to an ended/amended run.
+            row = tx.db.execute("SELECT worker_id FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None or worker_id is None or row[0] != worker_id or decoder != "public-batch-v1":
+                raise Conflict("late producer binding requires the original worker and run")
+        else:
+            _run(tx, run_id, worker_id)
         old = tx.db.execute("SELECT * FROM native_bindings WHERE adapter=? AND session_id=? AND stream_id=?",
                             (adapter, session_id, stream_id)).fetchone()
         if old:
@@ -148,6 +156,9 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     delivery = commands.add_parser("enqueue")
     delivery.add_argument("binding")
     delivery.add_argument("--delivery", required=True, help="producer ID reused for every retry of these bytes")
+    commands.add_parser("retry", help="retry one bounded producer batch")
+    pending = commands.add_parser("pending", help="show capture readiness for one run")
+    pending.add_argument("--run", required=True)
     for child in commands.choices.values():
         child.add_argument("--root", default=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -156,6 +167,18 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         if args.command == "bind":
             print(bind(store, run_id=args.run, stream_id=args.stream, adapter=args.adapter,
                        session_id=args.session, decoder=args.decoder, worker_id=worker_id))
+        elif args.command == "retry":
+            from .caller import require_partner_caller
+            from .native_producer import retry
+            require_partner_caller("capture retry", env)
+            print(canonical(retry(store)))
+        elif args.command == "pending":
+            from .native_producer import status
+            with store.transaction() as tx:
+                owner = tx.db.execute("SELECT worker_id FROM runs WHERE run_id=?", (args.run,)).fetchone()
+                if owner is None or worker_id not in {None, "partner", owner[0]}:
+                    raise Conflict("capture status does not belong to this caller's run")
+                print(canonical(status(tx, args.run)))
         else:
             raw = sys.stdin.buffer.read(MAX_RECORD_BYTES + 1)
             if len(raw) > MAX_RECORD_BYTES:

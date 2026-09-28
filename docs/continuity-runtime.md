@@ -87,6 +87,54 @@ does not activate a partial fleet migration.
 
 ## Native capture
 
+Installed `hx-hook` entrypoints have an explicit planned-run route. The controller
+must supply `HX_CONTINUITY_RUN`, `HX_CONTINUITY_LAUNCH`, and
+`HX_CONTINUITY_ADAPTER` for the original executor launch. The adapter must match
+the worker configuration. This route binds observed native sessions and child
+streams to that run, captures public observations, and skips legacy memory,
+context, compaction, completion, and companion side effects. The Partner guard
+retains its existing enforcement path. Missing launch identity or malformed input
+creates a visible capture gap when the ledger is writable. Hooks still return
+without blocking native compaction.
+
+`native_producer.py` stores decoded public observations in a durable retry queue
+before delivery. Unknown/private raw fields do not enter the queue. Queue admission
+is atomic and limited to 1,024 records and 64 MiB for the root; an individual public
+delivery is at most 8 MiB. This disk queue is additional to the capture spool, not a
+process-memory budget. The installed Codex/Grok/Meta normalizers and shared hook
+reader also bound incoming data. Queue overflow or undecodable input records a gap;
+the original native source is still needed for reconciliation.
+
+Only an acknowledged delivery is removed. Lost acknowledgements retry the same
+identity and bytes. An older queued observation prevents newer observations in
+that binding from overtaking it. The existing root observer retries on notification
+and reconciliation, with at most 16 binding heads and a 256 KiB scheduling quantum;
+one complete larger record may exceed that quantum. A blocked binding does not
+prevent another worker's head from being tried. No additional resident is started.
+
+```sh
+hx capture pending --run RUN
+hx capture retry
+```
+
+The first command reports queued count/bytes and gaps for the caller's run. The
+second is a Partner/operator command for one bounded retry pass. Planned context
+waits for pending deliveries; forced context exposes the lag. Unit completion checks
+the queue and gap state in its final publication transaction. Late observations
+after stop or amendment stay queued against their original run; they never move to
+the worker's new task. Unresolved producer capture also blocks downstream admission
+and final prerequisite verification, even if the producer had previously completed.
+Late-record/gap reconciliation and automatic pause notification remain controller
+work; there is no automatic gap-clearing or invented acknowledgement.
+
+The five adapter configurations can route their existing normalized hook events
+through this entrypoint. This is not automatic fleet activation: launch/resume must
+install the environment contract, compiled instructions, and checkpoint delivery.
+The current installation sets do not yet provide every adapter's user-message,
+failure, assistant-only, or child-source registration. The shared `request` and
+`log-failure` routes accept those observations when supplied; native coverage and
+version checks, companion routing, and reset barriers remain required.
+
 The lifecycle controller creates a task/run, then binds each native execution stream:
 
 ```sh
@@ -193,7 +241,7 @@ updates, the typed cursor, and projection notification commit atomically. Existi
 constraints, decisions, and unrelated findings remain unchanged. The event is reduced
 deterministically, so routine progress does not trigger a companion model pass.
 
-Native lifecycle wiring, producer retry storage, controller scheduling, projection
+Native lifecycle wiring, producer-gap reconciliation, controller scheduling, projection
 consumers, prompt deployment, and coordinated activation remain tracked in
 [the build status](continuity-build-status.md).
 

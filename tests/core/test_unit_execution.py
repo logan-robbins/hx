@@ -61,6 +61,39 @@ def test_ready_and_completion_unlock_receipt_dependency(fleet):
     assert all(item["status"] == "completed" for item in statuses(store).values())
 
 
+def test_completion_waits_for_native_delivery_and_retains_ownership(fleet, monkeypatch):
+    from hx import native_producer as relay, native_capture
+    store, repo = fleet[:2]
+    planning.apply(store, plan(fleet))
+    run = units.assign(store, "implement", 1, "eng-001")["run_id"]
+    with monkeypatch.context() as m:
+        def unavailable(*args, **kwargs):
+            raise OSError("temporary capture failure")
+        m.setattr(native_capture, "enqueue", unavailable)
+        relay.produce(store, run_id=run, worker_id="eng-001", adapter="pi", session_id="S", stream_id="native",
+                      payload={"event": "log", "tool_use_id": "C", "tool_response": "Check output"})
+    with pytest.raises(Conflict, match="unacknowledged"):
+        finish(store, run)
+    assert store.db.execute("SELECT count(*) FROM leases WHERE run_id=?", (run,)).fetchone()[0] == 2
+    assert not store.db.execute("SELECT 1 FROM unit_completions WHERE run_id=?", (run,)).fetchone()
+    relay.retry(store)
+    assert finish(store, run)["run_id"] == run
+
+
+def test_late_producer_evidence_blocks_downstream_admission(fleet):
+    from hx import native_producer as relay
+    store, repo = fleet[:2]
+    planning.apply(store, plan(fleet, [unit(repo, "a"), unit(repo, "b", prerequisites=[dependency("a")])]))
+    run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    finish(store, run)
+    assert statuses(store)["b"]["status"] == "ready"
+    relay.produce(store, run_id=run, worker_id="eng-001", adapter="claude", session_id="late-session", stream_id="native",
+                  payload={"event": "stop", "last_assistant_message": "A late background operation failed."})
+    assert statuses(store)["b"]["status"] == "blocked"
+    with pytest.raises(Conflict, match="unacknowledged"):
+        units.assign(store, "b", 1, "eng-002")
+
+
 def test_independent_units_parallel_only_in_distinct_worktrees(fleet, tmp_path):
     store, repo = fleet[:2]
     other = tmp_path / "other"

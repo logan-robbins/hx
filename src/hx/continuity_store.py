@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -384,6 +384,19 @@ CREATE TABLE IF NOT EXISTS context_requests (
 """
 
 
+MIGRATION_11 = """
+CREATE TABLE IF NOT EXISTS native_producer_queue (
+    binding_id TEXT NOT NULL REFERENCES native_bindings(binding_id), delivery_id TEXT NOT NULL,
+    payload_hash TEXT NOT NULL, payload TEXT NOT NULL, bytes INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0, error TEXT,
+    PRIMARY KEY(binding_id,delivery_id)
+);
+CREATE TABLE IF NOT EXISTS native_capture_gaps (
+    run_id TEXT PRIMARY KEY REFERENCES runs(run_id), reason TEXT NOT NULL
+);
+"""
+
+
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
@@ -406,7 +419,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -457,6 +470,10 @@ class ContinuityStore:
                         self.db.execute(statement)
             if version < 10:
                 for statement in MIGRATION_10.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+            if version < 11:
+                for statement in MIGRATION_11.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

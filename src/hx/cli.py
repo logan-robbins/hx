@@ -116,6 +116,7 @@ the control plane:
   map init/check/anchor/import/export/get/overlay/propose/refresh  manage the semantic application map
   map plan-context            retrieve a bounded assignment brief for a goal
   capture bind/enqueue         bind and durably capture native execution events
+  capture pending/retry        inspect delivery gaps and retry a bounded producer batch
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate

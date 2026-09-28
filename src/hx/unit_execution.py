@@ -90,6 +90,8 @@ def _output(tx, dependency):
     if row is None or row["version"] != dependency["version"]:
         raise Conflict(f"prerequisite {dependency['task_id']}/{dependency['output_id']}@{dependency['version']} has no current completion proof")
     proof = json.loads(row["payload"])
+    from .native_producer import require_drained
+    require_drained(tx, proof["run_id"])
     for receipt_id in proof["checks"].values():
         receipt = tx.db.execute("SELECT valid,artifact_hash FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()
         if receipt is None or not receipt["valid"] or not checks._artifact_intact(tx.store, receipt["artifact_hash"]):
@@ -286,6 +288,8 @@ def complete(store, run_id, receipt_ids, *, env=None):
         payload = task["payload"]
         if run["phase"] == "paused":
             raise Conflict("paused unit cannot complete")
+        from .native_producer import require_drained
+        require_drained(tx, run_id)
         state = workspace(payload, clean=True)
         if state != before:
             raise Conflict("worktree changed during completion verification")

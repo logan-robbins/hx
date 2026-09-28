@@ -86,4 +86,6 @@ def test_hook_entrypoint_knows_the_spec_09_events():
         # The Companion's own `stop`, in its own home — the other half of the pass protocol
         # (spec 10), not one of the agent's own.
         "companion-stop",
+        # Explicit normalized observation routes for planned-run capture.
+        "request", "log-failure",
     }

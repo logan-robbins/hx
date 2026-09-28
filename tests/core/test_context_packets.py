@@ -317,3 +317,19 @@ def test_compiled_context_instructions_reach_assignment_once_and_expire_on_polic
     policy.write_text("Do not publish before the integration gate passes.")
     with pytest.raises(ValidationError, match="sources, identity"):
         packets.read(store, metadata["checkpoint_id"], run)
+
+
+def test_queued_native_delivery_blocks_planned_context_and_stays_visible_in_forced_context(assignment, monkeypatch):
+    from hx import native_producer as relay, native_capture
+    store, _, run, _ = assignment
+    def unavailable(*args, **kwargs):
+        raise OSError("temporary capture failure")
+    monkeypatch.setattr(native_capture, "enqueue", unavailable)
+    relay.produce(store, run_id=run, worker_id="eng-001", adapter="codex", session_id="S", stream_id="native",
+                  payload={"event": "request", "prompt": "Keep this correction pending."})
+    with pytest.raises(Conflict, match="capture lag"):
+        packets.issue(store, run, request_id="planned-native", mode="planned")
+    packet = packets.issue(store, run, request_id="forced-native")
+    assert not packet["extraction_ready"]
+    assert packet["capture"][0]["pending_deliveries"] == 1
+    assert "native-producer" in packet["text"]
