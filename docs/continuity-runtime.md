@@ -55,9 +55,14 @@ supports at most 64 required facts, 32 streams, 16 registered log sources, and 3
 unresolved events; larger unresolved sets require reduction or task decomposition.
 
 `--instructions FILE` includes already-resolved operator/role instructions exactly
-once and charges them to the packet. The new persona compiler, provider placement,
+once and charges them to the packet. Native installation of compiled personas,
 remaining conversation, tool schemas, and reserved output accounting still need
 integration; packet size alone is not full-request admission.
+
+`--prompt-manifest FILE` instead validates a [compiled prompt bundle](prompt-runtime.md)
+against current sources, identity, channel placement, and assignment workdir. Context-channel
+instructions enter the packet once, and checkpoint replay detects changed policy. Prepared
+system prefixes remain unusable through this path until native installation is acknowledged.
 
 Forced mode, the default, retains pending extraction, explicit capture gaps, and
 lag detected by comparing registered file identity/size with committed offsets.

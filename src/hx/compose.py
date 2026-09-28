@@ -551,12 +551,13 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--record", action="append", default=[])
     parser.add_argument("--require", action="append", default=[])
     parser.add_argument("--instructions", help="explicit resolved instruction file to include and charge once")
+    parser.add_argument("--prompt-manifest", help="verify compiled context-channel instructions and include them once")
     parser.add_argument("--max-tokens", type=int, default=8000)
     parser.add_argument("--optional-tokens", type=int, default=1000)
     parser.add_argument("--json", action="store_true", help="return checkpoint identity, artifact path, and coverage")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    ledger_options = args.request or args.checkpoint or args.ack or args.planned or args.record or args.require or args.instructions or args.json or args.max_tokens != 8000 or args.optional_tokens != 1000
+    ledger_options = args.request or args.checkpoint or args.ack or args.planned or args.record or args.require or args.instructions or args.prompt_manifest or args.json or args.max_tokens != 8000 or args.optional_tokens != 1000
     if not args.run and ledger_options:
         raise ValidationError("ledger context options require --run")
     if args.run:
@@ -565,7 +566,9 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         from .continuity_store import ContinuityStore, canonical
         if args.stream is not None or not (args.request or args.checkpoint) or (args.ack and not args.checkpoint):
             raise ValidationError("ledger context requires --request or --checkpoint, and scopes all run streams together")
-        if args.checkpoint and (args.record or args.require or args.instructions or args.planned or args.max_tokens != 8000 or args.optional_tokens != 1000):
+        if args.instructions and args.prompt_manifest:
+            raise ValidationError("use a prompt manifest or an explicit instruction file, not both")
+        if args.checkpoint and (args.record or args.require or args.instructions or args.prompt_manifest or args.planned or args.max_tokens != 8000 or args.optional_tokens != 1000):
             raise ValidationError("checkpoint replay cannot change its frozen selection or budget")
         who = caller(env)
         if who not in {None, "partner", args.id}:
@@ -590,7 +593,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
                 result = context_packets.issue(ledger, args.run, request_id=args.request,
                     record_ids=tuple(args.record), required_ids=tuple(args.require),
                     mode="planned" if args.planned else "forced", instructions=instructions,
-                    max_tokens=args.max_tokens, optional_tokens=args.optional_tokens)
+                    max_tokens=args.max_tokens, optional_tokens=args.optional_tokens, prompt_manifest=args.prompt_manifest)
             path = ledger.artifacts / result["packet_hash"]
             print(canonical({key: value for key, value in {**result, "path": str(path)}.items() if key != "text"}) if args.json or args.ack else path)
         return 0

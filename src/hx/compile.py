@@ -23,7 +23,7 @@ import argparse
 import re
 from pathlib import Path
 
-from .errors import HxError, NotFound
+from .errors import HxError, NotFound, ValidationError
 from .ids import PARTNER
 
 HEADER = "## UPDATES BELOW ONLY"
@@ -40,6 +40,30 @@ REGION_RE = re.compile(
     r"<!-- hx:(?P=kind) end -->",
     re.DOTALL,
 )
+
+VARIABLE_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}")
+
+
+def expand_identity(text: str, values: dict[str, str]) -> str:
+    """Resolve known identity variables once; never ship an invented identity."""
+    unknown = set(VARIABLE_RE.findall(text)) - values.keys()
+    if unknown:
+        raise ValidationError("unresolved prompt identity variables: " + ", ".join(sorted(unknown)))
+    return VARIABLE_RE.sub(lambda match: values[match[1]], text)
+
+
+def identity_values(root: Path, item_id: str) -> dict[str, str]:
+    from .config_harness import load_harness, resolve_workdir
+    config = load_harness(root / "config" / item_id / "harness.json", check_cross_file=False)
+    return {"id": config.id, "pod": config.pod, "role": config.role, "flavor": config.flavor,
+            "workdir": str(resolve_workdir(config.workdir, root) if config.workdir else root.resolve())}
+
+
+def strip_known_blocks(text: str, known: list[str]) -> str:
+    result = text.strip("\n")
+    for body in sorted(set(filter(None, known)), key=len, reverse=True):
+        result = re.sub(r"(?:\A|(?<=\n\n))" + re.escape(body.strip("\n")) + r"(?=\n\n|\Z)", "", result)
+    return result.strip("\n")
 
 
 def role_of(root: Path, item_id: str) -> str:
@@ -114,7 +138,17 @@ def compile_agent(root: Path, item_id: str) -> dict:
             f"{agents}: no `{HEADER}` line; the compiler cannot tell base from memory"
         )
     upper, _, lower = text.partition(HEADER)
-    new_upper = render(global_text, role, role_text, upper)
+    values = identity_values(root, item_id)
+    # A copied canonical persona is generated boilerplate, not per-id policy.
+    # Remove only an exact known copy outside the generated regions. Preserve
+    # every other operator-authored byte; never fuzzy-match policy away.
+    previous_roles = [match["body"].strip("\n") for match in REGION_RE.finditer(upper) if match["kind"] == "role"]
+    custom = REGION_RE.sub("", upper)
+    if role_text:
+        custom = strip_known_blocks(custom, [role_text, expand_identity(role_text, values), *previous_roles])
+    new_upper = render(expand_identity(global_text, values), role,
+                       expand_identity(role_text, values) if role_text else None,
+                       expand_identity(custom, values))
     new_text = new_upper + HEADER + lower if lower else new_upper + HEADER + "\n"
     if new_text != text:
         agents.write_text(new_text)
@@ -127,8 +161,18 @@ def compile_agent(root: Path, item_id: str) -> dict:
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx compile", add_help=True)
     parser.add_argument("id")
+    parser.add_argument("--planned", action="store_true", help="build versioned prompts for the planned runtime without activating them")
+    parser.add_argument("--audience", choices=("worker", "partner", "companion", "subagent"))
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+
+    if args.planned:
+        from .prompt_compiler import build
+        from .continuity_store import canonical
+        print(canonical(build(root, args.id, audience=args.audience)))
+        return 0
+    if args.audience:
+        raise ValidationError("--audience requires --planned")
 
     report = compile_agent(root, args.id)
     if report["compiled"]:

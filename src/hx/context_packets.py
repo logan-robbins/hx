@@ -87,7 +87,8 @@ def _retire(tx, run_id, keep):
 
 
 def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="forced",
-          max_tokens=8000, optional_tokens=1000, instructions="", count_tokens=None, tokenizer_id=None):
+          max_tokens=8000, optional_tokens=1000, instructions="", count_tokens=None, tokenizer_id=None,
+          prompt_manifest=None):
     """Freeze exactly what a worker will read, without acknowledging any events.
 
     Planned mode gates on extraction and known capture lag. Native reset also
@@ -108,6 +109,15 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                            "instructions": instructions, "tokenizer": tokenizer_id})
     with store.transaction() as tx:
         run, task, admission = _run(tx, run_id)
+        prompt_bundle = None
+        if prompt_manifest:
+            if instructions:
+                raise ValidationError("resolved instructions and prompt manifest cannot both be supplied")
+            from .prompt_compiler import context_instructions
+            path = Path(prompt_manifest).resolve()
+            instructions, version = context_instructions(store.root, run["worker_id"], path, workdir=task["payload"]["workdir"])
+            prompt_bundle = {"manifest": str(path), "version": version}
+            request_hash = digest({"request": request_hash, "prompt": prompt_bundle})
         existing = tx.db.execute("SELECT request_hash FROM context_requests WHERE run_id=? AND request_id=?", (run_id, request_id)).fetchone()
         if existing:
             if existing[0] != request_hash:
@@ -233,6 +243,7 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                     "task_id": task["task_id"], "task_revision": task["revision"], "phase": run["phase"], "mode": mode,
                     "records": selected, "omitted": omitted, "map_inputs": payload["map_inputs"],
                     "prerequisite_proofs": admission["prerequisites"],
+                    "prompt_bundle": prompt_bundle,
                     "cursors": cursors, "pending": pending, "capture": sources, "receipts": receipts,
                     "charged_tokens": _count(packet, count_tokens), "tokenizer": tokenizer_id or "utf8-bytes",
                     "extraction_ready": not pending and not lag, "native_reset_ready": False}
@@ -256,6 +267,12 @@ def _read(tx, checkpoint_id, run_id):
         raise Conflict("checkpoint assignment changed; issue current context")
     if metadata["phase"] != run["phase"]:
         raise Conflict("assignment phase changed; issue current context")
+    if metadata.get("prompt_bundle"):
+        from .prompt_compiler import context_instructions
+        prompt = metadata["prompt_bundle"]
+        _, version = context_instructions(tx.store.root, run["worker_id"], Path(prompt["manifest"]), workdir=task["payload"]["workdir"])
+        if version != prompt["version"]:
+            raise Conflict("checkpoint instructions changed; issue current context")
     for current in tx.db.execute("""SELECT r.record_id,r.version FROM records r JOIN record_heads h USING(record_id,version)
         WHERE task_id=? AND validity='current' AND kind IN ('goal','constraint','cursor') LIMIT ?""", (task["task_id"], MAX_RECORDS + 1)):
         if metadata["records"].get(current["record_id"]) != current["version"]:

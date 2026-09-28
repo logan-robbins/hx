@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hx import checks, context_packets as packets, observer, planning, progress, unit_execution
+from hx import checks, context_packets as packets, observer, planning, progress, prompt_compiler, unit_execution
 from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
 from hx.errors import ValidationError
 from hx.facts import RequiredContextOverflow
@@ -293,3 +293,27 @@ def test_new_binding_constraint_requires_a_fresh_checkpoint(assignment):
         packets.read(store, first["checkpoint_id"], run)
     current = packets.issue(store, run, request_id="after")
     assert "Do not deploy before the integration check passes." in current["text"]
+
+
+@pytest.mark.parametrize("flavor", ["codex", "meta"])
+def test_compiled_context_instructions_reach_assignment_once_and_expire_on_policy_change(assignment, run_hx, flavor):
+    store, repo, run, _ = assignment
+    config = store.root / "config" / "eng-001"
+    config.mkdir(parents=True)
+    (config / "harness.json").write_text(json.dumps({"id": "eng-001", "pod": "eng", "role": "backend-engineer",
+        "model": "configured-model", "effort": "high", "flavor": flavor, "workdir": str(repo)}))
+    (config / "AGENTS.md").write_text("## UPDATES BELOW ONLY\nDo not import this previous task's notes.\n")
+    bundle = prompt_compiler.build(store.root, "eng-001")
+    issued = run_hx("compose", "eng-001", "--run", run, "--request", "compiled", "--prompt-manifest", bundle["manifest_path"], "--json", "--root", str(store.root))
+    assert issued.returncode == 0, issued.stderr
+    metadata = json.loads(issued.stdout)
+    text = Path(metadata["path"]).read_text()
+    assert text.count("Session identity:") == 1
+    assert text.count("Finish one observable behavior end to end.") == 1
+    assert "previous task's notes" not in text
+    assert metadata["prompt_bundle"]["version"] == bundle["version"]
+    policy = store.root / "continuity" / "policy.md"
+    policy.parent.mkdir(parents=True)
+    policy.write_text("Do not publish before the integration gate passes.")
+    with pytest.raises(ValidationError, match="sources, identity"):
+        packets.read(store, metadata["checkpoint_id"], run)

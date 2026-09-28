@@ -2,6 +2,15 @@
 
 Reviewed the shipped prompts and their delivery code on 2026-09-25. The strongest existing instructions retain the exact commands, failures, decisions, and next actions needed for the active goal. The main conflicts are blanket reread prohibitions, repeated instructions, missing companion inputs, excessive decomposition, unbounded historical retention, and proof treated as prose. Apply the rules below with the [continuity implementation](/Users/loganrobbins/workspace/hx/docs/continuity-implementation.md).
 
+Implementation update, 2026-09-28: the [planned prompt runtime](prompt-runtime.md) now
+implements audience/role separation, current-state retention rules, QA and release
+policies, identity resolution, exact boilerplate deduplication, operator-policy
+preservation, and prepared delivery manifests. Context-channel bundles join immutable
+assignment packets with source/version checks. The shared legacy compiler also fixes
+placeholder and copied-role duplication. Findings below describe the original legacy
+path; native controller installation, enforced companion permissions, and coordinated
+legacy replacement remain open rather than being implied by prompt text.
+
 ## Scope and role decisions
 
 | Sources reviewed | Decision |
@@ -11,7 +20,7 @@ Reviewed the shipped prompts and their delivery code on 2026-09-25. The stronges
 | [Backend persona](/Users/loganrobbins/workspace/hx/src/hx/skeleton/personas/backend-engineer/AGENTS.md), [companion](/Users/loganrobbins/workspace/hx/src/hx/skeleton/companion/roles/backend-engineer.md) | Preserve domain/data invariants, callers, migrations, source facts, exact checks, and teardown. Order work by actual dependencies, not a universal migration/model/handler sequence. |
 | [Frontend persona](/Users/loganrobbins/workspace/hx/src/hx/skeleton/personas/frontend-engineer/AGENTS.md), [companion](/Users/loganrobbins/workspace/hx/src/hx/skeleton/companion/roles/frontend-engineer.md) | Preserve user journeys, UI states, API contracts, design/accessibility decisions, and visual evidence tied to build and viewport. |
 | [Release persona](/Users/loganrobbins/workspace/hx/src/hx/skeleton/personas/release-engineer/AGENTS.md), [companion](/Users/loganrobbins/workspace/hx/src/hx/skeleton/companion/roles/release-engineer.md) | Keep both map access and a companion. Preserve execution order, artifact identity, deployment state, authorization, and rollback evidence. |
-| QA | Add `qa-engineer` persona and companion. Neither is shipped; the [role catalog](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-fleet/SKILL.md:16) lists only backend, frontend, and release workers. |
+| QA | `qa-engineer` now ships with a persona, companion, canonical planned policies, and an entry in the [role catalog](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-fleet/SKILL.md:16). Current source/environment and actual assertion coverage govern its proof. |
 | [Worker subagents](/Users/loganrobbins/workspace/hx/src/hx/skeleton/templates/worker/SUBAGENTS.md), [Partner subagents](/Users/loganrobbins/workspace/hx/src/hx/skeleton/config/partner/SUBAGENTS.md) | Inherit scoped task inputs and ownership; return evidence and unresolved facts. Parent retains scheduling authority. |
 | [Companion base](/Users/loganrobbins/workspace/hx/src/hx/skeleton/companion/BASE.md), [Partner companion](/Users/loganrobbins/workspace/hx/src/hx/skeleton/companion/roles/partner.md) | Retain compact, role-specific records only while they support the active goal or current proof; replace snapshot rewriting and cursor inference with the proposed validated patch protocol and bounded garbage collection. |
 | [Partner mechanics](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-partner/SKILL.md), [worker mechanics](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-worker/SKILL.md), [fleet mechanics](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-fleet/SKILL.md), [companion mechanics](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-companion/SKILL.md), [memory mechanics](/Users/loganrobbins/workspace/hx/src/hx/skills/hx-memory/SKILL.md) | Update with the same contracts. Keep command syntax here; keep policy in canonical base/role sources. |

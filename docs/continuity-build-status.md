@@ -20,7 +20,8 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 | P09 budgets | Pending | Entire request accounting, capability gates, shared parent reserve. |
 | P10 Jev | Pending | Bounded client, validated decisions, deterministic fallback. |
 | P10b tools | Pending | Catalog, discover/load, verified adapter tool visibility. |
-| P11a–P11b selection/prompts | Pending | Record selection, plan review, all roles/companions, QA role. |
+| P11a selection | Pending | Semantic record selection and plan review. |
+| P11b prompts | In progress | Audience-aware canonical prompts for Partner/workers/companions/subagents; backend/frontend/release/QA policies; resolved identity; preserved operator policy; no personal-memory import; delivery manifests; verified context-channel packet composition. Shared legacy compiler also fixes unresolved placeholders and copied-role duplication. Native installation acknowledgement, companion tool enforcement, instruction-skill migration, and complete request-budget accounting remain. |
 | P11c traversal | In progress | Exact/lexical seeds, bounded adjacent records and interface consumers, required input overflow, current owners and explicit gaps. Full beam/Jev traversal, persisted selection, and current-task traces remain. |
 | P11d–P11e lifecycle/preservation | Pending | Quotas, compression/drop, evidence references, GC. |
 | P11f compaction | Pending | Advisory timing inside deterministic readiness gates. |
@@ -37,7 +38,7 @@ stable IDs. The examples are non-exhaustive. The [language guide](continuity-lan
 complete propositions, conditions, causes, dependencies, verification, uncertainty, and
 remaining obligations; findings retain ordinary concise prose for other relationships. Required text must never be blindly truncated.
 
-Verification: `.venv/bin/python -m pytest tests/core/test_context_packets.py tests/core/test_unit_execution.py tests/core/test_planning.py tests/core/test_map_refresh.py tests/core/test_map_updates.py tests/core/test_appmap.py tests/core/test_completion_inputs.py tests/core/test_checks.py tests/core/test_evidence.py tests/core/test_native_capture.py tests/core/test_progress.py tests/core/test_observer.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 303 passed. A separate 74-test packet/legacy-compose/store run also passed, using isolated fake harnesses. No live adapter capture/companion path has been cut over or certified yet.
+Verification: `.venv/bin/python -m pytest tests/core/test_prompt_compiler.py tests/core/test_compile.py tests/core/test_context_packets.py tests/core/test_unit_execution.py tests/core/test_planning.py tests/core/test_map_refresh.py tests/core/test_map_updates.py tests/core/test_appmap.py tests/core/test_completion_inputs.py tests/core/test_checks.py tests/core/test_evidence.py tests/core/test_native_capture.py tests/core/test_progress.py tests/core/test_observer.py tests/core/test_passes.py tests/core/test_continuity_store.py tests/core/test_facts.py tests/core/test_cli.py -q` — 352 passed. A separate serial 199-test run covered prompt/context compilation, configuration, installation, and isolated fake launch adapters for Claude, Codex, Meta, Grok, and Pi. No live model or fleet was started. Native installation acknowledgement and capture/companion cutover remain unverified.
 
 The [runtime contracts](continuity-runtime.md) document native binding/enqueue, typed
 progress, and check receipts, including retry identities, bounded input/output, sparse
@@ -48,6 +49,8 @@ The [planning runtime](planning-runtime.md) documents focused assignments, depen
 proofs, lease collisions, successful integration, and the remaining native launch boundary.
 The [planned context contract](continuity-runtime.md#planned-assignment-context) documents
 the explicit ledger compose path, immutable replay, pending tails, and current-task isolation.
+The [prompt runtime](prompt-runtime.md) documents role/audience compilation, operator-policy
+migration, source/identity validation, channel placement, and remaining native activation.
 
 ## Current capture and evidence commands
 
