@@ -111,10 +111,13 @@ cwd = os.environ["HX_CWD"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 target = os.environ["HX_SETTINGS"]
 is_partner = item_id == "partner"
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(root), item_id, "claude", os.environ)
 
 
 def hook(event):
-    return {"type": "command", "command": f"{shlex.quote(hook_bin)} --id {shlex.quote(item_id)} {event}"}
+    args = [hook_bin, "--id", item_id, *(["--root", root, *continuity] if continuity else []), event]
+    return {"type": "command", "command": " ".join(shlex.quote(arg) for arg in args)}
 
 
 def entry(event, matcher=None):

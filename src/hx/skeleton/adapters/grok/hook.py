@@ -47,8 +47,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", required=True)
     parser.add_argument("--hook-bin", required=True)
+    parser.add_argument("--root")
     parser.add_argument("event")
+    for field in ("run", "launch", "adapter"):
+        parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
+    continuity = [getattr(args, "continuity_" + field) for field in ("run", "launch", "adapter")]
+    if any(continuity) and not all(continuity):
+        parser.error("planned hook identity must be complete")
+    extra = [part for field, value in zip(("run", "launch", "adapter"), continuity)
+             if value is not None for part in ("--continuity-" + field, value)]
 
     try:
         raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
@@ -64,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     # --hook-bin can be a bare path or a command with arguments.
     try:
         proc = subprocess.run(
-            [*shlex.split(args.hook_bin), "--id", args.id, args.event],
+            [*shlex.split(args.hook_bin), "--id", args.id,
+             *(["--root", args.root] if args.root else []), *extra, args.event],
             input=payload,
             capture_output=True,
         )

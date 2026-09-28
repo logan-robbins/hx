@@ -6,9 +6,9 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 11; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 12; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
-| P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Explicit planned-hook routing now binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Automatic launch environment setup, full native event/source coverage, late/gap reconciliation, lifecycle barriers, and live-version verification remain. |
+| P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Planned-hook routing binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. All five installers persist immutable launch contracts and bake callback identity into arguments; Pi snapshots its contract at extension load. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Automatic launch environment setup, full native event/source coverage, late/gap reconciliation, lifecycle barriers, and live execution verification remain. Installed CLI versions/options and the real Pi extension loader were checked separately. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
 | P04 typed progress/facts | In progress | Typed facts and `hx progress --file/--run` implemented: bounded sparse updates, field provenance, task/run ownership, CAS, idempotency, deterministic cursor reduction, and projection outbox. Native prompt deployment and projection consumers remain. |
 | P05 check receipts | In progress | `checks.py`/`fingerprints.py`: exact recipes, streamed identities/output, receipt reuse/revalidation, uncertain-request deduplication, timeout/output/background-process failure handling. Planned-unit ledger completion rechecks all assigned receipts and native delivery/gap readiness, then publishes exact outputs atomically. Interrupted-execution recovery, watcher generation guards, native completion wiring, and quota integration remain. |
@@ -38,16 +38,19 @@ stable IDs. The examples are non-exhaustive. The [language guide](continuity-lan
 complete propositions, conditions, causes, dependencies, verification, uncertainty, and
 remaining obligations; findings retain ordinary concise prose for other relationships. Required text must never be blindly truncated.
 
-Verification: the native producer/capture, packet, unit execution, planning, observer,
-ledger migration, and five launch-adapter suites with CLI stand-ins passed 215 tests serially.
-A separate 99-test producer/CLI/legacy-compose/installation run and an 81-test final
-producer/capture/context/completion run passed. The final 25-test producer suite also
-passed after handling empty session IDs. These checks
-cover persisted retries, uncertain acknowledgement, ordering, late evidence,
-original-run isolation, capture readiness, and native wrapper routing. The previous
-prompt/core regression run passed 352 tests. No live model or fleet was started;
-native launch environment setup, full source coverage, prompt installation
-acknowledgement, and capture/companion cutover remain unverified.
+Verification: the launch-contract, producer/capture, ledger, packet, unit execution,
+prompt compiler, and CLI suites passed 156 tests; the optional installed-Pi test was
+skipped in that run and passed separately against Pi 0.84.3. A separate 99-test run
+covered generated hook commands and installation for all five adapters, including
+callbacks with cleared environments and callbacks after worker reuse. Actual
+installed CLI version/help and launch-option parsing checks also passed for all five.
+No model request or worker fleet was started. Native process launch/resume, full
+source coverage, prompt installation acknowledgement, and coordinated cutover
+remain unverified.
+
+The [native interface report](native-interface-verification.md) records actual installed
+CLI versions, option parsing, immutable hook binding, and the installed Pi loader check.
+These results are separate from model execution or full fleet certification.
 
 The [runtime contracts](continuity-runtime.md) document native binding/enqueue, typed
 progress, and check receipts, including retry identities, bounded input/output, sparse

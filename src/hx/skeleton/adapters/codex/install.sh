@@ -99,6 +99,9 @@ item_id = os.environ["HX_ID"]
 python = os.environ["HX_PYTHON"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 adapter = os.path.join(os.environ["HX_ROOT"], "adapters", "codex", "hook.py")
+from pathlib import Path
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "codex", os.environ)
 root = os.environ["HX_ROOT"]
 cwd = os.environ["HX_CWD"]
 
@@ -126,7 +129,7 @@ for codex_event, matcher, hx_event in events:
     # tests); quote each part, the shell splits them back at fire time.
     cmd = " ".join(shlex.quote(part) for part in (
         python, adapter, "--id", item_id, "--hook-bin", hook_bin,
-        "--root", root, hx_event,
+        "--root", root, *continuity, hx_event,
     ))
     block = f"[[hooks.{codex_event}]]\n"
     if matcher is not None:

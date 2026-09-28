@@ -127,7 +127,16 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
     parser.add_argument("--id", required=True, dest="item_id", help="the id, baked in by install.sh")
     parser.add_argument("event", choices=sorted(EVENTS), help="the hx hook event (spec 09.1)")
     parser.add_argument("--root", help=argparse.SUPPRESS)
+    for field in ("run", "launch", "adapter"):
+        parser.add_argument("--continuity-" + field, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+
+    explicit = [getattr(args, "continuity_" + field) for field in ("run", "launch", "adapter")]
+    if any(explicit):
+        if not all(explicit):
+            parser.error("planned hooks require run, launch, and adapter together")
+        env = {**env, **{"HX_CONTINUITY_" + field.upper(): value
+                        for field, value in zip(("run", "launch", "adapter"), explicit)}}
 
     event, item_id = args.event, args.item_id
     root = None
@@ -143,15 +152,16 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
 
         if env.get("HX_CONTINUITY_RUN") and event != "guard":
             from .continuity_store import ContinuityStore
-            from .config_harness import flavor_of
+            from .hook_contract import validate
             from .native_producer import hook
             launch_id = env.get("HX_CONTINUITY_LAUNCH")
             adapter = env.get("HX_CONTINUITY_ADAPTER")
-            if not launch_id or adapter != flavor_of(root, item_id):
-                raise HxError("planned hooks require the original launch identity and configured adapter")
+            if not launch_id or not adapter:
+                raise HxError("planned hooks require the original launch identity and adapter")
             if event == "companion-stop":
                 raise HxError("planned executor capture cannot run a legacy companion handler")
             with ContinuityStore(root) as ledger:
+                validate(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id, adapter=adapter, worker_id=item_id)
                 hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
                      adapter=adapter, launch_id=launch_id, event=event, payload=payload)
             return 0

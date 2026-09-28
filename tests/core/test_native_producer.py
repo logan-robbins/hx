@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from hx import hooks, native_capture, native_producer as relay, observer
+from hx import hooks, hook_contract, native_capture, native_producer as relay, observer
 from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
 from hx.errors import ValidationError
 from .test_native_capture import ledger, tool
@@ -159,6 +159,7 @@ def test_installed_entrypoint_routes_planned_hooks_without_legacy_memory(instanc
             run = tx.start_run("T", 1, "eng-001")
         env = {"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001", "HX_CONTINUITY_RUN": run,
                "HX_CONTINUITY_LAUNCH": "L1", "HX_CONTINUITY_ADAPTER": adapter}
+        hook_contract.installation_args(instance, "eng-001", adapter, env)
         monkeypatch.setitem(hooks._HANDLERS, "log", lambda *a, **k: pytest.fail("legacy log handler"))
         monkeypatch.setitem(hooks._HANDLERS, "context", lambda *a, **k: pytest.fail("legacy memory composer"))
         for event, payload in [("context", {"source": "startup"}), ("log", tool()),
@@ -226,6 +227,7 @@ def test_native_normalizer_reaches_planned_ledger(instance, child_env, adapter):
             run = tx.start_run("T", 1, "eng-001")
         env = child_env(HARNESS_ROOT=str(instance), HARNESS_ID="eng-001", HX_CONTINUITY_RUN=run,
                         HX_CONTINUITY_LAUNCH="native-launch", HX_CONTINUITY_ADAPTER=adapter)
+        hook_contract.installation_args(instance, "eng-001", adapter, env)
         command = [sys.executable, str(instance / "adapters" / adapter / "hook.py"), "--id", "eng-001",
                    "--hook-bin", f"{sys.executable} -m hx.hooks"]
         if adapter in {"codex", "meta"}:

@@ -67,6 +67,9 @@ item_id = os.environ["HX_ID"]
 python = os.environ["HX_PYTHON"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 adapter = os.path.join(os.environ["HX_ROOT"], "adapters", "grok", "hook.py")
+from pathlib import Path
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "grok", os.environ)
 
 events = (
     "SessionStart:context",
@@ -83,7 +86,8 @@ for spec in events:
     # hook_bin can be a command with arguments (`python -m hx.hooks` in tests),
     # so it rides inside a shell-quoted command string grok runs.
     cmd = " ".join(shlex.quote(part) for part in (
-        python, adapter, "--id", item_id, "--hook-bin", hook_bin, hx_event,
+        python, adapter, "--id", item_id, "--hook-bin", hook_bin,
+        *(["--root", os.environ["HX_ROOT"], *continuity] if continuity else []), hx_event,
     ))
     blocks.append(
         f"[[hooks.{grok_event}]]\n"

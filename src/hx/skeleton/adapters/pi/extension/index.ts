@@ -8,8 +8,9 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 
 const SOURCE: Record<string, string> = {
@@ -30,6 +31,19 @@ let contextTokens: number | null = null;
 let settledThisRun = false;
 const inFlight = new Set<string>();
 
+// Snapshot once when the extension loads. A later worker installation must not
+// change the run identity of callbacks already owned by this native session.
+const hookContractPath = join(dirname(fileURLToPath(import.meta.url)), "hook-contract.json");
+function installedHook(): { command: string; args: string[] } | null {
+  if (!existsSync(hookContractPath)) return null;
+  if (statSync(hookContractPath).size > 8192) throw new Error("hx hook contract exceeds 8 KiB");
+  const value = JSON.parse(readFileSync(hookContractPath, "utf8"));
+  if (typeof value.command !== "string" || !Array.isArray(value.args) || value.args.length > 20 ||
+      value.args.some((item: unknown) => typeof item !== "string")) throw new Error("invalid hx hook contract");
+  return value;
+}
+const nativeHook = installedHook();
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is unset`);
@@ -37,11 +51,11 @@ function required(name: string): string {
 }
 
 function hookBin(): string {
-  return join(required("HARNESS_ROOT"), "bin", "hx-hook");
+  return nativeHook?.command ?? join(required("HARNESS_ROOT"), "bin", "hx-hook");
 }
 
 function callHook(event: string, payload: Record<string, unknown>): string {
-  const result = spawnSync(hookBin(), ["--id", required("HARNESS_ID"), event], {
+  const result = spawnSync(hookBin(), [...(nativeHook?.args ?? ["--id", required("HARNESS_ID")]), event], {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: process.env,

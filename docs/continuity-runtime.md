@@ -89,8 +89,15 @@ does not activate a partial fleet migration.
 
 Installed `hx-hook` entrypoints have an explicit planned-run route. The controller
 must supply `HX_CONTINUITY_RUN`, `HX_CONTINUITY_LAUNCH`, and
-`HX_CONTINUITY_ADAPTER` for the original executor launch. The adapter must match
-the worker configuration. This route binds observed native sessions and child
+`HX_CONTINUITY_ADAPTER` to the adapter installer for the original executor launch.
+The installer validates the active run and configured adapter, then registers an
+immutable launch/run/worker/adapter tuple. A launch ID cannot be reassigned. Generated
+hook commands carry `--continuity-run`, `--continuity-launch`, and
+`--continuity-adapter` with the root and worker ID, so cleared native environments
+cannot silently fall back to legacy handlers. Explicit arguments override inherited
+environment values; every planned hook checks its registered tuple. Pi snapshots
+the same arguments from `hook-contract.json` once at extension load. This route
+binds observed native sessions and child
 streams to that run, captures public observations, and skips legacy memory,
 context, compaction, completion, and companion side effects. The Partner guard
 retains its existing enforcement path. Missing launch identity or malformed input
@@ -134,6 +141,8 @@ The current installation sets do not yet provide every adapter's user-message,
 failure, assistant-only, or child-source registration. The shared `request` and
 `log-failure` routes accept those observations when supplied; native coverage and
 version checks, companion routing, and reset barriers remain required.
+The [installed-interface checks](native-interface-verification.md) separate real
+CLI option parsing and the installed Pi loader from model-execution evidence.
 
 The lifecycle controller creates a task/run, then binds each native execution stream:
 
