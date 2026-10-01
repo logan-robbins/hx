@@ -6,7 +6,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 12; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 13; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
 | P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Planned-hook routing binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. All five installers persist immutable launch contracts and bake callback identity into arguments; Pi snapshots its contract at extension load. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Automatic launch environment setup, full native event/source coverage, late/gap reconciliation, lifecycle barriers, and live execution verification remain. Installed CLI versions/options and the real Pi extension loader were checked separately. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
@@ -16,7 +16,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 | P06b shared map updates | In progress | `map_updates.py`, `map_refresh.py`, `map_dependencies.py`: proposal CAS/coalescing, atomic graph changes, isolated overlays, durable bounded source refresh, exact task/fact input bindings, incident-edge/fact/receipt invalidation, and direct-consumer replan queue. Planned source leases are implemented. Remaining: watcher registration, automatic downstream replan scheduling, file-only consumer indexing, native companion transaction integration. |
 | P06c map integration | In progress | `hx map check` and deterministic shard export implemented. Concurrent publication protection, merged-source reconciliation, and crash recovery remain. |
 | P07 context compiler | In progress | `context_packets.py` and explicit `hx compose --run`: immutable assignment packets, selected current facts, required map inputs, exact recipes, pending evidence/capture lag, source-aware replay, acknowledgements and predecessor retirement. Native turn-boundary barriers, persona placement, adapter/controller composition and full-request budget wiring remain. |
-| P08 task planning | In progress | Indexed assignment brief; validated behavior-unit DAG; atomic plan revisions; ready/assign/audit/finish/materialize/stop; repository-wide leases; exact source/receipt outputs; verified integration before consumer admission. Serial ledger/CLI end-to-end coverage. Native dispatch/resume, resource-aware scheduling, automatic mutation-boundary audits, and semantic plan review remain. |
+| P08 task planning | In progress | Indexed assignment brief; validated behavior-unit DAG; atomic plan revisions; ready/assign/audit/finish/materialize/stop; repository-wide leases; exact source/receipt outputs; verified integration before consumer admission. Serial ledger/CLI end-to-end coverage. Private launch preparation freezes current instructions and context, excludes old homes/memories, and binds hooks to the shared authority. Native dispatch/resume, resource-aware scheduling, automatic mutation-boundary audits, and semantic plan review remain. |
 | P09 budgets | Pending | Entire request accounting, capability gates, shared parent reserve. |
 | P10 Jev | Pending | Bounded client, validated decisions, deterministic fallback. |
 | P10b tools | Pending | Catalog, discover/load, verified adapter tool visibility. |
@@ -29,7 +29,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 | P11h–P11j QA | Pending | Optional extensions after core; triage, test selection, review. |
 | P12 migration/release | Pending | Atomic authority cutover, projections, adapter and recovery verification. |
 
-Implementation uses correctness tests, not A/B experiments or comparative rollout gates.
+Implementation uses correctness tests, not A/B experiments or comparative rollout gates. CLI stand-ins exercise repeatable failure and transport cases; they are test fixtures, never production runtimes or evidence of live model behavior.
 No model switching or personal/cross-task episodic memory is introduced.
 
 Compact continuation uses typed facts, rendered once by code. Preserve exact conditions,
@@ -51,6 +51,14 @@ remain unverified.
 The [native interface report](native-interface-verification.md) records actual installed
 CLI versions, option parsing, immutable hook binding, and the installed Pi loader check.
 These results are separate from model execution or full fleet certification.
+
+Private native preparation adds a Schema 13 reservation and selected configuration
+snapshot. Its launch/prompt/hook/producer/ledger/packet checks passed 123 tests
+(one optional installed-Pi loader test skipped). The expanded preparation and
+five-adapter install/start suites passed 114 tests, including concurrent preparation,
+changed packet/configuration refusal, late correction refusal, and shared-authority
+callbacks from private homes. No model request was made. The preparation API is
+not yet connected to native submission, startup acknowledgement, or recovery.
 
 The [runtime contracts](continuity-runtime.md) document native binding/enqueue, typed
 progress, and check receipts, including retry identities, bounded input/output, sparse

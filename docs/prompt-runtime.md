@@ -86,5 +86,31 @@ Compilation does not rewrite installed configuration, restart sessions, or enfor
 tool permissions. Native controller installation/acknowledgement, companion tool
 enforcement, task-scoped tool selection, instruction-skill migration, and coordinated
 replacement of the legacy prompt path remain necessary before fleet activation.
-The role/adapter matrix and fake-adapter tests establish local assembly and launch
+The role/adapter matrix and CLI stand-in tests establish local assembly and launch
 regressions only; they do not certify live model behavior.
+
+## Private planned launch preparation
+
+`native_launch.prepare` reserves one immutable preparation per planned run in
+Schema 13. It verifies the assigned worker, current prompt sources, exact admitted
+worktree, and prerequisite proofs. It freezes a task packet and prepares a private
+installation root under `run/ID/launches/LAUNCH/root`. Only selected configuration,
+current adapter code, and compiled instructions enter that root. Old native homes,
+personal memories, and legacy memory skills are excluded.
+
+Prepared adapter hooks and worker commands address the shared authority. Native
+homes remain private to the launch. The executor installation skips the legacy
+companion home; planned companion dispatch still requires its own restricted pass
+controller. Credential provisioning follows the existing native adapters.
+
+The initial 8,000-token allowance conservatively charges UTF-8 bytes for both the
+custom system prefix and the task packet. Provider base instructions, tool schemas,
+retained conversation, and output reserves still require P09 accounting. Prepared
+files do not acknowledge native instruction delivery or tool visibility.
+
+Retries retain the same launch identity. Colliding requests cannot reserve another
+installation; interrupted preparation remains visible and retains assignment
+leases. `native_launch.verify` rejects changed configuration, instructions, packet,
+worktree, prerequisites, or newly arriving evidence. This is a library preparation
+boundary; native submission, startup acknowledgement, stop/recovery barriers, and
+CLI dispatch are not connected yet.

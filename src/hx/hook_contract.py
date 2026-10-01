@@ -24,6 +24,8 @@ def installation_args(root: Path, item_id: str, adapter: str, env) -> list[str]:
     if not all(values):
         raise ValidationError("planned installation requires run, launch, and adapter together")
     run_id, launch_id, declared = values
+    installation_root = root.resolve()
+    root = Path(env.get("HX_CONTINUITY_AUTHORITY") or root).resolve()
     _id(launch_id)
     if adapter != declared or load_harness(root / "config" / item_id / "harness.json", check_cross_file=False).flavor != adapter:
         raise ValidationError("planned hook adapter differs from the executor configuration")
@@ -36,7 +38,8 @@ def installation_args(root: Path, item_id: str, adapter: str, env) -> list[str]:
         if not previous:
             tx._change()
             tx.db.execute("INSERT INTO native_launch_contracts VALUES(?,?,?,?)", (launch_id, *expected))
-    return [argument for field, value in zip(FIELDS, values) for argument in ("--continuity-" + field, value)]
+    return [*(["--root", str(root)] if root != installation_root else []),
+            *(argument for field, value in zip(FIELDS, values) for argument in ("--continuity-" + field, value))]
 
 
 def validate(ledger, *, run_id: str, launch_id: str, adapter: str, worker_id: str):

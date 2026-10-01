@@ -58,9 +58,11 @@ if [ "$use_login" = 0 ]; then
     "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
 fi
 
-claude_token=$root/seed/token
-[ -f "$claude_token" ] || die \
-  "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  claude_token=$root/seed/token
+  [ -f "$claude_token" ] || die \
+    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -185,7 +187,9 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   done
 fi
 
-HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+fi
 
 printf 'install.sh: wrote %s (Codex home, unattended, hx hooks)\n' "$home/config.toml"
 if [ "$use_login" = 1 ]; then

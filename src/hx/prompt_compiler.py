@@ -165,11 +165,10 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
     return {**result, "manifest_path": str(destination / "manifest.json")}
 
 
-def context_instructions(root: Path, item_id: str, manifest_path: Path, *, workdir: str):
-    """Verify a prepared context-channel bundle against current configuration.
+def verified_bundle(root: Path, item_id: str, manifest_path: Path, *, workdir: str):
+    """Verify both prepared channels against current sources and configuration.
 
-    System-channel installation needs a native launch acknowledgement. Until that
-    controller integration exists, refuse to pretend a prepared prefix was loaded.
+    This checks installation inputs; it does not acknowledge native delivery.
     """
     if not manifest_path.resolve().is_relative_to((root / "run" / item_id / "prompts").resolve()):
         raise ValidationError("prompt manifest must belong to the named worker")
@@ -187,10 +186,18 @@ def context_instructions(root: Path, item_id: str, manifest_path: Path, *, workd
         raise ValidationError("prompt sources, identity, placement, or workdir changed; compile current instructions")
     if current["migration_review"]:
         raise ValidationError("operator policy migration review remains unresolved; preserved legacy policy cannot be silently activated")
+    rendered = {}
+    for target in ("system", "context"):
+        with Path(current[target + "_path"]).open("rb") as handle:
+            data = handle.read(262145)
+        if len(data) != current["delivery"][target]["bytes"] or hashlib.sha256(data).hexdigest() != current["delivery"][target]["sha256"]:
+            raise ValidationError("compiled instructions are missing or altered")
+        rendered[target] = data.decode("utf-8")
+    return current, rendered
+
+
+def context_instructions(root: Path, item_id: str, manifest_path: Path, *, workdir: str):
+    current, rendered = verified_bundle(root, item_id, manifest_path, workdir=workdir)
     if current["delivery"]["system"]["bytes"]:
         raise ValidationError("system prompt installation is not acknowledged by a native controller")
-    with Path(current["context_path"]).open("rb") as handle:
-        data = handle.read(262145)
-    if len(data) != current["delivery"]["context"]["bytes"] or hashlib.sha256(data).hexdigest() != current["delivery"]["context"]["sha256"]:
-        raise ValidationError("compiled context instructions are missing or altered")
-    return data.decode("utf-8"), current["version"]
+    return rendered["context"], current["version"]

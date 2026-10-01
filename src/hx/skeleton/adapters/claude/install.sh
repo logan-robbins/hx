@@ -231,6 +231,11 @@ fi
 # CLAUDE.md: the Companion interprets a stream and returns JSON, and anything else that could
 # make it act or load project context is a liability, not a feature. Onboarding and trust are
 # pre-seeded here too, for the same reason as the agent's home.
+if [ -n "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  printf 'install.sh: prepared executor home %s\n' "$home"
+  exit 0
+fi
+
 companion_home=$root/run/$id/companion-home
 mkdir -p "$companion_home"
 copy_skills "$companion_home/skills" hx-companion
