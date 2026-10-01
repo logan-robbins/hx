@@ -136,6 +136,9 @@ hooks = {
     "PreCompact": [entry("precompact", "*")],
     "PostCompact": [entry("postcompact", "*")],
 }
+if continuity:
+    hooks["UserPromptSubmit"] = [entry("request")]
+
 # The guard is the one hook that enforces anything, and it is the Partner's alone: it
 # directs by status and dispatch, and config/partner/guard.json names what it must not run or
 # read (spec 09.1). The matcher is `hook_guard.MATCHER`.

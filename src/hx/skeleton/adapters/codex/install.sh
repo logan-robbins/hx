@@ -123,6 +123,8 @@ events = [
     ("SubagentStart", None, "subagent-start"),
     ("SubagentStop", None, "subagent-stop"),
 ]
+if continuity:
+    events.append(("UserPromptSubmit", None, "request"))
 if item_id == "partner":
     events.append(("PreToolUse", "Bash|apply_patch|Edit|Write", "guard"))
 blocks = []

@@ -93,7 +93,7 @@ if [ "$mode" = exec ]; then
 
   # No prompt argument. --yolo disables approval and sandboxing and trusts the
   # workspace for this run; the persona file is derived above for inspection.
-  exec "$bin" --yolo -m "$model" --reasoning-effort "$effort"
+  exec "$bin" --yolo --model "$model" --reasoning-effort "$effort"
 fi
 
 read -r -a TMUX_CMD <<< "${HX_TMUX:-tmux}"

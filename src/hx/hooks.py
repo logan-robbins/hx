@@ -164,6 +164,11 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 validate(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id, adapter=adapter, worker_id=item_id)
                 hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
                      adapter=adapter, launch_id=launch_id, event=event, payload=payload)
+                if event in {"context", "request"}:
+                    from .native_controller import observe
+                    line = observe(ledger, env["HX_CONTINUITY_RUN"], launch_id, event, payload)
+                    if line:
+                        print(line)
             return 0
 
         # These extra observation routes are consumed by the planned runtime.
@@ -199,7 +204,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 except Exception:
                     pass  # Storage failure is still reported to the native hook.
         print(f"hx-hook: {event}: {detail}", file=sys.stderr)
-        return 0
+        return 2 if event == "request" and env.get("HX_CONTINUITY_RUN") else 0
 
 
 if __name__ == "__main__":

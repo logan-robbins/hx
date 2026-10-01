@@ -63,6 +63,9 @@ function callHook(event: string, payload: Record<string, unknown>): string {
   if (result.status !== 0 && result.stderr) {
     process.stderr.write(result.stderr);
   }
+  if (nativeHook && event === "request" && result.status !== 0) {
+    throw new Error("hx refused the request because its startup context is not verified");
+  }
   return result.stdout ?? "";
 }
 
@@ -154,6 +157,15 @@ export default function (pi: {
 
   pi.on("message_end", (event) => {
     rememberUsage(event.message);
+  });
+
+  pi.on("input", (event, ctx) => {
+    if (!nativeHook || subagent) return;
+    try {
+      callHook("request", { prompt: event.text, transcript_path: sessionFile(ctx) });
+    } catch {
+      return { action: "handled" };
+    }
   });
 
   pi.on("session_start", (event, ctx) => {

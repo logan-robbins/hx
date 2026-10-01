@@ -131,7 +131,7 @@ def test_installed_pi_loader_delivers_with_frozen_contract(instance, child_env, 
     script.write_text('''import { pathToFileURL } from "node:url";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-const [loader, extension, cwd] = process.argv.slice(2);
+const [loader, extension, cwd, hook] = process.argv.slice(2);
 const {loadExtensions} = await import(pathToFileURL(loader).href);
 const result = await loadExtensions([extension], cwd);
 if (result.errors.length) throw new Error(JSON.stringify(result.errors));
@@ -146,6 +146,14 @@ if (!handlers?.length) throw new Error("tool_result handler missing");
 for (const handler of handlers) await handler({toolName:"bash",toolCallId:"native-call",input:{command:"true"},
  content:[{type:"text",text:"Native loader callback delivered."}],isError:false},
  {sessionManager:{getSessionFile:()=>"native-session"}});
+const inputs = result.extensions[0].handlers.get("input");
+if (!inputs?.length) throw new Error("input handler missing");
+for (const handler of inputs) await handler({type:"input",text:"Exact native request.",source:"interactive"},
+ {sessionManager:{getSessionFile:()=>"native-session"}});
+writeFileSync(hook, ["#!/bin/sh", "exit 2", ""].join(String.fromCharCode(10)));
+const denied = await inputs[0]({type:"input",text:"Unverified context.",source:"interactive"},
+ {sessionManager:{getSessionFile:()=>"native-session"}});
+if (denied?.action !== "handled") throw new Error("refused input reached agent processing");
 console.log("installed Pi loader and callback completed");
 ''')
     with ContinuityStore(instance) as ledger:
@@ -155,9 +163,11 @@ console.log("installed Pi loader and callback completed");
             "args": ["--root", str(instance), "--id", "eng-001", *args]}))
         isolated_home = tmp_path / "isolated-loader-home"
         isolated_home.mkdir()
-        result = subprocess.run(["node", str(script), os.environ["HX_PI_EXTENSION_LOADER"], str(extension), str(tmp_path)],
+        result = subprocess.run(["node", str(script), os.environ["HX_PI_EXTENSION_LOADER"], str(extension), str(tmp_path), str(hook)],
                                 env=child_env(HOME=str(isolated_home), PI_CODING_AGENT_DIR=str(isolated_home / "pi")),
                                 capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
-        row = ledger.db.execute("SELECT payload FROM events WHERE run_id=?", (run,)).fetchone()
+        row = ledger.db.execute("SELECT payload FROM events WHERE run_id=? AND kind='tool_result'", (run,)).fetchone()
         assert row and "Native loader callback delivered." in row[0], result.stderr
+        request = ledger.db.execute("SELECT payload FROM events WHERE run_id=? AND kind='request'", (run,)).fetchone()
+        assert request and "Exact native request." in request[0]

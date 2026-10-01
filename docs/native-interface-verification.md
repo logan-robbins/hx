@@ -12,7 +12,8 @@ These results establish the observed interface surface, not completed fleet comp
 | Pi | `0.84.3` | Offline mode, thinking/model, session directory, and appended system prompt accepted with `--help`. |
 
 Each binary's `--version`, `--help`, and help invocation with the current launch
-options exited zero. Help-mode parsing does not establish authentication, provider
+options exited zero. Help can exit before validating other arguments; these results
+do not prove that the full launch argument list is accepted. Help-mode parsing does not establish authentication, provider
 request behavior, actual prompt placement, tool visibility, event coverage, or reset
 semantics. In particular, the option list alone cannot prove that no additional
 instruction mechanism exists behind a configuration setting.
@@ -58,3 +59,38 @@ home and the real
 installed Pi loader with controlled event input. Native CLI emission of those
 events, complete user/assistant/failure coverage, controller launch/resume,
 companion integration, and real model execution remain to be verified separately.
+
+## Native controller checks on 2026-10-01
+
+The installed Muse Code `1.4.2 (1.4.2-R4684.1)` TUI ran on a private tmux server with
+its built-in echo provider. Its real startup and request hooks reached the shared
+ledger, installed the current context pointer, and confirmed the exact submission.
+The test wrapper disables updates and removes model/effort options, which echo does
+not support. No model request, provider authentication, or task execution is proven
+by this test.
+
+This check exposed two defects missed by the CLI stand-ins: the launcher used `-m`,
+which the actual TUI rejects, and the controller waited for startup before sending
+the first prompt, while Muse defers that hook until the first prompt. The adapter
+now uses `--model`; the controller supports deferred startup and rejects request
+execution until the startup context is verified.
+
+```sh
+HX_MUSE_TEST_BIN=/Users/loganrobbins/.local/bin/muse \
+  .venv/bin/python -m pytest \
+  tests/core/test_native_controller.py::test_installed_muse_startup_and_request_hooks -q
+```
+
+The installed Pi extension loader also exercised the new `input` handler and
+delivered an exact request through its frozen hook contract. The controller suite
+uses actual tmux and generated hook commands for all five adapters, with CLI
+stand-ins for deterministic startup, collision, missing acknowledgement, transport
+failure, and request rejection scenarios.
+
+Request-hook contracts were checked against the primary
+[Codex hook reference](https://developers.openai.com/codex/hooks),
+[Muse hook reference](https://meta-models.github.io/muse-code-sdk/next/guides/extend/hooks/),
+and [Grok hook source documentation](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md).
+The installed Pi extension type declarations document `input` and its handled
+result. Controlled shutdown/recovery, complete source capture, full tool visibility,
+companion execution, and model-backed unit completion remain unverified.

@@ -98,6 +98,8 @@ events = (
     "SubagentStart:subagent-start",
     "SubagentStop:subagent-stop",
 )
+if continuity:
+    events += ("UserPromptSubmit:request",)
 hooks = {}
 for spec in events:
     muse_event, hx_event = spec.split(":")

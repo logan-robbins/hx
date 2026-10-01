@@ -665,6 +665,9 @@ class Transaction:
             raise ValidationError("planned runs stop, fail, or finish through the verified completion gate")
         if planned and outcome == "completed" and not self.db.execute("SELECT 1 FROM unit_completions WHERE run_id=?", (run_id,)).fetchone():
             raise Conflict("planned completion requires verified checks and output proofs")
+        if planned:
+            from .native_controller import guard_release
+            guard_release(self, run_id)
         self._change()
         self.db.execute("UPDATE runs SET outcome=?,ended_at=? WHERE run_id=?", (outcome, time.time(), run_id))
         self.db.execute("DELETE FROM leases WHERE run_id=?", (run_id,))

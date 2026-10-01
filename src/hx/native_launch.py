@@ -163,34 +163,38 @@ def environment(root, launch, *, env=None):
 def verify(ledger, run_id):
     """Revalidate prepared inputs before an installer/controller uses them."""
     with ledger.transaction() as tx:
-        launch = _row(tx, run_id)
-        if not launch or launch["status"] != "prepared":
-            raise Conflict("native launch preparation is not ready")
-        payload = launch["payload"]
-        run, task, admission = unit_execution._run(tx, run_id)
-        if run["phase"] == "paused":
-            raise Conflict("native launch assignment is paused")
-        manifest, rendered = prompt_compiler.verified_bundle(ledger.root, run["worker_id"],
-            Path(payload["manifest"]), workdir=task["payload"]["workdir"])
-        if manifest["version"] != payload["prompt_version"]:
-            raise Conflict("native launch instructions changed")
-        current = _configuration(ledger.root, run["worker_id"], task["payload"]["workdir"])
-        if {name: hashlib.sha256(data).hexdigest() for name, data in current.items()} != payload["configuration"]:
-            raise Conflict("native launch configuration changed")
-        capsule = Path(payload["capsule"])
-        for relative, expected in payload["configuration"].items():
-            if hashlib.sha256(_bytes(capsule / relative)).hexdigest() != expected:
-                raise Conflict("native launch capsule configuration changed")
-        if _bytes(capsule / "config" / run["worker_id"] / "AGENTS.md", 262144) != (rendered["system"] + "## UPDATES BELOW ONLY\n").encode():
-            raise Conflict("native launch system instructions changed")
-        if unit_execution.workspace(task["payload"], clean=True) != admission["workspace"]:
-            raise Conflict("native launch worktree changed")
-        if unit_execution._prerequisites(tx, task, admission["workspace"]) != admission["prerequisites"]:
-            raise Conflict("native launch prerequisite proof changed")
-        packet = context_packets._read(tx, payload["checkpoint_id"], run_id)
-        if packet["packet_hash"] != payload["packet_hash"] or _bytes(Path(payload["packet_path"]), 262144) != packet["text"].encode():
-            raise Conflict("native launch context packet changed")
-        cursors, pending = context_packets._pending(tx, run_id)
-        if cursors != packet["cursors"] or pending != packet["pending"] or context_packets._sources(tx, run_id) != packet["capture"]:
-            raise Conflict("native launch has newer execution evidence; compose current context")
-        return launch
+        return verify_inputs(tx, run_id)
+
+
+def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
+    launch = _row(tx, run_id)
+    if not launch or launch["status"] not in states:
+        raise Conflict("native launch preparation is not ready")
+    payload = launch["payload"]
+    run, task, admission = unit_execution._run(tx, run_id)
+    if run["phase"] == "paused":
+        raise Conflict("native launch assignment is paused")
+    manifest, rendered = prompt_compiler.verified_bundle(tx.store.root, run["worker_id"],
+        Path(payload["manifest"]), workdir=task["payload"]["workdir"])
+    if manifest["version"] != payload["prompt_version"]:
+        raise Conflict("native launch instructions changed")
+    current = _configuration(tx.store.root, run["worker_id"], task["payload"]["workdir"])
+    if {name: hashlib.sha256(data).hexdigest() for name, data in current.items()} != payload["configuration"]:
+        raise Conflict("native launch configuration changed")
+    capsule = Path(payload["capsule"])
+    for relative, expected in payload["configuration"].items():
+        if hashlib.sha256(_bytes(capsule / relative)).hexdigest() != expected:
+            raise Conflict("native launch capsule configuration changed")
+    if _bytes(capsule / "config" / run["worker_id"] / "AGENTS.md", 262144) != (rendered["system"] + "## UPDATES BELOW ONLY\n").encode():
+        raise Conflict("native launch system instructions changed")
+    if unit_execution.workspace(task["payload"], clean=True) != admission["workspace"]:
+        raise Conflict("native launch worktree changed")
+    if unit_execution._prerequisites(tx, task, admission["workspace"]) != admission["prerequisites"]:
+        raise Conflict("native launch prerequisite proof changed")
+    packet = context_packets._read(tx, payload["checkpoint_id"], run_id)
+    if packet["packet_hash"] != payload["packet_hash"] or _bytes(Path(payload["packet_path"]), 262144) != packet["text"].encode():
+        raise Conflict("native launch context packet changed")
+    cursors, pending = context_packets._pending(tx, run_id)
+    if check_evidence and (cursors != packet["cursors"] or pending != packet["pending"] or context_packets._sources(tx, run_id) != packet["capture"]):
+        raise Conflict("native launch has newer execution evidence; compose current context")
+    return launch

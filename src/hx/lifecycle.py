@@ -125,6 +125,7 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     about the Companion does not run one.
     """
     require_partner_caller("launch", env)
+    _guard_planned(root, item_id)
     from . import envfile
 
     envfile.sync_seed(root)
@@ -232,6 +233,7 @@ def start_companion(root: Path, item_id: str, *, env=None) -> bool:
 def restart(root: Path, item_id: str, *, env=None) -> dict:
     """The fallback seam (spec 08, 02): flush, compose, relaunch bare, then the pointer."""
     require_partner_caller("restart", env)
+    _guard_planned(root, item_id)
     path = find_work_item(root, item_id)
 
     from . import compile as compile_mod
@@ -337,13 +339,32 @@ def _diff(previous: str | None, current: str) -> str:
     return "; ".join(parts) if parts else "no change"
 
 
+def _guard_planned(root, item_id):
+    if not (root / "state" / "continuity.sqlite").is_file():
+        return
+    from .continuity_store import Conflict, ContinuityStore
+    with ContinuityStore(root) as ledger:
+        if ledger.db.execute("SELECT 1 FROM runs JOIN unit_runs USING(run_id) WHERE worker_id=? AND ended_at IS NULL", (item_id,)).fetchone():
+            raise Conflict("planned worker requires hx launch --run RUN --request REQUEST; legacy launch/restart cannot replace it")
+
+
 def main_launch(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx launch", add_help=True)
     parser.add_argument("id")
     parser.add_argument("--no-companion", action="store_true",
                         help="launch the agent without its Companion window")
+    parser.add_argument("--run", help="start the worker's reserved planned run")
+    parser.add_argument("--request", help="stable native launch request; reuse it when checking progress")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.run or args.request:
+        if not (args.run and args.request):
+            parser.error("planned launch requires --run and --request together")
+        from .continuity_store import ContinuityStore, canonical
+        from .native_controller import advance
+        with ContinuityStore(root) as ledger:
+            print(canonical(advance(ledger, args.id, args.run, args.request, env=env)))
+        return 0
     result = launch(root, args.id, companion=not args.no_companion, env=env)
     print(f"HX-LAUNCH {result['id']} {result['session']} goal={result['goal'] or 'none'}")
     return 0

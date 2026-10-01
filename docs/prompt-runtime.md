@@ -103,14 +103,42 @@ homes remain private to the launch. The executor installation skips the legacy
 companion home; planned companion dispatch still requires its own restricted pass
 controller. Credential provisioning follows the existing native adapters.
 
-The initial 8,000-token allowance conservatively charges UTF-8 bytes for both the
-custom system prefix and the task packet. Provider base instructions, tool schemas,
+The initial 8,000-token allowance conservatively charges UTF-8 bytes for the
+custom system prefix, task packet, startup pointer, and submission marker. Provider base instructions, tool schemas,
 retained conversation, and output reserves still require P09 accounting. Prepared
 files do not acknowledge native instruction delivery or tool visibility.
 
 Retries retain the same launch identity. Colliding requests cannot reserve another
 installation; interrupted preparation remains visible and retains assignment
 leases. `native_launch.verify` rejects changed configuration, instructions, packet,
-worktree, prerequisites, or newly arriving evidence. This is a library preparation
-boundary; native submission, startup acknowledgement, stop/recovery barriers, and
-CLI dispatch are not connected yet.
+worktree, prerequisites, or newly arriving evidence.
+
+## Fresh native dispatch
+
+`hx launch ID --run RUN --request REQUEST` advances a reserved planned assignment.
+It installs the private native home, creates a unique `hx-LAUNCH` tmux session,
+and submits one launch marker when the UI is ready. Repeat the same command to
+advance startup or inspect its durable status. Session creation never respawns an
+existing window. Legacy launch/restart refuses an active planned worker.
+
+The native startup hook verifies current configuration and the generated persona,
+then composes a fresh immutable packet including intervening pending evidence.
+The first user message identifies that hook's context pointer rather than an older
+prepared file. Muse defers startup until the first prompt; the same protocol
+supports both eager and deferred startup. The request hook rejects execution if
+startup context is unverified. Claude/Codex/Grok/Meta use `UserPromptSubmit`; Pi
+uses its native `input` event.
+
+Only a request observation matching the submitted prompt and original native
+session marks submission confirmed. An absent acknowledgement, uncertain transport,
+or missing original pane retains ownership and never causes an automatic resend.
+The generated prefix check and native startup receipt do not prove that a model
+obeyed the prompt or that its full tool surface was restricted.
+
+Controlled shutdown, background-work barriers, resumable boundaries, and automatic
+controller scheduling remain unfinished. Active native runs cannot release unit
+leases until their process ownership is reconciled. Complete fleet activation and
+native unit completion remain pending those barriers. An uncontrolled clear or
+compaction invalidates startup delivery and rejects later requests until a
+controlled continuation boundary is available; it never certifies the old packet
+as a new continuation.
