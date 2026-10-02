@@ -10,10 +10,11 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from . import checks, companion_protocol as protocol, native_processes, passes, prompt_compiler
+from . import checks, companion_map, companion_protocol as protocol, jev_selection, native_processes, passes, prompt_compiler
 from .config_harness import load_harness
 from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
+from .events import is_bookkeeping as _bookkeeping
 from .facts import FIELDS, LIST_FIELDS, RequiredContextOverflow
 from .native_launch import _bytes
 
@@ -38,26 +39,6 @@ def instructions():
         "Typed payload fields: " + canonical(fields))
 
 
-def _bookkeeping(event):
-    observation = event.get("payload", {}).get("observation", {})
-    data = observation.get("data", {})
-    if event["kind"] != "boundary" or not isinstance(data, dict):
-        return False
-    source = data.get("source")
-    if source == "model_response" and (data.get("status") != "success" or data.get("error")):
-        return False
-    shapes = {"token_count": {"usage_scope", "last_usage", "context_window"},
-              "token_usage_record": {"usage_scope", "turn_id", "turn_usage", "session_usage"},
-              "tool_admission": {"tool_use_id", "tool_name", "agent_id"},
-              "native_instructions": {"role", "content_hash"},
-              "world_state": {"turn_id", "state_hash"}, "turn_context": {"turn_id", "state_hash"},
-              "session_meta": {"native_session_id", "cli_version"},
-              "model_response": {"agent_id", "turn_id", "request_id", "response_id", "provider", "model",
-                  "attempt", "step", "status", "finish_reason", "error", "message_count", "tool_count",
-                  "tool_call_count", "usage_scope", "settled"}}
-    return source in shapes and not data.keys() - shapes[source] - {"source"}
-
-
 def _reduce(store, job):
     body = protocol.frozen(store, job)
     result = passes.commit(store, body["pass_id"], {"schema_version": 1, "pass_id": body["pass_id"],
@@ -69,16 +50,18 @@ def _reduce(store, job):
     return protocol.row(store, job["job_id"])
 
 
-def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=()):
+def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_snapshot=None, map_record_ids=(), env=None):
     for value in (worker, run_id, stream_id, request_id):
         _id(value)
     if len(record_ids) > 32:
         raise ValidationError("select at most 32 current records for a companion pass")
+    map_selection = companion_map.selection(map_snapshot, map_record_ids)
     request_key = digest([run_id, stream_id, request_id])
     old = store.db.execute("SELECT job_id FROM companion_jobs WHERE request_key=?", (request_key,)).fetchone()
     if old:
         job = protocol.row(store, old[0])
-        if job["worker_id"] != worker or job["payload"]["record_ids"] != list(record_ids):
+        if (job["worker_id"] != worker or job["payload"]["record_ids"] != list(record_ids)
+            or job["payload"].get("map_selection") != map_selection):
             raise Conflict("companion request identity was reused with different inputs")
         return _reduce(store, job) if job["status"] == "reducing" else job
     with store.transaction() as tx:
@@ -94,10 +77,17 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=()):
     binary = Path(json.loads(_bytes(store.root / "config/claude.json"))["bin"]).resolve()
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValidationError("configured Claude executable is unavailable")
-    body = passes.prepare(store, run_id, stream_id, record_ids=tuple(record_ids), prompt_version=prompt["version"])
+    selection = jev_selection.for_pass(store, run_id, stream_id, env=env, exclude_ids=record_ids)
+    selected_ids = tuple(dict.fromkeys([*record_ids, *selection["records"]]))
+    body = passes.prepare(store, run_id, stream_id, record_ids=selected_ids, prompt_version=prompt["version"],
+                          map_snapshot=map_snapshot, map_record_ids=map_record_ids)
     if body is None:
         return None
+    if any(body["record_versions"].get(record_id) != version for record_id, version in selection["records"].items()):
+        raise Conflict("Jev-selected records changed before pass preparation")
     system = rendered["system"] + rendered["context"] + "\n" + instructions()
+    if map_selection is not None:
+        system += companion_map.instructions()
     size = len(system.encode()) + len(canonical(body).encode()) + len(canonical(protocol.TOOLS).encode())
     if size > REQUEST_BYTES:
         raise RequiredContextOverflow("companion instructions, frozen pass, and schemas exceed 32 KiB")
@@ -105,7 +95,8 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=()):
     payload = {"manifest": prompt["manifest_path"], "prompt_version": prompt["version"], "system": system,
         "binary": str(binary), "binary_stat": [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns],
         "model": config.companion.get("model") or config.model,
-        "effort": config.companion.get("effort") or config.effort, "record_ids": list(record_ids),
+        "effort": config.companion.get("effort") or config.effort, "record_ids": list(record_ids), "map_selection": map_selection,
+        "jev": {key: value for key, value in selection.items() if key != "scores"},
         "request_bytes": size, "reads": 0, "read_bytes": 0, "attempts": 0}
     job_id = str(uuid.uuid4())
     try:
@@ -118,7 +109,8 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=()):
     except sqlite3.IntegrityError:
         # A concurrent request may have prepared its own harmless pass, but only
         # the winning request owns execution; never launch a duplicate model.
-        return prepare(store, worker, run_id, stream_id, request_id, record_ids=record_ids)
+        return prepare(store, worker, run_id, stream_id, request_id, record_ids=record_ids,
+                       map_snapshot=map_snapshot, map_record_ids=map_record_ids, env=env)
     if all(_bookkeeping(event) for event in body["events"]):
         return _reduce(store, protocol.row(store, job_id))
     return protocol.row(store, job_id)
@@ -127,7 +119,7 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=()):
 def status(store, job_id):
     job = protocol.row(store, job_id)
     return {"job_id": job_id, "pass_id": job["pass_id"], "status": job["status"],
-            **{key: job["payload"][key] for key in ("result", "last_error", "process", "attempts", "read_bytes", "execution", "deterministic")
+            **{key: job["payload"][key] for key in ("result", "last_error", "process", "attempts", "read_bytes", "execution", "deterministic", "jev")
                if key in job["payload"]}}
 
 
@@ -161,6 +153,7 @@ def execute(store, job_id, *, env=None, timeout_s=60):
             if current["status"] != "prepared":
                 return status(tx, job_id)
             passes._active_run(tx, job["run_id"])
+            companion_map.check_scope(tx, body, versions=True)
             cursor = tx.db.execute("SELECT classified_seq,revision FROM cursors WHERE run_id=? AND stream_id=?",
                                    (job["run_id"], body["stream_id"])).fetchone()
             if tuple(cursor) != (body["from_seq"], body["cursor_revision"]):

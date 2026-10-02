@@ -9,18 +9,18 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 | P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 16; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
 | P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Planned-hook routing binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. All five installers persist immutable launch contracts and bake callback identity into arguments; Pi snapshots its contract at extension load. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Fresh planned launch now creates private sessions, observes startup, and confirms exact submission through installed request hooks. Full native event/source coverage, late/gap reconciliation, shutdown/resume barriers, and model execution verification remain. Installed CLI versions/options and the real Pi extension loader were checked separately. |
-| P03 bounded companion passes | In progress | Frozen inputs, selected records, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Explicit native Claude execution now supplies only scoped evidence reads and structured patches, one validation retry, bounded execution, and one durable root-wide model slot. Known bookkeeping batches reduce without a model. Remaining: automatic scheduling, interrupted-process reconciliation, map-patch integration. |
+| P03 bounded companion passes | In progress | Frozen inputs, selected records, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Explicit native Claude execution now supplies only scoped evidence reads and structured patches, one validation retry, bounded execution, and one durable root-wide model slot. Known bookkeeping batches reduce without a model. Selected map records and updates now share the fact/cursor transaction. Remaining: automatic scheduling and interrupted-process reconciliation. |
 | P04 typed progress/facts | In progress | Typed facts and `hx progress --file/--run` implemented: bounded sparse updates, field provenance, task/run ownership, CAS, idempotency, deterministic cursor reduction, and projection outbox. Native prompt deployment and projection consumers remain. |
 | P05 check receipts | In progress | `checks.py`/`fingerprints.py`: exact recipes, streamed identities/output, receipt reuse/revalidation, uncertain-request deduplication, timeout/output/background-process failure handling. Planned-unit ledger completion rechecks all assigned receipts and native delivery/gap readiness, then publishes exact outputs atomically. Interrupted-execution recovery, watcher generation guards, native completion wiring, and quota integration remain. |
 | P06a portable application map | In progress | `appmap.py`: semantic schema, stable responsibility IDs, portable Git baseline import/export, typed relationships, source anchors, selected reads/cache, and disk-backed batch validation. Fresh-clone reconstruction, stack replacement, stale anchors, branch provenance, and declared config-dependent fact invalidation tested. Automatic source/config watcher wiring remains. |
-| P06b shared map updates | In progress | `map_updates.py`, `map_refresh.py`, `map_dependencies.py`: proposal CAS/coalescing, atomic graph changes, isolated overlays, durable bounded source refresh, exact task/fact input bindings, incident-edge/fact/receipt invalidation, and direct-consumer replan queue. Planned source leases are implemented. Remaining: watcher registration, automatic downstream replan scheduling, file-only consumer indexing, native companion transaction integration. |
+| P06b shared map updates | In progress | `map_updates.py`, `map_refresh.py`, `map_dependencies.py`: proposal CAS/coalescing, atomic graph changes, isolated overlays, durable bounded source refresh, exact task/fact input bindings, incident-edge/fact/receipt invalidation, and direct-consumer replan queue. Planned source leases are implemented. Remaining: watcher registration, automatic downstream replan scheduling, file-only consumer indexing. Selected native companion map updates now use the shared proposal transaction. |
 | P06c map integration | In progress | `hx map check` and deterministic shard export implemented. Concurrent publication protection, merged-source reconciliation, and crash recovery remain. |
 | P07 context compiler | In progress | `context_packets.py` and explicit `hx compose --run`: immutable assignment packets, selected current facts, required map inputs, exact recipes, pending evidence/capture lag, source-aware replay, acknowledgements and predecessor retirement. Native turn-boundary barriers, persona placement, adapter/controller composition and full-request budget wiring remain. |
 | P08 task planning | In progress | Indexed assignment brief; validated behavior-unit DAG; atomic plan revisions; ready/assign/audit/finish/materialize/stop; repository-wide leases; exact source/receipt outputs; verified integration before consumer admission. Serial ledger/CLI end-to-end coverage. Private launch preparation freezes current instructions and context, excludes old homes/memories, and binds hooks to the shared authority. Explicit native dispatch starts one unique session and never resends an uncertain submission. Owned-process shutdown now records kernel identities and terminates observed descendants through bounded, replayable steps. Background/source reconciliation, safe lease release and resume, automatic scheduling, resource-aware admission, mutation-boundary audits, and semantic plan review remain. |
 | P09 budgets | Pending | Entire request accounting, capability gates, shared parent reserve. |
-| P10 Jev | Pending | Bounded client, validated decisions, deterministic fallback. |
+| P10 Jev | In progress | Required TypeSafe API client pinned to `jev-1.13.0`; batched Noul/Choice validation, 4,000-byte requests, 500 ms deadlines, and durable current-task selection cache. Native companion preparation uses Jev to select additional current facts. API failure stops preparation without a fallback. Live API and selection/cache checks passed. Remaining: integrate checkpoint selection, traversal, retention, tools, and output reduction through this client. |
 | P10b tools | Pending | Catalog, discover/load, verified adapter tool visibility. |
-| P11a selection | Pending | Semantic record selection and plan review. |
+| P11a selection | In progress | Native companion additional-fact selection uses the Jev API; goals, constraints, cursor, and explicitly requested IDs stay required. Planner review and checkpoint selection remain. |
 | P11b prompts | In progress | Audience-aware canonical prompts for Partner/workers/companions/subagents; backend/frontend/release/QA policies; resolved identity; preserved operator policy; no personal-memory import; delivery manifests; verified context-channel packet composition. Shared legacy compiler also fixes unresolved placeholders and copied-role duplication. Explicit native companion execution enforces scoped read/patch tools. Full native installation acknowledgement, instruction-skill migration, and complete request-budget accounting remain. |
 | P11c traversal | In progress | Exact/lexical seeds, bounded adjacent records and interface consumers, required input overflow, current owners and explicit gaps. Full beam/Jev traversal, persisted selection, and current-task traces remain. |
 | P11d–P11e lifecycle/preservation | Pending | Quotas, compression/drop, evidence references, GC. |
@@ -270,3 +270,30 @@ invalid event kind, corrected before the final run. No paid model fleet was star
 The Partner and Partner companion prompts now favor current progress/readiness summaries,
 reuse available map briefs, and request detailed output only for a scheduling-relevant
 failure, conflict, changed input, or decision. Legacy persona cutover remains pending.
+
+
+Jev is now required for semantic selection of additional companion facts, with no
+fallback selector. The TypeSafe HTTP client uses the configured credential directly,
+pins `jev-1.13.0`, batches typed questions, validates exact answer IDs/probabilities,
+and stops preparation on API failure. The native companion receives mandatory and
+explicit facts plus Jev-selected facts. Successful decisions are cached under current
+inputs; scores and credentials do not enter its context. Remaining Jev consumers are
+checkpoint selection, plan review, traversal, retention, tools, and output reduction.
+
+Live TypeSafe verification used the actual API key from the operator's dotenv entry.
+A two-candidate current-task selection retained the parser fact (0.90), excluded the
+unrelated icon fact (0.03), and returned in 405.98 ms with 424 input and 40 output tokens.
+Replay reused the same stored decision without another call. This checks API integration
+and this selection, not general semantic quality. No paid native model was launched.
+
+Selected application-map changes now commit with companion facts and cursor advancement
+through the existing shared map writer. Concurrent identical updates coalesce; conflicting
+updates reject the pass. Same-pass fact rebinding precedes invalidation of remaining old
+consumers. Selected-record reads remain bounded, and unchanged calls use cached source
+anchors. The installed Claude/local-provider check now also submits a map patch.
+
+Regression: 226 tests passed across Jev, native companion, atomic map passes, shared map
+updates/refresh, portable maps, pass validation, prompt compilation, context packets, and
+ledger migrations. The installed Claude check was enabled. The live Jev checks are
+separate from loopback HTTP fixtures for timeout, malformed responses, batching, and
+no-fallback behavior. The full implementation goal remains open; PR only, no main merge.

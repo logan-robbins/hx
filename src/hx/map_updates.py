@@ -190,7 +190,9 @@ def _preflight(store, repository, key, body, operations):
     return versions, stamps, captures
 
 
-def propose(store: ContinuityStore, repository: Path, body: dict, *, worker_id=None) -> dict:
+def prepare_proposal(store: ContinuityStore, repository: Path, body: dict, *, worker_id=None) -> dict:
+    """Validate selected sources outside the eventual mutation transaction."""
+    body = json.loads(canonical(body))
     operations = validate(body)
     repo_id = appmap.manifest(repository)["repo_id"]
     key = (repo_id, body["snapshot"])
@@ -201,119 +203,149 @@ def propose(store: ContinuityStore, repository: Path, body: dict, *, worker_id=N
         if previous:
             if previous["request_hash"] != request_hash or previous["run_id"] != body["run_id"]:
                 raise Conflict("map patch ID was already used with different content")
-            return json.loads(previous["result"])
+            return {"repository": repository, "repo_id": repo_id, "body": body, "worker_id": worker_id,
+                    "request_hash": request_hash, "replay": True}
         if run["ended_at"] is not None or task["revision"] != run["task_revision"]:
             raise Conflict("map proposal requires an active run bound to the current task revision")
         require_worktree(tx.db, repository, *key)
     frozen_versions, stamps, captures = _preflight(store, repository, key, body, operations)
-    with store.transaction() as tx:
-        run, task = _caller(tx, repository, body, worker_id)
-        if run["ended_at"] is not None or task["revision"] != run["task_revision"]:
-            raise Conflict("map proposal run/task changed during source validation")
-        previous = tx.db.execute("SELECT * FROM map_patches WHERE repository=? AND patch_id=?", (repo_id, body["patch_id"])).fetchone()
-        if previous:
-            if previous["request_hash"] != request_hash or previous["run_id"] != body["run_id"]:
-                raise Conflict("map patch ID was already used with different content")
-            return json.loads(previous["result"])
-        require_worktree(tx.db, repository, *key)
-        for event_id in body["evidence_ids"]:
-            event = tx.db.execute("SELECT r.task_id FROM events e JOIN runs r USING(run_id) WHERE event_id=?", (event_id,)).fetchone()
-            if event is None or event[0] != body["task_id"]:
-                raise ValidationError("map evidence is absent or belongs to another task")
-        coalesced = set()
-        for record_id, expected in body["read_versions"].items():
-            current = _record(tx.db, key, record_id)
-            actual = current["version"] if current else 0
-            op = operations.get(record_id)
-            if not op and tx.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id)).fetchone():
-                raise Conflict(f"map read dependency awaits source refresh: {record_id}")
-            proposed = op.get("record") if op else None
-            identical = (proposed is not None and current is not None and current["applicability"] == "current"
-                         and appmap.semantic_identity(json.loads(current["payload"])) == appmap.semantic_identity(proposed))
-            if identical:
-                statuses = {(edge["kind"], edge["target"]): edge["status"] for edge in tx.db.execute(
-                    "SELECT kind,target,status FROM map_relations WHERE repository=? AND snapshot=? AND source=?", (*key, record_id))}
-                identical = all(statuses.get((edge["kind"], edge["to"])) == edge["status"] for edge in proposed["edges"])
-            elif op and op["op"] == "invalidate" and current is not None and current["applicability"] == "stale":
-                base = _record(tx.db, key, record_id, expected)
-                identical = base is not None and appmap.semantic_identity(json.loads(base["payload"])) == appmap.semantic_identity(json.loads(current["payload"]))
-            # A concurrent identical edit is safe only when every other dependency
-            # still matches. All read dependencies are checked before any writes.
-            if (actual != expected or actual != frozen_versions[record_id]) and not identical:
-                _conflict(tx.db, key, record_id, expected, current, proposed if proposed is not None else op)
-            if identical:
-                coalesced.add(record_id)
-        results, changed = {}, []
-        tx._change()
-        for record_id, op in operations.items():
-            old = _record(tx.db, key, record_id)
-            if record_id in coalesced:
-                version = old["version"]
+    return {"repository": repository, "repo_id": repo_id, "body": body, "worker_id": worker_id,
+            "request_hash": request_hash, "operations": operations, "frozen_versions": frozen_versions,
+            "stamps": stamps, "captures": captures}
+
+
+def apply_proposal(tx, prepared, *, defer_invalidation=False):
+    """Install a prepared map patch inside the caller's fact/cursor transaction."""
+    tx._check()
+    repository, repo_id, body = prepared["repository"], prepared["repo_id"], prepared["body"]
+    worker_id, request_hash = prepared["worker_id"], prepared["request_hash"]
+    key = (repo_id, body["snapshot"])
+    operations = prepared.get("operations", {})
+    frozen_versions, stamps, captures = (prepared.get(name, {}) for name in ("frozen_versions", "stamps", "captures"))
+    run, task = _caller(tx, repository, body, worker_id)
+    previous = tx.db.execute("SELECT * FROM map_patches WHERE repository=? AND patch_id=?", (repo_id, body["patch_id"])).fetchone()
+    if previous:
+        if previous["request_hash"] != request_hash or previous["run_id"] != body["run_id"]:
+            raise Conflict("map patch ID was already used with different content")
+        return json.loads(previous["result"])
+    if run["ended_at"] is not None or task["revision"] != run["task_revision"]:
+        raise Conflict("map proposal run/task changed during source validation")
+    if prepared.get("replay"):
+        raise Conflict("prepared map replay no longer exists")
+    require_worktree(tx.db, repository, *key)
+    for event_id in body["evidence_ids"]:
+        event = tx.db.execute("SELECT r.task_id FROM events e JOIN runs r USING(run_id) WHERE event_id=?", (event_id,)).fetchone()
+        if event is None or event[0] != body["task_id"]:
+            raise ValidationError("map evidence is absent or belongs to another task")
+    coalesced = set()
+    for record_id, expected in body["read_versions"].items():
+        current = _record(tx.db, key, record_id)
+        actual = current["version"] if current else 0
+        op = operations.get(record_id)
+        if not op and tx.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id)).fetchone():
+            raise Conflict(f"map read dependency awaits source refresh: {record_id}")
+        proposed = op.get("record") if op else None
+        identical = (proposed is not None and current is not None and current["applicability"] == "current"
+                     and appmap.semantic_identity(json.loads(current["payload"])) == appmap.semantic_identity(proposed))
+        if identical:
+            statuses = {(edge["kind"], edge["target"]): edge["status"] for edge in tx.db.execute(
+                "SELECT kind,target,status FROM map_relations WHERE repository=? AND snapshot=? AND source=?", (*key, record_id))}
+            identical = all(statuses.get((edge["kind"], edge["to"])) == edge["status"] for edge in proposed["edges"])
+        elif op and op["op"] == "invalidate" and current is not None and current["applicability"] == "stale":
+            base = _record(tx.db, key, record_id, expected)
+            identical = base is not None and appmap.semantic_identity(json.loads(base["payload"])) == appmap.semantic_identity(json.loads(current["payload"]))
+        # A concurrent identical edit is safe only when every other dependency
+        # still matches. All read dependencies are checked before any writes.
+        if (actual != expected or actual != frozen_versions[record_id]) and not identical:
+            _conflict(tx.db, key, record_id, expected, current, proposed if proposed is not None else op)
+        if identical:
+            coalesced.add(record_id)
+    results, changed = {}, []
+    tx._change()
+    for record_id, op in operations.items():
+        old = _record(tx.db, key, record_id)
+        if record_id in coalesced:
+            version = old["version"]
+        else:
+            version = old["version"] + 1 if old else 1
+            if op["op"] == "put":
+                record = {**op["record"], "version": version}
+                applicability = "current"
             else:
-                version = old["version"] + 1 if old else 1
-                if op["op"] == "put":
-                    record = {**op["record"], "version": version}
-                    applicability = "current"
-                else:
-                    if old is None:
-                        raise ValidationError("cannot invalidate an absent map record")
-                    record = {**json.loads(old["payload"]), "version": version}
-                    applicability = "stale"
-                tx.db.execute("INSERT INTO map_records VALUES(?,?,?,?,?,?,?,?,?)",
-                    (*key, record_id, version, record["kind"], canonical(record), canonical(body["evidence_ids"]),
-                     canonical({"anchors": record["anchors"], "patch_id": body["patch_id"],
-                                "reason": op.get("reason")}), applicability))
-                tx.db.execute("INSERT INTO map_heads VALUES(?,?,?,?) ON CONFLICT(repository,snapshot,record_id) DO UPDATE SET version=excluded.version",
-                              (*key, record_id, version))
-                appmap.index_relations(tx.db, *key, record)
-                if old and (applicability != old["applicability"] or appmap.semantic_identity(record) != appmap.semantic_identity(json.loads(old["payload"]))):
-                    changed.append(record_id)
-            tx.db.executemany("INSERT OR IGNORE INTO map_evidence VALUES(?,?,?,?,?)",
-                             ((*key, record_id, version, event_id) for event_id in body["evidence_ids"]))
-            results[record_id] = {"version": version, "coalesced": record_id in coalesced}
-            tx.db.execute("DELETE FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id))
-        # Validate every affected incident edge under the same writer lock. The
-        # unchanged remainder was validated on import or an earlier transaction.
-        for record_id in operations:
-            for edge in tx.db.execute("""
-                WITH incident AS (
-                    SELECT * FROM map_relations WHERE repository=? AND snapshot=? AND source=?
-                    UNION ALL
-                    SELECT * FROM map_relations WHERE repository=? AND snapshot=? AND target=? AND source!=?
-                )
-                SELECT e.*,s.kind AS source_kind,t.kind AS target_kind,
-                       s.applicability AS source_applicability,t.applicability AS target_applicability
-                FROM incident e
-                LEFT JOIN map_heads sh ON sh.repository=e.repository AND sh.snapshot=e.snapshot AND sh.record_id=e.source
-                LEFT JOIN map_records s ON s.repository=sh.repository AND s.snapshot=sh.snapshot AND s.record_id=sh.record_id AND s.version=sh.version
-                LEFT JOIN map_heads th ON th.repository=e.repository AND th.snapshot=e.snapshot AND th.record_id=e.target
-                LEFT JOIN map_records t ON t.repository=th.repository AND t.snapshot=th.snapshot AND t.record_id=th.record_id AND t.version=th.version
-                """, (*key, record_id, *key, record_id, record_id)):
-                if edge["source_kind"] is None or edge["target_kind"] is None:
-                    raise ValidationError("resulting map graph has a missing endpoint")
-                appmap.validate_relation(edge["source_kind"], edge["kind"], edge["target_kind"])
-                if edge["status"] == "validated" and (edge["source_applicability"] != "current" or edge["target_applicability"] != "current"):
-                    tx.db.execute("UPDATE map_relations SET status='stale' WHERE repository=? AND snapshot=? AND source=? AND kind=? AND target=?",
-                                  (*key, edge["source"], edge["kind"], edge["target"]))
-        for record_id in changed:
+                if old is None:
+                    raise ValidationError("cannot invalidate an absent map record")
+                record = {**json.loads(old["payload"]), "version": version}
+                applicability = "stale"
+            tx.db.execute("INSERT INTO map_records VALUES(?,?,?,?,?,?,?,?,?)",
+                (*key, record_id, version, record["kind"], canonical(record), canonical(body["evidence_ids"]),
+                 canonical({"anchors": record["anchors"], "patch_id": body["patch_id"],
+                            "reason": op.get("reason")}), applicability))
+            tx.db.execute("INSERT INTO map_heads VALUES(?,?,?,?) ON CONFLICT(repository,snapshot,record_id) DO UPDATE SET version=excluded.version",
+                          (*key, record_id, version))
+            appmap.index_relations(tx.db, *key, record)
+            if old and (applicability != old["applicability"] or appmap.semantic_identity(record) != appmap.semantic_identity(json.loads(old["payload"]))):
+                changed.append(record_id)
+        tx.db.executemany("INSERT OR IGNORE INTO map_evidence VALUES(?,?,?,?,?)",
+                         ((*key, record_id, version, event_id) for event_id in body["evidence_ids"]))
+        results[record_id] = {"version": version, "coalesced": record_id in coalesced}
+        tx.db.execute("DELETE FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id))
+    # Validate every affected incident edge under the same writer lock. The
+    # unchanged remainder was validated on import or an earlier transaction.
+    for record_id in operations:
+        for edge in tx.db.execute("""
+            WITH incident AS (
+                SELECT * FROM map_relations WHERE repository=? AND snapshot=? AND source=?
+                UNION ALL
+                SELECT * FROM map_relations WHERE repository=? AND snapshot=? AND target=? AND source!=?
+            )
+            SELECT e.*,s.kind AS source_kind,t.kind AS target_kind,
+                   s.applicability AS source_applicability,t.applicability AS target_applicability
+            FROM incident e
+            LEFT JOIN map_heads sh ON sh.repository=e.repository AND sh.snapshot=e.snapshot AND sh.record_id=e.source
+            LEFT JOIN map_records s ON s.repository=sh.repository AND s.snapshot=sh.snapshot AND s.record_id=sh.record_id AND s.version=sh.version
+            LEFT JOIN map_heads th ON th.repository=e.repository AND th.snapshot=e.snapshot AND th.record_id=e.target
+            LEFT JOIN map_records t ON t.repository=th.repository AND t.snapshot=th.snapshot AND t.record_id=th.record_id AND t.version=th.version
+            """, (*key, record_id, *key, record_id, record_id)):
+            if edge["source_kind"] is None or edge["target_kind"] is None:
+                raise ValidationError("resulting map graph has a missing endpoint")
+            appmap.validate_relation(edge["source_kind"], edge["kind"], edge["target_kind"])
+            if edge["status"] == "validated" and (edge["source_applicability"] != "current" or edge["target_applicability"] != "current"):
+                tx.db.execute("UPDATE map_relations SET status='stale' WHERE repository=? AND snapshot=? AND source=? AND kind=? AND target=?",
+                              (*key, edge["source"], edge["kind"], edge["target"]))
+    for record_id in changed:
+        if not defer_invalidation:
             from .map_dependencies import invalidate_consumers
             invalidate_consumers(tx, key, record_id, results[record_id]["version"], "A required map input changed.")
-            # A source rewritten by this same patch explicitly revalidates its
-            # outgoing declarations against the resulting graph and read set.
-            for edge in tx.db.execute("SELECT source,kind FROM map_relations WHERE repository=? AND snapshot=? AND target=? AND status='validated'", (*key, record_id)):
-                if edge["source"] not in operations:
-                    tx.db.execute("UPDATE map_relations SET status='stale' WHERE repository=? AND snapshot=? AND source=? AND kind=? AND target=?",
-                                  (*key, edge["source"], edge["kind"], record_id))
-        # Metadata fences detect source writes during hashing/commit without a
-        # second full-file read. Watcher generation/lease integration comes later.
-        for path, stamp in stamps.items():
-            if appmap._source_stamp(repository, path) != stamp:
-                raise Conflict("map source changed before proposal commit")
-        for (path, symbol), capture in captures.items():
-            tx.db.execute("INSERT INTO map_anchor_cache VALUES(?,?,?,?,?,?) ON CONFLICT(repository,worktree,path,symbol) DO UPDATE SET source_stamp=excluded.source_stamp,payload=excluded.payload",
-                (repo_id, str(repository.resolve()), path, symbol, capture["source_stamp"], canonical(capture["anchor"])))
-        require_worktree(tx.db, repository, *key)
-        result = {"patch_id": body["patch_id"], "snapshot": body["snapshot"], "records": results, "changed": changed}
-        tx.db.execute("INSERT INTO map_patches VALUES(?,?,?,?,?)", (repo_id, body["patch_id"], body["run_id"], request_hash, canonical(result)))
-        tx.enqueue("map_changed", f"map:{repo_id}:{body['patch_id']}", {**result, "repo_id": repo_id, "task_id": body["task_id"]})
-        return result
+        # A source rewritten by this same patch explicitly revalidates its
+        # outgoing declarations against the resulting graph and read set.
+        for edge in tx.db.execute("SELECT source,kind FROM map_relations WHERE repository=? AND snapshot=? AND target=? AND status='validated'", (*key, record_id)):
+            if edge["source"] not in operations:
+                tx.db.execute("UPDATE map_relations SET status='stale' WHERE repository=? AND snapshot=? AND source=? AND kind=? AND target=?",
+                              (*key, edge["source"], edge["kind"], record_id))
+    # Metadata fences detect source writes during hashing/commit without a
+    # second full-file read. Watcher generation/lease integration comes later.
+    for path, stamp in stamps.items():
+        if appmap._source_stamp(repository, path) != stamp:
+            raise Conflict("map source changed before proposal commit")
+    for (path, symbol), capture in captures.items():
+        tx.db.execute("INSERT INTO map_anchor_cache VALUES(?,?,?,?,?,?) ON CONFLICT(repository,worktree,path,symbol) DO UPDATE SET source_stamp=excluded.source_stamp,payload=excluded.payload",
+            (repo_id, str(repository.resolve()), path, symbol, capture["source_stamp"], canonical(capture["anchor"])))
+    require_worktree(tx.db, repository, *key)
+    result = {"patch_id": body["patch_id"], "snapshot": body["snapshot"], "records": results, "changed": changed}
+    tx.db.execute("INSERT INTO map_patches VALUES(?,?,?,?,?)", (repo_id, body["patch_id"], body["run_id"], request_hash, canonical(result)))
+    tx.enqueue("map_changed", f"map:{repo_id}:{body['patch_id']}", {**result, "repo_id": repo_id, "task_id": body["task_id"]})
+    return result
+
+
+def invalidate_dependants(tx, prepared, result):
+    """Invalidate remaining old consumers after same-pass facts have rebound."""
+    from .map_dependencies import invalidate_consumers
+    key = (prepared["repo_id"], prepared["body"]["snapshot"])
+    for record_id in result["changed"]:
+        invalidate_consumers(tx, key, record_id, result["records"][record_id]["version"], "A required map input changed.")
+
+
+def propose(store: ContinuityStore, repository: Path, body: dict, *, worker_id=None) -> dict:
+    prepared = prepare_proposal(store, repository, body, worker_id=worker_id)
+    with store.transaction() as tx:
+        return apply_proposal(tx, prepared)

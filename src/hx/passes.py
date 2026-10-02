@@ -45,7 +45,9 @@ def _event_view(tx, row, available_bytes: int) -> dict:
 
 def prepare(store: ContinuityStore, run_id: str, stream_id: str, *,
             record_ids: tuple[str, ...] = (), prompt_version: str, max_bytes: int = PASS_BYTES,
-            max_events: int = MAX_EVENTS) -> dict | None:
+            max_events: int = MAX_EVENTS, map_snapshot=None, map_record_ids=()) -> dict | None:
+    from . import companion_map
+    map_selection = companion_map.selection(map_snapshot, map_record_ids)
     if type(max_bytes) is not int or type(max_events) is not int or max_bytes < 1 or not 1 <= max_events <= MAX_EVENTS:
         raise ValidationError(f"pass bounds require positive bytes and 1–{MAX_EVENTS} events")
     if not isinstance(prompt_version, str) or not prompt_version:
@@ -87,6 +89,9 @@ def prepare(store: ContinuityStore, run_id: str, stream_id: str, *,
                 "record_versions": {key: value["version"] for key, value in selected.items()},
                 "records": [{key: record[key] for key in ("record_id", "version", "kind", "payload", "evidence")}
                             for record in selected.values()], "events": []}
+        if map_selection is not None:
+            body["map_scope"] = companion_map.freeze(tx, body["task"], map_selection,
+                max_bytes=max_bytes - len(canonical(body).encode()))
         if len(canonical(body).encode()) > max_bytes:
             raise RequiredContextOverflow("task and selected pass facts exceed the pass budget; narrow optional selection or split")
         for row in [*pending, *fresh]:
@@ -215,23 +220,34 @@ def _write_operation(tx, operation: dict, frozen: dict, run: dict, allowed_evide
 
 def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
     fields = {"schema_version", "pass_id", "event_digest", "task_revision", "operations", "dispositions"}
-    if (not isinstance(response, dict) or not fields <= response.keys() or response.keys() - fields - {"event_reasons"}
+    if (not isinstance(response, dict) or not fields <= response.keys() or response.keys() - fields - {"event_reasons", "map_patch"}
         or type(response.get("schema_version")) is not int or response["schema_version"] != 1
         or type(response.get("task_revision")) is not int):
         raise ValidationError("pass response has missing/unknown fields or schema")
     if response["pass_id"] != pass_id or not isinstance(response["operations"], list) or not isinstance(response["dispositions"], dict):
         raise ValidationError("pass response identity/operations/dispositions are invalid")
     response_hash = digest(response)
+    prepared_map = None
+    if "map_patch" in response:
+        from . import companion_map
+        with store.transaction() as tx:
+            row = tx.db.execute("SELECT status,payload FROM passes WHERE pass_id=?", (pass_id,)).fetchone()
+            if row is None:
+                raise ValidationError("unknown companion pass")
+            # Committed replay must not inspect changed or retired source inputs.
+            if row["status"] == "committed":
+                return _committed(tx, pass_id, response_hash)
+            frozen = json.loads(row["payload"])
+            _active_run(tx, frozen["run_id"])
+            if response["task_revision"] != frozen["task_revision"] or response["event_digest"] != frozen["event_digest"]:
+                raise Conflict("pass task revision or event digest differs from its frozen input")
+        prepared_map = companion_map.prepare_patch(store, frozen, response["map_patch"])
     with store.transaction() as tx:
         row = tx.db.execute("SELECT * FROM passes WHERE pass_id=?", (pass_id,)).fetchone()
         if not row:
             raise ValidationError("unknown companion pass")
         if row["status"] == "committed":
-            ref = tx.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='pass' AND owner_id=? AND slot='result'", (pass_id,)).fetchone()
-            result = json.loads(tx.read_artifact(ref[0]))
-            if result["response_hash"] != response_hash:
-                raise Conflict("committed pass received a different response")
-            return result
+            return _committed(tx, pass_id, response_hash)
         if row["status"] != "prepared":
             raise Conflict("pass is not eligible for commit")
         frozen = json.loads(row["payload"])
@@ -263,6 +279,7 @@ def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
                 raise Conflict(f"selected record {record_id} changed during extraction")
             _check_sources(record["inputs"], frozen["task"], tx)
             allowed.update(record["evidence"])
+        map_result = companion_map.apply_patch(tx, frozen, prepared_map) if prepared_map is not None else None
         changed = []
         seen = set()
         for operation in response["operations"]:
@@ -271,6 +288,8 @@ def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
                 raise ValidationError("each record may be changed once per pass")
             seen.add(record_id)
             changed.append(_write_operation(tx, operation, frozen, run, allowed))
+        if prepared_map is not None:
+            companion_map.finalize(tx, frozen, prepared_map, map_result)
         for event in actual:
             disposition = response["dispositions"][event["event_id"]]
             if disposition not in {"reduced", "extracted", "no_change", "dropped", "pending"}:
@@ -291,6 +310,16 @@ def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
         tx.db.execute("UPDATE passes SET status='committed' WHERE pass_id=?", (pass_id,))
         result = {"pass_id": pass_id, "response_hash": response_hash, "to_seq": row["to_seq"],
                   "cursor_revision": row["cursor_revision"] + 1, "changed_records": changed}
+        if map_result is not None:
+            result["map_patch"] = map_result
         tx.put_artifact(canonical(result).encode(), owner_type="pass", owner_id=pass_id, slot="result")
         tx.enqueue("projection", f"pass:{pass_id}", {"run_id": run["run_id"], "stream_id": row["stream_id"], **result})
         return result
+
+
+def _committed(tx, pass_id, response_hash):
+    ref = tx.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='pass' AND owner_id=? AND slot='result'", (pass_id,)).fetchone()
+    result = json.loads(tx.read_artifact(ref[0]))
+    if result["response_hash"] != response_hash:
+        raise Conflict("committed pass received a different response")
+    return result

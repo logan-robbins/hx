@@ -274,3 +274,23 @@ def decode(version: str, body: dict) -> list[Event]:
         if event.native_id is not None and (not isinstance(event.native_id, str) or not event.native_id or len(event.native_id) > 512):
             raise DecodeGap("invalid native event identity")
     return events
+
+
+def is_bookkeeping(event):
+    observation = event.get("payload", {}).get("observation", {})
+    data = observation.get("data", {})
+    if event["kind"] != "boundary" or not isinstance(data, dict):
+        return False
+    source = data.get("source")
+    if source == "model_response" and (data.get("status") != "success" or data.get("error")):
+        return False
+    shapes = {"token_count": {"usage_scope", "last_usage", "context_window"},
+              "token_usage_record": {"usage_scope", "turn_id", "turn_usage", "session_usage"},
+              "tool_admission": {"tool_use_id", "tool_name", "agent_id"},
+              "native_instructions": {"role", "content_hash"},
+              "world_state": {"turn_id", "state_hash"}, "turn_context": {"turn_id", "state_hash"},
+              "session_meta": {"native_session_id", "cli_version"},
+              "model_response": {"agent_id", "turn_id", "request_id", "response_id", "provider", "model",
+                  "attempt", "step", "status", "finish_reason", "error", "message_count", "tool_count",
+                  "tool_call_count", "usage_scope", "settled"}}
+    return source in shapes and not data.keys() - shapes[source] - {"source"}

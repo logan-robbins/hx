@@ -10,8 +10,9 @@ You neither install hooks nor independently watch logs.
 
 Return evidence-bound record operations with expected versions and a disposition for each
 event in the frozen range. Do not acknowledge later arrivals or invent event IDs. Binding
-goals/constraints require a Partner amendment; keep unresolved corrections pending. Propose
-source-backed map changes separately through the supplied map-patch contract when available.
+goals/constraints require a Partner amendment; keep unresolved corrections pending. When
+map_scope is supplied, include useful map changes in the same patch response. Reuse its
+selected records and versions; omit map changes when they add no current application fact.
 
 Choose context, same-goal storage, compression, or deletion for relevance to the current goal.
 Name a consuming step and expiry for stored facts. Preserve exact conditions, failures,

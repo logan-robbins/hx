@@ -243,3 +243,20 @@ The runtime persists a single root-wide execution slot. An uncertain interruptio
 retains that slot rather than starting a duplicate call. Automatic scheduling,
 interrupted-process recovery, complete request/cost accounting, and native map-patch
 integration remain pending. No paid model or live worker fleet was run.
+
+
+## Live Jev API integration (2026-10-01)
+
+The client uses the vendor's [HTTP API contract](https://docs.typesafe.ai/api), including
+Bearer authentication, `state`/`model`/`questions`, typed Noul/Choice answers, and usage.
+A live Noul request returned `jev-1.13.0` in 469.1 ms. The integrated current-task selector
+then batched two candidate questions: parser relevance 0.90, unrelated icon relevance
+0.03, 424 input tokens, 40 output tokens, 405.98 ms. Its second invocation reused the
+stored decision. Credentials were read locally and never printed or copied into state.
+
+No fallback selector is implemented. Timeout, HTTP failure, invalid answer types/IDs,
+nonfinite probabilities, or invalid Choice normalization stop the dependent selection.
+Native companion preparation calls this selector before freezing additional facts;
+required goals/constraints/cursor and exact requested IDs remain included. The installed
+Claude/local-provider test separately verified an atomic fact plus map patch through
+its actual MCP connection. Broader Jev consumers and full fleet cutover remain open.

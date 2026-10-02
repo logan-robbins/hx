@@ -168,14 +168,35 @@ def test_schema_fifteen_upgrade_preserves_passes(planned):
 
 
 @pytest.mark.skipif(not os.environ.get('HX_CLAUDE_TEST_BIN'), reason='requires explicitly selected installed Claude; local provider fixture only')
-def test_installed_claude_companion_reads_scoped_evidence_and_commits_patch(planned):
+@pytest.mark.parametrize('with_map', [False, True])
+def test_installed_claude_companion_reads_scoped_evidence_and_commits_patch(planned, with_map):
     from .claude_companion_fixture import transport
-    store, _, event = planned
+    store, run, event = planned
     (store.root / 'config/claude.json').write_text(json.dumps({'bin': os.environ['HX_CLAUDE_TEST_BIN']}))
     (store.root / 'seed/token').write_text('sk-ant-api-fixture-local-only')
-    job = job_for(planned)
+    map_options = {}
+    if with_map:
+        from pathlib import Path
+        from hx import appmap, map_updates
+        from .test_appmap import record, write, commit
+        with store.transaction() as tx:
+            repository = Path(tx.task('T')['payload']['workdir'])
+        (repository / 'parser.py').write_text('def parse():\n    return "reject unknown fields"\n')
+        appmap.initialize(repository)
+        node = record('parser', claim='observed', anchors=[appmap.source_anchor(repository, 'parser.py')])
+        write(repository, node)
+        commit(repository)
+        baseline = appmap.import_baseline(store, repository)['snapshot']
+        snapshot = map_updates.create_overlay(store, repository, baseline)['snapshot']
+        map_options = {'map_snapshot': snapshot, 'map_record_ids': ['parser']}
+    job = native.prepare(store, 'eng-001', run, 'main', 'request', **map_options)
     body = protocol.frozen(store, job)
-    with transport(body, answer(body, [create(event, text='The parser rejects unknown fields.')])) as (url, requests):
+    response = answer(body, [create(event, text='The parser rejects unknown fields.')])
+    if with_map:
+        response['map_patch'] = {'schema_version': 1, 'patch_id': 'pass-'+body['pass_id'], 'task_id': 'T',
+            'run_id': run, 'snapshot': snapshot, 'read_versions': {'parser': 1}, 'evidence_ids': [event['event_id']],
+            'operations': [{'op': 'put', 'record': {**node, 'version': 2, 'summary': 'The parser rejects unknown fields.'}}]}
+    with transport(body, response) as (url, requests):
         result = native.execute(store, job['job_id'], env={'PATH': os.environ['PATH'], 'ANTHROPIC_BASE_URL': url})
     assert result['status'] == 'committed', result
     assert result['attempts'] == 1 and result['read_bytes'] == 1024
@@ -185,6 +206,11 @@ def test_installed_claude_companion_reads_scoped_evidence_and_commits_patch(plan
     assert {'mcp__continuity__read_evidence', 'mcp__continuity__submit_patch'} <= tool_names
     assert tool_names <= {'mcp__continuity__read_evidence', 'mcp__continuity__submit_patch', 'EndConversation', 'ToolSearch'}
     assert any('accepted' in json.dumps(request['messages']) for request in requests)
+    if with_map:
+        assert result['result']['map_patch']['records']['parser']['version'] == 2
+        assert appmap.get_record(store, repository, snapshot, 'parser')['record']['summary'] == 'The parser rejects unknown fields.'
+        with pytest.raises(Conflict, match='different inputs'):
+            job_for(planned)
 
 
 def test_stale_cursor_is_rejected_before_any_native_call(planned, monkeypatch):

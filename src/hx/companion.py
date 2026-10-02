@@ -536,6 +536,8 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--stream", default="main")
     parser.add_argument("--request", help="stable idempotency identity for this pass")
     parser.add_argument("--record", action="append", default=[])
+    parser.add_argument("--map-snapshot", help="worktree map snapshot for this pass")
+    parser.add_argument("--map-record", action="append", default=[], help="selected map ID (at most eight)")
     parser.add_argument("--job", help="inspect a previously prepared native companion job")
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args(argv)
@@ -554,12 +556,13 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             else:
                 if not args.request:
                     parser.error("planned companion requires --request")
-                job = native_companion.prepare(ledger, args.id, args.run, args.stream, args.request, record_ids=args.record)
+                job = native_companion.prepare(ledger, args.id, args.run, args.stream, args.request, record_ids=args.record,
+                    map_snapshot=args.map_snapshot, map_record_ids=args.map_record, env=env)
                 result = ({"status": "no_work"} if job is None else native_companion.status(ledger, job["job_id"])
                           if args.prepare_only else native_companion.execute(ledger, job["job_id"], env=env))
             print(canonical(result))
         return 0
-    if args.request or args.record or args.prepare_only:
+    if args.request or args.record or args.prepare_only or args.map_snapshot or args.map_record:
         parser.error("planned companion options require --run")
 
     if args.ingest:
