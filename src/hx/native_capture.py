@@ -127,6 +127,24 @@ def enqueue(store: ContinuityStore, binding_id: str, delivery_id: str, payload: 
                 session_id=binding["session_id"], event=event,
                 fallback_identity=("delivery", binding_id, delivery_id, index))
             identifiers.append(captured["event_id"])
+            if event.kind == "tool_result":
+                from .native_tools import settle
+                try:
+                    settle(tx, binding["run_id"], binding["session_id"], event.data)
+                except (Conflict, ValidationError):
+                    # Keep unmatched evidence, without claiming the call ended.
+                    # A missing admission means capture coverage needs repair.
+                    tx._change()
+                    tx.db.execute("INSERT OR IGNORE INTO native_capture_gaps VALUES(?,?)",
+                                  (binding["run_id"], "native tool result has no matching admitted call"))
+            if event.kind in {"spawn", "finish"}:
+                from .native_tools import child
+                try:
+                    child(tx, binding["run_id"], binding["session_id"], event)
+                except (Conflict, ValidationError):
+                    tx._change()
+                    tx.db.execute("INSERT OR IGNORE INTO native_capture_gaps VALUES(?,?)",
+                                  (binding["run_id"], "native child lifecycle lacks a stable matching identity"))
             if event.usage is not None:
                 latest_usage = event.usage
         tx._change()

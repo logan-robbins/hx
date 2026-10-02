@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .continuity_store import EVENT_KINDS
+from .continuity_store import EVENT_KINDS, digest
 from .errors import ValidationError
 
 
@@ -50,7 +50,8 @@ def hook_v1(body: dict) -> list[Event]:
     aliases = {"toolName": "tool_name", "toolInput": "tool_input", "toolResult": "tool_response",
                "tool_result": "tool_response", "toolUseId": "tool_use_id", "sessionId": "session_id",
                "hookEventName": "hook_event_name", "backgroundTasks": "background_tasks",
-               "lastAssistantMessage": "last_assistant_message", "agentId": "agent_id", "turnId": "turn_id"}
+               "lastAssistantMessage": "last_assistant_message", "agentId": "agent_id", "turnId": "turn_id",
+               "subagent_id": "agent_id", "childSessionId": "child_session_id"}
     p = dict(body)
     for source, target in aliases.items():
         if source in p and target not in p:
@@ -61,9 +62,16 @@ def hook_v1(body: dict) -> list[Event]:
     key = event.replace("_", "").replace("-", "").lower()
     identifier = p.get("native_event_id") or p.get("event_id")
     identifier = identifier if isinstance(identifier, str) and identifier else None
+    if key in {"pretooluse", "toolstart"}:
+        call = p.get("tool_use_id")
+        scoped_call = digest([p["agent_id"], call]) if p.get("agent_id") else call
+        return [Event("boundary", {"source": "tool_admission", **{name: p[name] for name in
+            ("tool_name", "tool_use_id", "agent_id") if name in p}},
+            "admission:" + str(scoped_call) if call else identifier)]
     if key in {"posttooluse", "posttoolusefailure", "log", "toolresult"}:
         call = p.get("tool_use_id")
-        native = f"tool:{call}" if isinstance(call, str) and call else identifier
+        scoped_call = digest([p["agent_id"], call]) if p.get("agent_id") else call
+        native = f"tool:{scoped_call}" if isinstance(call, str) and call else identifier
         data = {name: p[name] for name in ("tool_name", "tool_use_id", "tool_input", "tool_response",
                                           "agent_id", "source_fingerprints", "cwd") if name in p}
         if key == "posttoolusefailure":
@@ -83,12 +91,12 @@ def hook_v1(body: dict) -> list[Event]:
             # Stop has no guaranteed message ID; never merge by matching text.
             result.append(Event("assistant_message", {"text": message, "claim": True},
                                 p.get("assistant_message_id")))
-        result.append(Event("finish", {name: p[name] for name in ("agent_id", "background_tasks", "turn_id") if name in p}, identifier))
+        result.append(Event("finish", {name: p[name] for name in ("agent_id", "child_session_id", "background_tasks", "turn_id") if name in p}, identifier))
         return result
     if key in {"sessionstart", "context", "precompact", "postcompact", "boundary"}:
         return [Event("boundary", {name: p[name] for name in ("source", "trigger", "turn_id", "compact_summary") if name in p}, identifier)]
     if key in {"subagentstart", "spawn"}:
-        return [Event("spawn", {name: p[name] for name in ("agent_id", "agent_type", "tool_input") if name in p}, identifier)]
+        return [Event("spawn", {name: p[name] for name in ("agent_id", "child_session_id", "agent_type", "tool_input") if name in p}, identifier)]
     raise DecodeGap(f"unsupported hook event {event}")
 
 

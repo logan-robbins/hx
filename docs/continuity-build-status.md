@@ -6,7 +6,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 13; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 14; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
 | P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Planned-hook routing binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. All five installers persist immutable launch contracts and bake callback identity into arguments; Pi snapshots its contract at extension load. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Fresh planned launch now creates private sessions, observes startup, and confirms exact submission through installed request hooks. Full native event/source coverage, late/gap reconciliation, shutdown/resume barriers, and model execution verification remain. Installed CLI versions/options and the real Pi extension loader were checked separately. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
@@ -142,3 +142,21 @@ suites passed 178 tests with the optional installed-Muse check skipped in that r
 Installed-runtime checks are run separately with explicit executable/loader paths.
 The controller, hook-contract, producer, unit execution, context packet, and ledger
 suites subsequently passed 106 tests with both installed-runtime checks enabled.
+
+Tool admission/drain integration: planned tool callbacks now register call ownership
+before execution and settle matching calls atomically with captured results. The
+Partner can close admission with `hx launch ... --drain`; concurrent admissions
+serialize with that transition, and retries preserve the same session and leases.
+Stable child/session bindings prevent one child from settling another child's call.
+Planned Pi children explicitly load the frozen hook extension from their private
+capsule. Active-call and child counts remain separate from process-quiescence proof.
+Controlled process shutdown, background-work reconciliation, resume, and native unit
+completion are still unfinished. The full delivery scope above remains active.
+
+Validation for tool admission/drain: 240 tests passed across native control,
+preparation, capture/producer/contracts, ledger/unit execution, and five-adapter
+install/start regressions, with the installed Muse and Pi checks enabled. After
+moving external pane queries outside SQLite's writer transaction, the final
+admission/drain suite passed 22 tests, including installed Pi parent/child callback
+checks. Tests ran serially without model calls or a live fleet. Pi extension syntax
+and `git diff --check` also passed.

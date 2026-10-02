@@ -83,7 +83,7 @@ events = (
     "SubagentStop:subagent-stop",
 )
 if continuity:
-    events += ("UserPromptSubmit:request",)
+    events += ("UserPromptSubmit:request", "PreToolUse:tool-start", "PostToolUseFailure:log-failure")
 blocks = []
 for spec in events:
     grok_event, hx_event = spec.split(":")

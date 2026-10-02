@@ -68,7 +68,12 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(body, dict):
         body = {"_hx_capture_error": True}
 
-    payload = json.dumps(translate(body)).encode()
+    translated = translate(body)
+    if any(continuity) and "subagentType" in body and "agent_id" not in body and "agentId" not in body:
+        # A type such as 'explore' is shared by concurrent children, not an ID.
+        translated.pop("agent_id", None)
+        translated["agent_type"] = body["subagentType"]
+    payload = json.dumps(translated).encode()
     # --hook-bin can be a bare path or a command with arguments.
     try:
         proc = subprocess.run(
@@ -79,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except OSError as exc:
         print(f"hook.py: cannot run {args.hook_bin}: {exc}", file=sys.stderr)
-        return 1
+        return 2 if any(continuity) and args.event in {"request", "tool-start"} else 1
     if proc.stdout:
         sys.stdout.buffer.write(proc.stdout)
     if proc.stderr:

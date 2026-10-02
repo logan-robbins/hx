@@ -320,3 +320,46 @@ shared retention/admission quotas remain part of the remaining runtime integrati
 The legacy completion path now checks source stability and Git cleanliness after checks
 and after the companion flush. It also rejects changed acceptance/assignment before
 writing completion metadata. Repository inspection failures are not treated as clean.
+
+## Native tool admission and drain
+
+Schema 14 adds indexed tool admissions and child identities. For planned sessions,
+`PreToolUse` calls `tool-start` before execution; Pi uses its blocking `tool_call`
+callback. Admission requires the original launch, verified startup, acknowledged
+submission, current unpaused assignment, owned pane, and matching main/child session.
+The short transaction serializes admission with drain and lease release. At most
+256 calls may be admitted concurrently per launch. Store call identities and input
+hashes here; preserve tool evidence in the existing bounded capture path.
+
+A captured success or failure settles its exact admission in the capture transaction.
+Durable queue retries perform the same reduction. An unmatched result stays captured
+and records a gap; it cannot clear another call. A deliberately refused call may
+produce a native error result without manufacturing a capture gap. Completed or
+refused call IDs cannot authorize another execution. Child IDs are launch-scoped;
+Muse's child-session binding allows tool payloads without an actor field. A category
+such as Grok's `subagentType` is not a child ID. Missing stable identities remain gaps.
+
+```sh
+hx launch eng-001 --run RUN --request ORIGINAL_LAUNCH_REQUEST --drain
+```
+
+This Partner/operator command closes new request/tool admission and returns durable
+`draining`, `pending_tool_calls`, and `active_children` fields. Repeat it to inspect
+progress. Existing calls can settle; the command does not paste another prompt,
+replace a native session, kill processes, or release execution leases. Intentional
+refusals return explicit native denials. Entry-point/storage errors deny planned
+requests/tools and record gaps when storage permits. Observation hooks retain their
+capture-first behavior. Legacy workers retain their existing hook configuration.
+
+Claude, Muse, and Grok install `PostToolUseFailure`; Codex uses its documented
+`PostToolUse` path, including nonzero Bash results. Pi returns `{block: true}` when
+admission fails and carries the frozen contract into explicitly loaded child
+extensions. Planned Pi children use the private capsule configuration and report
+their own admission/result pair, avoiding duplicate parent log observations.
+
+This barrier counts observable calls, not every process or remote operation a tool
+may start. Zero admitted calls, a Stop hook, or a quiet pane cannot prove quiescence.
+Native hook timeouts/crashes may fail open outside the hx entrypoint, and complete
+adapter/tool coverage is not yet certified. Process ownership, detached/background
+work reconciliation, controlled termination/resume, and full compaction barriers
+remain required before native completion may release its leases.

@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except OSError as exc:
         print(f"hook.py: cannot run {args.hook_bin}: {exc}", file=sys.stderr)
-        return 1
+        return 2 if any(continuity) and args.event in {"request", "tool-start"} else 1
     if proc.stdout:
         sys.stdout.buffer.write(proc.stdout)
     if proc.stderr:

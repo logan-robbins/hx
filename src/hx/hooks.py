@@ -5,11 +5,15 @@
 the payload from stdin, resolve the root, dispatch, and — above all — never take a tool call
 down with it.
 
-**Failure policy.** A hook that crashes must not break the agent. A malformed payload, a
+**Legacy failure policy.** A hook that crashes must not break the agent. A malformed payload, a
 missing file, an unexpected exception: logged to `logs/<id>/hook-errors.log` and **allowed**
 (exit 0). The one hook that enforces anything is the Partner's `guard` (`PreToolUse`,
 `hook_guard.py`): it keeps this policy for its own crashes, but a rule it matches is never
 allowed — it exits 2 with its reason on stderr (spec 09.1). No timeouts, no network.
+
+Planned request and tool admission explicitly deny on errors. Observation-only
+failures retain a capture gap. Native hook crashes/timeouts outside this entrypoint
+can still fail open in the host; hooks alone cannot prove process quiescence.
 """
 
 from __future__ import annotations
@@ -46,11 +50,12 @@ EVENTS = {
     "guard": 9,
     "request": 9,
     "log-failure": 9,
+    "tool-start": 9,
 }
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
-    "precompact", "postcompact", "companion-stop", "guard", "request", "log-failure",
+    "precompact", "postcompact", "companion-stop", "guard", "request", "log-failure", "tool-start",
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
@@ -160,8 +165,15 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 raise HxError("planned hooks require the original launch identity and adapter")
             if event == "companion-stop":
                 raise HxError("planned executor capture cannot run a legacy companion handler")
+            child = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
+            if child and not (payload.get("session_id") or payload.get("sessionId") or payload.get("transcript_path")):
+                from .continuity_store import digest
+                payload = {**payload, "session_id": "launch:" + digest([launch_id, child])}
             with ContinuityStore(root) as ledger:
                 validate(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id, adapter=adapter, worker_id=item_id)
+                if event == "tool-start":
+                    from .native_tools import admit
+                    admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload)
                 hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
                      adapter=adapter, launch_id=launch_id, event=event, payload=payload)
                 if event in {"context", "request"}:
@@ -173,7 +185,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
 
         # These extra observation routes are consumed by the planned runtime.
         # Legacy configurations continue to use their existing event handlers.
-        if event == "request":
+        if event in {"request", "tool-start"}:
             return 0
         if event == "log-failure":
             event = "log"
@@ -192,6 +204,10 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
     except SystemExit:
         raise
     except BaseException as exc:
+        from .native_tools import AdmissionDenied
+        if isinstance(exc, AdmissionDenied):
+            print(f"hx-hook: {event}: {exc}", file=sys.stderr)
+            return 2
         detail = f"{type(exc).__name__}: {exc}"
         if root is not None:
             log_error(root, item_id, event, detail + "\n" + traceback.format_exc())
@@ -204,7 +220,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 except Exception:
                     pass  # Storage failure is still reported to the native hook.
         print(f"hx-hook: {event}: {detail}", file=sys.stderr)
-        return 2 if event == "request" and env.get("HX_CONTINUITY_RUN") else 0
+        return 2 if event in {"request", "tool-start"} and env.get("HX_CONTINUITY_RUN") else 0
 
 
 if __name__ == "__main__":

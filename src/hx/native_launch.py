@@ -157,6 +157,7 @@ def environment(root, launch, *, env=None):
     return {**(os.environ if env is None else env), "HARNESS_ROOT": str(capsule),
             "HX_CONTINUITY_AUTHORITY": str(root.resolve()), "HX_CONTINUITY_RUN": launch["run_id"],
             "HX_CONTINUITY_LAUNCH": launch["launch_id"], "HX_CONTINUITY_ADAPTER": flavor,
+            "HX_CONTINUITY_CAPSULE": str(capsule),
             "HX_SKILLS_DIR": "", "HX_PYTHON": sys.executable}
 
 

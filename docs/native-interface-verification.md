@@ -94,3 +94,33 @@ and [Grok hook source documentation](https://github.com/xai-org/grok-build/blob/
 The installed Pi extension type declarations document `input` and its handled
 result. Controlled shutdown/recovery, complete source capture, full tool visibility,
 companion execution, and model-backed unit completion remain unverified.
+
+## Planned tool admission contracts (2026-10-01)
+
+The planned installers now add `PreToolUse` admission. Failure-result coverage
+follows the adapters' distinct contracts: [Claude's hook reference](https://code.claude.com/docs/en/hooks),
+[Muse's event payload reference](https://meta-models.github.io/muse-code-sdk/next/guides/plugins/reference/hook-events/),
+[Grok's hook source documentation](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md),
+and [Codex's hook reference](https://learn.chatgpt.com/docs/hooks).
+Claude/Muse/Grok declare `PostToolUseFailure`; Codex documents nonzero Bash results
+through `PostToolUse`, without declaring a separate failure hook. Pi's installed
+0.84.3 extension declarations expose `tool_call` and `{block, reason}`; its installed
+argument parser confirms that explicit `--extension` paths still load with
+`--no-extensions` discovery disabled.
+
+These contracts also establish limits. A host may skip or fail open on a crashed,
+timed-out, or oversized hook. Codex documents tool coverage exceptions. Grok's
+`subagentType` is not a unique child identity. Muse supplies `subagent_id` and
+`child_session_id` on child lifecycle events; tool events carry `tool_use_id`.
+The runtime records missing identity/settlement evidence as a gap and retains leases.
+Hook admission does not establish operating-system process containment or prove
+that detached/background work ended.
+
+The installed Pi loader check now exercises both parent and child `tool_call`
+callbacks against a planned launch: valid admission, durable result settlement,
+then native `{block: true}` after drain, including the resulting denied-tool error
+observation. The parent pane in that test uses the existing CLI transport fixture;
+this proves the real extension loader/callback integration, not model execution.
+The combined 240-test regression run also retained the installed Muse echo-provider
+startup/request check. A final 22-test admission suite passed after the transaction
+lock adjustment. No model provider calls were made.

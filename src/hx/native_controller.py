@@ -36,11 +36,15 @@ def _transition(tx, run_id, expected, status, *, payload=None, error=None):
 
 
 def _result(ledger, run_id):
+    from .native_tools import pending
     row = native_launch._row(ledger, run_id)
     body = row["payload"]
     return {"run_id": run_id, "launch_id": row["launch_id"], "status": row["status"],
             "session": body.get("session"), "checkpoint_id": body["checkpoint_id"],
-            "instruction_delivery": body["instruction_delivery"], "error": row["error"]}
+            "instruction_delivery": body["instruction_delivery"], "error": row["error"],
+            "pending_tool_calls": pending(ledger, row["launch_id"]),
+            "active_children": ledger.db.execute("SELECT count(*) FROM native_children WHERE launch_id=? AND status='active'",
+                                                 (row["launch_id"],)).fetchone()[0]}
 
 
 def _native_env(ledger, row, env):
@@ -179,6 +183,27 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
     return _result(ledger, run_id)
 
 
+def drain(ledger, worker, run_id, request_id, *, env=None):
+    """Close admissions durably while retaining every execution lease.
+
+    A drain is one prerequisite for shutdown. Zero observable calls does not
+    prove the native process or its detached/background work has stopped.
+    """
+    require_partner_caller("launch drain", env)
+    with ledger.transaction() as tx:
+        row = native_launch._row(tx, run_id)
+        if not row or row["request_id"] != request_id or row["payload"]["worker_id"] != worker:
+            raise Conflict("native drain must name its original worker and launch request")
+        if row["status"] != "draining":
+            if row["status"] not in {"ready", "submitted", "submission_unconfirmed", "submission_uncertain",
+                                      "submission_rejected", "continuation_required", "session_uncertain"}:
+                raise Conflict("native launch is changing state; reconcile startup before draining")
+            unit_execution._run(tx, run_id)
+            payload = {**row["payload"], "drain_from": row["status"]}
+            _transition(tx, run_id, {row["status"]}, "draining", payload=payload)
+    return _result(ledger, run_id)
+
+
 def observe(ledger, run_id, launch_id, event, observation):
     """Handle lifecycle evidence after its public payload is durably captured."""
     row = native_launch._row(ledger, run_id)
@@ -186,6 +211,9 @@ def observe(ledger, run_id, launch_id, event, observation):
         return None
     if row["launch_id"] != launch_id:
         raise Conflict("native lifecycle event belongs to another launch")
+    if event == "request" and row["status"] in {"draining", "quiesced"}:
+        from .native_tools import AdmissionDenied
+        raise AdmissionDenied("native request admission is closed for shutdown")
     if observation.get("agent_id") or observation.get("agentId"):
         return None
     native_session = observation.get("session_id") or observation.get("sessionId") or observation.get("transcript_path")
@@ -258,3 +286,9 @@ def guard_release(tx, run_id):
     row = native_launch._row(tx, run_id)
     if row and row["status"] not in {"prepared", "preparation_failed", "installation_failed", "quiesced"}:
         raise Conflict("native session ownership must be reconciled before releasing assignment leases")
+    if row:
+        from .native_tools import pending
+        if pending(tx, row["launch_id"]):
+            raise Conflict("native tools remain in flight; reconcile calls before releasing assignment leases")
+        if tx.db.execute("SELECT 1 FROM native_children WHERE launch_id=? AND status='active' LIMIT 1", (row["launch_id"],)).fetchone():
+            raise Conflict("native children remain active; reconcile ownership before releasing assignment leases")

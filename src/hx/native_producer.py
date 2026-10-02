@@ -159,11 +159,12 @@ def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload):
         # solely to compose child digests and must not duplicate a tool result.
         return None
     session = payload.get("session_id") or payload.get("sessionId") or payload.get("transcript_path")
-    child = payload.get("agent_id") or payload.get("agentId")
+    child = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
     if not session:
         session = "launch:" + digest([launch_id, child])
     stream = "child:" + digest([launch_id, child]) if child else "native:" + digest([launch_id, session])
     observed = dict(payload)
-    observed.setdefault("hook_event_name", {"log-failure": "PostToolUseFailure", "request": "UserPromptSubmit"}.get(event, event))
+    observed.setdefault("hook_event_name", {"log-failure": "PostToolUseFailure", "request": "UserPromptSubmit",
+                                           "tool-start": "PreToolUse"}.get(event, event))
     return produce(store, run_id=run_id, worker_id=worker_id, adapter=adapter, session_id=session,
                    stream_id=stream, payload=observed)

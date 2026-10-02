@@ -63,8 +63,8 @@ function callHook(event: string, payload: Record<string, unknown>): string {
   if (result.status !== 0 && result.stderr) {
     process.stderr.write(result.stderr);
   }
-  if (nativeHook && event === "request" && result.status !== 0) {
-    throw new Error("hx refused the request because its startup context is not verified");
+  if (nativeHook && (event === "request" || event === "tool-start") && result.status !== 0) {
+    throw new Error("hx refused native admission; reconcile the assignment before continuing");
   }
   return result.stdout ?? "";
 }
@@ -154,6 +154,7 @@ export default function (pi: {
   registerTool: (tool: Record<string, unknown>) => void;
 }): void {
   const subagent = process.env.PI_SUBAGENT === "1";
+  const childIdentity = nativeHook && subagent ? { agent_id: required("HX_PI_CHILD_ID") } : null;
 
   pi.on("message_end", (event) => {
     rememberUsage(event.message);
@@ -202,15 +203,29 @@ export default function (pi: {
     });
   });
 
+  pi.on("tool_call", (event, ctx) => {
+    if (!nativeHook) return;
+    try {
+      callHook("tool-start", {
+        tool_name: event.toolName,
+        tool_use_id: event.toolCallId,
+        tool_input: event.input,
+        ...(childIdentity ?? { transcript_path: sessionFile(ctx) }),
+      });
+    } catch {
+      return { block: true, reason: "hx closed native tool admission; reconcile the assignment before continuing" };
+    }
+  });
+
   pi.on("tool_result", (event, ctx) => {
-    if (subagent) return;
+    if (subagent && !nativeHook) return;
     callHook("log", {
       tool_name: event.toolName,
       tool_use_id: event.toolCallId,
       tool_input: event.input,
       tool_response: { text: contentText(event.content), isError: event.isError },
       context_tokens: contextTokens,
-      transcript_path: sessionFile(ctx),
+      ...(childIdentity ?? { transcript_path: sessionFile(ctx) }),
     });
   });
 
@@ -298,7 +313,7 @@ export default function (pi: {
 }
 
 function runChild(prompt: string, contextLine: string, agentId: string, signal?: AbortSignal): Promise<string> {
-  const root = required("HARNESS_ROOT");
+  const root = nativeHook ? required("HX_CONTINUITY_CAPSULE") : required("HARNESS_ROOT");
   const id = required("HARNESS_ID");
   const home = join(root, "run", id, "home");
   const subagents = join(root, "config", id, "SUBAGENTS.md");
@@ -311,6 +326,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
   const args = [
     "--mode", "json", "-p", "--no-session",
     "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
+    ...(nativeHook ? ["--extension", fileURLToPath(import.meta.url)] : []),
     "--no-context-files", "--no-approve", "--offline",
     "--model", harness.model,
     "--thinking", harness.effort,
@@ -323,6 +339,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
       env: {
         ...process.env,
         PI_SUBAGENT: "1",
+        HX_PI_CHILD_ID: agentId,
         PI_CODING_AGENT_DIR: home,
         PI_OFFLINE: "1",
       },
@@ -344,7 +361,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
           if (event.type === "message_end" && event.message?.role === "assistant") {
             last = textOf(event.message);
           }
-          if (event.type === "tool_execution_end") {
+          if (event.type === "tool_execution_end" && !nativeHook) {
             const tokens = usageTokens(event.result?.usage);
             callHook("log", {
               agent_id: agentId,

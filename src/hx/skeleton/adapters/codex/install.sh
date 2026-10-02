@@ -125,6 +125,7 @@ events = [
 ]
 if continuity:
     events.append(("UserPromptSubmit", None, "request"))
+    events.append(("PreToolUse", None, "tool-start"))
 if item_id == "partner":
     events.append(("PreToolUse", "Bash|apply_patch|Edit|Write", "guard"))
 blocks = []
