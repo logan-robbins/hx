@@ -28,6 +28,28 @@ def unavailable(*args, **kwargs):
     raise OSError("capture temporarily unavailable")
 
 
+def test_pi_completed_messages_retry_public_data_and_retain_child_identity(ledger, monkeypatch):
+    store, run = ledger
+    payload = {"type": "message_end", "agent_id": "child", "message": {"role": "assistant",
+        "content": [{"type": "thinking", "thinking": "PRIVATE"}, {"type": "text", "text": "Check failed."}],
+        "stopReason": "error", "errorMessage": "Provider unavailable", "usage": {"input": 12}}}
+    with monkeypatch.context() as m:
+        m.setattr(native_capture, "enqueue", unavailable)
+        result = relay.hook(store, run_id=run, worker_id="eng-001", adapter="pi", launch_id="launch",
+                            event="message", payload=payload)
+    assert result["queued"] and "PRIVATE" not in "\n".join(store.db.iterdump())
+    assert relay.retry(store)[0]["committed"]
+    public = json.loads(store.db.execute("SELECT payload FROM events").fetchone()[0])["observation"]
+    assert public["data"]["agent_id"] == "child"
+    assert public["data"]["errorMessage"] == "Provider unavailable"
+    assert public["usage"] == {"input": 12}
+    for adapter, body in [("claude", payload), ("pi", {**payload, "type": "message_update"}),
+                          ("pi", {**payload, "message": {"role": "toolResult"}})]:
+        with pytest.raises(ValidationError, match="completed user or assistant"):
+            relay.hook(store, run_id=run, worker_id="eng-001", adapter=adapter, launch_id="launch",
+                       event="message", payload=body)
+
+
 def test_durable_retry_after_reopen_keeps_identity_and_only_public_observations(ledger, monkeypatch):
     store, run = ledger
     payload = {**tool(), "private_thinking": "PRIVATE TOKEN", "transcript_path": "/must/not/read"}

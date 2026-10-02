@@ -51,11 +51,12 @@ EVENTS = {
     "request": 9,
     "log-failure": 9,
     "tool-start": 9,
+    "message": 9,
 }
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
-    "precompact", "postcompact", "companion-stop", "guard", "request", "log-failure", "tool-start",
+    "precompact", "postcompact", "companion-stop", "guard", "request", "log-failure", "tool-start", "message",
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
@@ -185,7 +186,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
 
         # These extra observation routes are consumed by the planned runtime.
         # Legacy configurations continue to use their existing event handlers.
-        if event in {"request", "tool-start"}:
+        if event in {"request", "tool-start", "message"}:
             return 0
         if event == "log-failure":
             event = "log"

@@ -122,7 +122,7 @@ def test_installed_pi_loader_delivers_with_frozen_contract(instance, child_env, 
     configure(instance, "pi")
     hook = instance / "bin" / "hx-hook"
     hook.parent.mkdir(exist_ok=True)
-    hook.write_text(f"#!{sys.executable}\nimport sys\nsys.path.insert(0, {str(SRC)!r})\nfrom hx.hooks import main\nraise SystemExit(main())\n")
+    hook.write_text(f"#!{sys.executable}\nimport sys, io\nsys.path.insert(0, {str(SRC)!r})\nfrom hx.hooks import main\nraw = sys.stdin.read()\nassert 'PRIVATE' not in raw, 'private fields reached hook pipe'\nsys.stdin = io.StringIO(raw)\nraise SystemExit(main())\n")
     hook.chmod(0o755)
     extension = tmp_path / "native-extension" / "index.ts"
     extension.parent.mkdir()
@@ -150,6 +150,16 @@ const inputs = result.extensions[0].handlers.get("input");
 if (!inputs?.length) throw new Error("input handler missing");
 for (const handler of inputs) await handler({type:"input",text:"Exact native request.",source:"interactive"},
  {sessionManager:{getSessionFile:()=>"native-session"}});
+const messages = result.extensions[0].handlers.get("message_end");
+if (!messages?.length) throw new Error("message_end handler missing");
+for (let count=0; count<2; count++) for (const handler of messages) await handler({type:"message_end",message:{
+ role:"assistant",content:[{type:"thinking",thinking:"PRIVATE THOUGHT",text:"PRIVATE TEXT"},
+ {type:"text",text:"Use the source receipt when admitting dependent work.",textSignature:"PRIVATE SIGNATURE"},
+ {type:"toolCall",id:"proposed-call",name:"read",arguments:{path:"src/x"},thoughtSignature:"PRIVATE SIGNATURE"},
+ {type:"image",data:"PRIVATE IMAGE"}],usage:{input:11,output:7,cacheRead:2,cacheWrite:0,totalTokens:20,private:"PRIVATE USAGE"},
+ stopReason:"length",providerMetadata:"PRIVATE METADATA"}}, {sessionManager:{getSessionFile:()=>"native-session"}});
+// Tool results already use the admission/result route and must not be relayed twice.
+for (const handler of messages) await handler({type:"message_end",message:{role:"toolResult",content:[]}}, {});
 writeFileSync(hook, ["#!/bin/sh", "exit 2", ""].join(String.fromCharCode(10)));
 const denied = await inputs[0]({type:"input",text:"Unverified context.",source:"interactive"},
  {sessionManager:{getSessionFile:()=>"native-session"}});
@@ -171,3 +181,13 @@ console.log("installed Pi loader and callback completed");
         assert row and "Native loader callback delivered." in row[0], result.stderr
         request = ledger.db.execute("SELECT payload FROM events WHERE run_id=? AND kind='request'", (run,)).fetchone()
         assert request and "Exact native request." in request[0]
+        messages = [json.loads(row[0]) for row in ledger.db.execute(
+            "SELECT payload FROM events WHERE run_id=? AND kind='assistant_message'", (run,))]
+        assert len(messages) == 2  # No native message ID: equal text is not identity.
+        public = messages[0]["observation"]
+        assert public["data"]["text"] == "Use the source receipt when admitting dependent work."
+        assert public["data"]["stopReason"] == "length"
+        assert public["data"]["tool_calls"] == [{"tool_use_id": "proposed-call", "tool_name": "read", "tool_input": {"path": "src/x"}}]
+        assert public["data"]["attachments"] == [{"attachment_type": "image", "content_available": False}]
+        assert public["usage"] == {"input": 11, "output": 7, "cacheRead": 2, "cacheWrite": 0, "totalTokens": 20}
+        assert "PRIVATE" not in "\n".join(ledger.db.iterdump())

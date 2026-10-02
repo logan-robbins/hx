@@ -61,6 +61,47 @@ def test_incremental_offsets_survive_restart_and_noop_decodes_nothing(capture):
     assert source_state(store, source)["payload"]["decoded_bytes"] == length + added
 
 
+def test_same_size_rewrite_outside_tail_cannot_clear_readiness(capture):
+    import os
+    from hx.observer import source_snapshot
+    from hx.native_producer import require_drained
+    store, run, path, source = capture
+    append(path, tool(text="old " + "unchanged tail " * 30))
+    drain(store, source)
+    previous = path.stat()
+    path.write_bytes(path.read_bytes().replace(b"old ", b"new "))
+    os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns + 1_000_000))
+    with store.transaction() as tx:
+        assert source_snapshot(tx, run)["sources"][0]["lag"]
+        with pytest.raises(Conflict, match="registered capture sources"):
+            require_drained(tx, run)
+    result = drain(store, source)
+    assert result["bytes"] == 0  # No ordinary full-history reread.
+    assert any("metadata changed without append" in gap["reason"] for gap in result["gaps"])
+    drain(store, source)  # Updating the observed timestamp must not clear the gap.
+    with store.transaction() as tx:
+        with pytest.raises(Conflict, match="registered capture sources"):
+            require_drained(tx, run)
+
+
+def test_readiness_bounds_source_scope_and_does_not_read_bodies(capture, monkeypatch):
+    from hx.observer import MAX_SOURCES, source_snapshot
+    from hx.native_producer import require_drained
+    store, run, path, source = capture
+    drain(store, source)
+    for index in range(MAX_SOURCES):
+        register(store, run_id=run, stream_id=f"extra-{index}", path=path,
+                 decoder="hook-v1", session_id=f"extra-{index}")
+    def no_reads(*args, **kwargs):
+        raise AssertionError("readiness must not open transcript bodies")
+    monkeypatch.setattr(Path, "open", no_reads)
+    with store.transaction() as tx:
+        snapshot = source_snapshot(tx, run)
+        assert snapshot["overflow"] and len(snapshot["sources"]) == MAX_SOURCES
+        with pytest.raises(Conflict, match="excessive scope"):
+            require_drained(tx, run)
+
+
 def test_incremental_reads_are_new_bytes_plus_fixed_tail_fingerprints(capture, monkeypatch):
     store, _, path, source = capture
     for index in range(100):
@@ -314,6 +355,12 @@ def test_pi_full_stdout_lifecycle_excludes_thinking_updates():
     assert any(event.kind == "tool_result" for event in events)
     assert any(event.data.get("tool_input") == {"command": "true"} for event in events)
     assert events[-1].data["settled"] is False
+
+
+@pytest.mark.parametrize("content", [None, {}, [{"type": "text", "text": {}}], [{"type": "new-public-kind"}]])
+def test_pi_unknown_completed_content_requires_reconciliation(content):
+    with pytest.raises(DecodeGap):
+        decode("pi-v1", {"type": "message_end", "message": {"role": "assistant", "content": content}})
 
 
 def test_unknown_native_shape_is_a_gap_not_an_empty_result():

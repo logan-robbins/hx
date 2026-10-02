@@ -103,6 +103,28 @@ function rememberUsage(message: { role?: string; usage?: { input?: number; cache
   if (tokens !== null) contextTokens = tokens;
 }
 
+function publicMessage(message: any): Record<string, unknown> {
+  // Project before serialization: private reasoning, signatures, image bytes,
+  // and provider-specific fields never cross the hook pipe.
+  const content = typeof message.content === "string" ? message.content :
+    Array.isArray(message.content) ? message.content.flatMap((part: any) => {
+      if (part?.type === "thinking" || part?.type === "redacted_thinking") return [];
+      if (part?.type === "text") return [{ type: "text", text: part.text }];
+      if (part?.type === "toolCall") return [{ type: "toolCall", id: part.id, name: part.name, arguments: part.arguments,
+        namespace: typeof part.namespace === "string" ? part.namespace : undefined }];
+      // Keep the tag so unknown public shapes become visible decoder gaps.
+      return [{ type: part?.type ?? "unknown" }];
+    }) : null;
+  const usage: Record<string, number> = {};
+  for (const key of ["input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "reasoning", "totalTokens"]) {
+    const value = message.usage?.[key];
+    if (Number.isSafeInteger(value) && value >= 0) usage[key] = value;
+  }
+  return { role: message.role, content, usage,
+    stopReason: typeof message.stopReason === "string" ? message.stopReason : undefined,
+    errorMessage: typeof message.errorMessage === "string" ? message.errorMessage : undefined };
+}
+
 function rebuildGoal(ctx: { sessionManager: { getBranch: () => Array<{ type?: string; customType?: string; data?: GoalState }> } }): void {
   goal = null;
   for (const entry of ctx.sessionManager.getBranch()) {
@@ -156,8 +178,11 @@ export default function (pi: {
   const subagent = process.env.PI_SUBAGENT === "1";
   const childIdentity = nativeHook && subagent ? { agent_id: required("HX_PI_CHILD_ID") } : null;
 
-  pi.on("message_end", (event) => {
+  pi.on("message_end", (event, ctx) => {
     rememberUsage(event.message);
+    if (!nativeHook || !["user", "assistant"].includes(event.message?.role)) return;
+    callHook("message", { type: "message_end", message: publicMessage(event.message),
+      ...(childIdentity ?? { transcript_path: sessionFile(ctx) }) });
   });
 
   pi.on("input", (event, ctx) => {

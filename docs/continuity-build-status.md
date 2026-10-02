@@ -180,3 +180,19 @@ session, and a replacement tmux session. Tests ran serially without model calls.
 An isolated waiting-shell measurement reported 1,920 KiB RSS on this host; that is
 one shell's observed RSS, not a fleet or worst-case bound. No new watcher or model
 process is introduced by the shell supervisor.
+
+Capture readiness now shares a bounded metadata snapshot across context packets,
+unit completion, and downstream prerequisite admission. Late transcript appends
+block dependent work; same-size rewrites outside the fixed tail fingerprint leave
+a persistent reconciliation gap. Planned Pi parent/child extensions relay public
+completed messages and usage through the durable producer. Thinking/signatures are
+excluded before the hook pipe; messages do not bypass tool admission or settlement.
+Automatic source registration, complete adapter coverage, reconciliation, native
+completion, and the remaining specification units above remain unfinished.
+
+Validation for shared source readiness and Pi completed-message capture: 153 tests
+passed across observer, context packets, unit execution, producer/capture, hook
+contracts, native tools, and Pi adapter regressions. Installed Pi 0.84.3 loader
+checks exercised frozen callback identities and parent/child messages; a pipe
+assertion verified that private fields were removed before transport. Tests ran
+serially without model calls. Extension syntax and `git diff --check` also passed.

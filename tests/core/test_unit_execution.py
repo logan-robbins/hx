@@ -94,6 +94,33 @@ def test_late_producer_evidence_blocks_downstream_admission(fleet):
         units.assign(store, "b", 1, "eng-002")
 
 
+def test_unread_transcript_blocks_completion_and_late_append_blocks_dependency(fleet, tmp_path):
+    from hx import observer
+    store, repo = fleet[:2]
+    planning.apply(store, plan(fleet, [unit(repo, "a"), unit(repo, "b", prerequisites=[dependency("a")])]))
+    run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    path = tmp_path / "transcript.jsonl"
+    path.write_text("")
+    source = observer.register(store, run_id=run, stream_id="native", path=path, decoder="hook-v1", session_id="S")
+    observer.drain(store, source)
+    # The observer has not seen these bytes; its stored pending_tail is false.
+    path.write_text('{"event":"stop","last_assistant_message":"Done."}\n')
+    receipt = checks.run_check(store, run, "unit")["receipt_id"]
+    with pytest.raises(Conflict, match="registered capture sources"):
+        units.complete(store, run, {"unit": receipt})
+    assert store.db.execute("SELECT count(*) FROM leases WHERE run_id=?", (run,)).fetchone()[0] == 2
+    assert not store.db.execute("SELECT 1 FROM unit_completions WHERE run_id=?", (run,)).fetchone()
+    observer.drain(store, source)
+    units.complete(store, run, {"unit": receipt})
+    assert statuses(store)["b"]["status"] == "ready"
+    with path.open("a") as handle:
+        handle.write('{"event":"stop","last_assistant_message":"Late failure."}\n')
+    assert observer.drain(store, source)["status"] == "closed"
+    assert statuses(store)["b"]["status"] == "blocked"
+    with pytest.raises(Conflict, match="registered capture sources"):
+        units.assign(store, "b", 1, "eng-002")
+
+
 def test_independent_units_parallel_only_in_distinct_worktrees(fleet, tmp_path):
     store, repo = fleet[:2]
     other = tmp_path / "other"

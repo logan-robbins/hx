@@ -27,6 +27,32 @@ MAX_RECORD_BYTES = 8 * 1024 * 1024
 SPOOL_BYTES = 64 * 1024 * 1024
 BATCH_BYTES = 256 * 1024  # Scheduling quantum; one complete record may exceed it.
 BATCH_RECORDS = 128
+MAX_SOURCES = 16
+
+
+def source_snapshot(tx, run_id):
+    """Inspect registered source metadata only; never read transcript bodies.
+
+    This is a current observation, not proof that a native writer has stopped.
+    Completion, dependency admission, and context compilation share this gate.
+    """
+    rows = tx.db.execute("""SELECT source_id,revision,generation,committed_offset,payload
+        FROM capture_sources WHERE run_id=? ORDER BY source_id LIMIT ?""",
+        (run_id, MAX_SOURCES + 1)).fetchall()
+    sources = []
+    for row in rows[:MAX_SOURCES]:
+        state = json.loads(row["payload"])
+        lag = bool(state["pending_tail"] or state["gaps"])
+        try:
+            stat = Path(state["path"]).stat()
+            lag |= (state["identity"] != [stat.st_dev, stat.st_ino]
+                    or stat.st_size != row["committed_offset"]
+                    or state.get("observed_times") != [stat.st_mtime_ns, stat.st_ctime_ns])
+        except OSError:
+            lag = True
+        sources.append({"id": row["source_id"], "revision": row["revision"], "generation": row["generation"],
+                        "offset": row["committed_offset"], "lag": lag, "gaps": state["gaps"]})
+    return {"sources": sources, "overflow": len(rows) > MAX_SOURCES}
 
 
 class SourceReadError(Exception):
@@ -191,6 +217,15 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
             with _source_io(Path(state["path"]).open, "rb") as handle:
                 stat = _source_io(os.fstat, handle.fileno())
                 identity = [stat.st_dev, stat.st_ino]
+                observed_times = [stat.st_mtime_ns, stat.st_ctime_ns]
+                if (state.get("observed_times") is not None
+                        and state["identity"] == identity
+                        and stat.st_size <= state["last_observed_size"]
+                        and state["observed_times"] != observed_times):
+                    # A rewrite outside the fixed tail fingerprint may have
+                    # changed already captured evidence. Do not reread history
+                    # or quietly accept a new timestamp as reconciliation.
+                    _gap(state, "source metadata changed without append; captured evidence requires reconciliation", offset)
                 if state["identity"] is not None and (
                     state["identity"] != identity or stat.st_size < offset
                     or (offset and _source_io(_anchor, handle, offset) != state["anchor"])
@@ -202,6 +237,7 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
                     state["branch_live"] = False
                 state["identity"] = identity
                 state["last_observed_size"] = stat.st_size
+                state["observed_times"] = observed_times
                 _source_io(handle.seek, offset)
                 while consumed < byte_budget and lines < max_records:
                     start = offset

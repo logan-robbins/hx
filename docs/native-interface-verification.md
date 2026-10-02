@@ -41,10 +41,21 @@ entrypoint without substituting the capture ledger. They do not invoke a model.
 ## Installed Pi loader
 
 The installed Pi 0.84.3 `loadExtensions` function loaded the shipped TypeScript
-extension, registered its handlers, and ran the `tool_result` callback against a
+extension, registered its handlers, and ran the `tool_result`, `input`, and
+`message_end` callbacks against a
 scratch ledger. The test changed both the environment and the on-disk contract
 after module initialization; the callback retained its original identity and
 delivered its public result. `node --check` also accepted the extension.
+
+Completed-message checks assert that private thinking, signatures, provider
+metadata, and image bytes are absent from the hook's stdin. Public findings,
+proposed tool calls, stop reasons, usage, and unavailable-image markers reach the
+ledger. Equal messages without native IDs remain distinct. The native-tool tests
+also exercise completed-message capture for parent and sessionless child callbacks
+loaded from the private launch capsule; child identity remains attached. Installed
+`MessageEndEvent`, `AssistantMessage`, and `Usage` declarations supply these public
+field contracts. These callback checks do not certify provider emission or model
+execution.
 
 Reproduce with an explicit installed loader path:
 

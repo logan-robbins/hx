@@ -41,7 +41,7 @@ def _usage(value) -> dict | None:
         return None
     # Keep provider names; interpretation belongs to capability-specific accounting.
     allowed = {"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
-               "input", "output", "cacheRead", "cacheWrite", "total_tokens"}
+               "input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "reasoning", "total_tokens", "totalTokens"}
     result = {key: item for key, item in value.items() if key in allowed and type(item) is int and item >= 0}
     return result or None
 
@@ -176,9 +176,35 @@ def pi_v1(body: dict) -> list[Event]:
                      f"tool:{call}" if isinstance(call, str) and call else native)]
     if role not in {"user", "assistant"}:
         raise DecodeGap(f"unsupported Pi message role {role}")
+    content = message.get("content")
+    if not isinstance(content, (str, list)):
+        raise DecodeGap("invalid Pi message content")
+    data = {"text": public_text(content), "claim": role == "assistant"}
+    if body.get("agent_id"):
+        data["agent_id"] = body["agent_id"]
+        if native:
+            native = digest([body["agent_id"], native])
+    for key in ("stopReason", "errorMessage"):
+        if isinstance(message.get(key), str):
+            data[key] = message[key]
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict):
+                raise DecodeGap("invalid Pi content block")
+            kind = block.get("type")
+            if kind == "toolCall":
+                data.setdefault("tool_calls", []).append({"tool_use_id": block.get("id"),
+                    "tool_name": block.get("name"), "tool_input": block.get("arguments")})
+                if isinstance(block.get("namespace"), str):
+                    data["tool_calls"][-1]["namespace"] = block["namespace"]
+            elif kind == "image":
+                data.setdefault("attachments", []).append({"attachment_type": "image", "content_available": False})
+            elif kind not in {"text", "thinking", "redacted_thinking"}:
+                raise DecodeGap(f"unsupported Pi content block {kind}")
+            elif kind == "text" and not isinstance(block.get("text"), str):
+                raise DecodeGap("invalid Pi text block")
     return [Event("assistant_message" if role == "assistant" else "request",
-                  {"text": public_text(message.get("content")), "claim": role == "assistant"}, native,
-                  _usage(message.get("usage")))]
+                  data, native, _usage(message.get("usage")))]
 
 
 def normalized_v1(body: dict) -> list[Event]:

@@ -272,6 +272,9 @@ if (mode === 'allowed' && answer?.block) throw new Error('valid tool denied');
 if (mode === 'denied' && !answer?.block) throw new Error('draining tool allowed');
 for (const fn of handlers.get('tool_result') ?? []) await fn({...event,
   content:[{type:'text',text:mode}], isError:mode==='denied'},ctx);
+for (const fn of handlers.get('message_end') ?? []) await fn({type:'message_end',message:{role:'assistant',
+  content:[{type:'text',text:'Current tool status is '+mode+'.'},{type:'thinking',thinking:'PRIVATE'}],
+  usage:{input:3,output:5},stopReason:'stop'}},ctx);
 ''')
     child_env = {**env, 'HARNESS_ID': 'eng-001', 'HARNESS_ROOT': str(store.root)}
     if as_child:
@@ -286,6 +289,12 @@ for (const fn of handlers.get('tool_result') ?? []) await fn({...event,
         assert native_producer.status(store, run)['gap'] is None
     calls = store.db.execute('SELECT status FROM native_tool_calls WHERE launch_id=? ORDER BY status', (row['launch_id'],)).fetchall()
     assert [item[0] for item in calls] == ['denied', 'settled']
+    messages = [json.loads(item[0])["observation"] for item in store.db.execute(
+        "SELECT payload FROM events WHERE run_id=? AND kind='assistant_message'", (run,))]
+    assert len(messages) == 2
+    assert {message["data"].get("agent_id") for message in messages} == ({"pi-child"} if as_child else {None})
+    assert all(message["usage"] == {"input": 3, "output": 5} for message in messages)
+    assert 'PRIVATE' not in repr(messages)
 
 
 @pytest.mark.parametrize('adapter', ['codex', 'grok', 'meta'])

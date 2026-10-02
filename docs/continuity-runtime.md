@@ -127,12 +127,35 @@ hx capture retry
 The first command reports queued count/bytes and gaps for the caller's run. The
 second is a Partner/operator command for one bounded retry pass. Planned context
 waits for pending deliveries; forced context exposes the lag. Unit completion checks
-the queue and gap state in its final publication transaction. Late observations
+the queue, gap state, and registered-source readiness in its final publication transaction. Late observations
 after stop or amendment stay queued against their original run; they never move to
 the worker's new task. Unresolved producer capture also blocks downstream admission
 and final prerequisite verification, even if the producer had previously completed.
 Late-record/gap reconciliation and automatic pause notification remain controller
 work; there is no automatic gap-clearing or invented acknowledgement.
+
+Context compilation, unit completion, and prerequisite admission share the same
+bounded source snapshot: at most 16 registered sources, inspected through file
+metadata rather than body reads. Unread bytes, a missing/replaced file, changed
+timestamps, pending partial records, persistent gaps, or excessive source scope
+block readiness. The observer records modification/change timestamps alongside
+identity, offset, and its fixed tail fingerprint. A metadata change without an
+append leaves a persistent gap, including a same-size rewrite outside that tail;
+an ordinary retry cannot silently clear it. Metadata-only changes can therefore
+require reconciliation too. Old source records without timestamps require an
+observer pass. This snapshot does not prove writer quiescence or full native
+source coverage; process ownership remains a separate completion gate.
+
+Planned Pi extensions relay completed user/assistant messages through
+`hx-hook message`, including sessionless children. The extension projects public
+content before serialization; thinking, signatures, image bytes, and arbitrary
+provider fields never enter the hook pipe. The Pi decoder retains text, proposed
+tool calls and namespaces, stop/error descriptions, usage counts, and
+unavailable-image markers. These are claims, not tool admissions or verification
+receipts. Tool results retain their existing admission/settlement route. Messages
+without native IDs keep separate delivery identities even when their text
+matches. Unknown completed-content shapes become visible gaps, and durable
+retries use the shared observer without a new process or transcript scan.
 
 The five adapter configurations can route their existing normalized hook events
 through this entrypoint. This is not automatic fleet activation: launch/resume must

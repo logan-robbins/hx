@@ -26,20 +26,11 @@ def _count(text, counter):
 
 def _sources(tx, run_id):
     from .native_producer import status
-    rows = tx.db.execute("SELECT source_id,revision,generation,committed_offset,payload FROM capture_sources WHERE run_id=? ORDER BY source_id LIMIT 17", (run_id,)).fetchall()
-    if len(rows) > 16:
+    from .observer import source_snapshot
+    snapshot = source_snapshot(tx, run_id)
+    if snapshot["overflow"]:
         raise RequiredContextOverflow("checkpoint exceeds 16 capture sources; reconcile the assignment's capture scope")
-    sources = []
-    for row in rows:
-        state = json.loads(row["payload"])
-        lag = bool(state["pending_tail"] or state["gaps"])
-        try:
-            stat = Path(state["path"]).stat()
-            lag |= state["identity"] != [stat.st_dev, stat.st_ino] or stat.st_size != row["committed_offset"]
-        except OSError:
-            lag = True
-        sources.append({"id": row["source_id"], "revision": row["revision"], "generation": row["generation"],
-                        "offset": row["committed_offset"], "lag": lag, "gaps": state["gaps"]})
+    sources = snapshot["sources"]
     producer = status(tx, run_id)
     if producer["lag"]:
         sources.append({"id": "native-producer", "revision": None, "generation": None, "offset": None,

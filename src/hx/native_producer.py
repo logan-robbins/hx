@@ -15,7 +15,7 @@ from . import native_capture
 from .continuity_store import Conflict, _id, canonical, digest
 from .errors import ValidationError
 from .events import decode
-from .observer import BATCH_BYTES, MAX_RECORD_BYTES, SPOOL_BYTES, notify
+from .observer import BATCH_BYTES, MAX_RECORD_BYTES, SPOOL_BYTES, notify, source_snapshot
 
 QUEUE_RECORDS = 1024
 RETRY_RECORDS = 16
@@ -44,6 +44,9 @@ def status(tx, run_id):
 def require_drained(tx, run_id):
     if status(tx, run_id)["lag"]:
         raise Conflict("native capture has unacknowledged deliveries or a gap; reconcile evidence before completion")
+    snapshot = source_snapshot(tx, run_id)
+    if snapshot["overflow"] or any(source["lag"] for source in snapshot["sources"]):
+        raise Conflict("registered capture sources have unread bytes, changed metadata, a gap, or excessive scope; reconcile evidence before completion")
 
 
 def _deliver(store, binding_id, delivery_id, payload, worker_id=None):
@@ -166,5 +169,12 @@ def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload):
     observed = dict(payload)
     observed.setdefault("hook_event_name", {"log-failure": "PostToolUseFailure", "request": "UserPromptSubmit",
                                            "tool-start": "PreToolUse"}.get(event, event))
+    decoder = "hook-v1"
+    if event == "message":
+        if (adapter != "pi" or payload.get("type") != "message_end"
+                or not isinstance(payload.get("message"), dict)
+                or payload["message"].get("role") not in {"user", "assistant"}):
+            raise ValidationError("message capture requires a Pi completed user or assistant message")
+        decoder = "pi-v1"
     return produce(store, run_id=run_id, worker_id=worker_id, adapter=adapter, session_id=session,
-                   stream_id=stream, payload=observed)
+                   stream_id=stream, payload=observed, decoder=decoder)
