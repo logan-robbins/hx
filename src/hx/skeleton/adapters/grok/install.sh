@@ -41,9 +41,11 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
 
-claude_token=$root/seed/token
-[ -f "$claude_token" ] || die \
-  "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  claude_token=$root/seed/token
+  [ -f "$claude_token" ] || die \
+    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -67,6 +69,9 @@ item_id = os.environ["HX_ID"]
 python = os.environ["HX_PYTHON"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 adapter = os.path.join(os.environ["HX_ROOT"], "adapters", "grok", "hook.py")
+from pathlib import Path
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "grok", os.environ)
 
 events = (
     "SessionStart:context",
@@ -77,13 +82,17 @@ events = (
     "SubagentStart:subagent-start",
     "SubagentStop:subagent-stop",
 )
+if continuity:
+    events += ("UserPromptSubmit:request", "PreToolUse:tool-start", "PostToolUseFailure:log-failure",
+               "StopFailure:stop-failure", "StopCancelled:stop-cancelled", "SessionEnd:session-end")
 blocks = []
 for spec in events:
     grok_event, hx_event = spec.split(":")
     # hook_bin can be a command with arguments (`python -m hx.hooks` in tests),
     # so it rides inside a shell-quoted command string grok runs.
     cmd = " ".join(shlex.quote(part) for part in (
-        python, adapter, "--id", item_id, "--hook-bin", hook_bin, hx_event,
+        python, adapter, "--id", item_id, "--hook-bin", hook_bin,
+        *(["--root", os.environ["HX_ROOT"], *continuity] if continuity else []), hx_event,
     ))
     blocks.append(
         f"[[hooks.{grok_event}]]\n"
@@ -121,7 +130,9 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   done
 fi
 
-HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+fi
 
 printf 'install.sh: wrote %s (Grok home, minimal screen, hx hooks)\n' "$home/config.toml"
 printf 'install.sh: auth is %s, exported as XAI_API_KEY at launch\n' "$token_file"

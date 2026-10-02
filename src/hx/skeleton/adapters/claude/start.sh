@@ -174,7 +174,7 @@ if [ "$mode" = exec ]; then
   # never becomes an argv element of anything.
   export HARNESS_ID="$id"
   export HX_ROLE="$role"
-  export HARNESS_ROOT="$root"
+  export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export CLAUDE_CONFIG_DIR="$home"
   export DISABLE_AUTOUPDATER=1
   # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of

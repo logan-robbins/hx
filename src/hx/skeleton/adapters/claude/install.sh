@@ -111,10 +111,13 @@ cwd = os.environ["HX_CWD"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 target = os.environ["HX_SETTINGS"]
 is_partner = item_id == "partner"
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(root), item_id, "claude", os.environ)
 
 
 def hook(event):
-    return {"type": "command", "command": f"{shlex.quote(hook_bin)} --id {shlex.quote(item_id)} {event}"}
+    args = [hook_bin, "--id", item_id, *(["--root", root, *continuity] if continuity else []), event]
+    return {"type": "command", "command": " ".join(shlex.quote(arg) for arg in args)}
 
 
 def entry(event, matcher=None):
@@ -133,6 +136,13 @@ hooks = {
     "PreCompact": [entry("precompact", "*")],
     "PostCompact": [entry("postcompact", "*")],
 }
+if continuity:
+    hooks["UserPromptSubmit"] = [entry("request")]
+    hooks["PreToolUse"] = [entry("tool-start", "*")]
+    hooks["PostToolUseFailure"] = [entry("log-failure", "*")]
+    hooks["StopFailure"] = [entry("stop-failure")]
+    hooks["SessionEnd"] = [entry("session-end")]
+
 # The guard is the one hook that enforces anything, and it is the Partner's alone: it
 # directs by status and dispatch, and config/partner/guard.json names what it must not run or
 # read (spec 09.1). The matcher is `hook_guard.MATCHER`.
@@ -228,6 +238,11 @@ fi
 # CLAUDE.md: the Companion interprets a stream and returns JSON, and anything else that could
 # make it act or load project context is a liability, not a feature. Onboarding and trust are
 # pre-seeded here too, for the same reason as the agent's home.
+if [ -n "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  printf 'install.sh: prepared executor home %s\n' "$home"
+  exit 0
+fi
+
 companion_home=$root/run/$id/companion-home
 mkdir -p "$companion_home"
 copy_skills "$companion_home/skills" hx-companion

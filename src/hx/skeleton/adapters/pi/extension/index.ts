@@ -8,8 +8,9 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 
 const SOURCE: Record<string, string> = {
@@ -30,6 +31,19 @@ let contextTokens: number | null = null;
 let settledThisRun = false;
 const inFlight = new Set<string>();
 
+// Snapshot once when the extension loads. A later worker installation must not
+// change the run identity of callbacks already owned by this native session.
+const hookContractPath = join(dirname(fileURLToPath(import.meta.url)), "hook-contract.json");
+function installedHook(): { command: string; args: string[] } | null {
+  if (!existsSync(hookContractPath)) return null;
+  if (statSync(hookContractPath).size > 8192) throw new Error("hx hook contract exceeds 8 KiB");
+  const value = JSON.parse(readFileSync(hookContractPath, "utf8"));
+  if (typeof value.command !== "string" || !Array.isArray(value.args) || value.args.length > 20 ||
+      value.args.some((item: unknown) => typeof item !== "string")) throw new Error("invalid hx hook contract");
+  return value;
+}
+const nativeHook = installedHook();
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is unset`);
@@ -37,17 +51,20 @@ function required(name: string): string {
 }
 
 function hookBin(): string {
-  return join(required("HARNESS_ROOT"), "bin", "hx-hook");
+  return nativeHook?.command ?? join(required("HARNESS_ROOT"), "bin", "hx-hook");
 }
 
 function callHook(event: string, payload: Record<string, unknown>): string {
-  const result = spawnSync(hookBin(), ["--id", required("HARNESS_ID"), event], {
+  const result = spawnSync(hookBin(), [...(nativeHook?.args ?? ["--id", required("HARNESS_ID")]), event], {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: process.env,
   });
   if (result.status !== 0 && result.stderr) {
     process.stderr.write(result.stderr);
+  }
+  if (nativeHook && (event === "request" || event === "tool-start") && result.status !== 0) {
+    throw new Error("hx refused native admission; reconcile the assignment before continuing");
   }
   return result.stdout ?? "";
 }
@@ -84,6 +101,28 @@ function rememberUsage(message: { role?: string; usage?: { input?: number; cache
   if (message?.role !== "assistant") return;
   const tokens = usageTokens(message.usage);
   if (tokens !== null) contextTokens = tokens;
+}
+
+function publicMessage(message: any): Record<string, unknown> {
+  // Project before serialization: private reasoning, signatures, image bytes,
+  // and provider-specific fields never cross the hook pipe.
+  const content = typeof message.content === "string" ? message.content :
+    Array.isArray(message.content) ? message.content.flatMap((part: any) => {
+      if (part?.type === "thinking" || part?.type === "redacted_thinking") return [];
+      if (part?.type === "text") return [{ type: "text", text: part.text }];
+      if (part?.type === "toolCall") return [{ type: "toolCall", id: part.id, name: part.name, arguments: part.arguments,
+        namespace: typeof part.namespace === "string" ? part.namespace : undefined }];
+      // Keep the tag so unknown public shapes become visible decoder gaps.
+      return [{ type: part?.type ?? "unknown" }];
+    }) : null;
+  const usage: Record<string, number> = {};
+  for (const key of ["input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "reasoning", "totalTokens"]) {
+    const value = message.usage?.[key];
+    if (Number.isSafeInteger(value) && value >= 0) usage[key] = value;
+  }
+  return { role: message.role, content, usage,
+    stopReason: typeof message.stopReason === "string" ? message.stopReason : undefined,
+    errorMessage: typeof message.errorMessage === "string" ? message.errorMessage : undefined };
 }
 
 function rebuildGoal(ctx: { sessionManager: { getBranch: () => Array<{ type?: string; customType?: string; data?: GoalState }> } }): void {
@@ -137,9 +176,22 @@ export default function (pi: {
   registerTool: (tool: Record<string, unknown>) => void;
 }): void {
   const subagent = process.env.PI_SUBAGENT === "1";
+  const childIdentity = nativeHook && subagent ? { agent_id: required("HX_PI_CHILD_ID") } : null;
 
-  pi.on("message_end", (event) => {
+  pi.on("message_end", (event, ctx) => {
     rememberUsage(event.message);
+    if (!nativeHook || !["user", "assistant"].includes(event.message?.role)) return;
+    callHook("message", { type: "message_end", message: publicMessage(event.message),
+      ...(childIdentity ?? { transcript_path: sessionFile(ctx) }) });
+  });
+
+  pi.on("input", (event, ctx) => {
+    if (!nativeHook || subagent) return;
+    try {
+      callHook("request", { prompt: event.text, transcript_path: sessionFile(ctx) });
+    } catch {
+      return { action: "handled" };
+    }
   });
 
   pi.on("session_start", (event, ctx) => {
@@ -176,15 +228,29 @@ export default function (pi: {
     });
   });
 
+  pi.on("tool_call", (event, ctx) => {
+    if (!nativeHook) return;
+    try {
+      callHook("tool-start", {
+        tool_name: event.toolName,
+        tool_use_id: event.toolCallId,
+        tool_input: event.input,
+        ...(childIdentity ?? { transcript_path: sessionFile(ctx) }),
+      });
+    } catch {
+      return { block: true, reason: "hx closed native tool admission; reconcile the assignment before continuing" };
+    }
+  });
+
   pi.on("tool_result", (event, ctx) => {
-    if (subagent) return;
+    if (subagent && !nativeHook) return;
     callHook("log", {
       tool_name: event.toolName,
       tool_use_id: event.toolCallId,
       tool_input: event.input,
       tool_response: { text: contentText(event.content), isError: event.isError },
       context_tokens: contextTokens,
-      transcript_path: sessionFile(ctx),
+      ...(childIdentity ?? { transcript_path: sessionFile(ctx) }),
     });
   });
 
@@ -272,7 +338,7 @@ export default function (pi: {
 }
 
 function runChild(prompt: string, contextLine: string, agentId: string, signal?: AbortSignal): Promise<string> {
-  const root = required("HARNESS_ROOT");
+  const root = nativeHook ? required("HX_CONTINUITY_CAPSULE") : required("HARNESS_ROOT");
   const id = required("HARNESS_ID");
   const home = join(root, "run", id, "home");
   const subagents = join(root, "config", id, "SUBAGENTS.md");
@@ -285,6 +351,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
   const args = [
     "--mode", "json", "-p", "--no-session",
     "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
+    ...(nativeHook ? ["--extension", fileURLToPath(import.meta.url)] : []),
     "--no-context-files", "--no-approve", "--offline",
     "--model", harness.model,
     "--thinking", harness.effort,
@@ -297,6 +364,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
       env: {
         ...process.env,
         PI_SUBAGENT: "1",
+        HX_PI_CHILD_ID: agentId,
         PI_CODING_AGENT_DIR: home,
         PI_OFFLINE: "1",
       },
@@ -318,7 +386,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
           if (event.type === "message_end" && event.message?.role === "assistant") {
             last = textOf(event.message);
           }
-          if (event.type === "tool_execution_end") {
+          if (event.type === "tool_execution_end" && !nativeHook) {
             const tokens = usageTokens(event.result?.usage);
             callHook("log", {
               agent_id: agentId,

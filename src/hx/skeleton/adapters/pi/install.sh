@@ -39,9 +39,11 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
 
-claude_token=$root/seed/token
-[ -f "$claude_token" ] || die \
-  "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  claude_token=$root/seed/token
+  [ -f "$claude_token" ] || die \
+    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -62,9 +64,18 @@ HX_ID=$id HX_ROOT=$root HX_HOME=$home HX_HARNESS=$harness HX_TOKEN=$token_file \
 "$python" - <<'PYEOF'
 import json
 import os
+from pathlib import Path
+from hx.hook_contract import installation_args
 
 home = os.environ["HX_HOME"]
 root = os.environ["HX_ROOT"]
+continuity = installation_args(Path(root), os.environ["HX_ID"], "pi", os.environ)
+contract = Path(home) / "extensions" / "hx" / "hook-contract.json"
+if continuity:
+    contract.write_text(json.dumps({"command": str(Path(root) / "bin" / "hx-hook"),
+        "args": ["--root", root, "--id", os.environ["HX_ID"], *continuity]}) + "\n")
+else:
+    contract.unlink(missing_ok=True)
 harness = json.load(open(os.environ["HX_HARNESS"]))
 model = harness.get("model") or ""
 provider = (harness.get("harness") or {}).get("provider")
@@ -114,7 +125,9 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   done
 fi
 
-HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+fi
 
 printf 'install.sh: wrote %s (Pi home, trust never, hx extension)\n' "$home/settings.json"
 printf 'install.sh: auth is %s, written to %s\n' "$token_file" "$home/auth.json"

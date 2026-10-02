@@ -85,7 +85,7 @@ if [ "$mode" = exec ]; then
 
   cd "$cwd"
   export HARNESS_ID="$id"
-  export HARNESS_ROOT="$root"
+  export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export XDG_CONFIG_HOME="$home"
   export XDG_DATA_HOME="$home/data"
   export META_API_KEY="$(cat "$token_file")"
@@ -93,7 +93,7 @@ if [ "$mode" = exec ]; then
 
   # No prompt argument. --yolo disables approval and sandboxing and trusts the
   # workspace for this run; the persona file is derived above for inspection.
-  exec "$bin" --yolo -m "$model" --reasoning-effort "$effort"
+  exec "$bin" --yolo --model "$model" --reasoning-effort "$effort"
 fi
 
 read -r -a TMUX_CMD <<< "${HX_TMUX:-tmux}"

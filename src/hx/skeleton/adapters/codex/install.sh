@@ -58,9 +58,11 @@ if [ "$use_login" = 0 ]; then
     "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
 fi
 
-claude_token=$root/seed/token
-[ -f "$claude_token" ] || die \
-  "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  claude_token=$root/seed/token
+  [ -f "$claude_token" ] || die \
+    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
+fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -99,6 +101,9 @@ item_id = os.environ["HX_ID"]
 python = os.environ["HX_PYTHON"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 adapter = os.path.join(os.environ["HX_ROOT"], "adapters", "codex", "hook.py")
+from pathlib import Path
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "codex", os.environ)
 root = os.environ["HX_ROOT"]
 cwd = os.environ["HX_CWD"]
 
@@ -118,6 +123,9 @@ events = [
     ("SubagentStart", None, "subagent-start"),
     ("SubagentStop", None, "subagent-stop"),
 ]
+if continuity:
+    events.append(("UserPromptSubmit", None, "request"))
+    events.append(("PreToolUse", None, "tool-start"))
 if item_id == "partner":
     events.append(("PreToolUse", "Bash|apply_patch|Edit|Write", "guard"))
 blocks = []
@@ -126,7 +134,7 @@ for codex_event, matcher, hx_event in events:
     # tests); quote each part, the shell splits them back at fire time.
     cmd = " ".join(shlex.quote(part) for part in (
         python, adapter, "--id", item_id, "--hook-bin", hook_bin,
-        "--root", root, hx_event,
+        "--root", root, *continuity, hx_event,
     ))
     block = f"[[hooks.{codex_event}]]\n"
     if matcher is not None:
@@ -182,7 +190,9 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   done
 fi
 
-HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
+  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
+fi
 
 printf 'install.sh: wrote %s (Codex home, unattended, hx hooks)\n' "$home/config.toml"
 if [ "$use_login" = 1 ]; then

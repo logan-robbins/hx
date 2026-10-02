@@ -23,6 +23,14 @@ SPEC_08_COMMANDS = {
     # Addenda distillation: shrinks the Work Item and tasks.json record back
     # down after resumes and amends accumulate; likewise post-spec-08.
     "distill",
+    # Continuity v2: registered incremental capture and its resident observer.
+    "observe",
+    "capture",
+    "progress",
+    "check",
+    "map",
+    "plan",
+    "evidence",
 }
 
 
@@ -78,4 +86,6 @@ def test_hook_entrypoint_knows_the_spec_09_events():
         # The Companion's own `stop`, in its own home — the other half of the pass protocol
         # (spec 10), not one of the agent's own.
         "companion-stop",
+        # Explicit normalized observation routes for planned-run capture.
+        "request", "log-failure",
     }

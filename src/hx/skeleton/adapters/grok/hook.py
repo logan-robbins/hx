@@ -47,27 +47,44 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--id", required=True)
     parser.add_argument("--hook-bin", required=True)
+    parser.add_argument("--root")
     parser.add_argument("event")
+    for field in ("run", "launch", "adapter"):
+        parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
+    continuity = [getattr(args, "continuity_" + field) for field in ("run", "launch", "adapter")]
+    if any(continuity) and not all(continuity):
+        parser.error("planned hook identity must be complete")
+    extra = [part for field, value in zip(("run", "launch", "adapter"), continuity)
+             if value is not None for part in ("--continuity-" + field, value)]
 
     try:
-        body = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        body = {}
+        raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError("oversized hook input")
+        body = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        body = {"_hx_capture_error": True}
     if not isinstance(body, dict):
-        body = {}
+        body = {"_hx_capture_error": True}
 
-    payload = json.dumps(translate(body)).encode()
+    translated = translate(body)
+    if any(continuity) and "subagentType" in body and "agent_id" not in body and "agentId" not in body:
+        # A type such as 'explore' is shared by concurrent children, not an ID.
+        translated.pop("agent_id", None)
+        translated["agent_type"] = body["subagentType"]
+    payload = json.dumps(translated).encode()
     # --hook-bin can be a bare path or a command with arguments.
     try:
         proc = subprocess.run(
-            [*shlex.split(args.hook_bin), "--id", args.id, args.event],
+            [*shlex.split(args.hook_bin), "--id", args.id,
+             *(["--root", args.root] if args.root else []), *extra, args.event],
             input=payload,
             capture_output=True,
         )
     except OSError as exc:
         print(f"hook.py: cannot run {args.hook_bin}: {exc}", file=sys.stderr)
-        return 1
+        return 2 if any(continuity) and args.event in {"request", "tool-start"} else 1
     if proc.stdout:
         sys.stdout.buffer.write(proc.stdout)
     if proc.stderr:

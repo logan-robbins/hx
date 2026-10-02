@@ -84,6 +84,9 @@ item_id = os.environ["HX_ID"]
 python = os.environ["HX_PYTHON"]
 hook_bin = os.environ["HX_HOOK_BIN"]
 adapter = os.path.join(os.environ["HX_ROOT"], "adapters", "meta", "hook.py")
+from pathlib import Path
+from hx.hook_contract import installation_args
+continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "meta", os.environ)
 root = os.environ["HX_ROOT"]
 
 events = (
@@ -95,6 +98,9 @@ events = (
     "SubagentStart:subagent-start",
     "SubagentStop:subagent-stop",
 )
+if continuity:
+    events += ("UserPromptSubmit:request", "PreToolUse:tool-start", "PostToolUseFailure:log-failure",
+               "StopFailure:stop-failure", "SessionEnd:session-end", "PostLLMCall:model-response")
 hooks = {}
 for spec in events:
     muse_event, hx_event = spec.split(":")
@@ -102,7 +108,7 @@ for spec in events:
     # tests); quote each part, the shell splits them back at fire time.
     cmd = " ".join(shlex.quote(part) for part in (
         python, adapter, "--id", item_id, "--hook-bin", hook_bin,
-        "--root", root, hx_event,
+        "--root", root, *continuity, hx_event,
     ))
     hooks.setdefault(muse_event, []).append({"hooks": [{"type": "command", "command": cmd}]})
 

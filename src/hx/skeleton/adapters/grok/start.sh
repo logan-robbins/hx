@@ -87,7 +87,7 @@ if [ "$mode" = exec ]; then
 
   cd "$cwd"
   export HARNESS_ID="$id"
-  export HARNESS_ROOT="$root"
+  export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export GROK_HOME="$home"
   export XAI_API_KEY="$(cat "$token_file")"
   export PATH="$root/bin:$PATH"

@@ -83,17 +83,31 @@ def run_checks(checks: str, workdir: Path, env=None) -> subprocess.CompletedProc
 
 def workdir_is_dirty(workdir: Path) -> tuple[bool, str]:
     """`git status --porcelain` in the workdir. A non-repository is never dirty (17.2)."""
-    if not (workdir / ".git").exists():
-        return False, ""
-    result = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=str(workdir), capture_output=True, text=True, check=False
-    )
+    import os
+    git_env = {**os.environ, "LC_ALL": "C"}
+    try:
+        inside = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=str(workdir),
+                                capture_output=True, text=True, check=False, env=git_env)
+        if inside.returncode != 0:
+            if "not a git repository" in inside.stderr:
+                return False, ""
+            return True, "Could not inspect repository state: " + inside.stderr
+        result = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=str(workdir), capture_output=True, text=True, check=False, env=git_env
+        )
+    except OSError as exc:
+        return True, f"Could not inspect repository state: {type(exc).__name__}"
     if result.returncode != 0:
-        return False, ""
+        return True, "Could not inspect repository state: " + result.stderr
     return bool(result.stdout.strip()), result.stdout
 
 
-def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> None:
+def _acceptance_identity(entry: dict) -> str:
+    from .continuity_store import digest
+    return digest({key: entry.get(key) for key in ("goal", "addenda", "dispatched")})
+
+
+def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> dict | None:
     """Every refusal, before anything is written. Raises `CheckFailed`."""
     open_streams = streams.subagent_streams(root, item_id, state="open")
     if open_streams:
@@ -123,12 +137,45 @@ def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> None:
             f"the `### Checks` block of the goal it was dispatched with (spec 06)."
         )
     checks = parse_goal_text(goal_text, f"tasks.json[{item_id}].goal").checks
+    from . import fingerprints
+    import os
+    check_env = dict(os.environ if env is None else env)
+    before = fingerprints.source(workdir, [], check_env)
     result = run_checks(checks, workdir, env)
     if result.returncode != 0:
         raise CheckFailed(
             f"{CHECK_FAILED} {item_id}\n`### Checks` failed with exit {result.returncode} in {workdir}:\n"
             f"{result.stdout}{result.stderr}"
         )
+    # Checks can write files or even commit changed inputs. Recheck both content
+    # identity and cleanliness after execution before allowing the completion path.
+    after = fingerprints.source(workdir, [], check_env)
+    dirty, listing = workdir_is_dirty(workdir)
+    if dirty:
+        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nthe workdir became dirty during verification:\n{listing}")
+    if before["repository"] and (not before["complete"] or not after["complete"] or any(
+        before[key] != after[key] for key in ("hash", "observation_hash")
+    )):
+        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nsource inputs changed during verification; run checks again on the final source.")
+    return {"source": after if after["repository"] else None, "acceptance": _acceptance_identity(entry)}
+
+
+def final_workspace_guard(root: Path, item_id: str, proof: dict | None, *, env=None) -> None:
+    """Check again after the companion flush, before changing completion metadata."""
+    from . import fingerprints
+    import os
+    if streams.subagent_streams(root, item_id, state="open"):
+        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nsubagent work remains open after verification.")
+    if proof is not None and _acceptance_identity(tasks_mod.load_tasks(root).get(item_id) or {}) != proof["acceptance"]:
+        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nassignment or acceptance changed after verification; check the current goal again.")
+    workdir = workdir_for(root, item_id)
+    dirty, listing = workdir_is_dirty(workdir)
+    if dirty:
+        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nthe workdir changed after verification:\n{listing}")
+    if proof is not None and proof["source"] is not None:
+        current = fingerprints.source(workdir, [], dict(os.environ if env is None else env))
+        if not current["complete"] or any(proof["source"][key] != current[key] for key in ("hash", "observation_hash")):
+            raise CheckFailed(f"{CHECK_FAILED} {item_id}\nsource inputs changed after verification; check the final source again.")
 
 
 def final_digest(root: Path, item_id: str, outcome: str, *, env=None) -> str:
@@ -231,12 +278,14 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
             f"refuse: {item_id} is `{item.state}`, not `working`; only a working item completes (spec 06)"
         )
 
-    preflight(root, item_id, outcome, env=env)
+    proof = preflight(root, item_id, outcome, env=env)
 
     ts = timestamps.now()
     # The Companion has to be at the head of the stream before its final pass (spec 08).
     flush_mod.flush(root, item_id, env=env)
     digest = final_digest(root, item_id, outcome, env=env)
+    if outcome == "done":
+        final_workspace_guard(root, item_id, proof, env=env)
     write_digest(path, digest)
     set_frontmatter(path, outcome=outcome)
 

@@ -111,7 +111,7 @@ if [ "$mode" = exec ]; then
 
   cd "$cwd"
   export HARNESS_ID="$id"
-  export HARNESS_ROOT="$root"
+  export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export PI_CODING_AGENT_DIR="$home"
   export PI_CODING_AGENT_SESSION_DIR="$home/sessions"
   export PI_OFFLINE=1
