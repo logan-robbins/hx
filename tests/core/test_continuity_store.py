@@ -70,6 +70,23 @@ def test_schema_one_migrates_without_losing_existing_tasks(ledger):
         assert upgraded.db.execute("SELECT count(*) FROM event_origins").fetchone()[0] == 0
 
 
+def test_schema_fourteen_indexes_existing_capture_without_resetting_offsets(ledger, tmp_path):
+    from hx import observer
+    store, run = ledger
+    path = tmp_path / "source.jsonl"
+    path.write_text('{"event":"stop"}\n')
+    source = observer.register(store, run_id=run, stream_id="native", path=path, decoder="hook-v1", session_id="S")
+    observer.drain(store, source)
+    before = tuple(store.db.execute("SELECT * FROM capture_sources WHERE source_id=?", (source,)).fetchone())
+    store.db.execute("DROP INDEX capture_run_sources")
+    store.db.execute("PRAGMA user_version=14")
+    with ContinuityStore(store.root) as upgraded:
+        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        assert tuple(upgraded.db.execute("SELECT * FROM capture_sources WHERE source_id=?", (source,)).fetchone()) == before
+        query = upgraded.db.execute("EXPLAIN QUERY PLAN SELECT * FROM capture_sources WHERE run_id=? ORDER BY source_id LIMIT 17", (run,))
+        assert any("capture_run_sources" in row[3] for row in query)
+
+
 def test_atomic_rollback_covers_records_cursor_outbox_and_artifacts(ledger):
     store, run = ledger
     with store.transaction() as tx:

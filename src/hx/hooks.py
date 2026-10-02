@@ -177,6 +177,9 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                     admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload)
                 hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
                      adapter=adapter, launch_id=launch_id, event=event, payload=payload)
+                from .native_sources import observe as observe_sources
+                observe_sources(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id,
+                                worker_id=item_id, adapter=adapter, event=event, payload=payload)
                 if event in {"context", "request"}:
                     from .native_controller import observe
                     line = observe(ledger, env["HX_CONTINUITY_RUN"], launch_id, event, payload)

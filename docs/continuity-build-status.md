@@ -6,7 +6,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 14; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 15; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
 | P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Planned-hook routing binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. All five installers persist immutable launch contracts and bake callback identity into arguments; Pi snapshots its contract at extension load. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Fresh planned launch now creates private sessions, observes startup, and confirms exact submission through installed request hooks. Full native event/source coverage, late/gap reconciliation, shutdown/resume barriers, and model execution verification remain. Installed CLI versions/options and the real Pi extension loader were checked separately. |
 | P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
@@ -196,3 +196,22 @@ contracts, native tools, and Pi adapter regressions. Installed Pi 0.84.3 loader
 checks exercised frozen callback identities and parent/child messages; a pipe
 assertion verified that private fields were removed before transport. Tests ran
 serially without model calls. Extension syntax and `git diff --check` also passed.
+
+Claude source registration now connects reported main/child transcripts to the
+shared observer from planned lifecycle hooks. Sources retain original launch,
+private-home, session, and actor identity; registration reads no transcript body.
+Incremental capture excludes main-session sidechains and detects ancestry changes;
+fork/resume reconciliation remains explicit and unfinished. Files outside the
+original home, replacement symlinks/homes, non-regular files, and conflicting
+registrations cannot silently substitute evidence. Schema 15 adds a run/source
+index while preserving existing offsets and generations. Other adapters retain
+their existing direct-event paths pending verified native source contracts.
+
+Validation for Claude source registration: 187 tests passed across scoped sources,
+observer, ledger migrations, context packets, unit execution, native capture and
+producer, hook contracts, preparation, and controller behavior. Installed Muse
+echo-provider and Pi loader checks were enabled. Claude source cases use controlled
+JSONL replay and the shared hook entrypoint; they do not prove native emission
+or model execution. Tests ran serially, with two-connection collision cases inside
+the source suite. `git diff --check` passed. Full adapter coverage, branch/gap
+reconciliation, and native completion remain unfinished.

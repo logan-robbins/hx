@@ -15,6 +15,7 @@ import math
 import os
 import select
 import socket
+import stat as stat_types
 import time
 import uuid
 from pathlib import Path
@@ -28,6 +29,42 @@ SPOOL_BYTES = 64 * 1024 * 1024
 BATCH_BYTES = 256 * 1024  # Scheduling quantum; one complete record may exceed it.
 BATCH_RECORDS = 128
 MAX_SOURCES = 16
+
+
+def _open_source(state):
+    """Open a launch-owned regular file without following replacement symlinks."""
+    scope = state.get("native_scope")
+    if not scope:
+        return Path(state["path"]).open("rb")
+    root = Path(scope["root"])
+    parts = Path(state["path"]).relative_to(root).parts
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    parent = os.open(root, flags | os.O_DIRECTORY)
+    try:
+        root_stat = os.fstat(parent)
+        if [root_stat.st_dev, root_stat.st_ino] != scope["root_identity"]:
+            raise OSError("original native source home was replaced")
+        for part in parts[:-1]:
+            child = os.open(part, flags | os.O_DIRECTORY, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        fd = os.open(parts[-1], flags, dir_fd=parent)
+        try:
+            if not stat_types.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError("native source is not a regular file")
+            return os.fdopen(fd, "rb")
+        except BaseException:
+            os.close(fd)
+            raise
+    finally:
+        os.close(parent)
+
+
+def _source_stat(state):
+    if not state.get("native_scope"):
+        return Path(state["path"]).stat()
+    with _open_source(state) as handle:
+        return os.fstat(handle.fileno())
 
 
 def source_snapshot(tx, run_id):
@@ -44,7 +81,7 @@ def source_snapshot(tx, run_id):
         state = json.loads(row["payload"])
         lag = bool(state["pending_tail"] or state["gaps"])
         try:
-            stat = Path(state["path"]).stat()
+            stat = _source_stat(state)
             lag |= (state["identity"] != [stat.st_dev, stat.st_ino]
                     or stat.st_size != row["committed_offset"]
                     or state.get("observed_times") != [stat.st_mtime_ns, stat.st_ctime_ns])
@@ -68,7 +105,8 @@ def _source_io(operation, *args):
 
 
 def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
-             decoder: str, session_id: str, branch_ids: list[str] | None = None) -> str:
+             decoder: str, session_id: str, branch_ids: list[str] | None = None,
+             native_scope: dict | None = None) -> str:
     if stream_id in {"progress", "checks"}:
         raise ValidationError("progress/checks streams are reserved for validated hx commands")
     if decoder not in DECODERS or not isinstance(session_id, str) or not session_id or len(session_id) > 512 or not stream_id:
@@ -77,22 +115,52 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
     if branch_ids is not None and (not isinstance(branch_ids, list) or not branch_ids or any(not isinstance(x, str) or not x for x in branch_ids)):
         raise ValidationError("branch_ids must be the ordered active ancestry IDs")
     source_id = digest([run_id, stream_id, str(path), decoder, session_id, branch_ids])
+    if native_scope is not None:
+        if (not isinstance(native_scope, dict)
+                or set(native_scope) != {"root", "root_identity", "actor_id", "launch_id", "branch_policy"}
+                or not isinstance(native_scope["root"], str)
+                or not isinstance(native_scope["root_identity"], list) or len(native_scope["root_identity"]) != 2
+                or any(type(value) is not int or value < 0 for value in native_scope["root_identity"])
+                or not isinstance(native_scope["launch_id"], str) or not 1 <= len(native_scope["launch_id"]) <= 512
+                or (native_scope["actor_id"] is not None and
+                    (not isinstance(native_scope["actor_id"], str) or not 1 <= len(native_scope["actor_id"]) <= 512))
+                or decoder != "claude-v1" or branch_ids is not None
+                or native_scope.get("branch_policy") != "claude-linear-v1"
+                or not Path(native_scope["root"]).is_absolute()
+                or ".." in Path(native_scope["root"]).parts
+                or not path.is_relative_to(Path(native_scope["root"]))
+                or ".." in path.parts
+                or path == Path(native_scope["root"])):
+            raise ValidationError("invalid native source scope")
+        source_id = digest([source_id, native_scope])
     with store.transaction() as tx:
-        run = tx.db.execute("SELECT ended_at FROM runs WHERE run_id=?", (run_id,)).fetchone()
-        if run is None or run[0] is not None:
+        run = tx.db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+        if run is None or run["ended_at"] is not None:
             raise ValidationError("capture registration requires an active run")
+        if native_scope and tx.task(run["task_id"])["revision"] != run["task_revision"]:
+            raise Conflict("native source task changed; lifecycle rebind required")
         if tx.db.execute("SELECT 1 FROM capture_sources WHERE source_id=?", (source_id,)).fetchone():
             return source_id
         # A changed branch requires a fresh run. Fact invalidation/rebinding must
         # also happen at the lifecycle boundary before preparing new context.
-        for row in tx.db.execute("SELECT payload FROM capture_sources WHERE run_id=?", (run_id,)):
-            previous = json.loads(row[0])
+        rows = tx.db.execute("SELECT stream_id,payload FROM capture_sources WHERE run_id=? LIMIT ?",
+                             (run_id, MAX_SOURCES + 1 if native_scope else -1))
+        if native_scope:
+            rows = rows.fetchall()
+            if len(rows) >= MAX_SOURCES:
+                raise Conflict("native source scope exceeds 16 sources; reconcile before registering more")
+        for row in rows:
+            previous = json.loads(row["payload"])
+            if native_scope and (previous["path"] == str(path) or row["stream_id"] == stream_id):
+                raise Conflict("native source path or stream was rebound; reconcile its original registration")
             if previous["path"] == str(path) and previous.get("branch_ids") != branch_ids:
                 raise Conflict("native branch changed; start a new run before registering its source")
         payload = {"schema_version": 1, "path": str(path), "session_id": session_id,
                    "branch_ids": branch_ids, "branch_live": False, "last_native_id": None, "identity": None,
                    "anchor": None, "gaps": [], "pending_tail": False, "latest_usage": None,
                    "decoded_bytes": 0, "last_observed_size": 0}
+        if native_scope is not None:
+            payload["native_scope"] = native_scope
         tx._change()
         tx.db.execute("INSERT OR IGNORE INTO cursors(run_id,stream_id) VALUES(?,?)", (run_id, stream_id))
         tx.db.execute("INSERT INTO capture_sources VALUES(?,?,?,?,?,?,?,?)",
@@ -113,6 +181,8 @@ def _anchor(handle, offset: int) -> str:
 
 
 def _branch_active(body: dict, state: dict) -> bool:
+    if state.get("native_scope", {}).get("branch_policy") == "claude-linear-v1":
+        return _claude_branch_active(body, state)
     if "parentId" not in body:
         return True
     native = body.get("id")
@@ -132,6 +202,32 @@ def _branch_active(body: dict, state: dict) -> bool:
         state["last_native_id"] = native
         return True
     return False
+
+
+def _claude_branch_active(body, state):
+    scope = state["native_scope"]
+    actor = scope["actor_id"]
+    if body.get("sessionId") not in (None, state["session_id"]):
+        raise DecodeGap("Claude record belongs to another session")
+    if not actor and (body.get("isSidechain") or body.get("teamName")):
+        return False
+    if body.get("agentId") not in (None, actor):
+        raise DecodeGap("Claude record belongs to another child")
+    native = body.get("uuid")
+    if not native and body.get("type") not in {"user", "assistant"}:
+        return True  # Non-chain bookkeeping still passes its decoder contract.
+    if not isinstance(native, str) or not 1 <= len(native) <= 512 or "parentUuid" not in body:
+        raise DecodeGap("Claude source lacks explicit native ancestry")
+    parent = body["parentUuid"]
+    if parent is not None and (not isinstance(parent, str) or not 1 <= len(parent) <= 512):
+        raise DecodeGap("invalid Claude parent identity")
+    if native == state["last_native_id"] and parent == state.get("last_native_parent"):
+        return not body.get("isMeta")  # Complementary observation of the same node.
+    if parent != state["last_native_id"]:
+        raise DecodeGap("Claude branch changed; reconcile before continuing capture")
+    state["last_native_id"] = native
+    state["last_native_parent"] = parent
+    return not body.get("isMeta")
 
 
 def spool_size(store: ContinuityStore) -> int:
@@ -179,6 +275,15 @@ def append_observation(tx, *, run_id: str, stream_id: str, session_id: str,
 
 
 def _capture(tx, source: dict, state: dict, event: Event, offset: int, index: int) -> dict:
+    actor = state.get("native_scope", {}).get("actor_id")
+    if actor:
+        native = event.native_id
+        call = event.data.get("tool_use_id")
+        if native and call and native.startswith(("tool:", "call:")):
+            native = native.split(":", 1)[0] + ":" + digest([actor, call])
+        elif native:
+            native = digest([actor, native])
+        event = Event(event.kind, {**event.data, "agent_id": actor}, native, event.usage)
     captured = append_observation(tx, run_id=source["run_id"], stream_id=source["stream_id"],
         session_id=state["session_id"], event=event,
         fallback_identity=("offset", source["source_id"], source["generation"], offset, index))
@@ -206,15 +311,17 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
             raise ValidationError(f"unknown capture source {source_id}")
         source = dict(row)
         state = json.loads(source["payload"])
-        run = tx.db.execute("SELECT ended_at FROM runs WHERE run_id=?", (source["run_id"],)).fetchone()
-        if run[0] is not None:
+        run = tx.db.execute("SELECT * FROM runs WHERE run_id=?", (source["run_id"],)).fetchone()
+        if run["ended_at"] is not None:
             return {"source_id": source_id, "status": "closed", "events": 0, "bytes": 0}
+        if state.get("native_scope") and tx.task(run["task_id"])["revision"] != run["task_revision"]:
+            return {"source_id": source_id, "status": "stale", "events": 0, "bytes": 0}
         offset = source["committed_offset"]
         consumed = count = lines = 0
         state["pending_tail"] = False
         used = spool_size(store)
         try:
-            with _source_io(Path(state["path"]).open, "rb") as handle:
+            with _source_io(_open_source, state) as handle:
                 stat = _source_io(os.fstat, handle.fileno())
                 identity = [stat.st_dev, stat.st_ino]
                 observed_times = [stat.st_mtime_ns, stat.st_ctime_ns]
@@ -234,6 +341,7 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
                     offset = 0
                     source["generation"] = str(uuid.uuid4())
                     state["last_native_id"] = None
+                    state.pop("last_native_parent", None)
                     state["branch_live"] = False
                 state["identity"] = identity
                 state["last_observed_size"] = stat.st_size
@@ -279,6 +387,8 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
                     state["branch_ids"] = branch_state["branch_ids"]
                     state["branch_live"] = branch_state["branch_live"]
                     state["last_native_id"] = branch_state["last_native_id"]
+                    if "last_native_parent" in branch_state:
+                        state["last_native_parent"] = branch_state["last_native_parent"]
                     offset += line_size
                     consumed += line_size
                     used += charge

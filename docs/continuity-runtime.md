@@ -157,6 +157,38 @@ without native IDs keep separate delivery identities even when their text
 matches. Unknown completed-content shapes become visible gaps, and durable
 retries use the shared observer without a new process or transcript scan.
 
+Planned Claude lifecycle hooks register reported main and child JSONL sources in
+the original launch's private home through `native_sources.py`. Registration
+records paths and ownership; it never searches session directories or reads a
+transcript body. Main `transcript_path` and child `agent_transcript_path` remain
+separate streams, matching [Claude's hook contract](https://code.claude.com/docs/en/hooks#subagentstop).
+The hook's final-message observation is retained immediately; a missing file or
+partial line remains pending until the observer can ingest the delayed record.
+Identical reports reuse one binding. A different path/session for that stream,
+a reused path for another actor, or more than 16 sources requires reconciliation.
+Other adapters keep their existing hook/direct-event routes; they do not acquire
+an assumed Claude decoder merely because a payload contains a transcript path.
+
+The scoped observer pins the private home's filesystem identity and opens each
+relative path component without following symlinks. Replacement homes, redirected
+paths, and non-regular files produce gaps before content ingestion. It validates
+session/actor identity and tracks Claude's `uuid`/`parentUuid` chain incrementally;
+main-session sidechains/team branches are excluded, while child sources retain
+their actor and separate tool identities. Progress/system links advance ancestry
+without becoming assistant findings. A fork, missing ancestry, or compaction
+chain reset requires explicit reconciliation instead of silently selecting a
+different branch. This policy covers fresh linear launches; controlled branch
+selection and resume remain unfinished. [The official SDK's transcript and
+subagent chain code](https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/sessions.py)
+defines the chain fields; its full-file reconstruction is not used in ordinary
+capture. Attachment records retain an unavailable-content marker.
+
+Schema 15 indexes registered sources by run and source ID without resetting
+existing generations or offsets. Task amendments and closed runs prevent scoped
+transcript ingestion; evidence never follows a reusable worker slot to a newer
+assignment. EOF and successful source registration still do not establish native
+quiescence, complete source coverage, or permission to release assignment leases.
+
 The five adapter configurations can route their existing normalized hook events
 through this entrypoint. This is not automatic fleet activation: launch/resume must
 install the environment contract, compiled instructions, and checkpoint delivery.

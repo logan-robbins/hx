@@ -73,6 +73,14 @@ companion integration, and real model execution remain to be verified separately
 
 ## Native controller checks on 2026-10-01
 
+Claude source registration uses the documented main/child hook paths and the
+official SDK's `uuid`/`parentUuid`, sidechain, metadata, and subagent-chain fields.
+Controlled JSONL replay covers delayed partial writes, child identity, private
+thinking exclusion, branch discontinuities, original-home confinement, concurrent
+registration, and worker reuse. These are source-contract tests, not an installed
+Claude model run. Native emission across supported Claude versions, fork/compaction
+reconciliation, and complete source coverage remain to be verified.
+
 The installed Muse Code `1.4.2 (1.4.2-R4684.1)` TUI ran on a private tmux server with
 its built-in echo provider. Its real startup and request hooks reached the shared
 ledger, installed the current context pointer, and confirmed the exact submission.

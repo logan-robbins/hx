@@ -102,6 +102,11 @@ def hook_v1(body: dict) -> list[Event]:
 
 def claude_v1(body: dict) -> list[Event]:
     kind = body.get("type")
+    if kind == "attachment":
+        attachment = body.get("attachment")
+        if not isinstance(attachment, dict) or not isinstance(attachment.get("type"), str):
+            raise DecodeGap("invalid Claude attachment")
+        return [Event("request", {"attachment_type": attachment["type"], "content_available": False}, body.get("uuid"))]
     if kind in {"progress", "file-history-snapshot", "queue-operation", "summary", "system"}:
         # Lifecycle hooks retain the boundary; these rows are provider bookkeeping.
         return []
