@@ -189,6 +189,26 @@ transcript ingestion; evidence never follows a reusable worker slot to a newer
 assignment. EOF and successful source registration still do not establish native
 quiescence, complete source coverage, or permission to release assignment leases.
 
+Codex main-thread lifecycle hooks use the same private-home registration with
+`codex-rollout-0.156.1`. The decoder is pinned because the
+[Codex hook reference](https://learn.chatgpt.com/docs/hooks#common-input-fields)
+does not promise a stable transcript format. The first committed record must
+identify the expected session and CLI version. Another session/version, repeated
+session metadata, rollback, compaction, or an unknown record leaves a visible
+gap without advancing past it. A later version requires its own verified decoder.
+Codex child transcript ancestry is not yet verified; a reported child source
+creates a gap instead of treating inherited parent history as child execution.
+
+The decoder captures public requests/messages, tool calls and outputs, command
+completion/exit status, discovered tool definitions, and usage with explicit
+response/turn/session scope. Hook and rollout tool observations share call IDs
+while retaining complementary fields. Known message broadcasts are skipped in
+favor of canonical response items. Reasoning and encrypted content are excluded;
+unavailable images/audio retain markers. Native instruction/world-state frames
+retain change fingerprints rather than repeating instruction bodies in the spool.
+These fingerprints do not establish full-request accounting or prompt equivalence.
+Turn completion remains separate from process quiescence and receipt validation.
+
 The five adapter configurations can route their existing normalized hook events
 through this entrypoint. This is not automatic fleet activation: launch/resume must
 install the environment contract, compiled instructions, and checkpoint delivery.

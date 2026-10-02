@@ -124,8 +124,9 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
                 or not isinstance(native_scope["launch_id"], str) or not 1 <= len(native_scope["launch_id"]) <= 512
                 or (native_scope["actor_id"] is not None and
                     (not isinstance(native_scope["actor_id"], str) or not 1 <= len(native_scope["actor_id"]) <= 512))
-                or decoder != "claude-v1" or branch_ids is not None
-                or native_scope.get("branch_policy") != "claude-linear-v1"
+                or (decoder, native_scope.get("branch_policy")) not in {
+                    ("claude-v1", "claude-linear-v1"), ("codex-rollout-0.156.1", "codex-0.156.1-v1")}
+                or branch_ids is not None
                 or not Path(native_scope["root"]).is_absolute()
                 or ".." in Path(native_scope["root"]).parts
                 or not path.is_relative_to(Path(native_scope["root"]))
@@ -181,6 +182,9 @@ def _anchor(handle, offset: int) -> str:
 
 
 def _branch_active(body: dict, state: dict) -> bool:
+    if state.get("native_scope", {}).get("branch_policy") == "codex-0.156.1-v1":
+        from .codex_rollout import active
+        return active(body, state)
     if state.get("native_scope", {}).get("branch_policy") == "claude-linear-v1":
         return _claude_branch_active(body, state)
     if "parentId" not in body:
@@ -342,6 +346,7 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
                     source["generation"] = str(uuid.uuid4())
                     state["last_native_id"] = None
                     state.pop("last_native_parent", None)
+                    state.pop("native_meta_seen", None)
                     state["branch_live"] = False
                 state["identity"] = identity
                 state["last_observed_size"] = stat.st_size
@@ -389,6 +394,8 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
                     state["last_native_id"] = branch_state["last_native_id"]
                     if "last_native_parent" in branch_state:
                         state["last_native_parent"] = branch_state["last_native_parent"]
+                    if "native_meta_seen" in branch_state:
+                        state["native_meta_seen"] = branch_state["native_meta_seen"]
                     offset += line_size
                     consumed += line_size
                     used += charge

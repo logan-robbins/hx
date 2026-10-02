@@ -12,11 +12,10 @@ camelCase variants map to snake_case, and `tool_response` is filled from
 `toolResult` when only the latter is present. Unknown keys pass through;
 hx-hook ignores what it does not read. Two deliberate gaps, not oversights:
 
-- context tokens: hook payloads carry no usage counts, so `context_tokens`
-  stays absent and the seam threshold does not fire for codex rows.
-- persona: the CLI surface has no verifiable system-prompt injection, so
-  the persona file is derived for inspection and identity arrives through the
-  context file and the pasted goal pointer.
+- context tokens: hook payloads carry no usage counts. Planned continuity gets
+  usage from its version-pinned rollout decoder; the legacy hook field remains absent.
+- persona: the legacy route derives a persona file for inspection. Planned
+  sessions use the launch manifest and verified startup context delivery.
 
 A `guard` denial (exit 2, reason on stderr) is additionally translated into
 Codex's `permissionDecision` deny JSON on stdout: exit 2 alone is a documented

@@ -12,7 +12,7 @@ from .errors import ValidationError
 def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
     # Other adapters retain their verified hook/direct-event paths until a
     # native file decoder and source-location contract have been established.
-    if adapter != "claude" or event not in {"context", "request", "stop", "subagent-start", "subagent-stop"}:
+    if adapter not in {"claude", "codex"} or event not in {"context", "request", "stop", "subagent-start", "subagent-stop"}:
         return []
     hook_contract.validate(store, run_id=run_id, launch_id=launch_id, adapter=adapter, worker_id=worker_id)
     launch = native_launch._row(store, run_id)
@@ -25,6 +25,8 @@ def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
     if payload.get("transcript_path") and (not actor or event in {"subagent-start", "subagent-stop"}):
         reports.append((None, payload["transcript_path"]))
     if payload.get("agent_transcript_path"):
+        if adapter == "codex":
+            raise Conflict("Codex child ancestry requires a verified source contract")
         if not actor:
             raise ValidationError("native child source requires its stable actor identity")
         _id(actor)
@@ -45,6 +47,10 @@ def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
         raise Conflict("original private home path was redirected")
     info = home.stat()
     sources = []
+    decoder, policy = "claude-v1", "claude-linear-v1"
+    if adapter == "codex":
+        from .codex_rollout import DECODER, POLICY
+        decoder, policy = DECODER, POLICY
     for actor, reported in reports:
         if not isinstance(reported, str) or len(reported.encode()) > 4096 or "\0" in reported or not Path(reported).is_absolute():
             raise ValidationError("native transcript requires a bounded absolute path")
@@ -53,7 +59,7 @@ def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
             raise Conflict("native transcript lies outside the original private home")
         stream = "child:" + digest([launch_id, actor]) if actor else "native:" + digest([launch_id, session])
         sources.append(observer.register(store, run_id=run_id, stream_id=stream, path=path,
-            decoder="claude-v1", session_id=session, native_scope={"root": str(home),
+            decoder=decoder, session_id=session, native_scope={"root": str(home),
                 "root_identity": [info.st_dev, info.st_ino], "actor_id": actor,
-                "launch_id": launch_id, "branch_policy": "claude-linear-v1"}))
+                "launch_id": launch_id, "branch_policy": policy}))
     return sources

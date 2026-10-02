@@ -41,7 +41,8 @@ def _usage(value) -> dict | None:
         return None
     # Keep provider names; interpretation belongs to capability-specific accounting.
     allowed = {"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
-               "input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "reasoning", "total_tokens", "totalTokens"}
+               "input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "reasoning", "total_tokens", "totalTokens",
+               "cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens"}
     result = {key: item for key, item in value.items() if key in allowed and type(item) is int and item >= 0}
     return result or None
 
@@ -230,7 +231,12 @@ def public_batch_v1(body: dict) -> list[Event]:
     return result
 
 
-DECODERS = {"hook-v1": hook_v1, "claude-v1": claude_v1, "pi-v1": pi_v1, "normalized-v1": normalized_v1,
+def codex_rollout(body):
+    from .codex_rollout import decode
+    return decode(body)
+
+
+DECODERS = {"hook-v1": hook_v1, "claude-v1": claude_v1, "pi-v1": pi_v1, "codex-rollout-0.156.1": codex_rollout, "normalized-v1": normalized_v1,
             "public-batch-v1": public_batch_v1}
 
 

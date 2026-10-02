@@ -20,21 +20,22 @@ from .test_unit_execution import fleet
 
 
 @pytest.fixture
-def launched(configured):
+def launched(configured, request):
     store, _, run = configured
-    launch = prepare(configured)
+    adapter = getattr(request, "param", "claude")
+    launch = prepare(configured, adapter)
     capsule = Path(launch["payload"]["capsule"])
     home = capsule / "run/eng-001/home"
     home.mkdir(parents=True)
     env = native_launch.environment(store.root, launch, env={})
-    args = hook_contract.installation_args(capsule, "eng-001", "claude", env)
+    args = hook_contract.installation_args(capsule, "eng-001", adapter, env)
     return store, run, launch, home, args
 
 
-def report(launched, path, *, event="stop", **extra):
+def report(launched, path, *, event="stop", adapter="claude", **extra):
     store, run, launch, _, _ = launched
     return native_sources.observe(store, run_id=run, launch_id=launch["launch_id"], worker_id="eng-001",
-        adapter="claude", event=event, payload={"session_id": "S", "transcript_path": str(path), **extra})
+        adapter=adapter, event=event, payload={"session_id": "S", "transcript_path": str(path), **extra})
 
 
 def hook(launched, path, *, event="stop", **extra):

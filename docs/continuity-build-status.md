@@ -215,3 +215,21 @@ JSONL replay and the shared hook entrypoint; they do not prove native emission
 or model execution. Tests ran serially, with two-connection collision cases inside
 the source suite. `git diff --check` passed. Full adapter coverage, branch/gap
 reconciliation, and native completion remain unfinished.
+
+Codex main-thread source registration now uses the version-pinned
+`codex-rollout-0.156.1` decoder. It preserves public message/tool/usage evidence,
+including complementary command exit status and namespaced tool definitions,
+without copying private reasoning or repeated native instruction frames into
+task memory. Source metadata must identify the original session and verified CLI
+version; unknown records and continuation changes remain gaps. The installed CLI
+was exercised with a local provider fixture, real hooks, one fixed command, and
+its actual rollout. Child ancestry, further native versions, complete Meta/Grok
+source contracts, reconciliation, and the remaining specification stay open.
+
+Validation for Codex source registration: 194 tests passed across rollout/source
+capture, observer, context packets, unit execution, hook contracts, producer,
+preparation, controller, and Codex adapter behavior. After tightening discovered
+tool and web-action validation, all 15 Codex rollout tests passed, including the
+installed CLI check. Installed Muse echo-provider and Pi loader checks were also
+enabled in the broader suite. These overlapping counts are not additive. No paid
+model or model fleet was run. `git diff --check` passed.

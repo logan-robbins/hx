@@ -73,6 +73,28 @@ companion integration, and real model execution remain to be verified separately
 
 ## Native controller checks on 2026-10-01
 
+Installed Codex CLI `0.156.1` also ran in an isolated home against a loopback
+Responses transport fixture. The real CLI executed one fixed `printf` command,
+emitted startup/request/tool/stop hooks, and wrote its own rollout. The observer
+ingested that reported path without gaps, retained public messages and command
+exit status, matched hook/rollout call identities, and read zero bytes on a second
+drain. Synthetic private reasoning sent by the fixture was absent from the ledger.
+Usage totals survived with their native scope. No personal auth/session files or
+paid model were used. The fixture substitutes only the provider response; the
+native executable, command execution, hooks, and rollout writer are real.
+
+The installed binary's experimental JSON-schema generator supplied the public
+response-item shapes. The hook reference explicitly treats transcript format as
+unstable, so this implementation requires `cli_version: 0.156.1` in matching
+session metadata. Unknown shapes, rollback/compaction, and unverified child
+ancestry remain gaps. This check proves the observed version's transport/source
+integration, not model quality, child execution, or complete fleet compatibility.
+
+```sh
+HX_CODEX_TEST_BIN=/opt/homebrew/bin/codex .venv/bin/python -m pytest \
+  tests/core/test_codex_rollout.py::test_installed_codex_rollout_and_hook_contract -q
+```
+
 Claude source registration uses the documented main/child hook paths and the
 official SDK's `uuid`/`parentUuid`, sidechain, metadata, and subagent-chain fields.
 Controlled JSONL replay covers delayed partial writes, child identity, private
