@@ -39,12 +39,14 @@ def _result(ledger, run_id):
     from .native_tools import pending
     row = native_launch._row(ledger, run_id)
     body = row["payload"]
+    shutdown = body.get("shutdown", {})
     return {"run_id": run_id, "launch_id": row["launch_id"], "status": row["status"],
             "session": body.get("session"), "checkpoint_id": body["checkpoint_id"],
             "instruction_delivery": body["instruction_delivery"], "error": row["error"],
             "pending_tool_calls": pending(ledger, row["launch_id"]),
             "active_children": ledger.db.execute("SELECT count(*) FROM native_children WHERE launch_id=? AND status='active'",
-                                                 (row["launch_id"],)).fetchone()[0]}
+                                                 (row["launch_id"],)).fetchone()[0],
+            "shutdown_phase": shutdown.get("phase"), "observed_processes": len(shutdown.get("processes", []))}
 
 
 def _native_env(ledger, row, env):
@@ -70,6 +72,11 @@ def _owned_pane(row):
     if pane.returncode or len(fields) != 3 or not fields[0].startswith("%") or not fields[1].isdigit() or fields[2] != "0":
         raise Conflict("native main pane is unavailable")
     actual = {"id": fields[0], "pid": int(fields[1])}
+    from .native_processes import probe
+    process = probe(actual["pid"])
+    if process is None:
+        raise Conflict("native main process exited before ownership was recorded")
+    actual["process"] = process["identity"]
     if row["payload"].get("pane") not in (None, actual):
         raise Conflict("native main pane was replaced")
     return actual
@@ -90,7 +97,8 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
     if row["status"] == "prepared":
         with ledger.transaction() as tx:
             row = native_launch.verify_inputs(tx, run_id)
-            payload = {**row["payload"], "session": "hx-" + row["launch_id"], "tmux": tmux.tmux_command(env)}
+            payload = {**row["payload"], "session": "hx-" + row["launch_id"], "tmux": tmux.tmux_command(env),
+                       "supervisor": "shell-wait-v1"}
             _transition(tx, run_id, {"prepared"}, "installing", payload=payload)
         row = native_launch._row(ledger, run_id)
         capsule = Path(payload["capsule"])
@@ -132,7 +140,11 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
             # mode, this command can never respawn or replace an existing pane.
             launched = _tmux(row, "new-session", "-d", "-s", payload["session"], "-n", "main",
                 "-c", json.loads(native_launch._bytes(capsule / "config" / worker / "harness.json"))["workdir"],
-                *environment, "bash", str(capsule / "adapters" / child["HX_CONTINUITY_ADAPTER"] / "start.sh"),
+                # tmux resumes its immediate child after SIGSTOP. Keep a small
+                # waiting shell as that child, so the native executable and its
+                # descendants can be stopped without suspending a shared server.
+                *environment, "/bin/sh", "-c", '"$@"; result=$?; exit "$result"', "hx-native-wait",
+                "bash", str(capsule / "adapters" / child["HX_CONTINUITY_ADAPTER"] / "start.sh"),
                 "--exec", worker)
             if launched.returncode:
                 raise HxError("native session creation failed; inspect its original launch before recovery")
@@ -194,11 +206,14 @@ def drain(ledger, worker, run_id, request_id, *, env=None):
         row = native_launch._row(tx, run_id)
         if not row or row["request_id"] != request_id or row["payload"]["worker_id"] != worker:
             raise Conflict("native drain must name its original worker and launch request")
+        if row["payload"].get("shutdown"):
+            return _result(tx, run_id)
         if row["status"] != "draining":
             if row["status"] not in {"ready", "submitted", "submission_unconfirmed", "submission_uncertain",
                                       "submission_rejected", "continuation_required", "session_uncertain"}:
                 raise Conflict("native launch is changing state; reconcile startup before draining")
-            unit_execution._run(tx, run_id)
+            # Closing admission must work even when task inputs were invalidated.
+            # The immutable launch tuple, not a fresh assignment, owns shutdown.
             payload = {**row["payload"], "drain_from": row["status"]}
             _transition(tx, run_id, {row["status"]}, "draining", payload=payload)
     return _result(ledger, run_id)
@@ -211,9 +226,11 @@ def observe(ledger, run_id, launch_id, event, observation):
         return None
     if row["launch_id"] != launch_id:
         raise Conflict("native lifecycle event belongs to another launch")
-    if event == "request" and row["status"] in {"draining", "quiesced"}:
+    if event == "request" and (row["status"] in {"draining", "quiesced"} or row["payload"].get("shutdown")):
         from .native_tools import AdmissionDenied
         raise AdmissionDenied("native request admission is closed for shutdown")
+    if row["payload"].get("shutdown"):
+        return None  # Late context hooks cannot reopen a terminating launch.
     if observation.get("agent_id") or observation.get("agentId"):
         return None
     native_session = observation.get("session_id") or observation.get("sessionId") or observation.get("transcript_path")

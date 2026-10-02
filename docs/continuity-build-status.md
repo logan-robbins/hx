@@ -16,7 +16,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 | P06b shared map updates | In progress | `map_updates.py`, `map_refresh.py`, `map_dependencies.py`: proposal CAS/coalescing, atomic graph changes, isolated overlays, durable bounded source refresh, exact task/fact input bindings, incident-edge/fact/receipt invalidation, and direct-consumer replan queue. Planned source leases are implemented. Remaining: watcher registration, automatic downstream replan scheduling, file-only consumer indexing, native companion transaction integration. |
 | P06c map integration | In progress | `hx map check` and deterministic shard export implemented. Concurrent publication protection, merged-source reconciliation, and crash recovery remain. |
 | P07 context compiler | In progress | `context_packets.py` and explicit `hx compose --run`: immutable assignment packets, selected current facts, required map inputs, exact recipes, pending evidence/capture lag, source-aware replay, acknowledgements and predecessor retirement. Native turn-boundary barriers, persona placement, adapter/controller composition and full-request budget wiring remain. |
-| P08 task planning | In progress | Indexed assignment brief; validated behavior-unit DAG; atomic plan revisions; ready/assign/audit/finish/materialize/stop; repository-wide leases; exact source/receipt outputs; verified integration before consumer admission. Serial ledger/CLI end-to-end coverage. Private launch preparation freezes current instructions and context, excludes old homes/memories, and binds hooks to the shared authority. Explicit native dispatch starts one unique session and never resends an uncertain submission. Controlled shutdown/resume, automatic scheduling, resource-aware admission, mutation-boundary audits, and semantic plan review remain. |
+| P08 task planning | In progress | Indexed assignment brief; validated behavior-unit DAG; atomic plan revisions; ready/assign/audit/finish/materialize/stop; repository-wide leases; exact source/receipt outputs; verified integration before consumer admission. Serial ledger/CLI end-to-end coverage. Private launch preparation freezes current instructions and context, excludes old homes/memories, and binds hooks to the shared authority. Explicit native dispatch starts one unique session and never resends an uncertain submission. Owned-process shutdown now records kernel identities and terminates observed descendants through bounded, replayable steps. Background/source reconciliation, safe lease release and resume, automatic scheduling, resource-aware admission, mutation-boundary audits, and semantic plan review remain. |
 | P09 budgets | Pending | Entire request accounting, capability gates, shared parent reserve. |
 | P10 Jev | Pending | Bounded client, validated decisions, deterministic fallback. |
 | P10b tools | Pending | Catalog, discover/load, verified adapter tool visibility. |
@@ -160,3 +160,23 @@ moving external pane queries outside SQLite's writer transaction, the final
 admission/drain suite passed 22 tests, including installed Pi parent/child callback
 checks. Tests ran serially without model calls or a live fleet. Pi extension syntax
 and `git diff --check` also passed.
+
+Owned-process shutdown integration: `hx launch ... --shutdown` records identities
+before signalling, stops discovered descendants, and ends at
+`stopped_unreconciled`. macOS uses audit-token signals; a PID or session-name match
+cannot substitute for the original process instance. A small waiting shell keeps
+tmux from automatically resuming the stopped native executable. Freeze batches
+exclude ledger writers, and conditional state updates preserve concurrent/restarted
+controller progress. Termination still retains leases: historical detached work,
+remote operations, source/capture coverage, completion handoff, and resume remain
+unfinished. The full specification remains the delivery scope.
+
+Validation for owned-process shutdown: 161 tests passed across shutdown/process
+identity, native controller/tools/preparation/contracts, ledger/unit execution, and
+legacy lifecycle behavior. Installed Muse echo-provider shutdown and Pi loader
+checks were enabled. The tests include interrupted signals, concurrent controller
+advances, stale kernel identities, unrelated processes, a child in a separate OS
+session, and a replacement tmux session. Tests ran serially without model calls.
+An isolated waiting-shell measurement reported 1,920 KiB RSS on this host; that is
+one shell's observed RSS, not a fleet or worst-case bound. No new watcher or model
+process is introduced by the shell supervisor.

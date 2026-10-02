@@ -355,16 +355,20 @@ def main_launch(argv: list[str], root: Path, *, env=None) -> int:
                         help="launch the agent without its Companion window")
     parser.add_argument("--run", help="start the worker's reserved planned run")
     parser.add_argument("--request", help="stable native launch request; reuse it when checking progress")
-    parser.add_argument("--drain", action="store_true", help="close planned request/tool admission and retain execution leases")
+    stopping = parser.add_mutually_exclusive_group()
+    stopping.add_argument("--drain", action="store_true", help="close planned request/tool admission and retain execution leases")
+    stopping.add_argument("--shutdown", action="store_true", help="advance owned-process termination; retain unreconciled leases")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.run or args.request or args.drain:
+    if args.run or args.request or args.drain or args.shutdown:
         if not (args.run and args.request):
             parser.error("planned launch requires --run and --request together")
         from .continuity_store import ContinuityStore, canonical
         from .native_controller import advance, drain
+        from .native_shutdown import advance as shutdown
         with ContinuityStore(root) as ledger:
-            print(canonical((drain if args.drain else advance)(ledger, args.id, args.run, args.request, env=env)))
+            action = shutdown if args.shutdown else drain if args.drain else advance
+            print(canonical(action(ledger, args.id, args.run, args.request, env=env)))
         return 0
     result = launch(root, args.id, companion=not args.no_companion, env=env)
     print(f"HX-LAUNCH {result['id']} {result['session']} goal={result['goal'] or 'none'}")

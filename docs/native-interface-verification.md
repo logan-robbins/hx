@@ -124,3 +124,32 @@ this proves the real extension loader/callback integration, not model execution.
 The combined 240-test regression run also retained the installed Muse echo-provider
 startup/request check. A final 22-test admission suite passed after the transaction
 lock adjustment. No model provider calls were made.
+
+## Process ownership and shutdown (2026-10-01)
+
+The macOS implementation uses the public SDK's `proc_bsdinfo`, task-name audit-token
+query, and `proc_signal_with_audittoken`. Apple's
+[libproc implementation](https://github.com/apple-oss-distributions/xnu/blob/main/libsyscall/wrappers/libproc/libproc.c)
+and [process lookup implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_proc.c)
+provide the underlying process-generation contract. Local kernel tests checked
+stop/kill, stale generation refusal even after a simulated stale userspace precheck,
+prior-boot refusal, self-signal refusal, and exclusion of an unrelated process from
+child discovery. They launch only short-lived test processes.
+
+A real tmux test exposed automatic continuation of stopped pane processes, matching
+[tmux's child-signal handler](https://github.com/tmux/tmux/blob/master/server.c).
+Planned launch now uses a minimal waiting shell as tmux's immediate child and stops
+the native executable beneath it. The installed Muse echo-provider test exercises
+startup, submission, and actual process shutdown without a model request. The
+Linux pidfd path is implemented but has not been executed on this macOS host.
+
+These results do not establish coverage of historical detached processes or remote
+jobs. Shutdown retains leases and explicitly reports `stopped_unreconciled` until
+those separate lifecycle obligations can be satisfied.
+
+The combined shutdown/control/lifecycle regression run passed 161 tests with the
+installed-runtime checks enabled. It includes two concurrent shutdown drivers,
+interruption after an actual stop signal, ledger writer exclusion, an owned child
+in a separate OS session, and retries after a replacement tmux session appears.
+Test cases ran serially; collision checks use short-lived threads. No model call
+or live worker fleet was started.

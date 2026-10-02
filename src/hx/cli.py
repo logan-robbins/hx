@@ -106,6 +106,7 @@ the control plane:
   launch ID                    idle work item, home, tmux session, goal if working
   launch ID --run RUN --request REQUEST  advance a planned native launch once
     --drain                    close native request/tool admission; retain leases
+    --shutdown                 stop observed owned processes; retain unreconciled leases
   dispatch ID GOAL [ID GOAL]   validate the goals, then working; the files are consumed
   goal ID [--now]              paste the pointer into a worker's pane
   task                         print your own goal and its addenda

@@ -363,3 +363,45 @@ Native hook timeouts/crashes may fail open outside the hx entrypoint, and comple
 adapter/tool coverage is not yet certified. Process ownership, detached/background
 work reconciliation, controlled termination/resume, and full compaction barriers
 remain required before native completion may release its leases.
+
+## Owned-process shutdown
+
+```sh
+hx launch eng-001 --run RUN --request ORIGINAL_LAUNCH_REQUEST --shutdown
+```
+
+This Partner/operator command advances one bounded shutdown step. It closes native
+admission, persists process-instance identities, stops the observed descendants,
+then kills those exact instances. Repeat the same command until it reports
+`stopped_unreconciled`. It is an interrupting shutdown: already admitted calls may
+be interrupted and remain unresolved. No acceptance receipt or task completion is
+invented from termination.
+
+Startup now records the pane process's kernel identity. On macOS, signals use an
+audit token with a process generation; Linux uses pidfds and boot/start identity.
+Stale identities do not signal a reused PID. Shutdown never selects a replacement
+by its tmux session name. A launch lacking the original process-instance receipt
+and controlled supervisor is not silently adopted for termination.
+
+A small waiting shell is tmux's immediate child. It launches the native adapter once,
+waits, then exits; it does not watch files, poll, restart workers, or run a model.
+This is necessary because tmux resumes its immediate child after `SIGSTOP`. The
+native process beneath the shell can remain stopped while the controller discovers
+its descendants. The supervisor stays runnable while waiting and is terminated last.
+
+Each call sends at most 16 signals or performs one process census. Shutdown retains
+at most 256 observed identities. The census contains PID/parent metadata only, is
+bounded at 256 KiB before parsing, and does not read process arguments, environments,
+source files, or transcripts. Stop intent and identities commit before signals.
+A short writer-exclusion transaction surrounds each freeze batch, preventing a
+suspended hx hook from holding the ledger's writer lock. Frozen descendants are
+expanded before the kill phase. Conditional ledger updates prevent concurrent
+controllers from replacing a newer shutdown snapshot; interrupted calls resume
+from persisted identities.
+
+`stopped_unreconciled` proves only that the recorded instances cannot execute. A
+process that detached and was reparented before discovery, an external service, or
+an uncaptured native operation can lie outside that snapshot. Its receipt therefore
+keeps `scope: observed_descendants` and `coverage_verified: false`; assignment leases
+remain held. Background/source reconciliation, completion handoff, and controlled
+resume remain required before the full lifecycle can release or reuse ownership.
