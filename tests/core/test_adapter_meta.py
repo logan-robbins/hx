@@ -60,6 +60,27 @@ def test_hook_passes_claude_shape_through():
     assert out["source"] == "startup"
 
 
+def test_model_response_projects_before_the_hook_pipe(tmp_path):
+    script = Path(_hook_module().__file__)
+    received = tmp_path / "received.json"
+    receiver = tmp_path / "receive.py"
+    receiver.write_text("import sys,pathlib\npathlib.Path(" + repr(str(received)) + ").write_bytes(sys.stdin.buffer.read())\n")
+    payload = {"hook_event_name": "PostLLMCall", "session_id": "S", "turn_id": "T", "request_id": "T:0:1",
+        "status": "failed", "error": "Provider unavailable", "usage": {"input_tokens": 12, "extra": "PRIVATE"},
+        "messages": [{"text": "PRIVATE" * 20000}], "tools": [{"description": "PRIVATE"}],
+        "options": {"private": "PRIVATE"}, "output_text_preview": "PRIVATE"}
+    import shlex
+    result = subprocess.run([sys.executable, str(script), "--id", "eng-001", "--root", str(tmp_path),
+        "--hook-bin", shlex.join([sys.executable, str(receiver)]), "model-response"],
+        input=json.dumps(payload), capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    wire = received.read_bytes()
+    assert b"PRIVATE" not in wire and len(wire) < 1000
+    public = json.loads(wire)
+    assert public["request_id"] == "T:0:1" and public["error"] == "Provider unavailable"
+    assert public["usage"] == {"input_tokens": 12}
+
+
 def test_hook_end_to_end_writes_the_log_stream(instance):
     from hx.streams import main_stream
 

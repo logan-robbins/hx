@@ -65,6 +65,35 @@ def test_durable_retry_after_reopen_keeps_identity_and_only_public_observations(
         assert reopened.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
+def test_muse_model_attempts_retry_without_private_frames_or_duplicate_usage(ledger, monkeypatch):
+    store, run = ledger
+    payload = {"session_id": "S", "turn_id": "T", "request_id": "T:0:1", "status": "failed",
+        "attempt": 1, "step": 0, "error": "API unavailable", "output_text_preview": "PRIVATE",
+        "messages": [{"content": "PRIVATE"}], "tools": [{"description": "PRIVATE"}],
+        "usage": {"input_tokens": 5, "cached_tokens": 2, "reasoning_tokens": 1}}
+    def emit(body):
+        return relay.hook(store, run_id=run, worker_id="eng-001", adapter="meta", launch_id="launch",
+                          event="model-response", payload=body)
+    with monkeypatch.context() as m:
+        m.setattr(native_capture, "enqueue", unavailable)
+        assert emit(payload)["queued"]
+    assert "PRIVATE" not in "\n".join(store.db.iterdump())
+    assert relay.retry(store)[0]["committed"]
+    assert emit(payload)["committed"]
+    assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
+    assert emit({**payload, "request_id": "T:0:2", "attempt": 2})["committed"]
+    assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
+    item = json.loads(store.db.execute("SELECT payload FROM events ORDER BY seq DESC LIMIT 1").fetchone()[0])["observation"]
+    assert item["data"]["attempt"] == 2 and item["data"]["error"] == "API unavailable"
+    assert item["usage"] == payload["usage"]
+    with pytest.raises(ValidationError, match="verified Muse"):
+        relay.hook(store, run_id=run, worker_id="eng-001", adapter="grok", launch_id="launch",
+                   event="model-response", payload=payload)
+    for bad in ({**payload, "status": "unknown"}, {**payload, "request_id": None}):
+        with pytest.raises(ValidationError):
+            emit(bad)
+
+
 def test_lost_ack_replays_committed_delivery_even_after_run_closes(ledger, monkeypatch):
     store, run = ledger
     real = native_capture.enqueue

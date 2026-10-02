@@ -73,6 +73,32 @@ companion integration, and real model execution remain to be verified separately
 
 ## Native controller checks on 2026-10-01
 
+Installed Muse Code `1.4.2 (1.4.2-R4684.1)` was also exercised against a loopback
+model-catalog/error fixture. Its real headless runtime received HTTP 400, emitted
+`PostLLMCall` with the request/turn identity and exact error, and then emitted
+`SessionEnd`. No `StopFailure` was observed for that request despite its presence
+in the current [Muse hook contract](https://meta-models.github.io/muse-code-sdk/next/guides/plugins/reference/hook-events/).
+The generated planned hooks now capture the observed model-response route and
+session end directly into the ledger. This uses an isolated home and a local
+fixture credential; no personal credentials or remote model service are used.
+
+Separate headless and interactive echo probes both reported `transcript_path:
+null`. A file decoder/location contract therefore remains unverified. Native
+reminder model attempts use separate session IDs; their usage/error observations
+retain those identities rather than becoming main-session results.
+
+```sh
+HX_MUSE_TEST_BIN=/Users/loganrobbins/.local/bin/muse .venv/bin/python -m pytest \
+  tests/core/test_hook_contract.py::test_installed_muse_failure_reaches_ledger_through_generated_hooks -q
+```
+
+Controlled callback replay additionally covers the documented
+[Claude failure/end events](https://code.claude.com/docs/en/hooks#stopfailure)
+and [Grok failure/cancellation/end events](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md).
+This proves installer/transport behavior under supplied payloads, not native
+failure emission for those two executables. Their late turn identifiers survive
+capture; these events cannot release assignment ownership or settle live tools.
+
 Installed Codex CLI `0.156.1` also ran in an isolated home against a loopback
 Responses transport fixture. The real CLI executed one fixed `printf` command,
 emitted startup/request/tool/stop hooks, and wrote its own rollout. The observer

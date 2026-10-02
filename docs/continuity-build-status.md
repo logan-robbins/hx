@@ -233,3 +233,23 @@ tool and web-action validation, all 15 Codex rollout tests passed, including the
 installed CLI check. Installed Muse echo-provider and Pi loader checks were also
 enabled in the broader suite. These overlapping counts are not additive. No paid
 model or model fleet was run. `git diff --check` passed.
+
+Failure/teardown capture now installs Claude/Muse/Grok `StopFailure` and
+`SessionEnd`, plus Grok `StopCancelled`. Their observations preserve native
+turn/prompt identity and diagnostics without closing tools, children, or leases.
+Claude failure/end callbacks also register a reported transcript without reading
+it. Muse `PostLLMCall` preserves request-attempt errors and reported usage, with
+private request summaries/tool previews removed before the hook pipe. The installed
+Muse 1.4.2 CLI emitted this callback for a local HTTP 400; it did not emit
+`StopFailure` in that probe. Headless and interactive echo probes reported no
+transcript path, so no Muse file-source contract is claimed. Complete feeds,
+background reconciliation, and the remaining specification are still required.
+
+Validation for failure/teardown capture: 244 tests passed serially across installed
+hook contracts, native tools/controller/capture/producer, scoped sources, adapter
+installation, Codex rollouts, observer, context packets, and behavior-unit execution.
+Installed Muse local-error and echo-provider checks, Codex local-response capture,
+and Pi loader checks were enabled. Replay covers delayed turn outcomes, outstanding
+child/tool/lease retention, retry deduplication, and private-field projection before
+the Muse pipe. These checks do not prove full adapter or background-work coverage.
+`git diff --check` passed.

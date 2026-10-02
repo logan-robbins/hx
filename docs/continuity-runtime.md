@@ -209,6 +209,24 @@ retain change fingerprints rather than repeating instruction bodies in the spool
 These fingerprints do not establish full-request accounting or prompt equivalence.
 Turn completion remains separate from process quiescence and receipt validation.
 
+Planned Claude, Muse, and Grok installs also capture `StopFailure` and `SessionEnd`;
+Grok captures `StopCancelled`. They produce observational boundaries with exact
+diagnostics, native turn/prompt identity, and an explicit unsettled outcome. A
+failure's rendered error is not an assistant finding. Delayed notifications remain
+associated with their native turn and never settle tool calls, children, or leases.
+Failure/end hooks can register a reported Claude transcript without reading it.
+
+Muse additionally captures `PostLLMCall`: the installed 1.4.2 CLI emitted this event
+for a rejected model request but did not emit `StopFailure` in that probe. Keep
+request/response IDs, attempt/step, status, error, and provider-reported attempt
+usage. Native truncated message/tool summaries and output previews are excluded
+before the hook pipe;
+they cannot establish full prompt contents, complete responses, or tool visibility.
+Repeated identical observations of one request deduplicate; another native request
+ID retains its own evidence. Failed-attempt usage is a vendor report, not proof of
+zero billing or the current context size. Original session identity separates
+main and native reminder sessions. Complete Muse log/feed coverage remains open.
+
 The five adapter configurations can route their existing normalized hook events
 through this entrypoint. This is not automatic fleet activation: launch/resume must
 install the environment contract, compiled instructions, and checkpoint delivery.

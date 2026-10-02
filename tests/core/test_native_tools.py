@@ -97,6 +97,28 @@ def test_duplicate_call_conflicting_input_and_settled_reuse(runtime):
     assert native_producer.status(store, run)['gap'] is None
 
 
+def test_late_failure_and_session_end_preserve_outcomes_without_settling_work(runtime):
+    store, _, run, _ = runtime
+    row = submitted(runtime)
+    child = {'session_id': 'test-native-session', 'agent_id': 'child-a', 'child_session_id': 'child-session'}
+    assert fire(store, run, row, 'subagent-start', child) == 0
+    call = payload(session_id='child-session', agent_id='child-a')
+    assert fire(store, run, row, 'tool-start', call) == 0
+    assert fire(store, run, row, 'request', {'session_id': 'test-native-session', 'prompt': 'Newer request', 'turn_id': 'new'}) == 0
+    for event in ('stop-failure', 'stop-cancelled', 'session-end'):
+        assert fire(store, run, row, event, {**child, 'turn_id': 'old', 'error': 'rate_limit',
+            'error_details': 'Provider unavailable', 'last_assistant_message': 'Rendered error', 'private_reasoning': 'PRIVATE'}) == 0
+    observations = [json.loads(item[0])['observation'] for item in store.db.execute('SELECT payload FROM events ORDER BY rowid DESC LIMIT 3')]
+    assert all(item['kind'] == 'boundary' and item['data']['settled'] is False for item in observations)
+    assert {item['data']['turn_id'] for item in observations} == {'old'}
+    assert {item['data']['outcome'] for item in observations} == {'failed', 'cancelled', 'session_ended'}
+    assert native_tools.pending(store, row['launch_id']) == 1
+    assert store.db.execute('SELECT status FROM native_children WHERE actor_id=?', ('child-a',)).fetchone()[0] == 'active'
+    assert store.db.execute('SELECT count(*) FROM leases WHERE run_id=?', (run,)).fetchone()[0] > 0
+    assert native_launch._row(store, run)['status'] == 'submitted'
+    assert 'PRIVATE' not in '\n'.join(store.db.iterdump())
+
+
 def test_unmatched_result_retained_as_gap_without_settling_call(runtime):
     store, _, run, _ = runtime
     row = submitted(runtime)

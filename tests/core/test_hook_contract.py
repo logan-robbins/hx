@@ -33,7 +33,7 @@ def identity(run, adapter, launch="launch-one"):
     return {"HX_CONTINUITY_RUN": run, "HX_CONTINUITY_LAUNCH": launch, "HX_CONTINUITY_ADAPTER": adapter}
 
 
-def commands(home, adapter):
+def commands(home, adapter, event="PostToolUse"):
     if adapter == "pi":
         contract = json.loads((home / "extensions" / "hx" / "hook-contract.json").read_text())
         return [shlex.join([contract["command"], *contract["args"], "log"])]
@@ -41,7 +41,7 @@ def commands(home, adapter):
         config = tomllib.loads((home / "config.toml").read_text())
     else:
         config = json.loads((home / ("muse/settings.json" if adapter == "meta" else "settings.json")).read_text())
-    return [hook["command"] for block in config["hooks"]["PostToolUse"] for hook in block["hooks"]]
+    return [hook["command"] for block in config["hooks"][event] for hook in block["hooks"]]
 
 
 @pytest.mark.parametrize("adapter", ["claude", "codex", "grok", "meta", "pi"])
@@ -74,6 +74,20 @@ def test_installed_hook_survives_cleared_environment_and_worker_reuse(instance, 
                                 text=True, env={"PATH": env["PATH"], "HOME": str(fake_home), "PYTHONPATH": str(SRC)})
         assert result.returncode == 0 and not result.stderr, result.stderr
         assert ledger.db.execute("SELECT count(*) FROM events WHERE run_id=?", (run,)).fetchone()[0] == 1
+        if adapter in {"claude", "meta", "grok"}:
+            events = ["StopFailure", "SessionEnd"] + (["StopCancelled"] if adapter == "grok" else [])
+            for event in events:
+                terminal = commands(instance / "run" / "eng-001" / "home", adapter, event)[0]
+                body = {"session_id": "S1", "hook_event_name": event, "promptId": "earlier-turn",
+                        "error": "rate_limit", "errorDetails": "Retry after reset.", "reason": "user_interrupt",
+                        "lastAssistantMessage": "Rendered error", "private_reasoning": "PRIVATE"}
+                observed = subprocess.run(shlex.split(terminal), input=json.dumps(body), capture_output=True,
+                    text=True, env={"PATH": env["PATH"], "PYTHONPATH": str(SRC)})
+                assert observed.returncode == 0 and not observed.stdout and not observed.stderr, observed.stderr
+                item = json.loads(ledger.db.execute("SELECT payload FROM events ORDER BY seq DESC LIMIT 1").fetchone()[0])["observation"]
+                assert item["kind"] == "boundary" and item["data"]["settled"] is False
+                assert item["data"]["prompt_id"] == "earlier-turn" and item["data"]["error_details"] == "Retry after reset."
+                assert "PRIVATE" not in "\n".join(ledger.db.iterdump())
         with ledger.transaction() as tx:
             tx.finish_run(run, "stopped")
         newer = start(ledger, "new")
@@ -191,3 +205,43 @@ console.log("installed Pi loader and callback completed");
         assert public["data"]["attachments"] == [{"attachment_type": "image", "content_available": False}]
         assert public["usage"] == {"input": 11, "output": 7, "cacheRead": 2, "cacheWrite": 0, "totalTokens": 20}
         assert "PRIVATE" not in "\n".join(ledger.db.iterdump())
+
+
+@pytest.mark.skipif(not os.environ.get('HX_MUSE_TEST_BIN'), reason='requires an explicitly selected Muse CLI; loopback error fixture only')
+def test_installed_muse_failure_reaches_ledger_through_generated_hooks(instance, tmp_path):
+    from .muse_native_fixture import rejected_request
+    configure(instance, 'meta')
+    hook = instance / 'bin/hx-hook'
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text(f'#!{sys.executable}\nimport sys\nsys.path.insert(0, {str(SRC)!r})\nfrom hx.hooks import main\nraise SystemExit(main())\n')
+    hook.chmod(0o700)
+    token = instance / 'seed/meta-token'
+    token.write_text('fixture-local-only')
+    token.chmod(0o600)
+    with ContinuityStore(instance) as ledger:
+        run = start(ledger)
+        env = {key: os.environ[key] for key in ('PATH', 'TMPDIR') if key in os.environ}
+        env.update(HOME=str(tmp_path), HARNESS_ROOT=str(instance), HX_PYTHON=sys.executable,
+                   PYTHONPATH=str(SRC), **identity(run, 'meta'))
+        installed = subprocess.run(['bash', str(instance / 'adapters/meta/install.sh'), '--no-companion', 'eng-001'],
+                                   env=env, text=True, capture_output=True, timeout=10)
+        assert installed.returncode == 0, installed.stderr
+        home = instance / 'run/eng-001/home'
+        work = tmp_path / 'native-work'
+        work.mkdir()
+        rejected_request(os.environ['HX_MUSE_TEST_BIN'], home, work)
+        rows = ledger.db.execute('''SELECT e.payload,b.session_id FROM events e
+            JOIN native_event_origins o USING(event_id) JOIN native_bindings b USING(binding_id)
+            WHERE e.run_id=?''', (run,)).fetchall()
+        observations = [(json.loads(row[0])['observation'], row[1]) for row in rows]
+        request, session = next((item, session) for item, session in observations if item['kind'] == 'request')
+        errors = [item for item, source in observations if source == session and item['data'].get('source') == 'model_response']
+        assert len(errors) == 1
+        assert errors[0]['data']['turn_id'] == request['data']['turn_id']
+        assert errors[0]['data']['status'] == 'failed' and errors[0]['data']['settled'] is False
+        assert 'HX local fixture rejected request' in errors[0]['data']['error']
+        assert errors[0]['data']['usage_scope'] == 'provider_attempt'
+        assert errors[0]['usage']['input_tokens'] == 0
+        assert any(item['data'].get('outcome') == 'session_ended' for item, source in observations if source == session)
+        assert not any(item['kind'] in {'assistant_message', 'finish'} for item, source in observations if source == session)
+        assert native_producer.status(ledger, run)['lag'] is False

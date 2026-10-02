@@ -12,7 +12,8 @@ from .errors import ValidationError
 def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
     # Other adapters retain their verified hook/direct-event paths until a
     # native file decoder and source-location contract have been established.
-    if adapter not in {"claude", "codex"} or event not in {"context", "request", "stop", "subagent-start", "subagent-stop"}:
+    if adapter not in {"claude", "codex"} or event not in {"context", "request", "stop", "subagent-start", "subagent-stop",
+                                                         "stop-failure", "stop-cancelled", "session-end"}:
         return []
     hook_contract.validate(store, run_id=run_id, launch_id=launch_id, adapter=adapter, worker_id=worker_id)
     launch = native_launch._row(store, run_id)

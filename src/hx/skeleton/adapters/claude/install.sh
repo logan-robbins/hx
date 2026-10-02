@@ -140,6 +140,8 @@ if continuity:
     hooks["UserPromptSubmit"] = [entry("request")]
     hooks["PreToolUse"] = [entry("tool-start", "*")]
     hooks["PostToolUseFailure"] = [entry("log-failure", "*")]
+    hooks["StopFailure"] = [entry("stop-failure")]
+    hooks["SessionEnd"] = [entry("session-end")]
 
 # The guard is the one hook that enforces anything, and it is the Partner's alone: it
 # directs by status and dispatch, and config/partner/guard.json names what it must not run or

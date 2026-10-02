@@ -157,6 +157,8 @@ def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload):
     _id(launch_id)
     if payload.get("_hx_capture_error"):
         raise ValidationError("native hook input could not be read within its capture bound")
+    if event == "model-response" and adapter != "meta":
+        raise ValidationError("model response capture requires the verified Muse hook contract")
     if event == "subagent-result":
         # PostToolUse already captured this observation; this legacy hook exists
         # solely to compose child digests and must not duplicate a tool result.

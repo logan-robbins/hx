@@ -99,7 +99,8 @@ events = (
     "SubagentStop:subagent-stop",
 )
 if continuity:
-    events += ("UserPromptSubmit:request", "PreToolUse:tool-start", "PostToolUseFailure:log-failure")
+    events += ("UserPromptSubmit:request", "PreToolUse:tool-start", "PostToolUseFailure:log-failure",
+               "StopFailure:stop-failure", "SessionEnd:session-end", "PostLLMCall:model-response")
 hooks = {}
 for spec in events:
     muse_event, hx_event = spec.split(":")

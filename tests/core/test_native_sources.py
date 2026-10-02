@@ -56,7 +56,8 @@ def append(path, body):
         handle.write((json.dumps(body) + "\n").encode())
 
 
-def test_hook_registers_without_reading_and_observer_captures_delayed_partial_output(launched, monkeypatch):
+@pytest.mark.parametrize("event", ["stop", "stop-failure", "session-end"])
+def test_hook_registers_without_reading_and_observer_captures_delayed_partial_output(launched, monkeypatch, event):
     store, run, _, home, _ = launched
     path = home / "projects/project/S.jsonl"
     real_open = os.open
@@ -66,8 +67,8 @@ def test_hook_registers_without_reading_and_observer_captures_delayed_partial_ou
     with monkeypatch.context() as m:
         m.setattr(os, "open", reject_source_open)
         m.setattr(observer, "drain", lambda *a, **kw: pytest.fail("hook must not drain transcript"))
-        assert hook(launched, path, last_assistant_message="Hook final text.") == 0
-        assert hook(launched, path, last_assistant_message="Hook final text.") == 0
+        assert hook(launched, path, event=event, last_assistant_message="Hook final text.") == 0
+        assert hook(launched, path, event=event, last_assistant_message="Hook final text.") == 0
     rows = store.db.execute("SELECT source_id FROM capture_sources WHERE run_id=?", (run,)).fetchall()
     assert len(rows) == 1
     source = rows[0][0]

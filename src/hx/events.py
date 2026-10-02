@@ -42,7 +42,7 @@ def _usage(value) -> dict | None:
     # Keep provider names; interpretation belongs to capability-specific accounting.
     allowed = {"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens",
                "input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "reasoning", "total_tokens", "totalTokens",
-               "cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens"}
+               "cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens", "cached_tokens", "reasoning_tokens"}
     result = {key: item for key, item in value.items() if key in allowed and type(item) is int and item >= 0}
     return result or None
 
@@ -52,7 +52,8 @@ def hook_v1(body: dict) -> list[Event]:
                "tool_result": "tool_response", "toolUseId": "tool_use_id", "sessionId": "session_id",
                "hookEventName": "hook_event_name", "backgroundTasks": "background_tasks",
                "lastAssistantMessage": "last_assistant_message", "agentId": "agent_id", "turnId": "turn_id",
-               "subagent_id": "agent_id", "childSessionId": "child_session_id"}
+               "subagent_id": "agent_id", "childSessionId": "child_session_id",
+               "promptId": "prompt_id", "errorDetails": "error_details", "stopHookActive": "stop_hook_active"}
     p = dict(body)
     for source, target in aliases.items():
         if source in p and target not in p:
@@ -63,6 +64,26 @@ def hook_v1(body: dict) -> list[Event]:
     key = event.replace("_", "").replace("-", "").lower()
     identifier = p.get("native_event_id") or p.get("event_id")
     identifier = identifier if isinstance(identifier, str) and identifier else None
+    if key in {"postllmcall", "modelresponse"}:
+        request = p.get("request_id")
+        if not isinstance(request, str) or not request or p.get("status") not in {"success", "failed"}:
+            raise DecodeGap("model response requires its request identity and known outcome")
+        data = {name: p[name] for name in ("agent_id", "turn_id", "request_id", "response_id", "provider", "model",
+            "attempt", "step", "status", "finish_reason", "error", "message_count", "tool_count", "tool_call_count") if name in p}
+        data.update(source="model_response", usage_scope="provider_attempt", settled=False)
+        # Request summaries/previews are truncated native diagnostics, not
+        # complete messages, tool schemas, or evidence of prompt equivalence.
+        return [Event("boundary", data, "model-response:" + request, _usage(p.get("usage")))]
+    if key in {"stopfailure", "stopcancelled", "sessionend"}:
+        # Turn-end notifications may arrive after a later request. Preserve the
+        # vendor's correlation fields; arrival order is not task completion.
+        data = {name: p[name] for name in ("agent_id", "agent_type", "child_session_id", "turn_id", "prompt_id",
+            "error", "error_details", "reason", "last_assistant_message", "stop_hook_active") if name in p}
+        data.update(source=key, outcome={"stopfailure": "failed", "stopcancelled": "cancelled",
+                                        "sessionend": "session_ended"}[key], settled=False)
+        # On failure, last_assistant_message can be the rendered API error.
+        # It must not become a claimed assistant finding or settle a child.
+        return [Event("boundary", data, identifier)]
     if key in {"pretooluse", "toolstart"}:
         call = p.get("tool_use_id")
         scoped_call = digest([p["agent_id"], call]) if p.get("agent_id") else call
@@ -84,7 +105,8 @@ def hook_v1(body: dict) -> list[Event]:
         text = p.get("prompt", p.get("text"))
         if not isinstance(text, str):
             raise DecodeGap("request hook lacks prompt text")
-        return [Event("correction" if key == "correction" else "request", {"text": text}, identifier)]
+        return [Event("correction" if key == "correction" else "request", {"text": text,
+            **{name: p[name] for name in ("turn_id", "prompt_id", "agent_id") if name in p}}, identifier)]
     if key in {"stop", "subagentstop", "finish"}:
         result = []
         message = p.get("last_assistant_message")
@@ -92,7 +114,8 @@ def hook_v1(body: dict) -> list[Event]:
             # Stop has no guaranteed message ID; never merge by matching text.
             result.append(Event("assistant_message", {"text": message, "claim": True},
                                 p.get("assistant_message_id")))
-        result.append(Event("finish", {name: p[name] for name in ("agent_id", "child_session_id", "background_tasks", "turn_id") if name in p}, identifier))
+        result.append(Event("finish", {name: p[name] for name in ("agent_id", "child_session_id", "background_tasks", "turn_id",
+            "prompt_id", "reason", "stop_hook_active") if name in p}, identifier))
         return result
     if key in {"sessionstart", "context", "precompact", "postcompact", "boundary"}:
         return [Event("boundary", {name: p[name] for name in ("source", "trigger", "turn_id", "compact_summary") if name in p}, identifier)]

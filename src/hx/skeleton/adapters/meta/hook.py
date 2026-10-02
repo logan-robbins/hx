@@ -11,11 +11,10 @@ variants map to snake_case, and `tool_response` is filled from `toolResult`
 when only the latter is present. Unknown keys pass through; hx-hook ignores
 what it does not read. Two deliberate gaps, not oversights:
 
-- context tokens: hook payloads carry no usage counts, so `context_tokens`
-  stays absent and the seam threshold does not fire for meta rows.
-- persona: the 1.3.0 CLI surface has no verifiable system-prompt injection, so
-  the persona file is derived for inspection and identity arrives through the
-  context file and the pasted goal pointer.
+- context tokens: legacy tool hooks carry no usage counts. Planned capture
+  records PostLLMCall attempt usage separately; it is not a context-window total.
+- persona: the legacy route derives a persona file for inspection. Planned
+  sessions use the launch manifest and verified startup context delivery.
 
 Hook commands run through the shell with a cleared environment, so everything
 the hook needs (--hook-bin, --root) is baked into the command line at install
@@ -46,6 +45,16 @@ def translate(body: dict) -> dict:
             out[dst] = body[src]
     if "tool_response" not in out and "tool_result" in out:
         out["tool_response"] = out["tool_result"]
+    if out.get("hook_event_name") == "PostLLMCall":
+        # Summaries and previews expand every attempt and can contain private
+        # request material. Project before the hx-hook pipe, not only at storage.
+        out = {key: out[key] for key in ("hook_event_name", "session_id", "turn_id", "agent_id", "agent_type",
+            "request_id", "response_id", "provider", "model", "attempt", "step", "status", "finish_reason",
+            "error", "usage", "message_count", "tool_count", "tool_call_count") if key in out}
+        if isinstance(out.get("usage"), dict):
+            out["usage"] = {key: value for key, value in out["usage"].items()
+                if key in {"input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens"}
+                and type(value) is int and value >= 0}
     return out
 
 
