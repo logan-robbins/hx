@@ -109,7 +109,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
     branch = _branch(values["workdir"])
     identity = {"id": item_id, "pod": config.pod, "role": config.role, "audience": audience,
                 "runtime": runtime, "executor_runtime": config.flavor,
-                "model": (config.companion or {}).get("model") if audience == "companion" else config.model,
+                "model": ((config.companion or {}).get("model") or config.model) if audience == "companion" else config.model,
                 "workdir": values["workdir"], "branch": branch}
     identity_text = "Session identity: " + canonical(identity) + ".\nThe current task or frozen pass supplies assignment-specific inputs; identity alone does not supply a goal."
     sections, sources, seen = [], [], set()
@@ -165,7 +165,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
     return {**result, "manifest_path": str(destination / "manifest.json")}
 
 
-def verified_bundle(root: Path, item_id: str, manifest_path: Path, *, workdir: str):
+def verified_bundle(root: Path, item_id: str, manifest_path: Path, *, workdir: str, audience="worker"):
     """Verify both prepared channels against current sources and configuration.
 
     This checks installation inputs; it does not acknowledge native delivery.
@@ -180,7 +180,7 @@ def verified_bundle(root: Path, item_id: str, manifest_path: Path, *, workdir: s
         manifest = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:
         raise ValidationError("prompt manifest must be JSON") from exc
-    current = build(root, item_id, audience="worker", persist=False)
+    current = build(root, item_id, audience=audience, persist=False)
     expected = {key: value for key, value in current.items() if key != "manifest_path"}
     if manifest != expected or Path(current["identity"]["workdir"]).resolve() != Path(workdir).resolve():
         raise ValidationError("prompt sources, identity, placement, or workdir changed; compile current instructions")

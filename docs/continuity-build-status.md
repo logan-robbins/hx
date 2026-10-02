@@ -6,10 +6,10 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 
 | Units | State | Evidence / remaining integration |
 |---|---|---|
-| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 15; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
+| P01 durable authority | Implemented; not yet cut over | `src/hx/continuity_store.py`; Schema 16; tests cover transaction rollback, abrupt exit, concurrent writers/CAS, late events, references/GC, outbox leases, checkpoint request replay, migrations, and verified artifact slices. |
 | P02a incremental capture | In progress | Registered-source observer, durable offsets/provenance, native macOS notifications plus reconciliation, bounded reads/spool, branch filtering, and versioned decoders implemented. Remaining: complete adapter source contracts, gap reconciliation, controller scheduling. |
 | P02b adapter capture/control | In progress | `hx capture bind/enqueue` provides session/run ownership, durable delivery acknowledgements, retry deduplication, public native decoding, spool admission, and controller notifications. Planned-hook routing binds sessions/children, stores bounded public deliveries before sending, and retries through the root observer. All five installers persist immutable launch contracts and bake callback identity into arguments; Pi snapshots its contract at extension load. Late evidence remains tied to the original run; queues/gaps gate context, completion, and downstream prerequisites. Fresh planned launch now creates private sessions, observes startup, and confirms exact submission through installed request hooks. Full native event/source coverage, late/gap reconciliation, shutdown/resume barriers, and model execution verification remain. Installed CLI versions/options and the real Pi extension loader were checked separately. |
-| P03 bounded companion passes | In progress | Frozen immutable inputs, selected records, evidence-bound patches, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Remaining: route the native companion through this API, bounded retry, map-patch integration. |
+| P03 bounded companion passes | In progress | Frozen inputs, selected records, CAS, pending-queue resolution, atomic cursor commit, and idempotent replay implemented. Explicit native Claude execution now supplies only scoped evidence reads and structured patches, one validation retry, bounded execution, and one durable root-wide model slot. Known bookkeeping batches reduce without a model. Remaining: automatic scheduling, interrupted-process reconciliation, map-patch integration. |
 | P04 typed progress/facts | In progress | Typed facts and `hx progress --file/--run` implemented: bounded sparse updates, field provenance, task/run ownership, CAS, idempotency, deterministic cursor reduction, and projection outbox. Native prompt deployment and projection consumers remain. |
 | P05 check receipts | In progress | `checks.py`/`fingerprints.py`: exact recipes, streamed identities/output, receipt reuse/revalidation, uncertain-request deduplication, timeout/output/background-process failure handling. Planned-unit ledger completion rechecks all assigned receipts and native delivery/gap readiness, then publishes exact outputs atomically. Interrupted-execution recovery, watcher generation guards, native completion wiring, and quota integration remain. |
 | P06a portable application map | In progress | `appmap.py`: semantic schema, stable responsibility IDs, portable Git baseline import/export, typed relationships, source anchors, selected reads/cache, and disk-backed batch validation. Fresh-clone reconstruction, stack replacement, stale anchors, branch provenance, and declared config-dependent fact invalidation tested. Automatic source/config watcher wiring remains. |
@@ -21,7 +21,7 @@ The full specification remains the delivery scope. Existing spec-file deletions 
 | P10 Jev | Pending | Bounded client, validated decisions, deterministic fallback. |
 | P10b tools | Pending | Catalog, discover/load, verified adapter tool visibility. |
 | P11a selection | Pending | Semantic record selection and plan review. |
-| P11b prompts | In progress | Audience-aware canonical prompts for Partner/workers/companions/subagents; backend/frontend/release/QA policies; resolved identity; preserved operator policy; no personal-memory import; delivery manifests; verified context-channel packet composition. Shared legacy compiler also fixes unresolved placeholders and copied-role duplication. Native installation acknowledgement, companion tool enforcement, instruction-skill migration, and complete request-budget accounting remain. |
+| P11b prompts | In progress | Audience-aware canonical prompts for Partner/workers/companions/subagents; backend/frontend/release/QA policies; resolved identity; preserved operator policy; no personal-memory import; delivery manifests; verified context-channel packet composition. Shared legacy compiler also fixes unresolved placeholders and copied-role duplication. Explicit native companion execution enforces scoped read/patch tools. Full native installation acknowledgement, instruction-skill migration, and complete request-budget accounting remain. |
 | P11c traversal | In progress | Exact/lexical seeds, bounded adjacent records and interface consumers, required input overflow, current owners and explicit gaps. Full beam/Jev traversal, persisted selection, and current-task traces remain. |
 | P11d–P11e lifecycle/preservation | Pending | Quotas, compression/drop, evidence references, GC. |
 | P11f compaction | Pending | Advisory timing inside deterministic readiness gates. |
@@ -253,3 +253,20 @@ and Pi loader checks were enabled. Replay covers delayed turn outcomes, outstand
 child/tool/lease retention, retry deduplication, and private-field projection before
 the Muse pipe. These checks do not prove full adapter or background-work coverage.
 `git diff --check` passed.
+
+
+Explicit companion execution now runs a fresh configured Claude process against one
+frozen ledger pass. Schema 16 persists request replay, read/retry budgets, and a single
+root-wide model slot. Only scoped evidence reads and atomic patch submission are exposed.
+Known bookkeeping-only batches reduce deterministically; failed/unknown observations
+remain for classification. Interrupted requests are never blindly resent. Automatic
+scheduling, process reconciliation, and companion map transactions remain unfinished.
+
+Final focused validation passed 146 tests across native companion execution, passes,
+prompt compilation, check execution, ledger migrations, and context packets, including
+installed Claude Code 2.1.287 with a local provider fixture. The preceding broader run
+also passed all 32 legacy companion tests; its sole remaining failure was a new test's
+invalid event kind, corrected before the final run. No paid model fleet was started.
+The Partner and Partner companion prompts now favor current progress/readiness summaries,
+reuse available map briefs, and request detailed output only for a scheduling-relevant
+failure, conflict, changed input, or decision. Legacy persona cutover remains pending.

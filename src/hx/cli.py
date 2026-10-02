@@ -129,6 +129,7 @@ the control plane:
   read ID [--detail|--full]      status; prose only with --detail, body with --full
   recall [QUERY] [--id ID]       last-resort file-memory search over completed items
   companion ID [--once]        the Companion loop, one per agent
+  companion ID --run RUN --request ID [--stream STREAM]  execute one frozen ledger pass
   compile ID                   distribute base rules into config/ID/AGENTS.md
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron

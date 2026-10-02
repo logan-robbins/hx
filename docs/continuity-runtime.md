@@ -85,6 +85,43 @@ The existing compose route without `--run` remains legacy. Native dispatch, hook
 seams, personas, and controller replay must switch together; this explicit interface
 does not activate a partial fleet migration.
 
+## Planned companion execution
+
+```sh
+hx companion eng-001 --run RUN --request PASS_REQUEST --stream main
+hx companion eng-001 --run RUN --request PASS_REQUEST --prepare-only
+hx companion eng-001 --job JOB
+```
+
+One request freezes up to 32 events within a 6,000-byte pass and selected current
+records. Reusing its request ID returns the same job. `--record ID` selects an
+optional fact; goal, constraint, and cursor records remain mandatory. `--job` only
+inspects status. Known bookkeeping-only batches commit deterministically without
+a model call. Failed model outcomes and unknown event shapes require classification.
+
+The configured native Claude companion runs once in a temporary private home with
+the compiled companion instructions and two MCP tools: `read_evidence` and
+`submit_patch`. It has no shell, repository read/write, dispatch, or completion
+tools. The evidence reader serves only event IDs in the frozen pass or its selected
+records: up to eight requests, 2 KiB each, with an 8 KiB total requested-byte budget.
+The patch validator accepts at most two submissions and 16 KiB per patch. It applies
+the existing atomic fact/version/cursor checks; native prose does not update state.
+Late events remain for the next pass. Ordinary checks and bookkeeping need no model
+review, and the Partner consumes compact progress/readiness results rather than raw
+check output. Details are retrieved only when they affect a decision.
+
+Instructions, pass, and supplied tool schemas are limited to 32 KiB. Native execution
+is limited to six turns, 60 seconds, and 64 KiB captured output, with a requested
+4,096-token generation limit. This is not complete provider-request/cost accounting.
+One durable root-wide running slot serializes model execution on low-memory hosts.
+The current implementation honors the configured model and creates no worker memory.
+
+A failed extraction leaves events pending and records an unresolved job; repeating
+that job never resends the model request. An interrupted driver retains running
+ownership without a timeout-based takeover. Process reconciliation/recovery, automatic
+observer scheduling, and atomic companion map patches remain unfinished. This explicit
+command does not switch the legacy companion or fleet authority.
+
 ## Native capture
 
 Installed `hx-hook` entrypoints have an explicit planned-run route. The controller

@@ -11,6 +11,13 @@ placeholder and copied-role duplication. Findings below describe the original le
 path; native controller installation, enforced companion permissions, and coordinated
 legacy replacement remain open rather than being implied by prompt text.
 
+Efficiency update, 2026-10-01: planned Partner prompts now consume compact goal progress,
+ownership, blockers, dependencies, and runtime completion/readiness summaries. They reuse
+the current brief and request detail only for a planning-relevant failure, conflict,
+changed input, or decision. Workers/QA perform assigned checks; the runtime validates
+results. Partner companion prompts avoid copying worker findings and check output.
+The legacy prompts remain pending coordinated cutover.
+
 ## Scope and role decisions
 
 | Sources reviewed | Decision |

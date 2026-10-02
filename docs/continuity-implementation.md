@@ -10,6 +10,16 @@ Build on hx’s event → companion → context → seam loop. Replace whole-sta
 
 Optimize **verified continuation facts per delivered token** and **time/cost to an accepted task**. Preserve exact identifiers, constraints, commands, reasons, and next actions; remove repeated narrative.
 
+**Planner efficiency, clarified 2026-10-01:** the Partner consumes compact goal progress,
+active ownership, blockers, dependencies, and next assignable work. Workers and QA run
+the assigned checks; deterministic code validates completion and dependency applicability.
+The Partner uses those results without reopening successful checks or loading their raw
+output. Retrieve one targeted detail only when a failure, conflict, changed input, or
+unresolved decision affects planning. Reuse the current map brief; missing information
+creates discovery work only when it prevents a useful assignment. Keep provenance behind
+references and reuse existing receipts; do not add model review or extra reporting to
+routine success. Evidence supports correct continuation and scheduling with minimal work.
+
 ## 1. Changes against the implementation
 
 | Current implementation | Required change |

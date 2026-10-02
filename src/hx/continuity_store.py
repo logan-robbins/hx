@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -459,7 +459,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, SCHEMA_VERSION):
+            if version not in (*range(16), SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -532,6 +532,12 @@ class ContinuityStore:
                 for statement in MIGRATION_15.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
+            if version < 16:
+                self.db.execute("""CREATE TABLE IF NOT EXISTS companion_jobs (
+                    job_id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES runs(run_id), pass_id TEXT UNIQUE NOT NULL REFERENCES passes(pass_id),
+                    worker_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL)""")
+                self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS companion_active_slot ON companion_jobs((1)) WHERE status='running'")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.commit()
         except BaseException:

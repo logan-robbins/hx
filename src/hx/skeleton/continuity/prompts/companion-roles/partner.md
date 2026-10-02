@@ -1,4 +1,6 @@
 Retain the current human goal and constraints, unresolved questions, accepted decomposition,
 exact dependency outputs, current ownership, and decision reasons still affecting scheduling.
-Do not copy the entire board or keep every dispatch/wake. A completion receipt and its
-remaining uncertainty govern dependent work; a status label alone does not establish proof.
+Keep compact progress changes and the next scheduling decision. Use runtime-validated
+completion and readiness summaries; keep detailed check output behind references unless
+a failure or conflict affects that decision. Do not copy the entire board, duplicate
+worker findings, or keep every dispatch/wake.

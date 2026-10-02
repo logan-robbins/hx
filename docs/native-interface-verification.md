@@ -220,3 +220,26 @@ interruption after an actual stop signal, ledger writer exclusion, an owned chil
 in a separate OS session, and retries after a replacement tmux session appears.
 Test cases ran serially; collision checks use short-lived threads. No model call
 or live worker fleet was started.
+
+
+## Restricted native companion (2026-10-01)
+
+Installed Claude Code 2.1.287 executed a frozen ledger pass through the new explicit
+companion command path. A loopback provider fixture requested a scoped evidence
+slice and submitted a valid record patch through the real CLI's MCP connection.
+The ledger committed one fact, charged the requested read bytes, and acknowledged
+only the frozen event range. This verifies actual CLI/tool transport and validation;
+the fixture's scripted replies do not establish model extraction quality.
+
+The provider request exposed only the two continuity tools and native control tools;
+no shell, file, or subagent execution tools were exposed. Isolation uses a temporary
+home/configuration and working directory, disabled hooks/memory/plugins, a replacement
+system prompt, no session persistence, empty built-in tools, and strict MCP configuration.
+These flags follow the [Claude CLI reference](https://code.claude.com/docs/en/cli-reference).
+The configured model is retained. This path supports the existing credential choice;
+`--bare` was not used because its API-key-only authentication excludes OAuth setups.
+
+The runtime persists a single root-wide execution slot. An uncertain interruption
+retains that slot rather than starting a duplicate call. Automatic scheduling,
+interrupted-process recovery, complete request/cost accounting, and native map-patch
+integration remain pending. No paid model or live worker fleet was run.

@@ -67,7 +67,7 @@ def test_partner_is_compiled_from_its_audience_and_role_instead_of_exempted(inst
     rendered = text(result)
     assert "Real dependencies remain\ndependencies" in rendered
     assert "simulate it" not in rendered and "No blockers by construction" not in rendered
-    assert "materialization evidence" in rendered
+    assert "runtime's completion and readiness results" in rendered
     assert "hx plan finish" not in rendered
 
 

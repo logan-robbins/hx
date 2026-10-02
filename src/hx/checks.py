@@ -94,7 +94,7 @@ def _stop(process):
     process.wait()
 
 
-def execute(argv, cwd, env, output: Path, timeout_s, max_bytes):
+def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, on_spawn=None):
     """Drain one pipe in 64 KiB chunks; output overflow/timeouts cannot pass."""
     started = time.monotonic()
     reason = None
@@ -102,13 +102,15 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes):
     with output.open("xb") as target:
         os.chmod(output, 0o600)
         try:
-            process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+            process = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL if stdin is None else stdin,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         except OSError as exc:
             message = f"Check could not start: {type(exc).__name__}.\n".encode()[:max_bytes]
             target.write(message)
             return {"exit_code": 127, "duration": time.monotonic() - started, "reason": "spawn_failed", "output_bytes": len(message)}
         try:
+            if on_spawn is not None:
+                on_spawn(process)
             os.set_blocking(process.stdout.fileno(), False)
             with selectors.DefaultSelector() as selected:
                 selected.register(process.stdout, selectors.EVENT_READ)
