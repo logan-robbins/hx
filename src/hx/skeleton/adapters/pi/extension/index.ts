@@ -43,6 +43,8 @@ function installedHook(): { command: string; args: string[] } | null {
   return value;
 }
 const nativeHook = installedHook();
+const nativeToolEnvironment = nativeHook && process.env.HX_CONTINUITY_CAPSULE && process.env.HX_CONTINUITY_RUN
+  ? { ...process.env } : null;
 
 function required(name: string): string {
   const value = process.env[name];
@@ -174,9 +176,33 @@ export default function (pi: {
   appendEntry: (customType: string, data?: GoalState) => void;
   registerCommand: (name: string, options: { description: string; handler: (args: string, ctx: any) => void }) => void;
   registerTool: (tool: Record<string, unknown>) => void;
+  getAllTools: () => { name: string }[];
+  getActiveTools: () => string[];
+  setActiveTools: (names: string[]) => void;
 }): void {
   const subagent = process.env.PI_SUBAGENT === "1";
   const childIdentity = nativeHook && subagent ? { agent_id: required("HX_PI_CHILD_ID") } : null;
+  const toolsetPath = join(dirname(fileURLToPath(import.meta.url)), "../../../toolset.json");
+  let toolsetStamp = "";
+  const syncTools = () => {
+    if (!nativeToolEnvironment || subagent) return;
+    const stat = statSync(toolsetPath);
+    const stamp = `${stat.mtimeMs}:${stat.size}`;
+    if (stamp === toolsetStamp) return;
+    if (stat.size > 8192) throw new Error("hx tool selection exceeds 8 KiB");
+    const value = JSON.parse(readFileSync(toolsetPath, "utf8"));
+    const known = new Set(pi.getAllTools().map(tool => tool.name));
+    if (value.adapter !== "pi" || !Array.isArray(value.selected) || value.selected.length > 16 ||
+        value.selected.some((name: unknown) => typeof name !== "string" || !known.has(name as string))) {
+      throw new Error("hx selected tools are unavailable in this Pi runtime");
+    }
+    pi.setActiveTools(value.selected);
+    const actual = pi.getActiveTools();
+    const result = spawnSync(join(nativeToolEnvironment.HX_CONTINUITY_CAPSULE!, "bin/hx"),
+      ["tools", "acknowledge", ...actual], { encoding: "utf8", env: nativeToolEnvironment });
+    if (result.status !== 0) throw new Error("hx could not acknowledge native tool visibility");
+    toolsetStamp = stamp;
+  };
 
   pi.on("message_end", (event, ctx) => {
     rememberUsage(event.message);
@@ -204,6 +230,7 @@ export default function (pi: {
       transcript_path: sessionFile(ctx),
     });
     inject(pi, stdout);
+    syncTools();
   });
 
   pi.on("session_compact", (event, ctx) => {
@@ -222,10 +249,19 @@ export default function (pi: {
 
   pi.on("session_before_compact", (event, ctx) => {
     if (subagent) return;
-    callHook("precompact", {
+    const checkpoint = callHook("precompact", {
       trigger: event.reason,
       transcript_path: sessionFile(ctx),
     });
+    if (nativeHook && checkpoint.trim()) {
+      // Pi's public hook supports replacing the summary. Keep its native cut
+      // boundary and recent messages; the checkpoint holds current task state.
+      return { compaction: {
+        summary: checkpoint.trim(),
+        firstKeptEntryId: event.preparation.firstKeptEntryId,
+        tokensBefore: event.preparation.tokensBefore,
+      } };
+    }
   });
 
   pi.on("tool_call", (event, ctx) => {
@@ -252,6 +288,7 @@ export default function (pi: {
       context_tokens: contextTokens,
       ...(childIdentity ?? { transcript_path: sessionFile(ctx) }),
     });
+    syncTools();
   });
 
   const settle = async (event: { type?: string; entries?: unknown[] }, ctx: any) => {

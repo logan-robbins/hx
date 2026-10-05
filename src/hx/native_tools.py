@@ -97,6 +97,10 @@ def _admit(store, run_id, launch_id, payload):
     # Recheck durable status and the pane receipt in the admission transaction.
     from .native_controller import _owned_pane
     pane = _owned_pane(snapshot)
+    from . import runtime_policy
+    with store.transaction() as tx:
+        _, task, _ = unit_execution._run(tx, run_id)
+    reading = runtime_policy.inspect_call(snapshot, task['payload'], payload)
     with store.transaction() as tx:
         row = native_launch._row(tx, run_id)
         if row is None:
@@ -116,10 +120,14 @@ def _admit(store, run_id, launch_id, payload):
             if previous[0] != fingerprint or previous[1] != "admitted":
                 raise AdmissionDenied("native tool identity was reused after settlement or with different input")
             return
+        from .native_completion import admission_closed
+        if admission_closed(tx, run_id):
+            raise AdmissionDenied('completion is being verified; end the native turn and wait for the runtime')
         if pending(tx, launch_id) >= 256:
             raise AdmissionDenied("native tool admission limit reached; finish outstanding calls first")
         tx._change()
         tx.db.execute("INSERT INTO native_tool_calls VALUES(?,?,?,?,?,'admitted')", (*key, fingerprint))
+        runtime_policy.remember_read(tx, row, session, actor, call, reading)
 
 
 def settle(tx, run_id, session_id, payload):
@@ -141,3 +149,5 @@ def settle(tx, run_id, session_id, payload):
         return
     tx._change()
     tx.db.execute("UPDATE native_tool_calls SET status='settled' WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?", key)
+    from .runtime_policy import settled
+    settled(tx, row['launch_id'], session, actor, call, payload)

@@ -95,7 +95,7 @@ def hook_v1(body: dict) -> list[Event]:
         scoped_call = digest([p["agent_id"], call]) if p.get("agent_id") else call
         native = f"tool:{scoped_call}" if isinstance(call, str) and call else identifier
         data = {name: p[name] for name in ("tool_name", "tool_use_id", "tool_input", "tool_response",
-                                          "agent_id", "source_fingerprints", "cwd") if name in p}
+                                          "agent_id", "source_fingerprints", "cwd", "is_error") if name in p}
         if key == "posttoolusefailure":
             data["is_error"] = True
             if "error" in p:

@@ -341,3 +341,18 @@ def test_identical_invalidations_coalesce_without_invalidating_changed_content(a
     second["patch_id"] = "stale-invalidation"
     with pytest.raises(map_updates.MapConflict):
         map_updates.propose(store, repo, second)
+
+
+def test_overlay_follows_forward_commits_but_never_branch_switches(active):
+    from hx import map_refresh
+    store, repo, info, _, _, _, overlay, _, _ = active
+    (repo / 'new.txt').write_text('A normal implementation commit.\n')
+    commit(repo)
+    assert map_updates.advance_head(store, repo, info['repo_id'], overlay)
+    assert selected(active)['applicability'] == 'pending'
+    map_refresh.drain(store, repo, overlay)
+    assert selected(active)['applicability'] == 'current'
+    assert not map_updates.advance_head(store, repo, info['repo_id'], overlay)
+    git(repo, 'checkout', '-qb', 'different-assignment')
+    with pytest.raises(Conflict, match='branch changed'):
+        map_updates.advance_head(store, repo, info['repo_id'], overlay)

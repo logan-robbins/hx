@@ -1,6 +1,6 @@
 # Jev engineering and QA: September 2026 evidence
 
-Research cutoff: **2026-09-25**. Read primary project documentation, selected implementation files, release notes, and published benchmark methods. Repository availability is implementation evidence; author measurements are attributed below. No projects were installed and no live benchmarks were reproduced. Decisions apply to hx's bounded current-task state and current application map; none require personal worker memory.
+Research cutoff: **2026-10-03** (updated October 4). Read primary project documentation, selected implementation files, release notes, and published benchmark methods. Repository availability is implementation evidence; author measurements are attributed below. No projects were installed and no live benchmarks were reproduced. Decisions apply to hx's bounded current-task state and current application map; none require personal worker memory.
 
 ## Reported uses and hx decisions
 
@@ -10,7 +10,7 @@ Research cutoff: **2026-09-25**. Read primary project documentation, selected im
 | [jgrep predictive test selection](https://github.com/kyu1204/jgrep), [Sep 23 benchmark](https://github.com/kyu1204/jgrep/blob/main/bench/tests/README.md) | Combines deterministic matches/imports with Jev scoring of remaining test files. The author reports 60 commits across five repositories: 11.6% mean test-file selection, 91.9% mean recall of author-edited tests versus 43.2% for deterministic matching, and 1.08 s mean selection time. This is not regression-detection recall; broad tests were missed. The harness can replace failed runs, although its notes report no such retries in the published run. | **Add preliminary check selection/order.** Union declared checks and deterministic impact links with semantic candidates. Run promising focused checks earlier; preserve the independently defined acceptance suite and mark every omitted check `not_run`. |
 | [Jev Review](https://github.com/devagrawal09/jev-review) and [JevGate](https://github.com/Tech-Byte-Frontier/jevgate) | Review screens changed files/source units, then narrows attention to concrete locations and issue categories. JevGate parses functions/tests and supports test-quality checks, including self-oracles; incomplete review is distinct from clear. Implementations exist; no general defect precision/recall or measured PR-quality improvement was established in the inspected sources. | **Add bounded review triage.** Compare current diff, relevant contract, and test assertions. Return located suspicions to QA/engineering for verification. Add `incomplete`, `unknown`, and `dismissed` dispositions; semantic “clear” is never acceptance proof. |
 | [jev-pruner](https://github.com/tamaratran/jev-pruner) | Reduces oversized command output before the main model receives it, preserving diagnostics and selected verbatim chunks. The author shows one 76,379-character log where a 2,227-character host preview omitted the error and a 4,013-character selected result retained it. This is a useful example, not a task-quality benchmark. | **Add reduction before tool-result delivery.** Parse test/build structure first; score only surplus chunks. Feed Jev the current goal/cursor rather than repeatedly rereading session history. Keep recovery evidence only within the existing task retention budget. |
-| [fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction) | Scores tool calls/results separately and keeps, abbreviates, or removes paired material; protects selected messages and preserves kept text verbatim. Uses explicit state/request budgets and failure fallbacks. | **Strengthen existing compaction units.** Preserve call/result identity and protected current facts; test deletions and fallback paths. Do not copy whole-session retention or permanent archives. |
+| [fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction) | Scores tool calls/results separately and keeps, abbreviates, or removes paired material; protects selected messages and preserves kept text verbatim. Uses explicit state/request budgets and failure fallbacks. | **Strengthen existing compaction units.** Preserve call/result identity and protected current facts; test deletion and explicit failure paths. Do not copy whole-session retention or permanent archives. |
 | [Jev Sift](https://github.com/kbhuw/jev-sift) and [jevgrep](https://github.com/thehumanworks/jevgrep) | Screen candidate files/text or semantically locate code before loading it into a larger model. Jevgrep's author reports 95% category-gate accuracy on 350 labelled files with atomic positive questions, versus 71% for one tested negated formulation. These are local task-specific results. | **Fold into map retrieval.** Start with deterministic repository discovery, then score bounded source candidates. Ask atomic questions and combine exclusions in code. Keep incomplete/truncated candidates explicit; search scores cannot validate graph edges. |
 | [Foreman](https://github.com/thruwire/foreman) and [Shifty Eye pilot](https://github.com/Shifty-Eye-Games/foreman-jev/blob/main/docs/pilot-release.md) | Separate observation and semantic-supervision loops assess progress, drift, test sufficiency, and verification needs. The Sep 17 pilot reports one real calculator repair: 58.979 s, 11 assessments, five acceptance tests passing, with source-bound proof. It expressly makes no speedup claim against plain Codex. | **Reuse architecture; defer continuous scoring.** Our observer already supplies the needed state. Add semantic drift advice only after measuring repeated-work problems; retain deterministic completion and independent acceptance. Do not let a probability close the task. |
 | [jev-router](https://github.com/gargpratyush/jev-router) | Chooses model tiers for fresh turns, pins tool-loop continuations, respects explicit model requests, and accounts for cache-rebuild cost when downgrading. Source implements routing policy; no general engineering quality/cost benchmark was established here. | **Excluded from hx scope.** This is an external ecosystem example only. Keep configured executor models; no model-selection or switching feature is planned. |
@@ -49,3 +49,29 @@ GitHub API HEAD metadata captured on Sep 25; these are latest observed commit da
 | Shifty Eye Foreman | [3cb97e6](https://github.com/Shifty-Eye-Games/foreman-jev/commit/3cb97e6051cb5764c50d3a0155f4d1483934fb25) | Sep 17 |
 | jev-router | [38da6b8](https://github.com/gargpratyush/jev-router/commit/38da6b84ea01241bfc41fbddc0928d0f40a703f0) | Sep 19 |
 | jev-ultrafast | [1231850](https://github.com/browser-use/jev-ultrafast/commit/1231850a0bf1a0c0341fe408ef1668dbbfdfac46) | Sep 18 |
+
+## October 3 cutoff update
+
+Rechecked primary repositories through October 3, Pacific time. `jev-pruner` advanced to
+[edbc602](https://github.com/tamaratran/jev-pruner/commit/edbc60262a5edc07e18d646c1a3f8a9f0ae868c5)
+(September 30); `fast-jev-compaction` remained at the September 17 commit above. No
+October 3 release of those projects was found. The cutoff date is not a release claim.
+
+TypeSafe's [limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13), reviewed
+October 2, reinforce small state, direct atomic questions, precise criteria, code for
+counts/limits/version comparisons, and generative models for writing. The vendor
+[skill suggestion cookbook](https://docs.typesafe.ai/cookbooks/skill_suggestion) uses
+progressive disclosure and a bounded second check; it does not transfer tool authority
+to the decision model.
+
+**Revised hx contract:** Jev classifies new observations against frozen current state
+and identifies material worth checking against the map. It does not rank factual
+obligations out of worker checkpoints. High-confidence repeated tool observations can
+avoid a generative companion pass; missing coverage, failures, and uncertainty require
+inspection. Neither model scores nor free-text native output establish task completion.
+Checks, byte limits, duplicate read detection, version comparisons and shared-map CAS
+remain code. Provider failure stops dependent inference; there is no substitute scorer.
+
+The October 4 live delta-path check used one real API request (405 input tokens,
+40 output tokens, 360.43 ms). It returned `review_delta`; a second identical call reused
+the cached decision. This verifies this API/cache path, not general classification accuracy.

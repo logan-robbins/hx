@@ -38,6 +38,33 @@ def require_worktree(db, repository, repo_id, snapshot):
     return expected
 
 
+def advance_head(store, repository, repo_id, snapshot):
+    """Follow ordinary commits in the same worktree; never adopt a checkout/reset."""
+    actual = _worktree(repository)
+    with store.transaction() as tx:
+        row = tx.db.execute('SELECT o.*,s.import_path FROM map_overlays o JOIN map_snapshots s USING(repository,snapshot) WHERE repository=? AND snapshot=?', (repo_id, snapshot)).fetchone()
+        if row is None:
+            raise Conflict('map writes require a worktree overlay')
+        if (actual['path'], actual['branch'], actual['git_dir']) != (row['import_path'], row['branch'], row['git_dir']):
+            raise Conflict('map worktree or branch changed; bind its own overlay')
+        if actual['head'] == row['head_commit']:
+            return False
+        if appmap._git(repository, 'merge-base', row['head_commit'], actual['head']) != row['head_commit']:
+            raise Conflict('map HEAD was reset or diverged; bind its own overlay')
+        if _worktree(repository) != actual:
+            raise Conflict('worktree changed during map HEAD advance')
+        tx._change()
+        tx.db.execute('UPDATE map_overlays SET head_commit=? WHERE repository=? AND snapshot=? AND head_commit=?',
+                      (actual['head'], repo_id, snapshot, row['head_commit']))
+        generation = tx.db.execute('SELECT revision+1 FROM ledger_meta').fetchone()[0]
+        # Pending anchors cannot be presented as verified current inputs. SQLite
+        # queues IDs on disk; refresh reads bounded records on subsequent ticks.
+        tx.db.execute('''INSERT INTO map_refresh_queue SELECT repository,snapshot,record_id,? FROM map_sources
+            WHERE repository=? AND snapshot=? GROUP BY record_id
+            ON CONFLICT(repository,snapshot,record_id) DO UPDATE SET generation=excluded.generation''', (generation, repo_id, snapshot))
+    return True
+
+
 def create_overlay(store: ContinuityStore, repository: Path, baseline: str) -> dict:
     """Explicit disk-backed batch: clone an immutable baseline into a worktree scope."""
     info, source = appmap._snapshot(store, repository, baseline)

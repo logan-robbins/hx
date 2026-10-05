@@ -15,7 +15,14 @@ from .test_prompt_compiler import configure
 
 
 @pytest.fixture
-def planned(instance):
+def planned(instance, monkeypatch):
+    from hx import jev
+    # Native transport/patch tests isolate the required decision service.
+    # test_jev exercises its HTTP contract and failures independently.
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'fixture-key')
+    monkeypatch.setattr(jev, 'evaluate', lambda state, questions, **kwargs: {
+        'model': jev.MODEL, 'answers': {key: {'type': 'noul', 'noul': .95} for key in questions},
+        'usage': {'input_tokens': 100, 'output_tokens': 20}, 'latency_ms': 1})
     config = configure(instance)
     (instance / 'config/claude.json').write_text(json.dumps({'bin': sys.executable}))
     with ContinuityStore(instance) as store:

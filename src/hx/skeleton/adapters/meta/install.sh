@@ -126,6 +126,7 @@ PYEOF
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   for want in hx-worker hx-memory; do
+    [ "$want" != hx-memory ] || [ -z "${HX_CONTINUITY_RUN:-}" ] || continue
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/muse/skills/$want"
     cp -R "$skills_src/$want" "$home/muse/skills/$want"

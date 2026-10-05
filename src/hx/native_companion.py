@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from . import checks, companion_map, companion_protocol as protocol, jev_selection, native_processes, passes, prompt_compiler
+from . import checks, companion_map, companion_protocol as protocol, jev_deltas, native_processes, passes, prompt_compiler
 from .config_harness import load_harness
 from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
@@ -43,9 +43,9 @@ def _reduce(store, job):
     body = protocol.frozen(store, job)
     result = passes.commit(store, body["pass_id"], {"schema_version": 1, "pass_id": body["pass_id"],
         "event_digest": body["event_digest"], "task_revision": body["task_revision"], "operations": [],
-        "dispositions": {event["event_id"]: "reduced" for event in body["events"]}})
+        "dispositions": {event["event_id"]: "reduced" if _bookkeeping(event) else "no_change" for event in body["events"]}})
     with store.transaction() as tx:
-        protocol.update(tx, protocol.row(tx, job["job_id"]), result=result, deterministic=True)
+        protocol.update(tx, protocol.row(tx, job["job_id"]), result=result, deterministic=not job['payload'].get('semantic_reduction', False))
         tx.db.execute("UPDATE companion_jobs SET status='committed' WHERE job_id=?", (job["job_id"],))
     return protocol.row(store, job["job_id"])
 
@@ -55,15 +55,19 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
         _id(value)
     if len(record_ids) > 32:
         raise ValidationError("select at most 32 current records for a companion pass")
-    map_selection = companion_map.selection(map_snapshot, map_record_ids)
+    requested_map = companion_map.selection(map_snapshot, map_record_ids)
+    map_selection = requested_map
     request_key = digest([run_id, stream_id, request_id])
     old = store.db.execute("SELECT job_id FROM companion_jobs WHERE request_key=?", (request_key,)).fetchone()
     if old:
         job = protocol.row(store, old[0])
         if (job["worker_id"] != worker or job["payload"]["record_ids"] != list(record_ids)
-            or job["payload"].get("map_selection") != map_selection):
+            or job["payload"].get("requested_map", job["payload"].get("map_selection")) != requested_map):
             raise Conflict("companion request identity was reused with different inputs")
         return _reduce(store, job) if job["status"] == "reducing" else job
+    if requested_map is None:
+        map_snapshot, map_record_ids = companion_map.assignment_selection(store, run_id)
+        map_selection = companion_map.selection(map_snapshot, map_record_ids)
     with store.transaction() as tx:
         run = passes._active_run(tx, run_id)
         if run["worker_id"] != worker:
@@ -77,26 +81,29 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
     binary = Path(json.loads(_bytes(store.root / "config/claude.json"))["bin"]).resolve()
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValidationError("configured Claude executable is unavailable")
-    selection = jev_selection.for_pass(store, run_id, stream_id, env=env, exclude_ids=record_ids)
-    selected_ids = tuple(dict.fromkeys([*record_ids, *selection["records"]]))
-    body = passes.prepare(store, run_id, stream_id, record_ids=selected_ids, prompt_version=prompt["version"],
+    body = passes.prepare(store, run_id, stream_id, record_ids=record_ids, prompt_version=prompt["version"],
                           map_snapshot=map_snapshot, map_record_ids=map_record_ids)
     if body is None:
         return None
-    if any(body["record_versions"].get(record_id) != version for record_id, version in selection["records"].items()):
-        raise Conflict("Jev-selected records changed before pass preparation")
+    selection = jev_deltas.classify(store, body, env=env)
     system = rendered["system"] + rendered["context"] + "\n" + instructions()
+    system += "\nJev observation routes: " + canonical(selection['events'])
+    system += ("\nThese routes focus inspection. They do not establish truth, delete facts, or settle events. "
+               "Review proposed deltas against the frozen current state; preserve uncertainty and exact commands.")
     if map_selection is not None:
         system += companion_map.instructions()
     size = len(system.encode()) + len(canonical(body).encode()) + len(canonical(protocol.TOOLS).encode())
     if size > REQUEST_BYTES:
         raise RequiredContextOverflow("companion instructions, frozen pass, and schemas exceed 32 KiB")
+    reducible = all(_bookkeeping(event) or selection['events'][event['event_id']].get('unchanged', False)
+                    for event in body['events'])
     info = binary.stat()
     payload = {"manifest": prompt["manifest_path"], "prompt_version": prompt["version"], "system": system,
         "binary": str(binary), "binary_stat": [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns],
         "model": config.companion.get("model") or config.model,
-        "effort": config.companion.get("effort") or config.effort, "record_ids": list(record_ids), "map_selection": map_selection,
+        "effort": config.companion.get("effort") or config.effort, "record_ids": list(record_ids), "map_selection": map_selection, "requested_map": requested_map,
         "jev": {key: value for key, value in selection.items() if key != "scores"},
+        "semantic_reduction": reducible and not all(_bookkeeping(event) for event in body['events']),
         "request_bytes": size, "reads": 0, "read_bytes": 0, "attempts": 0}
     job_id = str(uuid.uuid4())
     try:
@@ -105,13 +112,14 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
             tx._change()
             tx.db.execute("INSERT INTO companion_jobs VALUES(?,?,?,?,?,?,?)",
                 (job_id, request_key, run_id, body["pass_id"], worker,
-                 "reducing" if all(_bookkeeping(event) for event in body["events"]) else "prepared", canonical(payload)))
+                 "reducing" if reducible else "prepared", canonical(payload)))
     except sqlite3.IntegrityError:
         # A concurrent request may have prepared its own harmless pass, but only
         # the winning request owns execution; never launch a duplicate model.
         return prepare(store, worker, run_id, stream_id, request_id, record_ids=record_ids,
-                       map_snapshot=map_snapshot, map_record_ids=map_record_ids, env=env)
-    if all(_bookkeeping(event) for event in body["events"]):
+                       map_snapshot=requested_map['snapshot'] if requested_map else None,
+                       map_record_ids=requested_map['record_ids'] if requested_map else (), env=env)
+    if reducible:
         return _reduce(store, protocol.row(store, job_id))
     return protocol.row(store, job_id)
 

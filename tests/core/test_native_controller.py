@@ -62,7 +62,10 @@ for line in sys.stdin:
 
 
 @pytest.fixture
-def runtime(configured, tmux_server, child_env, tmp_path):
+def runtime(configured, tmux_server, child_env, tmp_path, monkeypatch):
+    from hx import application_loop
+    # Transport fixtures do not start an unrelated background inference service.
+    monkeypatch.setattr(application_loop, 'ensure', lambda *a, **kw: None)
     store, repo, run = configured
     executable = tmp_path / "cli-stand-in"
     executable.write_text(CLI_STAND_IN)
@@ -96,6 +99,11 @@ def ready(runtime):
         row = native_launch._row(store, run)
         pane = controller.goal.capture_pane(row["payload"]["session"], env)
         pytest.fail(f"startup did not complete: {row['status']}; pane: {pane}")
+    # The startup hook commits before the CLI returns to its input loop.
+    # Tests that submit immediately need the independently observable prompt too.
+    session = native_launch._row(store, run)["payload"]["session"]
+    wait_for(lambda: "hx-fake-idle>" in controller.goal.capture_pane(session, env),
+             what="native fixture input prompt", limit=10)
     return native_launch._row(store, run)
 
 

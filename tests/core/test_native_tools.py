@@ -24,8 +24,10 @@ from .conftest import wait_for
 def submitted(runtime):
     store, _, run, env = runtime
     ready(runtime)
-    controller.advance(store, 'eng-001', run, 'launch', env=env)
-    wait_for(lambda: native_launch._row(store, run)['status'] == 'submitted', what='submission', limit=10)
+    # Startup acknowledgement can precede the CLI becoming ready for input.
+    # Reuse the same request while advancing the real controller state machine.
+    wait_for(lambda: controller.advance(store, 'eng-001', run, 'launch', env=env)['status'] == 'submitted',
+             what='submission', limit=10)
     return native_launch._row(store, run)
 
 
@@ -327,3 +329,56 @@ def test_missing_hook_executable_denies_planned_tool(adapter, tmp_path):
         '--hook-bin', str(tmp_path / 'missing-hook'), '--continuity-run', 'run', '--continuity-launch', 'launch',
         '--continuity-adapter', adapter, 'tool-start'], input=json.dumps(payload()), text=True, capture_output=True)
     assert result.returncode == 2 and 'cannot run' in result.stderr
+
+
+@pytest.mark.skipif(not os.environ.get('HX_PI_EXTENSION_LOADER'), reason='requires the installed Pi SDK; no model calls')
+def test_installed_pi_session_applies_deferred_tools(runtime, tmp_path):
+    from hx import tool_catalog
+    store, _, run, env = runtime
+    flavor(runtime, 'pi')
+    row = submitted(runtime)
+    body = payload('load-grep', tool_name='bash', tool_input={'command': 'hx tools load grep'})
+    admitted = subprocess.run(installed_command(row, 'pi', 'tool-start'), input=json.dumps(body), env=env, capture_output=True, text=True)
+    assert admitted.returncode == 0, admitted.stderr
+    assert tool_catalog.load(store, run, ['grep'])['status'] == 'pending_native'
+    extension = Path(row['payload']['capsule']) / 'run/eng-001/home/extensions/hx/index.ts'
+    script = tmp_path / 'active-tools.mjs'
+    script.write_text('''import {pathToFileURL} from 'node:url';
+import {dirname,resolve} from 'node:path';
+const [loader,extension,cwd] = process.argv.slice(2);
+const core = resolve(dirname(loader),'..');
+const imp = path => import(pathToFileURL(resolve(core,path)).href);
+const {createAgentSession} = await imp('sdk.js');
+const {DefaultResourceLoader} = await imp('resource-loader.js');
+const {SettingsManager} = await imp('settings-manager.js');
+const {SessionManager} = await imp('session-manager.js');
+const resources = new DefaultResourceLoader({cwd,agentDir:cwd,noExtensions:true,noSkills:true,
+  noPromptTemplates:true,noThemes:true,noContextFiles:true,systemPrompt:'Tool visibility fixture.'});
+await resources.reload();
+const {session} = await createAgentSession({cwd,agentDir:cwd,resourceLoader:resources,
+  sessionManager:SessionManager.inMemory(cwd),settingsManager:SettingsManager.inMemory(),
+  model:{id:'fixture',name:'fixture',api:'anthropic-messages',
+  provider:'anthropic',baseUrl:'http://127.0.0.1:1',reasoning:false,input:['text'],
+  cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:10000,maxTokens:1000}});
+const {loadExtensions} = await import(pathToFileURL(loader).href);
+const loaded = await loadExtensions([extension],cwd);
+if(loaded.errors.length) throw new Error(JSON.stringify(loaded.errors));
+loaded.runtime.getAllTools = () => session.getAllTools();
+loaded.runtime.getActiveTools = () => session.getActiveToolNames();
+loaded.runtime.setActiveTools = names => session.setActiveToolsByName(names);
+const ctx = {sessionManager:{getSessionFile:()=> 'test-native-session'}};
+for(const fn of loaded.extensions[0].handlers.get('tool_result')) await fn({toolName:'bash',toolCallId:'load-grep',
+  input:{command:'hx tools load grep'},content:[{type:'text',text:'pending_native'}],isError:false},ctx);
+const names=session.getActiveToolNames();
+if(!names.includes('grep') || names.includes('find')) throw new Error('actual tool visibility differs');
+if(!session.getToolDefinition('grep')?.parameters) throw new Error('missing actual grep schema');
+console.log(JSON.stringify({names}));
+session.dispose();
+''')
+    child = native_launch.environment(store.root, row, env=env)
+    child.update(HARNESS_ROOT=str(store.root), HARNESS_ID='eng-001')
+    result = subprocess.run(['node', str(script), os.environ['HX_PI_EXTENSION_LOADER'], str(extension), str(tmp_path)],
+                            env=child, capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stderr
+    assert 'grep' in json.loads(result.stdout)['names']
+    assert tool_catalog.selection(store, row)['status'] == 'loaded'

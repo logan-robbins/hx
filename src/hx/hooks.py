@@ -185,6 +185,12 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 from .native_sources import observe as observe_sources
                 observe_sources(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id,
                                 worker_id=item_id, adapter=adapter, event=event, payload=payload)
+                if event == 'precompact' and not child:
+                    from .native_launch import _row
+                    from .compaction_policy import prepare_native_compaction
+                    launch = _row(ledger, env['HX_CONTINUITY_RUN'])
+                    if launch and launch['status'] == 'submitted':
+                        print(prepare_native_compaction(ledger, launch, payload))
                 if event in {"context", "request"}:
                     from .native_controller import observe
                     line = observe(ledger, env["HX_CONTINUITY_RUN"], launch_id, event, payload)

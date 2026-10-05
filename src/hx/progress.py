@@ -146,6 +146,9 @@ def update(store: ContinuityStore, body: dict, *, worker_id: str | None = None) 
         tx.classify(run_id, "progress", expected_revision=cursor_row["revision"], through=event["seq"],
                     dispositions={event["seq"]: "reduced"})
         tx.enqueue("projection", f"progress:{task_id}:{revision}", result)
+        from . import task_retention
+        task_retention.enforce(tx, task_id)
+        task_retention.collect(tx, task_id)
         return result
 
 

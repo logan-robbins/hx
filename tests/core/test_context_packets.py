@@ -149,7 +149,9 @@ def test_superseded_checkpoints_retire_and_ack_releases_predecessor(assignment):
     packets.acknowledge(store, third["checkpoint_id"], run)
     assert store.db.execute("SELECT count(*) FROM checkpoints").fetchone()[0] == 1
     deleted = store.collect_artifacts()
-    assert first["packet_hash"] in deleted and second["packet_hash"] in deleted
+    # Identical prose shares one content-addressed artifact across checkpoints.
+    assert first['packet_hash'] == second['packet_hash'] == third['packet_hash']
+    assert third['packet_hash'] not in deleted
     assert packets.read(store, third["checkpoint_id"], run)["text"] == third["text"]
 
 

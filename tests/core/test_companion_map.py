@@ -194,3 +194,21 @@ def test_map_scope_rejects_branch_change_and_changed_version_before_model(active
     git(repo, 'checkout', '-qb', 'other-branch')
     with store.transaction() as tx, pytest.raises(Conflict, match='worktree'):
         companion_map.check_scope(tx, body)
+
+
+def test_changed_source_supplies_current_anchors_for_atomic_map_repair(active):
+    from hx import map_refresh
+    store, repo, _, _, _, _, snapshot, _, _ = active
+    (repo / 'compiler.py').write_text("class Compiler:\n    def build(self):\n        return 'bounded context'\n")
+    map_refresh.queue_sources(store, repo, snapshot, ['compiler.py'])
+    map_refresh.drain(store, repo, snapshot)
+    body = frozen(active)
+    item = next(item for item in body['map_scope']['records'] if item['record']['id'] == 'compiler')
+    assert item['applicability'] == 'stale'
+    assert item['current_anchors'][0]['sha256'] != item['record']['anchors'][0]['sha256']
+    current = copy.deepcopy(item['record'])
+    current.update(version=current['version'] + 1, anchors=item['current_anchors'])
+    result = response(active, body, nodes=[current], reads=body['map_scope']['read_versions'])
+    passes.commit(store, body['pass_id'], result)
+    assert selected(active)['applicability'] == 'current'
+    assert selected(active)['record']['anchors'] == item['current_anchors']

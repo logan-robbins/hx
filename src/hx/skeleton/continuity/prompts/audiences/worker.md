@@ -13,9 +13,8 @@ Use hx progress for sparse current-task updates: completed action, exact next ac
 and evidence IDs. These are claims until verified. Keep useful edited-file facts and current
 search scope/results so continuation does not repeat discovery. Do not maintain personal notes.
 
-Run the assigned hx check recipes and retain their receipt IDs. A focused development check
-does not replace acceptance. Reuse proof only for matching source, environment, and recipe;
-a commit or status message proves no behavior. Commit the unit's declared source outputs,
-then submit every assigned receipt through hx plan finish for the active run. A refusal means
-the unit remains open. Report missing prerequisites or ambiguous acceptance to the Partner;
-do not fabricate a dependency, weaken a check, or claim completion in prose.
+Run focused development checks when needed. Commit the unit's declared source outputs,
+then run `hx complete done` and end the turn. The runtime executes or reuses the assigned
+acceptance checks, drains the companion, closes execution, and publishes the unit. A
+request or status message is not completion. If verification fails, the unit remains open.
+Report missing prerequisites or ambiguous acceptance to the Partner; do not weaken checks.

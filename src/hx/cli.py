@@ -14,6 +14,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from . import tool_execution as tool_execution_cmd
+from . import tool_catalog as tool_catalog_cmd
+from . import application_loop as loop_cmd
 from . import amend as amend_cmd
 from . import archive as archive_cmd
 from . import bench as bench_cmd
@@ -46,7 +49,7 @@ from . import show as show_cmd
 from . import task as task_cmd
 from . import ui_cmd
 from . import wake as wake_cmd
-from .errors import HxError
+from .errors import HxError, ValidationError
 
 #: Every command of spec 08, plus `install`, `up`, `doctor`, `ui` and `show`. The v1 cut
 #: (spec 14 D25) removed `repo`, `push` and `upgrade`: hx does not manage git or its own
@@ -78,6 +81,9 @@ IMPLEMENTED = {
     "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
+    "loop": loop_cmd.main,
+    "tool-exec": tool_execution_cmd.main,
+    "tools": tool_catalog_cmd.main,
     "memory": memory_cmd.main,
     "observe": observer_cmd.main,
     "progress": progress_cmd.main,
@@ -135,6 +141,7 @@ the control plane:
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
   memory search QUERY          what other agents already learned; see `hx memory --help`
+  loop [--once]                capture, refresh mapped sources, and run one companion at a time
   observe register/drain/serve/status  incremental continuity source capture
   evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
 
@@ -188,6 +195,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # The standing refusal runs before anything else, for every command (ORCHESTRATION.md).
         root = _root_for(rest, env)
+        import os
+        if (os.environ if env is None else env).get('HX_CONTINUITY_RUN') and command in {'memory', 'recall'}:
+            raise ValidationError('planned workers have no episodic memory; use current task progress, map inputs and bounded evidence')
         if command in NOT_IMPLEMENTED:
             print(
                 f"hx: {command}: not implemented (build-{NOT_IMPLEMENTED[command]})",

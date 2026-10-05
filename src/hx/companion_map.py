@@ -13,6 +13,30 @@ from .facts import RequiredContextOverflow
 MAX_RECORDS = 8
 
 
+def assignment_selection(store, run_id):
+    """Reuse declared map inputs and their direct edges; no repository search."""
+    from .passes import _active_run
+    with store.transaction() as tx:
+        run = _active_run(tx, run_id)
+        task = tx.task(run['task_id'])
+        refs = task['payload'].get('map_inputs', [])
+        if not refs:
+            return None, ()
+        scopes = {(ref['repository'], ref['snapshot']) for ref in refs}
+        if len(scopes) != 1:
+            raise ValidationError('one companion pass requires one assignment map snapshot')
+        repository, snapshot = next(iter(scopes))
+        ids = list(dict.fromkeys(ref['id'] for ref in refs))
+        for source in tuple(ids):
+            for edge in tx.db.execute('SELECT target FROM map_relations WHERE repository=? AND snapshot=? AND source=? ORDER BY target',
+                                      (repository, snapshot, source)):
+                if edge[0] not in ids:
+                    ids.append(edge[0])
+                if len(ids) > MAX_RECORDS:
+                    raise RequiredContextOverflow('assignment map and direct interfaces exceed eight records; split the unit')
+        return snapshot, tuple(ids)
+
+
 def selection(snapshot, record_ids):
     if snapshot is None and not record_ids:
         return None
@@ -49,7 +73,16 @@ def freeze(tx, task, selected, *, max_bytes):
                 edge["status"] = statuses.get((edge["kind"], edge["to"]), "stale")
             refreshing = tx.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?",
                                       (*key, record_id)).fetchone() is not None
-            scope["records"].append({"record": record, "applicability": header["applicability"], "awaiting_refresh": refreshing})
+            anchors = []
+            for anchor in record['anchors']:
+                cached = tx.db.execute('SELECT source_stamp,payload FROM map_anchor_cache WHERE repository=? AND worktree=? AND path=? AND symbol=?',
+                    (repo_id, str(repository.resolve()), anchor['path'], anchor['symbol'] or '')).fetchone()
+                if cached:
+                    from .map_refresh import _stamp
+                    if cached['source_stamp'] == _stamp(repository, anchor['path']):
+                        anchors.append(json.loads(cached['payload']))
+            scope["records"].append({"record": record, "applicability": header["applicability"],
+                                     "awaiting_refresh": refreshing, 'current_anchors': anchors})
     if len(canonical(scope).encode()) > max_bytes:
         raise RequiredContextOverflow("selected map records exceed the pass budget; narrow selection")
     return scope
@@ -118,6 +151,8 @@ def instructions():
         "Put version is expected read version+1; absent selected IDs have version 0. "
         "Every edge endpoint must be in read_versions. Record fields: schema_version=1,id,version,kind, "
         "claim=required/observed/hypothesis,summary,data,anchors,edges,attributes,replaces. "
+        "current_anchors supplies verified current source locations and hashes for changed files. "
+        "Use them to repair source anchors only when the observed behavior supports the semantic claim. "
         "Reuse valid supplied anchors or exact anchors present in captured evidence; never invent hashes. "
         "Observed claims require source anchors. Anchors: path,symbol,sha256,optional line/end_line. "
         "Edges: kind,to,status,evidence. Attributes use namespaced keys; replaces is an ID array. "

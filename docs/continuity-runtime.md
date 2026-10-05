@@ -99,26 +99,26 @@ a fact; goal, constraint, and cursor records remain mandatory. `--job` only
 inspects status. Known bookkeeping-only batches commit deterministically without
 a model call. Failed model outcomes and unknown event shapes require classification.
 
-Before freezing a semantic pass, Jev selects additional current-task facts through
-the TypeSafe API. This path is enabled directly, without an opt-in flag. It considers
-up to 16 current candidates using whole compact facts, the goal/constraints/cursor,
-and bounded recent observations. Nouls at or above 0.90 select facts; explicitly named
-facts and mandatory records bypass filtering. Larger sets report `has_more`.
+After freezing a pass, Jev judges whether each new observation adds information to
+its bounded current-state slice and whether it concerns application-map changes.
+It does not select which factual obligations survive. Covered, confidently repeated
+tool observations can avoid a generative pass; failures, incomplete coverage and
+uncertainty remain reviewable. The companion writes the actual structured changes.
 
 The client pins `jev-1.13.0` and calls `POST https://api.typesafe.ai/v1/systemone`.
 It reads `TYPESAFE_API_KEY` from the environment or the named entry in
 `~/workspace/.env`; `TYPESAFE_API_KEY_FILE` can specify another key file. The key is
 never stored in the ledger or passed to the native companion. Independent questions
 batch within 4,000 UTF-8 bytes per request, at most 16 questions, four requests, and
-16,000 bytes per selection. Each API request has a 500 ms deadline and no synchronous
+16,000 bytes per decision batch. Each API request has a 500 ms deadline and no synchronous
 retry. Jev failure stops preparation with an explicit error: no heuristic ranking,
 substitute model, or native companion execution follows that failed decision.
 
-Successful selection is cached by exact task/run, cursor, source-bound fact versions,
-model, policy, state, and questions. Repeating those inputs reuses the stored decision.
-Scores remain outside the companion packet. Required inputs and bookkeeping need no
-semantic selection. This selects facts for the planned companion; checkpoint selection,
-tool loading, map traversal, retention decisions, and output reduction still need wiring.
+Successful decisions are cached by task/run revision, policy, model, bound inputs,
+state and questions. The current task keeps at most 128 completed cache entries.
+Exact repeats reuse them; completed tasks discard them. Required inputs, counts,
+versions and bookkeeping are deterministic. The same client serves optional tool
+discovery and surplus-output judgments. No failure substitutes another scorer.
 
 `--map-snapshot SNAPSHOT --map-record ID` supplies up to eight selected map IDs, within
 the same pass budget. A selected absent ID has version zero and may be created. The
@@ -127,6 +127,8 @@ map writer handles version conflicts and identical concurrent edits. Map changes
 fact updates, dependent invalidation, and cursor advancement commit together; a failed
 operation rolls all of them back. Facts rebound to the new map version in that same
 response stay current. Map selection loads only the named records, checking sizes first.
+When source changes, the watcher supplies verified `current_anchors` to the frozen
+pass so the companion can repair map records without searching or inventing hashes.
 
 The configured native Claude companion runs once in a temporary private home with
 the compiled companion instructions and two MCP tools: `read_evidence` and
@@ -147,9 +149,11 @@ The current implementation honors the configured model and creates no worker mem
 
 A failed extraction leaves events pending and records an unresolved job; repeating
 that job never resends the model request. An interrupted driver retains running
-ownership without a timeout-based takeover. Process reconciliation/recovery, automatic
-observer scheduling, and complete Jev integration remain unfinished. This explicit
-command does not switch the legacy companion or fleet authority.
+ownership without a timeout-based takeover. The resident application loop reconciles
+the original process and accepted patch before releasing that slot. Missing or
+ambiguous process identity keeps it unresolved. `hx loop --retry RUN` explicitly
+requests a fresh window after a known failure is resolved. Legacy assignments retain
+their existing authority; planned assignments use this loop.
 
 ## Native capture
 
@@ -561,6 +565,62 @@ from persisted identities.
 `stopped_unreconciled` proves only that the recorded instances cannot execute. A
 process that detached and was reparented before discovery, an external service, or
 an uncaptured native operation can lie outside that snapshot. Its receipt therefore
-keeps `scope: observed_descendants` and `coverage_verified: false`; assignment leases
-remain held. Background/source reconciliation, completion handoff, and controlled
-resume remain required before the full lifecycle can release or reuse ownership.
+keeps `scope: observed_descendants` and `coverage_verified: false`. Manual shutdown
+alone retains assignment leases. The planned completion loop additionally requires
+settled admitted tools/children, drained registered capture, classified observations,
+and passing declared checks before publishing outputs and releasing ownership.
+Publication repeats the drain check atomically. Untracked remote work remains outside
+this managed scope.
+
+## Planned application loop and compaction
+
+Planned dispatch starts and waits for one root service to acknowledge readiness.
+Run `hx loop` to operate it explicitly; `--once` advances one bounded cycle under the
+same singleton lock. `--status` gives the Partner current owners, pending work,
+changed inputs, completion status and blockers without loading logs or receipts.
+The loop never switches executor models. Jev judges observation deltas; the
+companion writes typed updates against frozen versions. Assignment map nodes and direct
+interfaces are selected from the ledger, with an eight-record pass bound.
+
+Planned hooks require bounded source ranges (160 lines), scoped searches (80 results),
+context files up to 8192 bytes and context/memory writes up to 4096 bytes. Repeating an
+unchanged successful source read within the same checkpoint is refused with its original
+call ID. Changed files, failed reads and new checkpoints remain readable. Shell checks
+cover common unbounded inspections; arbitrary programs are not treated as sandboxed.
+
+Current fact quotas are 64 records, 8192 bytes for context retention and 32768 bytes for
+all current stored facts. Oversized patches roll back. Compress/drop in the same patch;
+superseded record payloads are deleted and dropped claims become version tombstones.
+Both companion patches and explicit progress enforce these quotas. Completed tasks
+erase current worker facts, progress detail and Jev/read caches. Capture artifacts
+and immutable pass/checkpoint receipts have a separate lifecycle; they are never
+reimported as personal worker memories.
+
+Native reset uses a fresh forced checkpoint, preserving pending corrections and gaps
+without acknowledging them. Codex installs a compact prompt; Claude receives private
+compact instructions; Pi can use a prepared checkpoint pointer as its native summary.
+No compaction hook calls a model synchronously. A forced checkpoint that cannot preserve
+its mandatory content within the bound fails explicitly.
+
+`hx tool-exec --request ID -- COMMAND` executes once, captures at most 1 MiB,
+preserves status/diagnostics and uses Jev to judge surplus output before delivery.
+The returned text is bounded to 4096 bytes. Omitted/unscored regions carry an exact
+evidence address; diagnostic overflow requires reading that address. Failed reduction
+retains the captured result, and retrying the same request never reruns side effects.
+
+`hx tools discover --query "next action"` judges a small optional capability catalog.
+Exact IDs bypass inference. `hx tools load ID` preserves required capabilities and
+records task-scoped selection. Select Claude launch tools before dispatch; additions
+after dispatch return `pending_restart`, never `loaded`. Pi's public extension API
+updates its actual active schemas and acknowledges the observed set. Grok's TUI
+ignores its headless-only `--tools` flag, so Grok, Codex and Muse remain advisory;
+no schema-token reduction is claimed for those adapters. Catalog entries do not
+change permissions or invoke tools. A new assignment starts with a fresh selection.
+
+`hx complete done` commits a completion intent after source changes are committed.
+The runtime waits for native turn end, admitted tools/children, capture and companion
+drain; executes the declared acceptance checks; shuts down the managed native process
+tree; and publishes outputs/releases leases atomically. A failed check sends one
+bounded continuation to the same worker. Publication replay recovers after a crash.
+This contract covers managed native operations and observed descendants; arbitrary
+untracked remote jobs are outside its completion proof.

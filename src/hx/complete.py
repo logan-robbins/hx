@@ -324,6 +324,18 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
+    import os
+    child = os.environ if env is None else env
+    if child.get('HX_CONTINUITY_RUN'):
+        if args.outcome != 'done':
+            raise Refused('planned blockers and decisions must be recorded with hx progress before the Partner stops the unit')
+        from .continuity_store import ContinuityStore, canonical
+        from .native_completion import request
+        with ContinuityStore(root) as ledger:
+            result = request(ledger, child['HX_CONTINUITY_RUN'], args.id or require_agent_caller('complete', child))
+        print(canonical(result))
+        print('Completion requested. End this turn; the runtime verifies checks and publishes the unit.')
+        return 0
     try:
         result = complete(root, args.outcome, item_id=args.id, env=env)
     except CheckFailed as exc:

@@ -151,6 +151,10 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
 """ + "\n".join(blocks)
+if continuity:
+    import json
+    from hx.compaction_policy import PROMPT
+    config = "compact_prompt = " + json.dumps(PROMPT) + "\n" + config
 # The agent runs unattended in exactly one directory: pre-trust it, or the
 # first launch stops at the folder-trust prompt with nobody to answer it.
 # This is the human's own trust decision, recorded by hx at install time.
@@ -184,6 +188,7 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   wants="hx-worker hx-memory"
   [ "$id" = partner ] && wants="hx-partner hx-fleet hx-memory"
   for want in $wants; do
+    [ "$want" != hx-memory ] || [ -z "${HX_CONTINUITY_RUN:-}" ] || continue
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"

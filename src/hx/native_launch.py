@@ -33,7 +33,9 @@ def _configuration(root, worker, workdir):
 
     harness = json.loads(_bytes(root / "config" / worker / "harness.json"))
     harness["workdir"] = workdir
-    result = {f"config/{worker}/harness.json": canonical(harness).encode() + b"\n"}
+    from .compaction_policy import compact_instructions
+    result = {f"config/{worker}/harness.json": canonical(harness).encode() + b"\n",
+              'config/CLAUDE.md': compact_instructions().encode()}
     for name in ("models.json", "auth.json", "claude.json", "codex.json", "meta.json", "grok.json", "pi.json"):
         path = root / "config" / name
         if path.is_file():
@@ -112,7 +114,7 @@ def prepare(ledger, worker, run_id, request_id, *, env=None):
         packet_budget = 8000 - len(rendered["system"].encode())
         if packet_budget <= 0:
             raise ValidationError("required system instructions exhaust the initial context budget")
-        payload = {"worker_id": worker, "capsule": str(capsule), "manifest": manifest["manifest_path"],
+        payload = {"worker_id": worker, "capsule": str(capsule), "manifest": manifest["manifest_path"], 'workdir': task['payload']['workdir'],
                    "prompt_version": manifest["version"], "configuration": config_hashes,
                    "instruction_delivery": "prepared", "tool_visibility": "unverified",
                    "checkpoint_id": None, "initial_input_limit": 8000}
@@ -126,6 +128,10 @@ def prepare(ledger, worker, run_id, request_id, *, env=None):
                                        instructions=rendered["context"], max_tokens=packet_budget,
                                        optional_tokens=min(1000, packet_budget))
         _capsule(root, worker, capsule, configuration, rendered["system"])
+        from . import tool_catalog
+        tools = tool_catalog.prepared_selection(ledger, run_id, manifest['identity']['runtime'])
+        files.atomic_write_json(capsule / 'run' / worker / 'toolset.json', tools)
+        payload['tool_selection'] = tools
         packet_path = capsule.parent / "task-context.md"
         files.atomic_write_text(packet_path, packet["text"])
         payload.update(checkpoint_id=packet["checkpoint_id"], packet_path=str(packet_path),
@@ -183,6 +189,9 @@ def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
     if {name: hashlib.sha256(data).hexdigest() for name, data in current.items()} != payload["configuration"]:
         raise Conflict("native launch configuration changed")
     capsule = Path(payload["capsule"])
+    from .tool_catalog import verify as verify_tools
+    if launch['status'] == 'prepared':
+        verify_tools(tx, launch)
     for relative, expected in payload["configuration"].items():
         if hashlib.sha256(_bytes(capsule / relative)).hexdigest() != expected:
             raise Conflict("native launch capsule configuration changed")

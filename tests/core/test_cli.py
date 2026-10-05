@@ -31,6 +31,7 @@ SPEC_08_COMMANDS = {
     "map",
     "plan",
     "evidence",
+    "loop", "tool-exec", "tools",
 }
 
 
@@ -87,5 +88,13 @@ def test_hook_entrypoint_knows_the_spec_09_events():
         # (spec 10), not one of the agent's own.
         "companion-stop",
         # Explicit normalized observation routes for planned-run capture.
-        "request", "log-failure",
+        "request", "log-failure", "tool-start", "message", "model-response",
+        "stop-failure", "stop-cancelled", "session-end",
     }
+
+
+@pytest.mark.parametrize('command', ['memory', 'recall'])
+def test_planned_workers_cannot_import_or_create_episodic_memory(run_hx, tmp_path, command):
+    result = run_hx(command, env_extra={'HARNESS_ROOT': str(tmp_path / 'planned'), 'HX_CONTINUITY_RUN': 'current-run'})
+    assert result.returncode == 2 and 'no episodic memory' in result.stderr
+    assert not (tmp_path / 'planned/state').exists()

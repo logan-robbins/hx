@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -459,7 +459,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (*range(16), SCHEMA_VERSION):
+            if version not in (*range(17), SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -538,6 +538,16 @@ class ContinuityStore:
                     run_id TEXT NOT NULL REFERENCES runs(run_id), pass_id TEXT UNIQUE NOT NULL REFERENCES passes(pass_id),
                     worker_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL)""")
                 self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS companion_active_slot ON companion_jobs((1)) WHERE status='running'")
+            if version < 17:
+                self.db.execute("""CREATE TABLE IF NOT EXISTS native_reads (
+                    launch_id TEXT NOT NULL, session_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+                    call_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL, read_key TEXT NOT NULL,
+                    source_stamp TEXT NOT NULL, success INTEGER NOT NULL,
+                    PRIMARY KEY(launch_id,session_id,actor_id,call_id))""")
+                self.db.execute("CREATE INDEX IF NOT EXISTS native_read_reuse ON native_reads(launch_id,session_id,actor_id,checkpoint_id,read_key,source_stamp)")
+                self.db.execute("CREATE TABLE IF NOT EXISTS runtime_cycles(scope TEXT PRIMARY KEY,payload TEXT NOT NULL)")
+                self.db.execute("CREATE TABLE IF NOT EXISTS tool_executions(run_id TEXT NOT NULL,request_id TEXT NOT NULL,input_hash TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(run_id,request_id))")
+                self.db.execute("CREATE TABLE IF NOT EXISTS map_source_observations(repository TEXT NOT NULL,snapshot TEXT NOT NULL,path TEXT NOT NULL,stamp TEXT NOT NULL,PRIMARY KEY(repository,snapshot,path))")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.commit()
         except BaseException:
@@ -708,6 +718,10 @@ class Transaction:
         self._change()
         self.db.execute("UPDATE runs SET outcome=?,ended_at=? WHERE run_id=?", (outcome, time.time(), run_id))
         self.db.execute("DELETE FROM leases WHERE run_id=?", (run_id,))
+        if outcome == 'completed':
+            from .task_retention import close
+            task_id = self.db.execute('SELECT task_id FROM runs WHERE run_id=?', (run_id,)).fetchone()[0]
+            close(self, task_id)
 
     def put_artifact(self, data: bytes, *, owner_type: str, owner_id: str, slot: str) -> str:
         """Install and reference bytes in this same transaction; rollback leaves only an orphan."""

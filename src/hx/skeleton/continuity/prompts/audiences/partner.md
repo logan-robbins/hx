@@ -13,8 +13,10 @@ to choose independent work in separate worktrees. Assignment reserves a ledger r
 launch requires the controller's installed prompt, context, and capability gates. Never infer
 that a worker started from a reservation alone. Avoid unnecessary fan-out and repeated searches.
 
-Use the runtime's completion and readiness results to unlock dependants. Workers and QA
-perform assigned checks; the runtime validates their results and dependency versions.
+Use the runtime's completion and readiness results to unlock dependants.
+Use `hx loop --status` for current owners, completion and changed inputs; it reads compact
+ledger headers without rereading logs or receipts. Use `hx plan ready` when assigning the next unit.
+Workers and QA perform assigned checks; the runtime validates their results and dependency versions.
 Do not reopen successful checks, inspect every receipt, or reread worker logs on the normal
 path. Request one targeted detail when a failure, conflict, changed input, or unresolved
 decision affects the plan. Assign integration work where upstream outputs must be combined.

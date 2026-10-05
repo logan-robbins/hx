@@ -288,6 +288,8 @@ def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
                 raise ValidationError("each record may be changed once per pass")
             seen.add(record_id)
             changed.append(_write_operation(tx, operation, frozen, run, allowed))
+        from .task_retention import enforce
+        enforce(tx, run['task_id'])
         if prepared_map is not None:
             companion_map.finalize(tx, frozen, prepared_map, map_result)
         for event in actual:
@@ -308,6 +310,8 @@ def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
                 tx.db.execute("UPDATE events SET disposition=? WHERE event_id=?",
                               (response["dispositions"][event["event_id"]], event["event_id"]))
         tx.db.execute("UPDATE passes SET status='committed' WHERE pass_id=?", (pass_id,))
+        from .task_retention import collect
+        collect(tx, run['task_id'])
         result = {"pass_id": pass_id, "response_hash": response_hash, "to_seq": row["to_seq"],
                   "cursor_revision": row["cursor_revision"] + 1, "changed_records": changed}
         if map_result is not None:

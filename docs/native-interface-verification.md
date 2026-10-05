@@ -260,3 +260,32 @@ Native companion preparation calls this selector before freezing additional fact
 required goals/constraints/cursor and exact requested IDs remain included. The installed
 Claude/local-provider test separately verified an atomic fact plus map patch through
 its actual MCP connection. Broader Jev consumers and full fleet cutover remain open.
+
+## October 4 loop and tool visibility
+
+The October 1 fact-selector entry above is historical. That path has been removed:
+Jev now judges event deltas, optional tool candidates and surplus tool output. The
+live delta call used 405 input / 40 output tokens (360.43 ms); live tool discovery
+used 366 / 77 (481.24 ms). Exact repeats reused their cached decisions.
+
+The installed Pi SDK created a real `AgentSession` without a model request. Its
+extension applied the requested `grep` addition through `setActiveTools`; the
+session exposed the real grep parameter schema and kept unselected `find` absent.
+A Pi launch `--tools` allowlist also filters the registry, preventing later additions;
+planned Pi uses the public active-tool API at startup instead. Immutable launch
+environment bindings prevent subsequent environment changes from retargeting it.
+
+Grok's [headless documentation](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md)
+explicitly says its `--tools` flag is ignored in the interactive TUI. Grok therefore
+uses advisory discovery; no native schema reduction is claimed. Its documented
+`read_file.target_file`, `search_replace` and `run_terminal_cmd` shapes now receive
+the same bounded-inspection policy. Planned homes disable both documented memory
+systems and automatic shell backgrounding; commands with potentially large output
+use the hx capture/reduction wrapper.
+
+[Codex's configuration schema](https://github.com/openai/codex/blob/main/codex-rs/core/config.schema.json)
+exposes `compact_prompt`; planned installation writes the controlled prompt there.
+Claude receives private compact instructions. Pi's public pre-compaction result
+accepts a checkpoint pointer summary while retaining its native cut boundary.
+Grok/Muse receive the common checkpoint/compaction instructions; dedicated native
+summary-prompt overrides are not claimed for them.

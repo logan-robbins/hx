@@ -205,11 +205,17 @@ if [ "$mode" = exec ]; then
   fi
 
   # Spec 17.4, exactly. No prompt argument, ever.
+  tool_args=()
+  if [ -n "${HX_CONTINUITY_RUN:-}" ] && [ "$role" != companion ]; then
+    selected_tools=$("$python" -c 'import json,sys;print(",".join(json.load(open(sys.argv[1]))["selected"]))' "$root/run/$id/toolset.json")
+    tool_args=(--tools "$selected_tools")
+  fi
   exec "$bin" \
     --dangerously-skip-permissions \
     --setting-sources user \
     --effort "$effort" \
     --model "$model" \
+    ${tool_args[@]+"${tool_args[@]}"} \
     --append-system-prompt-file "$system_prompt"
 fi
 

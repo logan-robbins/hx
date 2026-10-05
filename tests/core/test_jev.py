@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from hx import jev, jev_selection, native_companion, companion_protocol
+from hx import jev, jev_deltas, passes, native_companion, companion_protocol
 from hx.continuity_store import Conflict
 from hx.errors import ValidationError
 from .test_native_companion import planned
@@ -123,12 +123,12 @@ def facts(planned):
 
 
 def score(state, questions, **kwargs):
-    return {'model': jev.MODEL, 'answers': {name: {'type': 'noul', 'noul': 0.97 if 'parser' in question['instructions']['fact'] else 0.02}
-            for name, question in questions.items()}, 'usage': {'input_tokens': 100, 'output_tokens': 20}, 'latency_ms': 10}
+    return {'model': jev.MODEL, 'answers': {name: {'type': 'noul', 'noul': .95}
+            for name in questions}, 'usage': {'input_tokens': 100, 'output_tokens': 20}, 'latency_ms': 10}
 
 
-def test_native_pass_uses_jev_selection_and_keeps_required_facts(planned, monkeypatch):
-    store, run, _ = planned
+def test_native_pass_classifies_deltas_without_selecting_facts(planned, monkeypatch):
+    store, run, event = planned
     facts(planned)
     calls = []
     def recorded(*args, **kwargs):
@@ -136,85 +136,113 @@ def test_native_pass_uses_jev_selection_and_keeps_required_facts(planned, monkey
         assert not store.db.in_transaction, 'API call must not hold the ledger writer lock'
         return score(*args, **kwargs)
     monkeypatch.setattr(jev, 'evaluate', recorded)
-    job = native_companion.prepare(store, 'eng-001', run, 'main', 'request', env={'TYPESAFE_API_KEY': 'fixture-key'})
+    job = native_companion.prepare(store, 'eng-001', run, 'main', 'request', record_ids=('unrelated',))
     body = companion_protocol.frozen(store, job)
-    assert set(body['record_versions']) == {'current', 'constraint'}
-    assert job['payload']['jev']['status'] == 'complete' and len(calls) == 1
-    assert 'scores' not in job['payload']['jev'] and 'fixture-key' not in json.dumps(job)
-    assert native_companion.prepare(store, 'eng-001', run, 'main', 'request')['job_id'] == job['job_id']
-    assert len(calls) == 1
-    # A second prepared request for identical inputs reuses the API result too.
-    native_companion.prepare(store, 'eng-001', run, 'main', 'second')
+    assert set(body['record_versions']) == {'unrelated', 'constraint'}
+    assert job['payload']['jev']['events'][event['event_id']]['route'] == 'review_delta'
+    assert 'observation routes' in job['payload']['system']
+    assert 'fixture-key' not in json.dumps(job)
+    assert native_companion.prepare(store, 'eng-001', run, 'main', 'request', record_ids=('unrelated',))['job_id'] == job['job_id']
+    native_companion.prepare(store, 'eng-001', run, 'main', 'second', record_ids=('unrelated',))
     assert len(calls) == 1
 
 
 @pytest.mark.parametrize('reason', ['timeout', 'invalid_response', 'http_401'])
 def test_failed_jev_stops_preparation_without_fallback_or_native_execution(planned, monkeypatch, reason):
     store, run, _ = planned
-    facts(planned)
     calls = []
     def fail(*args, **kwargs):
         calls.append(1)
         raise jev.Unavailable(reason)
     monkeypatch.setattr(jev, 'evaluate', fail)
     monkeypatch.setattr(native_companion.checks, 'execute', lambda *a, **kw: pytest.fail('must not run native model'))
-    with pytest.raises(ValidationError, match='Jev selection stopped: '+reason):
-        native_companion.prepare(store, 'eng-001', run, 'main', 'request', env={'TYPESAFE_API_KEY': 'fixture-key'})
+    with pytest.raises(ValidationError, match='Jev decision stopped: '+reason):
+        native_companion.prepare(store, 'eng-001', run, 'main', 'request')
     assert len(calls) == 1
     assert store.db.execute('SELECT count(*) FROM companion_jobs').fetchone()[0] == 0
-    assert store.db.execute('SELECT count(*) FROM passes').fetchone()[0] == 0
     assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 0
 
 
-def test_changed_candidate_or_new_event_invalidates_jev_cache(planned, monkeypatch):
+def test_changed_observation_or_current_record_invalidates_jev_cache(planned, monkeypatch):
     store, run, event = planned
     facts(planned)
     calls = []
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: (calls.append(1), score(*a, **kw))[1])
-    env = {'TYPESAFE_API_KEY': 'fixture-key'}
-    first = jev_selection.for_pass(store, run, 'main', env=env)
-    assert jev_selection.for_pass(store, run, 'main', env=env) == first
+    def classify():
+        body = passes.prepare(store, run, 'main', prompt_version='test', record_ids=('current',))
+        return jev_deltas.classify(store, body)
+    first = classify()
+    assert classify() == first
     with store.transaction() as tx:
         tx.put_record('current', expected_version=1, task_id='T', **create(event, 'current', text='The parser rejects unknown fields.')['record'])
-    second = jev_selection.for_pass(store, run, 'main', env=env)
-    assert second['records']['current'] == 2 and len(calls) == 2
+    classify()
+    assert len(calls) == 2
     with store.transaction() as tx:
         tx.append_event(run, 'main', 'new', 'tool_result', {'text': 'New next action.'})
-    jev_selection.for_pass(store, run, 'main', env=env)
+    classify()
     assert len(calls) == 3
 
 
 def test_task_change_during_jev_call_rejects_result(planned, monkeypatch):
     store, run, _ = planned
-    facts(planned)
+    body = passes.prepare(store, run, 'main', prompt_version='test')
     def amend(*args, **kwargs):
         with store.transaction() as tx:
             tx.put_task('T', {'goal': 'Different assignment.'}, expected_revision=1)
         return score(*args, **kwargs)
     monkeypatch.setattr(jev, 'evaluate', amend)
     with pytest.raises(Conflict, match='amended'):
-        jev_selection.for_pass(store, run, 'main', env={'TYPESAFE_API_KEY': 'fixture-key'})
+        jev_deltas.classify(store, body)
     assert store.db.execute('SELECT count(*) FROM retrieval_runs').fetchone()[0] == 0
 
 
-def test_independent_nouls_batch_without_truncating_candidates():
-    candidates = [{'text': 'Complete fact '+str(i)+' '+('x'*500)} for i in range(12)]
-    batches = jev_selection._batches({'goal': 'Use current facts.'}, candidates)
-    assert 1 < len(batches) <= 4
-    assert sum(len(batch) for batch in batches) == len(candidates)
-    assert all(len(jev.encode({'goal': 'Use current facts.'}, batch)) <= 4000 for batch in batches)
+def test_large_observation_requests_scoped_read_without_truncating(planned, monkeypatch):
+    store, run, _ = planned
+    body = passes.prepare(store, run, 'main', prompt_version='test')
+    body['events'][0]['payload'] = {'text': 'x' * 6000}
+    monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no unbounded requests'))
+    result = jev_deltas.classify(store, body)
+    assert list(result['events'].values()) == [{'route': 'read_evidence'}]
 
 
 def test_routine_bookkeeping_has_no_semantic_decision_to_send(planned, monkeypatch):
-    from hx import passes
     from .test_passes import answer
     store, run, _ = planned
-    facts(planned)
     initial = passes.prepare(store, run, 'main', prompt_version='test')
     passes.commit(store, initial['pass_id'], answer(initial, disposition='no_change'))
     with store.transaction() as tx:
         tx.append_event(run, 'main', 'tokens', 'boundary',
             {'observation': {'data': {'source': 'token_count', 'last_usage': {'input_tokens': 12}}}})
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('bookkeeping needs no semantic judgment'))
-    result = jev_selection.for_pass(store, run, 'main')
-    assert result['records'] == {}
+    body = passes.prepare(store, run, 'main', prompt_version='test')
+    result = jev_deltas.classify(store, body)
+    assert result['requests'] == []
+
+
+def test_repetition_reduces_without_a_generative_pass(planned, monkeypatch):
+    store, run, event = planned
+    facts(planned)
+    def repetition(state, questions, **kwargs):
+        return {**score(state, questions), 'answers': {name: {'type': 'noul', 'noul': .01} for name in questions}}
+    monkeypatch.setattr(jev, 'evaluate', repetition)
+    job = native_companion.prepare(store, 'eng-001', run, 'main', 'repeat', record_ids=('current',))
+    assert job['status'] == 'committed'
+    assert job['payload']['semantic_reduction'] and not job['payload']['deterministic']
+    assert store.db.execute('SELECT disposition FROM events WHERE event_id=?', (event['event_id'],)).fetchone()[0] == 'no_change'
+    with store.transaction() as tx:
+        assert tx.record('current')['version'] == 1
+
+
+def test_failure_and_uncertainty_require_companion_review(planned, monkeypatch):
+    store, run, _ = planned
+    facts(planned)
+    with store.transaction() as tx:
+        tx.append_event(run, 'main', 'failure', 'tool_result', {'is_error': True, 'error': 'A test failed.'})
+    monkeypatch.setattr(jev, 'evaluate', lambda state, questions, **kwargs: {
+        **score(state, questions), 'answers': {name: {'type': 'noul', 'noul': .01} for name in questions}})
+    job = native_companion.prepare(store, 'eng-001', run, 'main', 'failure', record_ids=('current',))
+    assert job['status'] == 'prepared'
+
+
+def test_pi_failure_flag_never_becomes_repetition():
+    assert jev_deltas._failed({'observation': {'data': {'tool_response': {'isError': True}}}})

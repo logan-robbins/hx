@@ -117,6 +117,19 @@ permission_mode = "always-approve"
 enabled = true
 
 """ + "\n".join(blocks)
+if continuity:
+    config += """
+[memory]
+enabled = false
+
+[memory_v2]
+enabled = false
+
+[toolset.bash]
+auto_background_on_timeout = false
+max_timeout_secs = 60
+output_byte_limit = 4096
+"""
 with open(os.path.join(home, "config.toml"), "w") as handle:
     handle.write(config)
 PYEOF
@@ -124,6 +137,7 @@ PYEOF
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   for want in hx-worker hx-memory; do
+    [ "$want" != hx-memory ] || [ -z "${HX_CONTINUITY_RUN:-}" ] || continue
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"

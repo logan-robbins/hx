@@ -158,6 +158,9 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
                 _transition(tx, run_id, {"starting"}, "start_uncertain", error=type(exc).__name__)
             raise
     row = native_launch._row(ledger, run_id)
+    if submit and row['status'] in {'starting', 'ready', 'submitted', 'submission_unconfirmed'}:
+        from .application_loop import ensure
+        ensure(ledger.root, env=env)
     if submit and row["status"] in {"starting", "ready"}:
         # Some TUIs defer SessionStart until the first prompt. Submit only the
         # launch marker; the request hook refuses execution until startup has
@@ -236,12 +239,17 @@ def observe(ledger, run_id, launch_id, event, observation):
     native_session = observation.get("session_id") or observation.get("sessionId") or observation.get("transcript_path")
     if event == "context":
         if observation.get("source", "startup") != "startup":
-            with ledger.transaction() as tx:
-                current = native_launch._row(tx, run_id)
-                payload = {**current["payload"], "startup_observed": False,
-                           "instruction_delivery": "continuation_boundary_required"}
-                _transition(tx, run_id, {current["status"]}, "continuation_required", payload=payload)
-            raise Conflict("native continuation requires a new controlled checkpoint boundary")
+            from .compaction_policy import continue_context
+            try:
+                return continue_context(ledger, row, observation)
+            except HxError as exc:
+                with ledger.transaction() as tx:
+                    current = native_launch._row(tx, run_id)
+                    if current['status'] in {'starting', 'ready', 'submitted', 'continuation_required'}:
+                        payload = {**current['payload'], 'startup_observed': False,
+                                   'instruction_delivery': 'continuation_boundary_required'}
+                        _transition(tx, run_id, {current['status']}, 'continuation_required', payload=payload)
+                raise Conflict('native continuation requires a controlled checkpoint boundary: ' + str(exc)) from None
         if row["payload"].get("startup_observed"):
             # A duplicate startup cannot reinstall context into a running turn.
             return None
@@ -286,6 +294,8 @@ def observe(ledger, run_id, launch_id, event, observation):
             _transition(tx, run_id, {row["status"]}, "submission_rejected", error="startup context is not verified")
         raise Conflict("native startup context is not verified; do not execute this assignment")
     if event == "request":
+        from .runtime_policy import check_files
+        check_files(row)
         if row["payload"].get("native_session") and native_session != row["payload"]["native_session"]:
             raise Conflict("native submission acknowledgement belongs to another session")
         _owned_pane(row)
@@ -309,3 +319,8 @@ def guard_release(tx, run_id):
             raise Conflict("native tools remain in flight; reconcile calls before releasing assignment leases")
         if tx.db.execute("SELECT 1 FROM native_children WHERE launch_id=? AND status='active' LIMIT 1", (row["launch_id"],)).fetchone():
             raise Conflict("native children remain active; reconcile ownership before releasing assignment leases")
+        if row['status'] == 'quiesced':
+            from .native_producer import require_drained
+            require_drained(tx, run_id)
+            if tx.db.execute('SELECT 1 FROM cursors WHERE run_id=? AND head_seq<>classified_seq LIMIT 1', (run_id,)).fetchone() or tx.db.execute("SELECT 1 FROM events WHERE run_id=? AND disposition='pending' LIMIT 1", (run_id,)).fetchone():
+                raise Conflict('late native evidence must be classified before releasing assignment leases')

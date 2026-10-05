@@ -167,6 +167,8 @@ settings = {
     # Bypass permissions, always. The Partner's guard is a hook, not a permission rule (spec 05, 09.1).
     "skipDangerousModePermissionPrompt": True,
 }
+if continuity:
+    settings["autoMemoryEnabled"] = False
 if is_partner:
     # The human and hx wake the Partner through the messaging socket (spec 11, 12).
     settings["crossSessionInbound"] = "accept"
@@ -230,7 +232,8 @@ fi
 if [ "$id" = partner ]; then
   copy_skills "$home/skills" hx-partner hx-fleet hx-memory
 else
-  copy_skills "$home/skills" hx-worker hx-memory
+  copy_skills "$home/skills" hx-worker
+  if [ -z "${HX_CONTINUITY_RUN:-}" ]; then copy_skills "$home/skills" hx-memory; fi
 fi
 fi
 
