@@ -248,12 +248,13 @@ def test_cli_prepares_and_inspects_same_job_without_native_start(planned, capsys
     from hx import companion
     store, run, _ = planned
     args = ['eng-001', '--run', run, '--stream', 'main', '--request', 'cli', '--prepare-only']
-    assert companion.main(args, store.root, env={}) == 0
+    env = {'TYPESAFE_API_KEY': 'fixture-key'}
+    assert companion.main(args, store.root, env=env) == 0
     first = json.loads(capsys.readouterr().out)
     assert first['status'] == 'prepared'
-    assert companion.main(args, store.root, env={}) == 0
+    assert companion.main(args, store.root, env=env) == 0
     assert json.loads(capsys.readouterr().out) == first
-    assert companion.main(['eng-001', '--job', first['job_id']], store.root, env={}) == 0
+    assert companion.main(['eng-001', '--job', first['job_id']], store.root, env=env) == 0
     assert json.loads(capsys.readouterr().out) == first
 
 
