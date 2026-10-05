@@ -126,8 +126,8 @@ def capture(
     if fallback:
         pane["source"] = "log"
         pane["lines"] = fallback
-        pane["error"] = stderr or f"no live tmux session {session}; showing the pane log"
+        pane["error"] = f"no live tmux session {session}; showing the pane log" + (f": {stderr}" if stderr else "")
         return pane
 
-    pane["error"] = stderr or f"no live tmux session {session}"
+    pane["error"] = f"no live tmux session {session}" + (f": {stderr}" if stderr else "")
     return pane

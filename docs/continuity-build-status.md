@@ -47,6 +47,10 @@ Latest verification (October 4; overlapping counts are not additive):
   and confirmed that those tests did not change the current Claude home.
 - Final focused regression after the publication barrier and startup-fixture fix:
   81 passed, 1 optional installed-runtime check skipped.
+- Portability/fixture regression: 261 passed after reconciling QA packaging and
+  board snapshots, pinning the native-install fixture, and preserving full launch
+  argv and session identity in diagnostics. The local installed-Claude deploy-doc
+  test requires an allowlisted version; this host now has 2.1.289, outside that list.
 - Python compilation and `git diff --check` passed.
 
 Live Jev checks used the operator's named dotenv key without printing or persisting it:

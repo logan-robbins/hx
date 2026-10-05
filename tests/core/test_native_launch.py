@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,10 @@ def test_private_installation_hooks_use_shared_authority(configured, child_env, 
     login = tmp_path / "user" / ".codex" / "auth.json"
     login.parent.mkdir(parents=True)
     login.write_text('{"fixture":true}')
+    # Installation validates a pinned executable; it does not launch a model.
+    # Keep this contract test independent of globally installed native CLIs.
+    (store.root / 'config' / (flavor + '.json')).write_text(
+        json.dumps({'bin': sys.executable, 'version': 'installation-fixture'}))
     launch = prepare(configured, flavor)
     capsule = Path(launch["payload"]["capsule"])
     env = native_launch.environment(store.root, launch, env=child_env(HOME=str(login.parents[1])))

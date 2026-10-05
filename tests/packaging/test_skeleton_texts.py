@@ -205,7 +205,7 @@ def test_every_shipped_persona_has_exactly_one_mutable_header():
     missing one would be a worker that cannot launch."""
     personas = sorted((SKELETON / "personas").iterdir())
     assert [p.name for p in personas] == [
-        "backend-engineer", "frontend-engineer", "partner", "release-engineer",
+        "backend-engineer", "frontend-engineer", "partner", "qa-engineer", "release-engineer",
     ], [p.name for p in personas]
     for directory in personas:
         path = directory / "AGENTS.md"
