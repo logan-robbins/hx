@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tomllib
 
 import pytest
@@ -30,7 +31,9 @@ def test_native_reset_rebuilds_current_packet_without_semantic_call(runtime, mon
     text = Path(current['payload']['packet_path']).read_text()
     assert 'parser now preserves' in text and 'Preserve the public signature.' in text
     assert len(text.encode()) <= 8192
-    assert str(current['payload']['packet_path']) in line
+    attached = json.loads(line)['hookSpecificOutput']
+    assert attached['hookEventName'] == 'SessionStart'
+    assert text in attached['additionalContext']
     assert store.db.execute('SELECT disposition FROM events WHERE event_id=?', (event['event_id'],)).fetchone()[0] is None
     assert fire(store, run, current, 'tool-start', payload('after-compact')) == 0
 
@@ -55,3 +58,10 @@ def test_precompact_prepares_pointer_without_acknowledging_tail(runtime):
     line = compaction_policy.prepare_native_compaction(store, row, {'trigger': 'auto'})
     assert 'Read the task context' in line and len(line.encode()) < 512
     assert before == [tuple(r) for r in store.db.execute('SELECT stream_id,classified_seq FROM cursors WHERE run_id=? ORDER BY stream_id', (run,))]
+
+
+def test_inline_boundary_limit_counts_utf8_bytes_without_truncation():
+    assert compaction_policy.claude_boundary_context('界' * 3000) is None
+    state = 'Do not publish until QA passes; next run `pytest tests/parser -q`.'
+    result = json.loads(compaction_policy.claude_boundary_context(state))
+    assert state in result['hookSpecificOutput']['additionalContext']

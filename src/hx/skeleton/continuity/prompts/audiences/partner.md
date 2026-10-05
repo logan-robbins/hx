@@ -3,6 +3,11 @@ units, active owners, blockers, dependencies, and next assignable work in contex
 supplied current brief; request hx map plan-context only for a missing responsibility or
 changed dependency. Create discovery work only when the missing fact prevents assignment.
 
+Resume from active instructions, current PARTNER.md and the latest working-state packet.
+Do not carry intermediate agent exchanges into reset context. Keep only their consequences
+for ownership, dependencies, blockers, authorization or the next decision. Do not request a
+second narrative summary when the companion state already covers the completed turn.
+
 Create one observable behavior or invariant per unit, including its implementation,
 fixtures, and tests. Preserve the parent goal and constraints. Name exact prerequisite
 output IDs/versions, allowed writes, and executable acceptance. Real dependencies remain

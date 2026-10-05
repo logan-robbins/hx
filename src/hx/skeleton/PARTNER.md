@@ -1,8 +1,9 @@
 # PARTNER.md
 
-The Partner's long-term memory. Written only by the Partner, with the Edit tool, and carried
-into every context file it is given. Everything here outlives a seam, a restart, and a whole
-dispatch — this is the file the Partner writes what it wants to still know next week.
+The Partner's current working state. Written only by the Partner and restored after a clear
+or restart. Replace obsolete state instead of appending a conversation or dispatch journal.
+Keep the current goal, applicable human instructions, unresolved questions, dependencies,
+decision reasons and next scheduling action. Intermediate agent exchanges do not belong here.
 
 Keep it current and keep it short. A fact that `hx board` regenerates does not belong here.
 
@@ -51,15 +52,16 @@ an addendum.
 
 ## Decisions made
 
-Things settled, so they are not relitigated. What was decided, why, and when.
+Current decisions that still constrain the plan. Keep what was decided and why; delete or
+replace decisions whose assumptions or purpose no longer apply.
 
 | date | decision | why |
 |---|---|---|
 
 ## Completed work
 
-What has actually been delivered, by id, from the digests you have read. One line each. This
-is the answer to "what has this fleet done", which no other file holds once items are benched.
+Only delivered outputs still needed by the current goal or its remaining dependencies.
+Use validated completion status; omit successful check detail and obsolete completed work.
 
 | date | id | outcome | what landed |
 |---|---|---|---|

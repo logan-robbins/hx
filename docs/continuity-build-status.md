@@ -27,7 +27,7 @@ interruption recovery; ambiguous ownership remains unresolved.
 | Inspection efficiency | ≤160 lines per source read; ≤80 scoped search results. An unchanged successful range cannot be reread in the same checkpoint. Changed files, errors and fresh contexts remain readable. Common noisy shell inspections route through bounded output capture. These gates do not sandbox arbitrary programs. |
 | Output | `hx tool-exec` executes a request once, captures ≤1 MiB and returns ≤4 KiB of selected verbatim output with status, diagnostics and recovery addresses. Jev only judges surplus chunks. A failed reduction can be retried without repeating the command. |
 | Tools | Small per-adapter catalog, Jev discovery and exact-ID selection. Required tools survive. Claude can select its launch tools before dispatch; live expansions report `pending_restart`. Pi updates real active schemas through its public API. Grok TUI, Codex and Muse remain advisory; no native schema savings are claimed. |
-| Compaction | Current checkpoint before reset; forced continuation preserves unresolved corrections/gaps without acknowledging them. Codex receives `compact_prompt`; Claude receives compact instructions; Pi can use the checkpoint pointer as its summary. No synchronous inference in compaction hooks. |
+| Compaction | The companion maintains current state for clear and restoration without a second conversation summary. Partner restoration omits worker investigation and personal-memory lookup; engineering/QA retain task-specific continuation. Bounded Claude reset state is attached through `SessionStart.additionalContext`. Forced continuation preserves unresolved corrections/gaps without acknowledging them. Codex receives `compact_prompt`; Claude receives compact instructions; Pi can use the checkpoint pointer as its summary. No synchronous inference in compaction hooks. |
 | Completion | Worker commits changes and requests `hx complete done`. Runtime waits for turn/tool/child/capture/companion drain, runs declared checks, stops managed native execution, publishes exact outputs and releases leases. Failure resumes the same worker once. Publication replay recovers after a crash. |
 
 ## Verification
@@ -51,6 +51,12 @@ Latest verification (October 4; overlapping counts are not additive):
   board snapshots, pinning the native-install fixture, and preserving full launch
   argv and session identity in diagnostics. The local installed-Claude deploy-doc
   test requires an allowlisted version; this host now has 2.1.289, outside that list.
+- Companion reset follow-up: 95 passed across compaction, Partner seams, composition,
+  prompt budgets and readiness; 24 passed for revised prompt contracts and Partner reset
+  behavior; 74 passed, 6 optional checks skipped for native controller/tools/companion
+  integration and prompt contracts. Counts overlap.
+- Baseline CI at `8f725cc`: Linux 1,820 passed / 25 skipped; macOS 1,822 passed /
+  23 skipped; packaging and Claude-home isolation checks passed on both platforms.
 - Python compilation and `git diff --check` passed.
 
 Live Jev checks used the operator's named dotenv key without printing or persisting it:

@@ -9,6 +9,8 @@ is `/clear` + rehydrate from its context file; no goal pointer is ever sent.
 
 from __future__ import annotations
 
+import json
+
 from .test_compose import run_hook
 from .test_streams import events, post_tool, transcript_with
 
@@ -50,9 +52,15 @@ def test_stop_takes_a_pending_partner_seam(instance, launched, tmux_server):
     assert events(instance, "partner", "partner-main")[-1] == "seam"
 
 
-def test_a_partner_seam_rehydrates_without_a_goal_pointer(instance, launched, tmux_server):
+def test_a_partner_seam_rehydrates_without_a_goal_pointer(instance, launched, tmux_server, monkeypatch):
     """The context file carries PARTNER.md, and the pane gets `/clear` only."""
     from hx.seam import seam
+    from hx import memory
+
+    def no_archive(*args, **kwargs):
+        raise AssertionError("Partner reset must not enqueue a memory episode")
+
+    monkeypatch.setattr(memory, "enqueue_quietly", no_archive)
 
     from .test_transitions import pasted
 
@@ -64,3 +72,41 @@ def test_a_partner_seam_rehydrates_without_a_goal_pointer(instance, launched, tm
     context = instance / "run" / "partner" / "partner-main.context.md"
     assert "PARTNER.md" in context.read_text()
     assert "/goal" not in pasted(instance, "partner")
+
+
+def test_partner_restores_decisions_while_workers_keep_debugging_state(instance, monkeypatch):
+    from hx import compose
+    state = {'seq': 3, 'goal': 'Ship the parser.',
+             'decisions': [{'d': 'Wait for the shared interface.', 'why': 'QA depends on it.'}],
+             'open_steps': [{'id': 'assign', 'intent': 'Unblock QA.', 'next': 'Assign QA after eng-001 completes.'}],
+             'blockers': ['eng-001 owns the interface.'],
+             'working_set': {'last_failure': 'pytest tests/parser -q: expected 2, got 1',
+                             'files': [{'path': 'parser.py', 'note': 'The branch at :19 is under repair.'}]},
+             'closed_steps': [{'id': 'old', 'outcome': 'INTERMEDIATE EXCHANGE'}],
+             'dead_ends': ['Avoid regex parsing; nested input fails.']}
+    for item in ('partner', 'eng-001'):
+        path = instance / 'state' / item / (item + '-main.json')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state))
+    partner = compose.step_state(instance, 'partner', 'partner-main')[1]
+    worker = compose.step_state(instance, 'eng-001', 'eng-001-main')[1]
+    assert 'Assign QA after eng-001 completes.' in partner and 'QA depends on it.' in partner
+    assert 'pytest tests/parser' not in partner and 'INTERMEDIATE EXCHANGE' not in partner
+    assert 'pytest tests/parser' in worker and 'Avoid regex parsing' in worker and 'parser.py' in worker
+    monkeypatch.setattr(compose, 'memory_episodes', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no episode lookup')))
+    monkeypatch.setattr(compose, 'memory', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no personal memory read')))
+    text = compose.compose_text(instance, 'partner', 'partner-main', env={})
+    assert '## PARTNER.md' in text and '## Board' in text
+    assert '## Memory' not in text and 'INTERMEDIATE EXCHANGE' not in text
+
+
+def test_claude_partner_reset_attaches_state_without_a_read_or_summary(instance, monkeypatch):
+    from hx import hook_context, compose
+    (instance / 'PARTNER.md').write_text('Ship the parser. eng-001 owns implementation; QA waits.')
+    monkeypatch.setattr(compose, 'memory_episodes', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no episode lookup')))
+    code, output = hook_context.handle({'source': 'clear'}, 'partner', instance, env={})
+    assert code == 0
+    attached = json.loads(output)['hookSpecificOutput']
+    assert attached['hookEventName'] == 'SessionStart'
+    assert 'QA waits.' in attached['additionalContext']
+    assert 'Use the Read tool once' not in output

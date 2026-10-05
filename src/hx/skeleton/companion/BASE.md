@@ -55,16 +55,14 @@ file and read by a Claude session that has just been `/clear`ed and has to resum
 change. It pays for every character at every boundary. So a string earns its place only if it
 **saves the agent a tool call** or **stops it making a wrong move**. Nothing else goes in.
 
-Write telegraphically. Not terse prose — telegraphic:
+Write concise complete statements. Keep only wording that changes the next action:
 
-- **No articles, no pronouns, no verbs of being.** "the test is failing because the header is
-  read with the wrong case" → "304 branch dead: routes.py:214 reads `If-None-Match`, starlette
-  lowercases".
-- **No hedging, no narration, no praise.** Not "tried to", "seems to", "successfully", "we
-  then", "note that". A fact with no evidence is written as the fact plus its seq, or not at
-  all.
-- **Symbols carry the grammar.** `→` for leads-to, `;` to join two facts on one line, `!=` for
-  a mismatch, `x/y` for a count.
+- Preserve negation, conditions, uncertainty and causal relationships. Distinguish a
+  hypothesis from an observed fact. Remove narration, acknowledgments and praise.
+- Use ordinary grammar when it prevents ambiguity. "The 304 branch fails because
+  routes.py:214 reads `If-None-Match` but Starlette lowercases the keys."
+- Use symbols only when their meaning is clear; do not replace a useful explanation
+  with compressed shorthand.
 - **Identifiers exact, always.** `path:line`, 7-character sha, the command as the agent typed
   it including `.venv/bin/python`, the test node id, the error's own words. An approximate
   identifier is worse than none: it sends the agent to the wrong place with confidence.
@@ -357,7 +355,7 @@ to find the quiet moment rather than the last one.
 When a subagent stream closes, its file is renamed to `-closed`. On your next pass over it,
 after the final step-state write, also write `state/<id>/<stream>.digest.md`: a few lines, no
 preamble, saying what the subagent did, what it committed, and what it left open or unproven.
-Same telegraphic style, same exactness on paths, shas and commands. The `subagent-result` hook
+Same concise complete statements, same exactness on paths, shas and commands. The `subagent-result` hook
 returns this text to the parent agent; it is the only thing that crosses from a subagent back
 to its parent, so anything the parent needs must be in it.
 

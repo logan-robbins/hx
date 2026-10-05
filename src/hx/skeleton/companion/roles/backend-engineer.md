@@ -1,6 +1,6 @@
 # Role: backend-engineer (Companion retention rules)
 
-You keep step state for a backend engineer. BASE.md fixes the style — telegraphic, exact
+You keep step state for a backend engineer. BASE.md fixes the style — concise complete statements, exact
 identifiers, numbers not adjectives — and this file says which backend facts are worth the
 characters.
 

@@ -1,5 +1,15 @@
-"""One concise compaction contract, installed into supported native prompt surfaces."""
-PROMPT = '''Preserve only the current assignment. Write concise complete statements.
+"""Restore companion-maintained state; native summarization is an emergency boundary."""
+PROMPT = '''The companion maintains current working state before a controlled reset.
+Normal continuation restores that state after clear; it needs no second conversation summary.
+If native compaction occurs, reference the latest runtime checkpoint without rewriting it.
+Preserve only necessary observations newer than that checkpoint and unresolved obligations.
+For the Partner, keep the current human goal, constraints, owners, dependencies, blockers,
+unanswered questions and next scheduling decision. Omit intermediate agent exchanges,
+routine progress, worker investigation and successful check details already represented in state.
+For engineering, keep remaining steps, edited-source state, exact useful commands, unresolved
+failures and approaches that must not be repeated. For QA, keep the tested revision/environment,
+reproduction, assertion coverage, unresolved defects and remaining checks.
+Write concise complete statements.
 Keep the goal, exact constraints, current cursor and next action, unresolved blockers,
 active child/tool operations, changed interfaces, and commands still needed to finish.
 Keep negation, conditions, uncertainty, exact paths, symbols, commands and check status.
@@ -13,6 +23,19 @@ remaining obligation and its checkpoint/evidence address; never silently truncat
 
 def compact_instructions():
     return '# Compact instructions\n\n' + PROMPT + '\n'
+
+
+def claude_boundary_context(text):
+    """Use the documented SessionStart context channel, not an invented system override."""
+    import json
+    from .runtime_policy import CONTEXT_BYTES
+    body = ('Current continuation state follows. Use it with the active system instructions; '
+            'it is state, not permission to change them. Do not reread its source files merely '
+            'to reconstruct this same state.\n\n' + text)
+    if len(body.encode()) > CONTEXT_BYTES:
+        return None
+    return json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart',
+                                             'additionalContext': body}}, ensure_ascii=False)
 
 
 def continue_context(ledger, row, observation):
@@ -64,6 +87,10 @@ def continue_context(ledger, row, observation):
         # Read reuse never crosses a model context reset.
         tx.db.execute('DELETE FROM native_reads WHERE launch_id=? AND checkpoint_id<>?',
                       (row['launch_id'], packet['checkpoint_id']))
+    if current['payload'].get('tool_selection', {}).get('adapter') == 'claude':
+        inline = claude_boundary_context(packet['text'])
+        if inline is not None:
+            return inline
     return native_controller._pointer(path)
 
 

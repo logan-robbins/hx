@@ -65,7 +65,7 @@ IMPLEMENTED = (
 )
 
 #: The handlers that produce output on stdout, and what form it takes. `context` prints one
-#: plain line (SessionStart injects stdout); the two subagent hooks must return JSON, because
+#: pointer or a bounded Claude reset context object; the two subagent hooks return JSON because
 #: plain stdout is not injected for them (spec 09.1, docs/en/hooks#subagentstart).
 _HANDLERS = {
     "context": hook_context.handle,

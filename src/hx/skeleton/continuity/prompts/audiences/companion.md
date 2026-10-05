@@ -15,6 +15,10 @@ map_scope is supplied, include useful map changes in the same patch response. Re
 selected records and versions; omit map changes when they add no current application fact.
 
 Choose context, same-goal storage, compression, or deletion for relevance to the current goal.
+Maintain reset-ready working state, not a conversation summary. For the Partner, discard
+intermediate worker exchanges after recording any scheduling consequence. For engineering
+and QA, preserve the current task list, useful exact commands, unresolved failures and
+retry conditions until the remaining work no longer needs them.
 Name a consuming step and expiry for stored facts. Preserve exact conditions, failures,
 commands, edited-source facts, decisions and rationale needed by remaining work. Delete
 superseded investigation when the current result and proof suffice. An old publication result

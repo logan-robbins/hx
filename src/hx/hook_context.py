@@ -1,8 +1,8 @@
 """The `context` hook: `SessionStart`, matcher `startup|resume|clear|compact` (spec 09.1).
 
-At every conversation boundary hx composes the context file and the hook prints one line: the
-path. Hooks never inject file contents (spec 02 Continuity) — the agent reads the file with
-one tool call, and its persona is already in the system prompt, so it costs nothing to have.
+At every conversation boundary hx composes current state. A bounded Claude Partner reset
+attaches it through SessionStart additionalContext. Other cases return one file pointer.
+Stable persona instructions remain in the existing system prompt.
 
 On `source=clear` and a `working` item the hook also sends the goal, which is what finishes a
 seam: `Stop` → `/clear` → `SessionStart(clear)` → `/goal` → one Read (spec 09.3). On `startup`
@@ -56,7 +56,7 @@ def write_socket_file(root: Path, payload: dict, env) -> Path | None:
 
 
 def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """Returns (exit code, the single stdout line)."""
+    """Return a bounded native context object or a single context-file pointer."""
     source = payload.get("source") or "startup"
 
     if item_id == PARTNER:
@@ -84,4 +84,12 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
             # This completes a seam: the item is working, so the pointer goes in now (spec 09.3).
             goal_mod.send_goal(root, item_id, now=True, env=env)
 
+    if item_id == PARTNER and source in {'clear', 'compact', 'resume'}:
+        from .config_harness import flavor_of
+        from .compaction_policy import claude_boundary_context
+        from .runtime_policy import CONTEXT_BYTES
+        if flavor_of(root, item_id) == 'claude' and path.stat().st_size <= CONTEXT_BYTES:
+            inline = claude_boundary_context(path.read_text())
+            if inline is not None:
+                return 0, inline
     return 0, CONTEXT_LINE.format(path=path)

@@ -29,9 +29,9 @@ Sections, in the order spec 07.3 fixes them:
 
 Everywhere else the persona is never here: it is in the system prompt, via
 `--append-system-prompt-file` (spec 02 Identity, 11). For `partner` the file also
-carries `PARTNER.md` and the `hx board` text, which is what it supervises from
-(spec 09.1). No size cap applies, because nothing is injected: the agent reads the
-file with a tool call (spec 02).
+carries current `PARTNER.md`, `hx board`, and companion scheduling state. It excludes
+personal memory and episode lookup. Bounded Claude reset packets can be attached directly;
+other packets use the single-file read path.
 """
 
 from __future__ import annotations
@@ -335,6 +335,12 @@ def step_state(root: Path, item_id: str, stream: str) -> tuple[str | None, str]:
         return _relative(root, path), "_the Companion's last write was not valid JSON_"
     if not isinstance(state, dict):
         return _relative(root, path), "_the Companion's last write was not an object_"
+    if item_id == PARTNER and is_main_stream(item_id, stream):
+        # Worker troubleshooting belongs to workers. The Partner companion lifts
+        # only scheduling-relevant consequences into decisions or blockers.
+        fields = {'seq', 'prompt_version', 'ts', 'goal', 'constraints', 'decisions',
+                  'open_steps', 'blockers', 'subagents_open'}
+        state = {key: value for key, value in state.items() if key in fields}
     return _relative(root, path), render_step_state(state)
 
 
@@ -483,8 +489,10 @@ def compose_text(
     if main and persona_source is not None:
         parts.append(_section("Persona", persona_source, persona_text))
 
-    source, text = memory(root, item_id, stream)
-    parts.append(_section("Memory" if main else "Who your subagents are", source, text))
+    partner = item_id == PARTNER and main
+    if not partner:
+        source, text = memory(root, item_id, stream)
+        parts.append(_section("Memory" if main else "Who your subagents are", source, text))
 
     source, text = task(root, item_id, None if main else (subagent_prompt or ""))
     parts.append(_section("Task", source, text))
@@ -498,7 +506,7 @@ def compose_text(
     source, text = step_state(root, item_id, stream)
     parts.append(_section("Step state", source, text))
 
-    injected = memory_episodes(root, item_id, stream, fallback=goal_text)
+    injected = None if partner else memory_episodes(root, item_id, stream, fallback=goal_text)
     if injected is not None:
         parts.append(_section("Memory episodes", injected[0], injected[1]))
 

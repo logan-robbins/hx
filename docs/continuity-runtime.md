@@ -602,6 +602,22 @@ compact instructions; Pi can use a prepared checkpoint pointer as its native sum
 No compaction hook calls a model synchronously. A forced checkpoint that cannot preserve
 its mandatory content within the bound fails explicitly.
 
+The companion maintains the working state needed after reset. The normal seam waits
+for that state, then clears and restores it; it does not ask the executor to summarize
+the same conversation again. Partner restoration uses active policy, current `PARTNER.md`,
+the current board and companion goals/constraints/decisions/open steps/blockers. It excludes
+worker debugging fields, intermediate exchanges, personal-memory tails and episode search.
+Engineering retains its current steps, commands, file state, failures and retry conditions;
+QA retains reproduction, source/environment, assertion coverage and remaining checks.
+
+Claude planned continuations and Partner resets attach packets that fit within 8 KiB through
+[`SessionStart.additionalContext`](https://code.claude.com/docs/en/hooks#sessionstart-decision-control),
+so no reconstruction read is needed. Claude wraps this as a system reminder, not a rewritten
+system prompt. Stable policy remains separate from changing task data. Oversized legacy
+packets and other adapters retain explicit file delivery without silent truncation. Native
+compaction, if forced before a controlled seam, preserves only the unprocessed tail and
+unresolved obligations beyond the checkpoint; the hook itself runs no inference.
+
 `hx tool-exec --request ID -- COMMAND` executes once, captures at most 1 MiB,
 preserves status/diagnostics and uses Jev to judge surplus output before delivery.
 The returned text is bounded to 4096 bytes. Omitted/unscored regions carry an exact
