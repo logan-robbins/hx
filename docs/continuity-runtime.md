@@ -574,6 +574,57 @@ this managed scope.
 
 ## Planned application loop and compaction
 
+### Application findings feed later goals
+
+The automatic companion pass can add up to four new observed map identities. New
+anchors must refer to paths in the frozen observations or selected records. Captured
+tool paths survive output externalization; the runtime supplies cached, bounded
+`discovery_anchors`, so the companion does not search the repository or invent hashes.
+An assignment with no map inputs can discover its first entries in its existing
+worktree overlay. Required records survive selection; optional neighboring records
+fit the remaining budget. Updating a high-fanout node preserves unselected, unchanged
+relationships and their runtime validity. New or changed edges still require versioned
+endpoints. Concurrent writers retain the existing atomic version checks.
+
+Successful completion publishes current map references in its completion transaction
+and adds bounded goal terms as retrieval hints. These hints are not application claims.
+Source or map changes invalidate reuse; closed-task investigation is still erased.
+Exact IDs, paths and qualified symbols, learned terms, then lexical matches seed the
+bounded planning brief. No embedding model or full-repository scan is needed.
+
+`hx plan draft --repo REPO --snapshot SNAPSHOT --file REQUEST --out PLAN` compiles a
+goal request into an assignment with current paths, invariants, exact check recipes,
+outputs, first action and specific unknowns. REQUEST supplies `plan_id`, `goal` and
+optionally `task_id`, `constraints`, `require` (map IDs), `write_paths`, `acceptance`
+and `recipe` (`change`, `repair`, `api`, `ui`, `migration`, `qa`). QA defaults to no
+source writes. No missing command, source path or acceptance result is invented.
+The compiler requires no model call. The Partner reviews the result and applies PLAN
+with `hx plan apply --file PLAN`; unresolved generated plans cannot be applied.
+`--out` returns only the file address, readiness and next action/unknowns.
+
+`hx loop --status` includes compact changed-input notices. `hx plan replan PLAN_ID
+--out PLAN` refreshes exact map/check bindings, propagates dependent output versions
+and names affected active runs. A worker can finish edits within its own write leases; external input and check changes still require replanning. It preserves the human goal, constraints, acceptance
+and write ownership. The Partner reviews contract changes and stops affected active
+units before applying. Unrelated units retain their revisions.
+
+Integration materialization transfers published findings into the integration map
+overlay, creating that overlay from the common baseline when necessary. `hx map publish --repo REPO
+--snapshot SNAPSHOT --run PRODUCER_RUN` also transfers the completed producer's findings
+and exports only those portable shards and missing endpoints. The integration worker
+includes those paths in its write scope and commits them with source integration.
+Publication checks installed source hashes, refuses divergent records and local edits,
+and can replay an interrupted identical export. Unrelated stale ledger records do not
+block the scoped export. `.hx/map/vocabulary.json` carries at most 128 source-bound
+term sets within 64 KiB; import ignores terms whose record identity no longer matches.
+
+Native bounded searches can reuse an exact query's small result across contexts and
+workers in the same worktree. The cache fingerprints at most 256 filesystem entries,
+without reading file bodies, and stores at most 128 results of 2 KiB per worktree, 256 for the entire root.
+Changed sources, errors, symlinks, larger scopes and oversized results prevent reuse.
+Partial results remain explicitly partial; they never establish absence. A cache hit
+returns its result through the admission response instead of executing the search again.
+
 Planned dispatch starts and waits for one root service to acknowledge readiness.
 Run `hx loop` to operate it explicitly; `--once` advances one bounded cycle under the
 same singleton lock. `--status` gives the Partner current owners, pending work,

@@ -20,11 +20,12 @@ interruption recovery; ambiguous ownership remains unresolved.
 | Area | Implemented behavior |
 |---|---|
 | Application map | Portable `.hx/map` records describe responsibilities, behaviors, interfaces, dependencies and checks. Git baselines and worktree overlays remain distinct. Shared writes use version CAS; identical updates coalesce and conflicting updates roll back. Source changes invalidate only indexed consumers. Fresh source anchors reach the companion without another repository search. |
-| Goal assignment | Validated behavior-unit DAGs, exact prerequisite outputs, write leases, declared checks and bounded map briefs. Partner prompts keep current owners, blockers and next assignable work. `hx loop --status` reads compact headers; ordinary success does not require reopening logs or receipts. |
+| Goal assignment | `hx plan draft --out` compiles current map paths, invariants, check recipes and outputs into reviewable assignments with specific unknowns. `hx plan replan --out` refreshes affected bindings and downstream output versions while preserving acceptance and ownership. Validated behavior-unit DAGs, exact prerequisite outputs, write leases, declared checks and bounded map briefs. Partner prompts keep current owners, blockers and next assignable work. `hx loop --status` reads compact headers; ordinary success does not require reopening logs or receipts. |
 | Jev | Required real TypeSafe API, pinned `jev-1.13.0`. Direct judgments on new-event deltas, repeated tool observations, optional tools and surplus output. No fact-survival ranking, generation, model switching or inference fallback. Requests ≤4,000 bytes, ≤16 questions, 500 ms, no automatic transport retry; current-task decisions are cached and bounded. |
-| Companion | Configured native Claude, one root model slot, no hooks or independent log scans. Frozen current-task pass; only scoped evidence reads and structured patch submission. Map/fact/cursor changes share one transaction. |
+| Companion | Up to four new observed map identities per pass; cached runtime discovery anchors; bounded optional neighbors with unchanged outside relationships preserved. Configured native Claude, one root model slot, no hooks or independent log scans. Frozen current-task pass; only scoped evidence reads and structured patch submission. Map/fact/cursor changes share one transaction. |
 | Context and memory | Current goal/constraints/cursor, selected current facts, exact commands and scoped map inputs. Planned boundaries enforce file size and read/search bounds. Compression erases obsolete record payloads; explicit drops leave version tombstones. Completed tasks erase worker facts, progress detail and semantic/read caches. |
-| Inspection efficiency | ≤160 lines per source read; ≤80 scoped search results. An unchanged successful range cannot be reread in the same checkpoint. Changed files, errors and fresh contexts remain readable. Common noisy shell inspections route through bounded output capture. These gates do not sandbox arbitrary programs. |
+| Application learning | Completion publishes current findings and bounded retrieval terms. Integration transfers matching findings with collision checks; scoped Git publication carries source-bound vocabulary into fresh clones. Older record versions lose their retrieval hints. |
+| Inspection efficiency | ≤160 lines per source read; ≤80 scoped search results. An unchanged successful range cannot be reread in the same checkpoint. Changed files, errors and fresh contexts remain readable. Exact bounded searches reuse small unchanged results across contexts/workers in the same worktree; partial output never establishes absence. The root search cache is capped at 256 entries. Common noisy shell inspections route through bounded output capture. These gates do not sandbox arbitrary programs. |
 | Output | `hx tool-exec` executes a request once, captures ≤1 MiB and returns ≤4 KiB of selected verbatim output with status, diagnostics and recovery addresses. Jev only judges surplus chunks. A failed reduction can be retried without repeating the command. |
 | Tools | Small per-adapter catalog, Jev discovery and exact-ID selection. Required tools survive. Claude can select its launch tools before dispatch; live expansions report `pending_restart`. Pi updates real active schemas through its public API. Grok TUI, Codex and Muse remain advisory; no native schema savings are claimed. |
 | Compaction | The companion maintains current state for clear and restoration without a second conversation summary. Partner restoration omits worker investigation and personal-memory lookup; engineering/QA retain task-specific continuation. Bounded Claude reset state is attached through `SessionStart.additionalContext`. Forced continuation preserves unresolved corrections/gaps without acknowledging them. Codex receives `compact_prompt`; Claude receives compact instructions; Pi can use the checkpoint pointer as its summary. No synchronous inference in compaction hooks. |
@@ -38,7 +39,15 @@ SDK check verifies actual active tool definitions after deferred loading without
 a model. The native completion integration covers turn end, pending tool refusal, checks,
 shutdown, publication, release and publication replay.
 
-Latest verification (October 4; overlapping counts are not additive):
+Latest verification (October 5; overlapping counts are not additive):
+
+- Application-learning and generated-goal regression: 386 passed, 2 optional checks skipped.
+  Includes discovery, completion publication, fresh-clone vocabulary reuse, scoped write
+  ownership, replanning, current-source search reuse and active-owner map repair.
+- Final integration/planning follow-up: 55 passed, including refusal to publish a
+  source-materialization receipt when application-map transfer encounters a collision.
+- Companion-reset CI at `32f96e8` passed on Linux and macOS before the application-learning
+  changes in this update.
 
 - Broad regression: 390 passed, 2 optional checks skipped. The historical user-home
   guard failed because the current Claude configuration differs from the September 21
@@ -78,7 +87,7 @@ outside its current capabilities and must not be presented as completed release 
 - Claude live tool expansion/restart, MCP/skill catalog discovery, and adapters whose native
   schema filtering or custom compaction surfaces have not been verified.
 - Coordinated legacy-authority migration, projection consumers, map export crash recovery,
-  automatic downstream replanning, and cancellation/raw-event/pass artifact retention.
+  and cancellation/raw-event/pass artifact retention.
 - Optional QA triage, test-selection and review extensions after core operation.
 
 Known boundaries remain explicit: managed completion covers admitted operations and observed

@@ -31,3 +31,8 @@ On changed contracts or scope, stop affected assignments at a safe boundary, rev
 and rebind current inputs. Keep current goal state and unanswered questions, not a history of
 finished asks. Respond to meaningful controller events instead of repeatedly polling panes.
 Report completion when the runtime confirms the goal's required units and integration checks.
+
+Use hx plan draft --out with the goal, recipe and current map snapshot to reuse known paths,
+contracts and check commands. Resolve only its named unknowns. hx loop --status includes
+changed assignments; hx plan replan --out generates their revised bindings and dependent outputs.
+Review the changed contract, preserve acceptance, stop affected active units, then apply.

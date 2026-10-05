@@ -33,6 +33,9 @@ def _active_run(tx, run_id: str) -> dict:
 def _event_view(tx, row, available_bytes: int) -> dict:
     view = {"event_id": row["event_id"], "seq": row["seq"], "kind": row["kind"],
             "payload_hash": row["payload_hash"], "pending": row["disposition"] == "pending"}
+    paths = tx.db.execute("SELECT json_extract(payload,'$.source_paths') FROM events WHERE event_id=? AND length(json_extract(payload,'$.source_paths'))<=4096", (row['event_id'],)).fetchone()
+    if paths and paths[0]:
+        view['source_paths'] = json.loads(paths[0])
     # Inspect lengths in SQLite; oversized bodies never cross into Python just
     # to discover that the model packet cannot accommodate them.
     if row["payload_bytes"] <= available_bytes:
@@ -91,24 +94,27 @@ def prepare(store: ContinuityStore, run_id: str, stream_id: str, *,
                             for record in selected.values()], "events": []}
         if map_selection is not None:
             body["map_scope"] = companion_map.freeze(tx, body["task"], map_selection,
-                max_bytes=max_bytes - len(canonical(body).encode()))
+                max_bytes=max_bytes - len(canonical(body).encode()) - 512)
         if len(canonical(body).encode()) > max_bytes:
             raise RequiredContextOverflow("task and selected pass facts exceed the pass budget; narrow optional selection or split")
+        reserve = min(768, max(0, (max_bytes - len(canonical(body).encode())) // 2)) if map_selection is not None else 0
+        event_limit = max_bytes - reserve
         for row in [*pending, *fresh]:
-            view = _event_view(tx, row, max_bytes - len(canonical(body).encode()))
+            view = _event_view(tx, row, event_limit - len(canonical(body).encode()))
             candidate = {**body, "events": [*body["events"], view],
                          "to_seq": max(body["to_seq"], row["seq"])}
-            if len(canonical(candidate).encode()) > max_bytes:
+            if len(canonical(candidate).encode()) > event_limit:
                 # Give an exact evidence address, never a misleading head excerpt.
                 view.pop("payload", None)
                 view["evidence"] = f"hx evidence {row['event_id']}"
                 view["requires_read"] = True
                 candidate["events"][-1] = view
-            if len(canonical(candidate).encode()) > max_bytes:
+            if len(canonical(candidate).encode()) > event_limit:
                 if not body["events"]:
                     raise RequiredContextOverflow("pass cannot fit even one evidence address")
                 break
             body = candidate
+        companion_map.discovery_anchors(tx, body, max_bytes)
         body["event_digest"] = digest([(row["event_id"], row["payload_hash"]) for row in body["events"]])
         tx._change()
         tx.db.execute("INSERT INTO passes VALUES(?,?,?,?,?,?,?,?,?,?)",

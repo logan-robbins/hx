@@ -51,4 +51,5 @@ def close(tx, task_id):
     tx.db.execute('DELETE FROM progress_steps WHERE task_id=?', (task_id,))
     tx.db.execute('DELETE FROM progress_deliverables WHERE task_id=?', (task_id,))
     tx.db.execute('DELETE FROM native_reads WHERE launch_id IN (SELECT l.launch_id FROM native_launches l JOIN runs r USING(run_id) WHERE r.task_id=?)', (task_id,))
+    tx.db.execute('DELETE FROM search_calls WHERE launch_id IN (SELECT l.launch_id FROM native_launches l JOIN runs r USING(run_id) WHERE r.task_id=?)', (task_id,))
     return True

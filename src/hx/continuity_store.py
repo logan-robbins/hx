@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -459,7 +459,7 @@ class ContinuityStore:
             self.db.execute("PRAGMA mmap_size=0")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (*range(17), SCHEMA_VERSION):
+            if version not in (*range(18), SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -548,6 +548,13 @@ class ContinuityStore:
                 self.db.execute("CREATE TABLE IF NOT EXISTS runtime_cycles(scope TEXT PRIMARY KEY,payload TEXT NOT NULL)")
                 self.db.execute("CREATE TABLE IF NOT EXISTS tool_executions(run_id TEXT NOT NULL,request_id TEXT NOT NULL,input_hash TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(run_id,request_id))")
                 self.db.execute("CREATE TABLE IF NOT EXISTS map_source_observations(repository TEXT NOT NULL,snapshot TEXT NOT NULL,path TEXT NOT NULL,stamp TEXT NOT NULL,PRIMARY KEY(repository,snapshot,path))")
+            if version < 18:
+                self.db.execute("CREATE TABLE IF NOT EXISTS map_publications(run_id TEXT NOT NULL REFERENCES runs(run_id),repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(run_id,repository,snapshot,record_id))")
+                self.db.execute("CREATE INDEX IF NOT EXISTS map_publication_lookup ON map_publications(repository,snapshot,record_id,version)")
+                self.db.execute("CREATE TABLE IF NOT EXISTS map_aliases(repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,term TEXT NOT NULL,PRIMARY KEY(repository,snapshot,record_id,term))")
+                self.db.execute("CREATE INDEX IF NOT EXISTS map_alias_lookup ON map_aliases(repository,snapshot,term)")
+                self.db.execute("CREATE TABLE IF NOT EXISTS search_coverage(repository TEXT NOT NULL,query_hash TEXT NOT NULL,source_hash TEXT NOT NULL,run_id TEXT NOT NULL,result TEXT NOT NULL,complete INTEGER NOT NULL,PRIMARY KEY(repository,query_hash))")
+                self.db.execute("CREATE TABLE IF NOT EXISTS search_calls(launch_id TEXT NOT NULL,session_id TEXT NOT NULL,actor_id TEXT NOT NULL,call_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(launch_id,session_id,actor_id,call_id))")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.commit()
         except BaseException:

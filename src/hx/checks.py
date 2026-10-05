@@ -60,7 +60,7 @@ def _assignment(tx, run_id, check_id, recipe, worker_id=None):
     if run["ended_at"] is not None or task["revision"] != run["task_revision"]:
         raise Conflict("check requires an active run pinned to the current task revision")
     from .map_dependencies import validate_task
-    validate_task(tx, task)
+    validate_task(tx, task, active_run=run_id)
     assigned = task["payload"].get("checks", {}).get(check_id)
     if recipe is None:
         if assigned is None:

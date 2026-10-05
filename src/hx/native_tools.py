@@ -101,6 +101,8 @@ def _admit(store, run_id, launch_id, payload):
     with store.transaction() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
     reading = runtime_policy.inspect_call(snapshot, task['payload'], payload)
+    from . import search_coverage
+    search = search_coverage.prepare(store, snapshot, task['payload'], payload)
     with store.transaction() as tx:
         row = native_launch._row(tx, run_id)
         if row is None:
@@ -128,6 +130,7 @@ def _admit(store, run_id, launch_id, payload):
         tx._change()
         tx.db.execute("INSERT INTO native_tool_calls VALUES(?,?,?,?,?,'admitted')", (*key, fingerprint))
         runtime_policy.remember_read(tx, row, session, actor, call, reading)
+        search_coverage.remember(tx, row, session, actor, call, search)
 
 
 def settle(tx, run_id, session_id, payload):
@@ -151,3 +154,5 @@ def settle(tx, run_id, session_id, payload):
     tx.db.execute("UPDATE native_tool_calls SET status='settled' WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?", key)
     from .runtime_policy import settled
     settled(tx, row['launch_id'], session, actor, call, payload)
+    from .search_coverage import settle as settle_search
+    settle_search(tx, row['launch_id'], session, actor, call, payload)

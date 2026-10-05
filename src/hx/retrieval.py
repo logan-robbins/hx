@@ -12,6 +12,8 @@ from .facts import RequiredContextOverflow
 
 STOP = {"a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is", "it", "of", "on", "or", "the", "to", "with"}
 
+STOP |= {"add", "change", "check", "fix", "implement", "improve", "keep", "preserve", "support", "test", "update", "verify", "current", "requested", "should", "must"}
+
 
 def plan_context(store, repository, snapshot, goal, *, required=(), max_bytes=16000):
     from .planning import write_scope
@@ -22,7 +24,7 @@ def plan_context(store, repository, snapshot, goal, *, required=(), max_bytes=16
     info, _ = appmap._snapshot(store, repository, snapshot)
     key = (info["repo_id"], snapshot)
     started = time.monotonic()
-    terms = list(dict.fromkeys(token for token in re.findall(r"[\w./-]+", goal.lower()) if token not in STOP))[:32]
+    terms = list(dict.fromkeys(token.rstrip(".") for token in re.findall(r"[\w./-]+", goal.lower()) if token.rstrip(".") and token.rstrip(".") not in STOP))[:32]
     seeds = []
     for token in terms:
         exact = store.db.execute("SELECT record_id FROM map_heads WHERE repository=? AND snapshot=? AND record_id=?", (*key, token)).fetchone()
@@ -31,6 +33,18 @@ def plan_context(store, repository, snapshot, goal, *, required=(), max_bytes=16
         for row in store.db.execute("SELECT record_id FROM map_sources WHERE repository=? AND snapshot=? AND path=? ORDER BY record_id LIMIT 3", (*key, token)):
             seeds.append(row[0])
     if terms:
+        # Learned terms only nominate candidates. Normal applicability and graph
+        # validation below still decide what may enter the brief.
+        slots = ','.join('?' for _ in terms)
+        for row in store.db.execute(f"""SELECT a.record_id FROM map_aliases a
+            JOIN map_heads h USING(repository,snapshot,record_id,version)
+            WHERE a.repository=? AND a.snapshot=? AND a.term IN ({slots})
+            GROUP BY a.record_id ORDER BY count(*) DESC,a.record_id LIMIT 3""", (*key, *terms)):
+            seeds.append(row[0])
+        # Exact qualified symbols can be more useful than a prose match.
+        for term in terms[:8]:
+            for row in store.db.execute("SELECT record_id FROM map_sources WHERE repository=? AND snapshot=? AND lower(symbol)=? ORDER BY record_id LIMIT 3", (*key, term)):
+                seeds.append(row[0])
         query = " OR ".join('"' + token.replace('"', '""') + '"' for token in terms)
         for row in store.db.execute("""SELECT k.record_id FROM map_search
             JOIN map_search_keys k ON k.rowid=map_search.rowid

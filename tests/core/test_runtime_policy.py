@@ -57,3 +57,45 @@ def test_bounded_search_and_read_remain_available(runtime):
     assert fire(store, run, row, 'tool-start', payload('search', tool_name='Grep',
         tool_input={'path': str(repo), 'pattern': 'Compiler', 'head_limit': 40})) == 0
     assert fire(store, run, row, 'tool-start', payload('shell-search', tool_input={'command': 'hx tool-exec --request search1 -- rg -m 20 Compiler compiler.py'})) == 0
+
+
+def test_search_result_reused_after_reset_but_invalidated_by_source_change(runtime):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    path = Path(repo) / 'coverage.py'
+    path.write_text('Compiler = 1\n')
+    body = payload('search1', tool_name='Grep', tool_input={'path': str(path), 'pattern': 'Compiler', 'head_limit': 40})
+    assert fire(store, run, row, 'tool-start', body) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': {'matches': ['Compiler = 1'], 'complete': True}}) == 0
+    assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 1
+    # Cache identity depends on sources and query, not a worker's context checkpoint.
+    assert fire(store, run, row, 'tool-start', {**body, 'tool_use_id': 'repeat'}) == 2
+    path.write_text('Compiler = 2\n')
+    assert fire(store, run, row, 'tool-start', {**body, 'tool_use_id': 'changed'}) == 0
+
+
+def test_search_does_not_cache_errors_or_claim_truncated_absence(runtime):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    path = Path(repo) / 'coverage.py'
+    path.write_text('Compiler = 1\n')
+    body = payload('error-search', tool_name='Grep', tool_input={'path': str(path), 'pattern': 'missing', 'head_limit': 1})
+    assert fire(store, run, row, 'tool-start', body) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': {'error': 'failed'}}) == 0
+    assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 0
+    retry = {**body, 'tool_use_id': 'retry-search'}
+    assert fire(store, run, row, 'tool-start', retry) == 0
+    assert fire(store, run, row, 'log', {**retry, 'tool_response': {'matches': [], 'complete': True, 'truncated': True}}) == 0
+    assert store.db.execute('SELECT complete FROM search_coverage').fetchone()[0] == 0
+
+
+def test_search_cache_ignores_source_changed_during_search(runtime):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    path = Path(repo) / 'coverage.py'
+    path.write_text('before\n')
+    body = payload('racing-search', tool_name='Grep', tool_input={'path': str(path), 'pattern': 'before', 'head_limit': 20})
+    assert fire(store, run, row, 'tool-start', body) == 0
+    path.write_text('after\n')
+    assert fire(store, run, row, 'log', {**body, 'tool_response': 'before'}) == 0
+    assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 0

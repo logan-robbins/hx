@@ -254,6 +254,16 @@ def encode_observation(*, session_id: str, event: Event, fallback_identity: tupl
     # linked by logical_id; reducers merge their evidence without guessing equality.
     logical_id = digest(identity)
     observation = {"schema_version": 1, "kind": event.kind, "data": event.data, "usage": event.usage}
+    # Keep exact inspected paths available even when bulky output becomes an
+    # artifact. Map discovery must not decode the entire result to recover them.
+    paths = []
+    args = event.data.get('tool_input') if isinstance(event.data, dict) else None
+    if isinstance(args, dict):
+        paths = [args[key] for key in ('path', 'file_path', 'filePath', 'target_file')
+                 if isinstance(args.get(key), str) and len(args[key].encode()) <= 1024]
+        if paths:
+            paths = list(dict.fromkeys(paths))
+            observation['source_paths'] = paths
     encoded = canonical(observation).encode()
     observation_hash = hashlib.sha256(encoded).hexdigest()
     capture_key = f"{logical_id}:{observation_hash}"
@@ -265,6 +275,8 @@ def encode_observation(*, session_id: str, event: Event, fallback_identity: tupl
     else:
         payload["artifact_hash"] = observation_hash
         payload["bytes"] = len(encoded)
+    if paths:
+        payload['source_paths'] = paths
     return capture_key, payload, encoded
 
 

@@ -233,6 +233,9 @@ def test_proposal_rejects_wrong_ownership_evidence_revision_or_read_set(active, 
             tx.put_task("T0", {"workdir": str(repo if fault == "revision" else repo.parent)}, expected_revision=1)
     else:
         del body["read_versions"]["bounded-context"]
+        # Existing untouched relationships can remain outside the context slice.
+        # A new declaration still requires its endpoint version.
+        body["operations"][0]["record"]["edges"].append({**body["operations"][0]["record"]["edges"][0], "kind": "depends_on"})
     with pytest.raises((Conflict, ValidationError)):
         map_updates.propose(store, repo, body, worker_id=worker_id)
     assert selected(active)["record"]["version"] == 1

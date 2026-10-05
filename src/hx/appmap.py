@@ -294,7 +294,7 @@ def _directory(repository: Path) -> Path:
 def records(repository: Path):
     directory = _directory(repository)
     for entry in sorted(directory.iterdir()):
-        if entry.name in {"manifest.json", "README.md"}:
+        if entry.name in {"manifest.json", "README.md", "vocabulary.json"}:
             continue
         if entry.name not in KINDS.values() or not entry.is_dir() or entry.is_symlink():
             raise ValidationError(f"unknown map structural directory: {entry.name}")
@@ -360,6 +360,10 @@ def staged(repository: Path):
             hasher = hashlib.sha256(canonical(info).encode())
             for row in stage.execute("SELECT payload FROM nodes ORDER BY id"):
                 hasher.update(row[0].encode() + b"\n")
+            from .map_learning import vocabulary
+            hints = vocabulary(repository)
+            if hints is not None:
+                hasher.update(canonical(hints).encode())
             yield stage, {"valid": True, "repo_id": info["repo_id"], "records": nodes, "edges": edges, "map_hash": hasher.hexdigest()}
 
 
@@ -437,6 +441,8 @@ def _committed_json(repository, commit, path, expected):
 
 
 def index_relations(db, repository, snapshot, record):
+    db.execute('DELETE FROM map_aliases WHERE repository=? AND snapshot=? AND record_id=? AND version<>?', (repository, snapshot, record['id'], record['version']))
+    db.execute('DELETE FROM map_publications WHERE repository=? AND snapshot=? AND record_id=? AND version<>?', (repository, snapshot, record['id'], record['version']))
     db.execute("DELETE FROM map_relations WHERE repository=? AND snapshot=? AND source=?",
                (repository, snapshot, record["id"]))
     db.executemany("INSERT INTO map_relations VALUES(?,?,?,?,?,?)",
@@ -457,6 +463,10 @@ def import_baseline(store: ContinuityStore, repository: Path) -> dict:
         raise Conflict("commit source and map together before importing a baseline")
     snapshot = f"git:{commit}"
     with staged(repository) as (stage, result):
+        from .map_learning import vocabulary, import_vocabulary
+        hints = vocabulary(repository)
+        if hints is not None:
+            _committed_json(repository, commit, '.hx/map/vocabulary.json', hints)
         _committed_json(repository, commit, ".hx/map/manifest.json", manifest(repository))
         for row in stage.execute("SELECT payload FROM nodes ORDER BY id"):
             record = json.loads(row[0])
@@ -483,6 +493,7 @@ def import_baseline(store: ContinuityStore, repository: Path) -> dict:
                      canonical({"anchors": record["anchors"]}), "current"))
                 tx.db.execute("INSERT INTO map_heads VALUES(?,?,?,?)", (result["repo_id"], snapshot, record["id"], record["version"]))
                 index_relations(tx.db, result["repo_id"], snapshot, record)
+            import_vocabulary(tx, repository, result['repo_id'], snapshot, hints)
             if _git(repository, "rev-parse", "HEAD") != commit or _dirty(repository):
                 raise Conflict("repository changed while importing its map")
     return {**result, "snapshot": snapshot}
@@ -577,8 +588,58 @@ def export_snapshot(store: ContinuityStore, repository: Path, snapshot: str) -> 
         for path, record in records(repository):
             if not (destination / path.relative_to(target)).exists():
                 path.unlink()
+        from .map_learning import portable_vocabulary
+        vocabulary_nodes = (get_record(store, repository, snapshot, row[0])['record'] for row in store.db.execute('SELECT DISTINCT record_id FROM map_aliases WHERE repository=? AND snapshot=? ORDER BY record_id LIMIT 128', (info['repo_id'], snapshot)))
+        vocabulary_write = portable_vocabulary(store, repository, snapshot, vocabulary_nodes)
+        if vocabulary_write:
+            atomic_write_text(*vocabulary_write)
         atomic_write_text(target / "manifest.json", canonical(info) + "\n")
     return {"repo_id": info["repo_id"], "snapshot": snapshot, "records": count}
+
+
+def export_records(store, repository, snapshot, record_ids):
+    """Replayable scoped publication; unrelated stale shards are left untouched."""
+    import fcntl
+    ids = list(dict.fromkeys(record_ids))
+    if not ids or len(ids) > 64:
+        raise ValidationError('scoped export requires 1–64 record IDs')
+    _snapshot(store, repository, snapshot)
+    git_dir = Path(_git(repository, 'rev-parse', '--absolute-git-dir'))
+    with (git_dir / 'hx-map-publication.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        selected = {}
+        for identity in ids:
+            current = get_record(store, repository, snapshot, identity, refresh=True)
+            if current['applicability'] != 'current':
+                raise Conflict('cannot publish stale finding: ' + identity)
+            selected[identity] = current['record']
+            for edge in current['record']['edges']:
+                if edge['to'] not in ids:
+                    if len(ids) >= 64:
+                        raise ValidationError('published dependency closure exceeds 64 records')
+                    # Include only dependencies missing from the portable map.
+                    target = get_record(store, repository, snapshot, edge['to'])['record']
+                    path = repository / '.hx/map' / KINDS[target['kind']] / (target['id'] + '.json')
+                    if not path.exists():
+                        ids.append(edge['to'])
+        writes = []
+        for record in selected.values():
+            target = repository / '.hx/map' / KINDS[record['kind']] / (record['id'] + '.json')
+            text = canonical(record) + '\n'
+            if target.exists() and read_json(target) == record:
+                continue  # A prior interrupted export already wrote this shard.
+            if _dirty(repository, target.relative_to(repository).as_posix()):
+                raise Conflict('publication would overwrite local map edits: ' + record['id'])
+            writes.append((target, text))
+        from .map_learning import portable_vocabulary
+        vocabulary_write = portable_vocabulary(store, repository, snapshot, selected.values())
+        if vocabulary_write:
+            writes.append(vocabulary_write)
+        # All conflicts are checked before the first write; atomic files make an
+        # interrupted identical request replayable without discarding local edits.
+        for target, text in writes:
+            atomic_write_text(target, text)
+        return {'records': sorted(selected), 'written': len(writes) - bool(vocabulary_write), 'vocabulary_written': bool(vocabulary_write)}
 
 
 def initialize(repository: Path) -> dict:
@@ -604,15 +665,17 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx map")
     parser.add_argument("--root")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "check", "anchor", "import", "export", "get", "overlay", "propose", "refresh", "plan-context"):
+    for name in ("init", "check", "anchor", "import", "export", "publish", "get", "overlay", "propose", "refresh", "plan-context"):
         command = commands.add_parser(name)
         command.add_argument("--repo", required=True)
         command.add_argument("--root", default=argparse.SUPPRESS)
         if name == "anchor":
             command.add_argument("path")
             command.add_argument("--symbol")
-        if name in {"export", "get", "overlay", "refresh", "plan-context"}:
+        if name in {"export", "publish", "get", "overlay", "refresh", "plan-context"}:
             command.add_argument("--snapshot", required=True)
+        if name == 'publish':
+            command.add_argument('--run', required=True)
         if name == "refresh":
             command.add_argument("--path", action="append", default=[])
             command.add_argument("--limit", type=int, default=16)
@@ -650,6 +713,11 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
                 if args.path:
                     queue_sources(store, repository, args.snapshot, args.path)
                 result = drain(store, repository, args.snapshot, limit=args.limit)
+            elif args.command == 'publish':
+                from .map_learning import transfer
+                transfer(store, repository, args.snapshot, args.run)
+                ids = [row[0] for row in store.db.execute('SELECT record_id FROM map_publications WHERE run_id=? AND repository=? ORDER BY record_id LIMIT 65', (args.run, manifest(repository)['repo_id']))]
+                result = export_records(store, repository, args.snapshot, ids) if ids else {'records': [], 'written': 0}
             elif args.command == "plan-context":
                 from .retrieval import plan_context
                 with Path(args.goal).open("rb") as handle:

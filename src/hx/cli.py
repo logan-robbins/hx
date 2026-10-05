@@ -118,11 +118,12 @@ the control plane:
   task                         print your own goal and its addenda
   progress --file JSON         commit a sparse typed progress update
   progress --run RUN           read the progress revision and current cursor
+  plan draft/replan/changes     compile assignments and inspect changed dependencies
   plan validate/apply/unit     validate behavior units and inspect their assignments
   plan ready/assign            admit ready units with prerequisites and write leases
   plan audit/finish/materialize/stop  verify scope, outputs, and integration
   check CHECK [--run RUN]      execute or reuse an input-bound verification receipt
-  map init/check/anchor/import/export/get/overlay/propose/refresh  manage the semantic application map
+  map init/check/anchor/import/export/publish/get/overlay/propose/refresh  manage the semantic application map
   map plan-context            retrieve a bounded assignment brief for a goal
   capture bind/enqueue         bind and durably capture native execution events
   capture pending/retry        inspect delivery gaps and retry a bounded producer batch

@@ -171,6 +171,11 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                 lines.append(f"Map input {ref['id']}@{ref['version']} awaits source refresh. Its source-dependent claims require revalidation.")
                 continue
             if not current or current['version'] != ref['version'] or current['applicability'] != 'current':
+                from .map_dependencies import owned_input
+                own_edit = owned_input(tx, task, ref, run_id)
+                if own_edit:
+                    lines.append(f"Your assigned edit changed map input {ref['id']}; use current task state and repair its map anchors before completion.")
+                    continue
                 if run['phase'] != 'paused' and mode != 'forced':
                     raise Conflict('required map input changed; rebind the assignment before composing context')
                 lines.append(f"Map input {ref['id']}@{ref['version']} is no longer current. Rebind required inputs before dependent execution.")

@@ -89,6 +89,7 @@ def create_overlay(store: ContinuityStore, repository: Path, baseline: str) -> d
                           (snapshot, info["repo_id"], baseline))
             tx.db.execute("INSERT INTO map_relations SELECT repository,?,source,kind,target,status FROM map_relations WHERE repository=? AND snapshot=?",
                           (snapshot, info["repo_id"], baseline))
+            tx.db.execute("INSERT INTO map_aliases SELECT repository,?,record_id,version,term FROM map_aliases WHERE repository=? AND snapshot=?", (snapshot, info["repo_id"], baseline))
             tx.db.execute("INSERT INTO map_sources SELECT repository,?,record_id,path,symbol,sha256 FROM map_sources WHERE repository=? AND snapshot=?",
                           (snapshot, info["repo_id"], baseline))
             tx.db.execute("INSERT INTO map_search_keys(repository,snapshot,record_id) SELECT repository,?,record_id FROM map_heads WHERE repository=? AND snapshot=?", (snapshot, info["repo_id"], baseline))
@@ -128,9 +129,6 @@ def validate(body):
             record_id = op["record"]["id"]
             if op["record"]["version"] != reads.get(record_id, -2) + 1:
                 raise ValidationError("proposed record version must advance its expected version by one")
-            for edge in op["record"]["edges"]:
-                if edge["to"] not in reads:
-                    raise ValidationError("every referenced endpoint needs an expected read version")
         elif op.get("op") == "invalidate" and op.keys() == {"op", "id", "reason"}:
             record_id = op["id"]
             appmap.identifier(record_id)
@@ -194,6 +192,14 @@ def _preflight(store, repository, key, body, operations):
             raise Conflict(f"map read dependency is not current: {record_id}")
         if not op and store.db.execute("SELECT 1 FROM map_refresh_queue WHERE repository=? AND snapshot=? AND record_id=?", (*key, record_id)).fetchone():
             raise Conflict(f"map read dependency awaits source refresh: {record_id}")
+        if op and op['op'] == 'put':
+            base = _record(store.db, key, record_id, body['read_versions'][record_id])
+            old_edges = {(edge['kind'], edge['to']): edge for edge in json.loads(base['payload'])['edges']} if base else {}
+            for edge in record['edges']:
+                if edge['to'] not in body['read_versions']:
+                    old = old_edges.get((edge['kind'], edge['to']))
+                    if old is None or {**edge, 'status': old['status']} != old:
+                        raise ValidationError('new or changed endpoints need an expected read version')
         for anchor in record["anchors"]:
             anchor_key = (anchor["path"], anchor["symbol"] or "")
             stamp = appmap._source_stamp(repository, anchor["path"])
@@ -296,7 +302,13 @@ def apply_proposal(tx, prepared, *, defer_invalidation=False):
         else:
             version = old["version"] + 1 if old else 1
             if op["op"] == "put":
-                record = {**op["record"], "version": version}
+                record = {**op["record"], "version": version, 'edges': [dict(edge) for edge in op['record']['edges']]}
+                for edge in record['edges']:
+                    if edge['to'] not in body['read_versions']:
+                        current_edge = tx.db.execute('SELECT status FROM map_relations WHERE repository=? AND snapshot=? AND source=? AND kind=? AND target=?', (*key, record_id, edge['kind'], edge['to'])).fetchone()
+                        if current_edge is None:
+                            raise Conflict('unchanged relationship disappeared during the map update')
+                        edge['status'] = current_edge[0]
                 applicability = "current"
             else:
                 if old is None:
@@ -360,6 +372,12 @@ def apply_proposal(tx, prepared, *, defer_invalidation=False):
     require_worktree(tx.db, repository, *key)
     result = {"patch_id": body["patch_id"], "snapshot": body["snapshot"], "records": results, "changed": changed}
     tx.db.execute("INSERT INTO map_patches VALUES(?,?,?,?,?)", (repo_id, body["patch_id"], body["run_id"], request_hash, canonical(result)))
+    if not defer_invalidation:
+        from .map_dependencies import owned_input
+        for record_id in changed:
+            ref = dict(repository=repo_id, snapshot=body['snapshot'], id=record_id, version=body['read_versions'][record_id])
+            if owned_input(tx, task, ref, body['run_id']):
+                tx.db.execute('DELETE FROM task_replan_queue WHERE task_id=? AND task_revision=? AND repository=? AND snapshot=? AND entity_id=?', (task['task_id'], task['revision'], *key, record_id))
     tx.enqueue("map_changed", f"map:{repo_id}:{body['patch_id']}", {**result, "repo_id": repo_id, "task_id": body["task_id"]})
     return result
 

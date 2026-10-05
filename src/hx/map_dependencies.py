@@ -86,10 +86,61 @@ def bind_record(tx, record_id, version, inputs):
         ((record_id, version, ref["repository"], ref["snapshot"], ref["id"], ref["version"]) for ref in refs))
 
 
-def validate_task(tx, task):
-    validate_refs(tx, task["payload"].get("map_inputs", []), task["payload"])
-    if tx.db.execute("SELECT 1 FROM task_replan_queue WHERE task_id=? AND task_revision=? LIMIT 1", (task["task_id"], task["revision"])).fetchone():
-        raise Conflict("task map inputs require replanning and explicit revision rebinding")
+def owned_input(tx, task, ref, run_id):
+    """An executor may finish its own assigned edit, never adopt external changes."""
+    run = tx.db.execute('SELECT task_id,task_revision,ended_at FROM runs WHERE run_id=?', (run_id,)).fetchone() if run_id else None
+    if not run or run['ended_at'] is not None or (run['task_id'], run['task_revision']) != (task['task_id'], task['revision']):
+        return False
+    from .map_updates import _record, require_worktree
+    key = (ref['repository'], ref['snapshot'])
+    current = _record(tx.db, key, ref['id'])
+    previous = _record(tx.db, key, ref['id'], ref['version'])
+    if not current or not previous:
+        return False
+    records = [json.loads(row['payload']) for row in (previous, current)]
+    if any(record['kind'] == 'check' or not record['anchors'] for record in records):
+        return False  # Check/acceptance changes always require a revised assignment.
+    metadata = json.loads(current['inputs'])
+    if current['version'] != ref['version'] and metadata.get('patch_id'):
+        writer = tx.db.execute('SELECT run_id FROM map_patches WHERE repository=? AND patch_id=?', (key[0], metadata['patch_id'])).fetchone()
+        if not writer or writer[0] != run_id:
+            return False
+    root = Path(task['payload']['workdir']).resolve()
+    require_worktree(tx.db, root, *key)
+    from .planning import write_scope
+    leases = [row[0] for row in tx.db.execute('SELECT canonical_path FROM leases WHERE repository=? AND run_id=?', (key[0], run_id))]
+    for record in records:
+        for anchor in record['anchors']:
+            path = write_scope(root, anchor['path'])
+            if not any(path == owner or path.startswith(owner + '/') for owner in leases):
+                return False
+    return True
+
+
+def validate_task(tx, task, *, active_run=None):
+    completed_bindings = set()
+    for ref in task['payload'].get('map_inputs', []):
+        try:
+            validate_refs(tx, [ref], task['payload'])
+        except Conflict:
+            if owned_input(tx, task, ref, active_run):
+                continue
+            published = tx.db.execute('''SELECT p.version FROM unit_completions c
+                JOIN map_publications p USING(run_id) WHERE c.task_id=? AND c.task_revision=?
+                AND p.repository=? AND p.snapshot=? AND p.record_id=?''',
+                (task['task_id'], task['revision'], ref['repository'], ref['snapshot'], ref['id'])).fetchone()
+            if not published:
+                raise
+            # A completed edit's current output map can supersede its original
+            # input map. Acceptance and the assignment itself remain immutable.
+            validate_refs(tx, [{**ref, 'version': published[0]}], task['payload'])
+            completed_bindings.add((ref['repository'], ref['snapshot'], ref['id']))
+    for row in tx.db.execute('SELECT * FROM task_replan_queue WHERE task_id=? AND task_revision=?', (task['task_id'], task['revision'])):
+        if (row['repository'], row['snapshot'], row['entity_id']) in completed_bindings:
+            continue
+        ref = dict(repository=row['repository'], snapshot=row['snapshot'], id=row['entity_id'], version=max(1, row['entity_version'] - 1))
+        if not owned_input(tx, task, ref, active_run):
+            raise Conflict('task map inputs require replanning and explicit revision rebinding')
 
 
 def invalidate_consumers(tx, key, entity_id, version, reason):
@@ -133,5 +184,14 @@ def invalidate_consumers(tx, key, entity_id, version, reason):
         ON CONFLICT(task_id,task_revision,repository,snapshot,entity_id)
         DO UPDATE SET entity_version=excluded.entity_version,reason=excluded.reason""",
         (version, reason, *key, entity_id, version))
+    # An active owner is implementing this change under its existing acceptance
+    # contract. Do not ask the Partner to reassign each intermediate source edit.
+    for row in tx.db.execute('''SELECT q.task_id,r.run_id FROM task_replan_queue q JOIN runs r
+        ON r.task_id=q.task_id AND r.task_revision=q.task_revision WHERE r.ended_at IS NULL
+        AND q.repository=? AND q.snapshot=? AND q.entity_id=? AND q.entity_version=?''', (*key, entity_id, version)).fetchall():
+        task = tx.task(row['task_id'])
+        ref = dict(repository=key[0], snapshot=key[1], id=entity_id, version=max(1, version - 1))
+        if owned_input(tx, task, ref, row['run_id']):
+            tx.db.execute('DELETE FROM task_replan_queue WHERE task_id=? AND task_revision=? AND repository=? AND snapshot=? AND entity_id=?', (task['task_id'], task['revision'], *key, entity_id))
     counts["tasks"] = tx.db.execute("SELECT count(*) FROM task_replan_queue q JOIN task_heads h ON h.task_id=q.task_id AND h.revision=q.task_revision WHERE repository=? AND snapshot=? AND entity_id=? AND entity_version=?", (*key, entity_id, version)).fetchone()[0]
     return counts

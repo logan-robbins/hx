@@ -171,8 +171,13 @@ def _definition(body):
 def validate(store, body):
     tasks, result = _definition(body)
     with store.transaction() as tx:
-        for payload in tasks.values():
-            validate_refs(tx, payload["map_inputs"], payload)
+        for task_id, payload in tasks.items():
+            current = tx.task(task_id)
+            if current and current["payload"] == payload:
+                active = tx.db.execute("SELECT run_id FROM runs WHERE task_id=? AND ended_at IS NULL", (current["task_id"],)).fetchone()
+                validate_task(tx, current, active_run=active[0] if active else None)
+            else:
+                validate_refs(tx, payload["map_inputs"], payload)
     return result
 
 
@@ -199,7 +204,8 @@ def apply(store, body):
             if (current["revision"] if current else 0) != unit["expected_revision"]:
                 raise Conflict(f"task {task_id} changed since this plan was drafted")
             if current and current["payload"] == payload:
-                validate_refs(tx, payload["map_inputs"], payload)
+                active = tx.db.execute("SELECT run_id FROM runs WHERE task_id=? AND ended_at IS NULL", (current["task_id"],)).fetchone()
+                validate_task(tx, current, active_run=active[0] if active else None)
                 task_versions[task_id] = current["revision"]
             else:
                 task_versions[task_id] = tx.put_task(task_id, payload, expected_revision=unit["expected_revision"])
@@ -229,20 +235,28 @@ def main(argv, root, *, env=None):
     parser = argparse.ArgumentParser(prog="hx plan")
     parser.add_argument("--root")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for action in ("validate", "apply", "unit", "ready", "assign", "audit", "finish", "materialize", "stop"):
+    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "assign", "audit", "finish", "materialize", "stop"):
         command = subcommands.add_parser(action)
         command.add_argument("--root", default=argparse.SUPPRESS)
         if action in {"unit", "assign", "materialize"}:
             command.add_argument("task_id")
-        if action == "ready":
+        if action in {"ready", "replan"}:
             command.add_argument("plan_id")
         if action == "assign":
             command.add_argument("--revision", required=True, type=int)
             command.add_argument("--worker", required=True)
         if action in {"audit", "finish", "stop"}:
             command.add_argument("run_id")
-        if action in {"validate", "apply", "finish"}:
+        if action in {"validate", "apply", "finish", "draft"}:
             command.add_argument("--file", required=True)
+        if action == "changes":
+            command.add_argument("--plan", dest="plan_id")
+            command.add_argument("--detail", action="store_true")
+        if action in {"draft", "replan"}:
+            command.add_argument("--out")
+        if action == "draft":
+            command.add_argument("--repo", required=True)
+            command.add_argument("--snapshot", required=True)
         if action == "materialize":
             command.add_argument("--integration-run", required=True)
             command.add_argument("--producer", required=True)
@@ -258,7 +272,15 @@ def main(argv, root, *, env=None):
             run_id = args.integration_run if args.command == "materialize" else args.run_id
             if not store.db.execute("SELECT 1 FROM runs WHERE run_id=? AND worker_id=?", (run_id, who)).fetchone():
                 raise Refused("worker may audit, finish, or materialize only its own assignment")
-        if args.command == "unit":
+        if args.command in {'draft', 'replan', 'changes'}:
+            from . import goal_templates
+            if args.command == 'draft':
+                result = goal_templates.draft(store, Path(args.repo).resolve(), args.snapshot, appmap.read_json(Path(args.file), 16000))
+            elif args.command == 'replan':
+                result = goal_templates.replan(store, args.plan_id)
+            else:
+                result = goal_templates.changes(store, plan_id=args.plan_id, details=args.detail)
+        elif args.command == "unit":
             result = assignment(store, args.task_id)
         elif args.command == "ready":
             result = unit_execution.ready(store, args.plan_id)
@@ -274,6 +296,16 @@ def main(argv, root, *, env=None):
             result = unit_execution.complete(store, args.run_id, appmap.read_json(Path(args.file), 16000), env=env)
         else:
             body = appmap.read_json(Path(args.file), PLAN_BYTES)
+            if 'plan' in body:
+                if not body.get('ready'):
+                    raise ValidationError('resolve the generated assignment unknowns before applying')
+                body = body['plan']
             result = validate(store, body) if args.command == "validate" else apply(store, body)
+    if args.command in {'draft', 'replan'} and args.out:
+        from .store import atomic_write_text
+        destination = Path(args.out).resolve()
+        atomic_write_text(destination, canonical(result) + '\n')
+        result = {key: result[key] for key in ('ready', 'unknowns', 'affected_tasks', 'first_action') if key in result}
+        result['file'] = str(destination)
     print(canonical(result))
     return 0

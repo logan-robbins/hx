@@ -258,7 +258,8 @@ def status(store, *, after=''):
         units.append(unit)
     completed = [dict(row) for row in store.db.execute('''SELECT c.task_id,c.task_revision,c.run_id FROM unit_completions c
         JOIN runs r USING(run_id) ORDER BY r.ended_at DESC LIMIT 8''')]
-    return {'active': units, 'recent_completions': completed, 'last_cycle': _state(store, 'last-cycle'),
+    from .goal_templates import changes
+    return {'active': units, 'replanning': changes(store, limit=4), 'recent_completions': completed, 'last_cycle': _state(store, 'last-cycle'),
             'service_error': _state(store, 'service-error'), 'completion_error': _state(store, 'completion-error'),
             'next_after': rows[15]['run_id'] if len(rows)>16 else None}
 

@@ -46,11 +46,11 @@ def workspace(payload, *, clean=False):
             "branch": _git(root, "symbolic-ref", "--quiet", "HEAD").decode().strip()}
 
 
-def _task(tx, task_id):
+def _task(tx, task_id, *, active_run=None):
     task = tx.task(task_id)
     if task is None or "plan_id" not in task["payload"]:
         raise ValidationError("unknown planned unit")
-    validate_task(tx, task)
+    validate_task(tx, task, active_run=active_run)
     return task
 
 
@@ -58,7 +58,7 @@ def _run(tx, run_id):
     row = tx.db.execute("SELECT r.*,u.payload AS admission FROM runs r JOIN unit_runs u USING(run_id) WHERE run_id=?", (run_id,)).fetchone()
     if row is None or row["ended_at"] is not None:
         raise Conflict("operation requires an active planned run")
-    task = _task(tx, row["task_id"])
+    task = _task(tx, row["task_id"], active_run=run_id)
     if task["revision"] != row["task_revision"]:
         raise Conflict("planned assignment changed")
     return dict(row), task, json.loads(row["admission"])
@@ -326,6 +326,8 @@ def complete(store, run_id, receipt_ids, *, env=None):
         result = {"task_id": task["task_id"], "revision": task["revision"], "run_id": run_id, "checks": receipt_ids,
                   "commit": state["commit"], "outputs": {name: digest(proof) for name, proof in proofs.items()}}
         tx._change()
+        from .map_learning import publish
+        result['application_findings'] = {'count': len(publish(tx, run_id, payload))}
         tx.db.execute("INSERT INTO unit_completions VALUES(?,?,?,?)", (task["task_id"], task["revision"], run_id, canonical(result)))
         for output_id, proof in proofs.items():
             tx.db.execute("INSERT INTO unit_outputs VALUES(?,?,?,?,?)", (task["task_id"], task["revision"], output_id, proof["version"], canonical(proof)))
@@ -361,11 +363,20 @@ the destination worktree while doing so. Consumers remain blocked until it stops
             raise Conflict("integration has not installed the exact prerequisite files")
         result = {"task_id": task_id, "revision": task["revision"], "producer": producer, "output_id": output_id,
                   "output_hash": digest(proof), "commit": state["commit"], "integration_run": integration_run}
+    from .map_learning import integrate
+    refs = integration['payload'].get('map_inputs', [])
+    findings = integrate(store, Path(task['payload']['workdir']), proof['run_id'], snapshot=refs[0]['snapshot'] if refs else None)
+    with store.transaction() as tx:
+        _run(tx, integration_run)
+        current_task = _task(tx, task_id)
+        if current_task['revision'] != task['revision'] or workspace(task['payload'], clean=True) != state or digest(_output(tx, dependency)) != result['output_hash']:
+            raise Conflict('source or assignment changed while integrating application findings')
+        result['application_findings'] = findings
         tx._change()
         tx.db.execute("INSERT INTO unit_materializations VALUES(?,?,?,?,?,?) ON CONFLICT(task_id,task_revision,producer,output_id) DO UPDATE SET integration_run=excluded.integration_run,payload=excluded.payload",
             (task_id, task["revision"], producer, output_id, integration_run, canonical(result)))
         tx.enqueue("unit_materialized", f"materialize:{digest(result)}", result)
-        return result
+    return result
 
 
 def stop(store, run_id, outcome="stopped"):

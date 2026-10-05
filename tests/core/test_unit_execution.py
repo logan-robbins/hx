@@ -201,7 +201,7 @@ def test_completion_requires_all_checks_and_declared_changed_outputs(fleet):
         finish(store, run)
 
 
-def test_source_producer_integration_consumer_end_to_end(fleet, tmp_path):
+def test_source_producer_integration_consumer_end_to_end(fleet, tmp_path, monkeypatch):
     store, repo = fleet[:2]
     consumer_repo = tmp_path / "consumer"
     git(repo, "worktree", "add", "-qb", "consume", str(consumer_repo))
@@ -221,6 +221,14 @@ def test_source_producer_integration_consumer_end_to_end(fleet, tmp_path):
         units.materialize(store, "consumer", integrating, "producer", "source")
     git(consumer_repo, "checkout", produced["commit"], "--", "feature.py")
     commit(consumer_repo)
+    from hx import map_learning
+    with monkeypatch.context() as patch:
+        def unavailable(*args, **kwargs):
+            raise Conflict('application finding collision')
+        patch.setattr(map_learning, 'integrate', unavailable)
+        with pytest.raises(Conflict, match='finding collision'):
+            units.materialize(store, 'consumer', integrating, 'producer', 'source')
+    assert store.db.execute('SELECT count(*) FROM unit_materializations').fetchone()[0] == 0
     materialized = units.materialize(store, "consumer", integrating, "producer", "source")
     assert materialized["output_hash"] == produced["outputs"]["source"]
     assert statuses(store)["consumer"]["status"] == "blocked"
