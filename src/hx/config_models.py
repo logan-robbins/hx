@@ -29,7 +29,7 @@ LARGE_WINDOW_THRESHOLD_CAP = 500_000
 _FIELDS = ("window", "threshold")
 
 #: Optional, and validated only when the row carries it.
-_OPTIONAL_FIELDS = ("autocompact_window",)
+_OPTIONAL_FIELDS = ("autocompact_window", "max_output_tokens")
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,7 @@ class Model:
     #: `None` when the row omits it: the session then runs on the native autocompact window
     #: and `start.sh` exports nothing.
     autocompact_window: int | None = None
+    max_output_tokens: int | None = None
 
 
 def validate_models(data: object, path: str | Path) -> dict[str, Model]:
@@ -107,8 +108,11 @@ def validate_models(data: object, path: str | Path) -> dict[str, Model]:
                     f"{path}: model `{model_id}`: `autocompact_window` ({autocompact}) must not "
                     f"exceed `window` ({window})"
                 )
+        output = values.get("max_output_tokens")
+        if output is not None and output + threshold >= window:
+            raise ValidationError(f"{path}: model `{model_id}`: max_output_tokens must fit above threshold within window")
         models[model_id] = Model(
-            id=model_id, window=window, threshold=threshold, autocompact_window=autocompact
+            id=model_id, window=window, threshold=threshold, autocompact_window=autocompact, max_output_tokens=output
         )
     return models
 

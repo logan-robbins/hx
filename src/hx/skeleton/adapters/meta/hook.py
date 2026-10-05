@@ -11,11 +11,10 @@ variants map to snake_case, and `tool_response` is filled from `toolResult`
 when only the latter is present. Unknown keys pass through; hx-hook ignores
 what it does not read. Two deliberate gaps, not oversights:
 
-- context tokens: hook payloads carry no usage counts, so `context_tokens`
-  stays absent and the seam threshold does not fire for meta rows.
-- persona: the 1.3.0 CLI surface has no verifiable system-prompt injection, so
-  the persona file is derived for inspection and identity arrives through the
-  context file and the pasted goal pointer.
+- context tokens: legacy tool hooks carry no usage counts. Planned capture
+  records PostLLMCall attempt usage separately; it is not a context-window total.
+- persona: the legacy route derives a persona file for inspection. Planned
+  sessions use the launch manifest and verified startup context delivery.
 
 Hook commands run through the shell with a cleared environment, so everything
 the hook needs (--hook-bin, --root) is baked into the command line at install
@@ -46,6 +45,16 @@ def translate(body: dict) -> dict:
             out[dst] = body[src]
     if "tool_response" not in out and "tool_result" in out:
         out["tool_response"] = out["tool_result"]
+    if out.get("hook_event_name") == "PostLLMCall":
+        # Summaries and previews expand every attempt and can contain private
+        # request material. Project before the hx-hook pipe, not only at storage.
+        out = {key: out[key] for key in ("hook_event_name", "session_id", "turn_id", "agent_id", "agent_type",
+            "request_id", "response_id", "provider", "model", "attempt", "step", "status", "finish_reason",
+            "error", "usage", "message_count", "tool_count", "tool_call_count") if key in out}
+        if isinstance(out.get("usage"), dict):
+            out["usage"] = {key: value for key, value in out["usage"].items()
+                if key in {"input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens"}
+                and type(value) is int and value >= 0}
     return out
 
 
@@ -55,26 +64,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hook-bin", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument("event")
+    for field in ("run", "launch", "adapter"):
+        parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
+    continuity = [getattr(args, "continuity_" + field) for field in ("run", "launch", "adapter")]
+    if any(continuity) and not all(continuity):
+        parser.error("planned hook identity must be complete")
+    extra = [part for field, value in zip(("run", "launch", "adapter"), continuity)
+             if value is not None for part in ("--continuity-" + field, value)]
 
     try:
-        body = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        body = {}
+        raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError("oversized hook input")
+        body = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        body = {"_hx_capture_error": True}
     if not isinstance(body, dict):
-        body = {}
+        body = {"_hx_capture_error": True}
 
     payload = json.dumps(translate(body)).encode()
     # --hook-bin can be a bare path or a command with arguments.
     try:
         proc = subprocess.run(
-            [*shlex.split(args.hook_bin), "--id", args.id, "--root", args.root, args.event],
+            [*shlex.split(args.hook_bin), "--id", args.id, "--root", args.root, *extra, args.event],
             input=payload,
             capture_output=True,
         )
     except OSError as exc:
         print(f"hook.py: cannot run {args.hook_bin}: {exc}", file=sys.stderr)
-        return 1
+        return 2 if any(continuity) and args.event in {"request", "tool-start"} else 1
     if proc.stdout:
         sys.stdout.buffer.write(proc.stdout)
     if proc.stderr:

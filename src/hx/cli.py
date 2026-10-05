@@ -14,6 +14,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from . import tool_execution as tool_execution_cmd
+from . import tool_catalog as tool_catalog_cmd
+from . import application_loop as loop_cmd
 from . import amend as amend_cmd
 from . import archive as archive_cmd
 from . import bench as bench_cmd
@@ -30,6 +33,13 @@ from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
 from . import memory as memory_cmd
+from . import observer as observer_cmd
+from . import native_capture as capture_cmd
+from . import progress as progress_cmd
+from . import checks as checks_cmd
+from . import appmap as map_cmd
+from . import planning as planning_cmd
+from . import evidence as evidence_cmd
 from . import goals as goals_cmd
 from . import read as read_cmd
 from . import recall as recall_cmd
@@ -39,7 +49,7 @@ from . import show as show_cmd
 from . import task as task_cmd
 from . import ui_cmd
 from . import wake as wake_cmd
-from .errors import HxError
+from .errors import HxError, ValidationError
 
 #: Every command of spec 08, plus `install`, `up`, `doctor`, `ui` and `show`. The v1 cut
 #: (spec 14 D25) removed `repo`, `push` and `upgrade`: hx does not manage git or its own
@@ -54,6 +64,10 @@ IMPLEMENTED = {
     "bench": bench_cmd.main,
     "board": board_cmd.main,
     "companion": companion_cmd.main,
+    "capture": capture_cmd.main,
+    "check": checks_cmd.main,
+    "map": map_cmd.main,
+    "plan": planning_cmd.main,
     "compile": compile_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
@@ -67,7 +81,13 @@ IMPLEMENTED = {
     "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
+    "loop": loop_cmd.main,
+    "tool-exec": tool_execution_cmd.main,
+    "tools": tool_catalog_cmd.main,
     "memory": memory_cmd.main,
+    "observe": observer_cmd.main,
+    "progress": progress_cmd.main,
+    "evidence": evidence_cmd.main,
     "goals": goals_cmd.main,
     "read": read_cmd.main,
     "recall": recall_cmd.main,
@@ -90,9 +110,23 @@ selects the instance; it defaults to ~/hx and may never be inside the user's ~/.
 
 the control plane:
   launch ID                    idle work item, home, tmux session, goal if working
+  launch ID --run RUN --request REQUEST  advance a planned native launch once
+    --drain                    close native request/tool admission; retain leases
+    --shutdown                 stop observed owned processes; retain unreconciled leases
   dispatch ID GOAL [ID GOAL]   validate the goals, then working; the files are consumed
   goal ID [--now]              paste the pointer into a worker's pane
   task                         print your own goal and its addenda
+  progress --file JSON         commit a sparse typed progress update
+  progress --run RUN           read the progress revision and current cursor
+  plan draft/replan/changes     compile assignments and inspect changed dependencies
+  plan validate/apply/unit     validate behavior units and inspect their assignments
+  plan ready/assign            admit ready units with prerequisites and write leases
+  plan audit/finish/materialize/stop  verify scope, outputs, and integration
+  check CHECK [--run RUN]      execute or reuse an input-bound verification receipt
+  map init/check/anchor/import/export/publish/get/overlay/propose/refresh  manage the semantic application map
+  map plan-context            retrieve a bounded assignment brief for a goal
+  capture bind/enqueue         bind and durably capture native execution events
+  capture pending/retry        inspect delivery gaps and retry a bounded producer batch
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate
@@ -102,11 +136,15 @@ the control plane:
   read ID [--detail|--full]      status; prose only with --detail, body with --full
   recall [QUERY] [--id ID]       last-resort file-memory search over completed items
   companion ID [--once]        the Companion loop, one per agent
+  companion ID --run RUN --request ID [--stream STREAM]  execute one frozen ledger pass
   compile ID                   distribute base rules into config/ID/AGENTS.md
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
   memory search QUERY          what other agents already learned; see `hx memory --help`
+  loop [--once]                capture, refresh mapped sources, and run one companion at a time
+  observe register/drain/serve/status  incremental continuity source capture
+  evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
 
 read-only views:
   board [--json]                          a plain listing of what is on disk
@@ -158,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # The standing refusal runs before anything else, for every command (ORCHESTRATION.md).
         root = _root_for(rest, env)
+        import os
+        if (os.environ if env is None else env).get('HX_CONTINUITY_RUN') and command in {'memory', 'recall'}:
+            raise ValidationError('planned workers have no episodic memory; use current task progress, map inputs and bounded evidence')
         if command in NOT_IMPLEMENTED:
             print(
                 f"hx: {command}: not implemented (build-{NOT_IMPLEMENTED[command]})",

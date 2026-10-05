@@ -23,6 +23,15 @@ SPEC_08_COMMANDS = {
     # Addenda distillation: shrinks the Work Item and tasks.json record back
     # down after resumes and amends accumulate; likewise post-spec-08.
     "distill",
+    # Continuity v2: registered incremental capture and its resident observer.
+    "observe",
+    "capture",
+    "progress",
+    "check",
+    "map",
+    "plan",
+    "evidence",
+    "loop", "tool-exec", "tools",
 }
 
 
@@ -78,4 +87,14 @@ def test_hook_entrypoint_knows_the_spec_09_events():
         # The Companion's own `stop`, in its own home — the other half of the pass protocol
         # (spec 10), not one of the agent's own.
         "companion-stop",
+        # Explicit normalized observation routes for planned-run capture.
+        "request", "log-failure", "tool-start", "message", "model-response",
+        "stop-failure", "stop-cancelled", "session-end",
     }
+
+
+@pytest.mark.parametrize('command', ['memory', 'recall'])
+def test_planned_workers_cannot_import_or_create_episodic_memory(run_hx, tmp_path, command):
+    result = run_hx(command, env_extra={'HARNESS_ROOT': str(tmp_path / 'planned'), 'HX_CONTINUITY_RUN': 'current-run'})
+    assert result.returncode == 2 and 'no episodic memory' in result.stderr
+    assert not (tmp_path / 'planned/state').exists()

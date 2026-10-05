@@ -8,7 +8,7 @@ procedure, and it leaves the token step (§2) to you.
 
 - macOS or Linux, `tmux`, `git`, Python 3.14, and `uv`.
 - Claude Code installed and on your `PATH` at a version hx has been tested with (`claude
-  --version`; the list is `src/hx/packaging/tested-claude-versions.json`, currently `2.1.278`).
+  --version`; the list is `src/hx/packaging/tested-claude-versions.json`, currently `2.1.280` and `2.1.278`).
 - A Claude subscription (Max or Pro), or an Anthropic API key supplied below.
 
 Alternatively, supply an Anthropic API key in a dotenv file. `hx` uses an existing

@@ -13,13 +13,14 @@ wires an agent up completely or refuses; there is no step you finish by hand aft
 
 ## 1. Creating a worker from a shipped persona
 
-Ids are `<pod>-NNN`. Three roles ship, each with a persona and a matching Companion role file:
+Ids are `<pod>-NNN`. Four worker roles ship, each with a persona and a matching Companion role file:
 
 | Role | Persona | Companion rules | Typical ids |
 |---|---|---|---|
 | `backend-engineer` | `personas/backend-engineer/AGENTS.md` | `companion/roles/backend-engineer.md` | `be-001`, `be-002` |
 | `frontend-engineer` | `personas/frontend-engineer/AGENTS.md` | `companion/roles/frontend-engineer.md` | `fe-001` |
 | `release-engineer` | `personas/release-engineer/AGENTS.md` | `companion/roles/release-engineer.md` | `rel-001` |
+| `qa-engineer` | `personas/qa-engineer/AGENTS.md` | `companion/roles/qa-engineer.md` | `qa-001` |
 
 All paths are relative to `$HARNESS_ROOT`. To create `be-001`:
 
@@ -31,7 +32,7 @@ That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
 
 1. **Substitute `{{id}}` and `{{pod}}`** in all three files — `be-001` and `be`. The pod is
    always the id's prefix, so `hx board` groups agents by it.
-2. **Set `role`** in `config/be-001/harness.json` to one of the three above. `hx launch`
+2. **Set `role`** in `config/be-001/harness.json` to one of the four above. `hx launch`
    refuses a role with no `companion/roles/<role>.md`, so a typo fails at launch rather than
    at the first Companion pass.
 3. **Set `workdir`** to an **absolute path to a directory that already exists** — the checkout

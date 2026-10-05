@@ -83,7 +83,7 @@ def pane_command(item_id: str, env=None) -> str:
     if not pid:
         return ""
     listing = subprocess.run(
-        ["ps", "-o", "command=", "-p", pid], capture_output=True, text=True, check=False
+        ["ps", "-ww", "-o", "command=", "-p", pid], capture_output=True, text=True, check=False
     )
     if listing.returncode == 0 and listing.stdout.strip():
         return listing.stdout.strip()

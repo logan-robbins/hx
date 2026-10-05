@@ -1,0 +1,77 @@
+# Jev engineering and QA: September 2026 evidence
+
+Research cutoff: **2026-10-03** (updated October 4). Read primary project documentation, selected implementation files, release notes, and published benchmark methods. Repository availability is implementation evidence; author measurements are attributed below. No projects were installed and no live benchmarks were reproduced. Decisions apply to hx's bounded current-task state and current application map; none require personal worker memory.
+
+## Reported uses and hx decisions
+
+| Use / primary source | Reported implementation and evidence | Decision for hx |
+|---|---|---|
+| [JMeter AI / Feather Wand v3.8.5](https://github.com/QAInsights/jmeter-ai/releases/tag/v3.8.5), released Sep 19 | Classifies deduplicated test-result failure signatures into connection, timeout, HTTP, authentication/session, assertion, script, and configuration categories. Also selects focused tool packs with bounded expansion. Opt-in and advisory; no reported triage-accuracy or repair-time benchmark. | **Add failure triage.** Attach a tentative category to an actual failed receipt and route the next investigation. Keep raw failure identity and deterministic status. Adopt an explicit unknown result; never infer pass/fail or retry permission from the label. |
+| [jgrep predictive test selection](https://github.com/kyu1204/jgrep), [Sep 23 benchmark](https://github.com/kyu1204/jgrep/blob/main/bench/tests/README.md) | Combines deterministic matches/imports with Jev scoring of remaining test files. The author reports 60 commits across five repositories: 11.6% mean test-file selection, 91.9% mean recall of author-edited tests versus 43.2% for deterministic matching, and 1.08 s mean selection time. This is not regression-detection recall; broad tests were missed. The harness can replace failed runs, although its notes report no such retries in the published run. | **Add preliminary check selection/order.** Union declared checks and deterministic impact links with semantic candidates. Run promising focused checks earlier; preserve the independently defined acceptance suite and mark every omitted check `not_run`. |
+| [Jev Review](https://github.com/devagrawal09/jev-review) and [JevGate](https://github.com/Tech-Byte-Frontier/jevgate) | Review screens changed files/source units, then narrows attention to concrete locations and issue categories. JevGate parses functions/tests and supports test-quality checks, including self-oracles; incomplete review is distinct from clear. Implementations exist; no general defect precision/recall or measured PR-quality improvement was established in the inspected sources. | **Add bounded review triage.** Compare current diff, relevant contract, and test assertions. Return located suspicions to QA/engineering for verification. Add `incomplete`, `unknown`, and `dismissed` dispositions; semantic “clear” is never acceptance proof. |
+| [jev-pruner](https://github.com/tamaratran/jev-pruner) | Reduces oversized command output before the main model receives it, preserving diagnostics and selected verbatim chunks. The author shows one 76,379-character log where a 2,227-character host preview omitted the error and a 4,013-character selected result retained it. This is a useful example, not a task-quality benchmark. | **Add reduction before tool-result delivery.** Parse test/build structure first; score only surplus chunks. Feed Jev the current goal/cursor rather than repeatedly rereading session history. Keep recovery evidence only within the existing task retention budget. |
+| [fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction) | Scores tool calls/results separately and keeps, abbreviates, or removes paired material; protects selected messages and preserves kept text verbatim. Uses explicit state/request budgets and failure fallbacks. | **Strengthen existing compaction units.** Preserve call/result identity and protected current facts; test deletion and explicit failure paths. Do not copy whole-session retention or permanent archives. |
+| [Jev Sift](https://github.com/kbhuw/jev-sift) and [jevgrep](https://github.com/thehumanworks/jevgrep) | Screen candidate files/text or semantically locate code before loading it into a larger model. Jevgrep's author reports 95% category-gate accuracy on 350 labelled files with atomic positive questions, versus 71% for one tested negated formulation. These are local task-specific results. | **Fold into map retrieval.** Start with deterministic repository discovery, then score bounded source candidates. Ask atomic questions and combine exclusions in code. Keep incomplete/truncated candidates explicit; search scores cannot validate graph edges. |
+| [Foreman](https://github.com/thruwire/foreman) and [Shifty Eye pilot](https://github.com/Shifty-Eye-Games/foreman-jev/blob/main/docs/pilot-release.md) | Separate observation and semantic-supervision loops assess progress, drift, test sufficiency, and verification needs. The Sep 17 pilot reports one real calculator repair: 58.979 s, 11 assessments, five acceptance tests passing, with source-bound proof. It expressly makes no speedup claim against plain Codex. | **Reuse architecture; defer continuous scoring.** Our observer already supplies the needed state. Add semantic drift advice only after measuring repeated-work problems; retain deterministic completion and independent acceptance. Do not let a probability close the task. |
+| [jev-router](https://github.com/gargpratyush/jev-router) | Chooses model tiers for fresh turns, pins tool-loop continuations, respects explicit model requests, and accounts for cache-rebuild cost when downgrading. Source implements routing policy; no general engineering quality/cost benchmark was established here. | **Excluded from hx scope.** This is an external ecosystem example only. Keep configured executor models; no model-selection or switching feature is planned. |
+| [TypeSafe skill suggestion](https://docs.typesafe.ai/cookbooks/skill_suggestion) | Vendor cookbook ranks 182 skills, rechecks three, and suggests at most one. It reports wrong skill loads falling from 16.8% to 7.3% across 488 requests. Published measurements use Jev 1.12 and Haiku; positive requests were generated from skill definitions, so the result is not a current-model engineering benchmark. | **Include in task-scoped loading.** P10b selects relevant optional tool definitions and skill bodies from a compact catalog. Mandatory capabilities remain deterministic, missing tools remain discoverable, and selections expire with the assignment. |
+| [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast), [performance notes](https://github.com/browser-use/jev-ultrafast/blob/main/docs/performance.md) | Chooses actions and targets from structured browser state; uses a text model when text entry is needed. Its author reports a six-run, one-task comparison with a 25% median time reduction, explicitly too small for general reliability claims. | **Defer browser control.** Reuse fresh-state validation and independent postconditions when a browser QA adapter is built. Navigation success is not proof that a product requirement passed. |
+
+## Engineering decisions
+
+Build **output reduction and task-scoped tool loading** in the core context/state/tool-use work. Add **failure triage → preliminary test selection → semantic review** as optional subsequent QA extensions; they do not block core delivery. Existing compaction and retrieval units absorb the matching patterns; do not install overlapping plugins into the hot path.
+
+**Build directly.** Implement diagnostic preservation plus Jev selection for oversized tool output, and compact-catalog selection for optional tools/skills. Integrate through verified adapter capabilities and bounded task storage. Use correctness fixtures for failures in the middle, multiline assertions, misleading success messages, repeated progress, large structured output, required complete results, missing tools, provider timeout, and task changes. No A/B test, parser-versus-Jev comparison, or savings demonstration gates development or activation.
+
+Keep questions atomic: identify a failure class, whether a particular check relates to a changed contract, or whether a named assertion exercises a required behavior. Supply the specific current evidence. TypeSafe documents weaknesses with numerical precision, indirection, irrelevant state, and adversarial framing; count, compare versions, enforce permissions, and validate postconditions in code. [Jev 1.13 limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13)
+
+QA suggestions are hypotheses. Test execution supplies status; receipts bind results to inputs. A missing source unit, truncated diff, unavailable provider, or unexecuted test is visible missing coverage. Test ranking cannot silently reduce the acceptance contract. Review scores cannot auto-dismiss a real failure or certify release readiness.
+
+Verify error/assertion preservation, exact schema IDs, working tool expansion, required-check inclusion, current-source binding, deletion, and timeout behavior. Record actual tokens, latency, failures, and recovery reads for operations; these counters do not require a comparison program or delay delivery.
+
+All suggestions, caches, traces, and source excerpts follow `context/store/compress/drop`; expire with the task or source version. A plugin's recovery archive is not a reason to retain old application states. Only current validated map facts survive independent assignments.
+
+## Repository snapshot provenance
+
+GitHub API HEAD metadata captured on Sep 25; these are latest observed commit dates, not release dates or benchmark dates. The table makes the research snapshot recoverable as repositories evolve.
+
+| Repository | Commit | Commit date (UTC) |
+|---|---|---|
+| fast-jev-compaction | [e3f262a](https://github.com/tamaratran/fast-jev-compaction/commit/e3f262a7f4d42bd8dd32ced30d26176f7cb545b0) | Sep 17 |
+| jev-pruner | [47d017c](https://github.com/tamaratran/jev-pruner/commit/47d017c34eab7690b95f075ce6f4839247c5dc0a) | Sep 19 |
+| jev-sift | [966de12](https://github.com/kbhuw/jev-sift/commit/966de12e2bb5f94d47886ee51f30a07ec8ef1607) | Sep 18 |
+| jevgrep | [1f4f30b](https://github.com/thehumanworks/jevgrep/commit/1f4f30be2a1a4034fd00546da7f2edb295e089c1) | Sep 21 |
+| jev-review | [31f8960](https://github.com/devagrawal09/jev-review/commit/31f89602797fb7bea007f8a480bf368bf564954e) | Sep 17 |
+| jevgate | [5fdf626](https://github.com/Tech-Byte-Frontier/jevgate/commit/5fdf6260f7e2f857ba82f94f0ba2ac3cb1adb4ff) | Sep 25 |
+| jmeter-ai | [75d0d45](https://github.com/QAInsights/jmeter-ai/commit/75d0d45243a50659dca2c2b77ffa589f447ae302) | Sep 23 |
+| jgrep | [89026fb](https://github.com/kyu1204/jgrep/commit/89026fbe3c42f170b86c21bf40ce67cbc7041e40) | Sep 24 |
+| Foreman | [ba91849](https://github.com/thruwire/foreman/commit/ba91849e7088f072db491c739e4c81fd9a4c8154) | Sep 24 |
+| Shifty Eye Foreman | [3cb97e6](https://github.com/Shifty-Eye-Games/foreman-jev/commit/3cb97e6051cb5764c50d3a0155f4d1483934fb25) | Sep 17 |
+| jev-router | [38da6b8](https://github.com/gargpratyush/jev-router/commit/38da6b84ea01241bfc41fbddc0928d0f40a703f0) | Sep 19 |
+| jev-ultrafast | [1231850](https://github.com/browser-use/jev-ultrafast/commit/1231850a0bf1a0c0341fe408ef1668dbbfdfac46) | Sep 18 |
+
+## October 3 cutoff update
+
+Rechecked primary repositories through October 3, Pacific time. `jev-pruner` advanced to
+[edbc602](https://github.com/tamaratran/jev-pruner/commit/edbc60262a5edc07e18d646c1a3f8a9f0ae868c5)
+(September 30); `fast-jev-compaction` remained at the September 17 commit above. No
+October 3 release of those projects was found. The cutoff date is not a release claim.
+
+TypeSafe's [limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13), reviewed
+October 2, reinforce small state, direct atomic questions, precise criteria, code for
+counts/limits/version comparisons, and generative models for writing. The vendor
+[skill suggestion cookbook](https://docs.typesafe.ai/cookbooks/skill_suggestion) uses
+progressive disclosure and a bounded second check; it does not transfer tool authority
+to the decision model.
+
+**Revised hx contract:** Jev classifies new observations against frozen current state
+and identifies material worth checking against the map. It does not rank factual
+obligations out of worker checkpoints. High-confidence repeated tool observations can
+avoid a generative companion pass; missing coverage, failures, and uncertainty require
+inspection. Neither model scores nor free-text native output establish task completion.
+Checks, byte limits, duplicate read detection, version comparisons and shared-map CAS
+remain code. Provider failure stops dependent inference; there is no substitute scorer.
+
+The October 4 live delta-path check used one real API request (405 input tokens,
+40 output tokens, 360.43 ms). It returned `review_delta`; a second identical call reused
+the cached decision. This verifies this API/cache path, not general classification accuracy.

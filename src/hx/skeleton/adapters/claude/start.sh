@@ -174,7 +174,7 @@ if [ "$mode" = exec ]; then
   # never becomes an argv element of anything.
   export HARNESS_ID="$id"
   export HX_ROLE="$role"
-  export HARNESS_ROOT="$root"
+  export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export CLAUDE_CONFIG_DIR="$home"
   export DISABLE_AUTOUPDATER=1
   # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of
@@ -186,6 +186,12 @@ if [ "$mode" = exec ]; then
   # 01.1 E10). Nine turns is nothing for a real task, so the cap is raised out of the way and
   # `hx heartbeat`'s re-paste stays as the fallback (spec 11, 17.4).
   export CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
+  if [ -n "${HX_MAX_OUTPUT_TOKENS:-}" ]; then
+    export CLAUDE_CODE_MAX_OUTPUT_TOKENS="$HX_MAX_OUTPUT_TOKENS"
+  fi
+  if [ -n "${HX_AUTOCOMPACT_WINDOW:-}" ]; then
+    autocompact=$HX_AUTOCOMPACT_WINDOW
+  fi
   # The operator's autocompact window, when `config/models.json` names one for this model.
   # hx's own seam threshold is below it by validation, so the seam still lands first and
   # native compaction stays the thing that never runs.
@@ -205,11 +211,17 @@ if [ "$mode" = exec ]; then
   fi
 
   # Spec 17.4, exactly. No prompt argument, ever.
+  tool_args=()
+  if [ -n "${HX_CONTINUITY_RUN:-}" ] && [ "$role" != companion ]; then
+    selected_tools=$("$python" -c 'import json,sys;print(",".join(json.load(open(sys.argv[1]))["selected"]))' "$root/run/$id/toolset.json")
+    tool_args=(--tools "$selected_tools")
+  fi
   exec "$bin" \
     --dangerously-skip-permissions \
     --setting-sources user \
     --effort "$effort" \
     --model "$model" \
+    ${tool_args[@]+"${tool_args[@]}"} \
     --append-system-prompt-file "$system_prompt"
 fi
 

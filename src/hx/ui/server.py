@@ -152,6 +152,13 @@ class UIServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def server_bind(self) -> None:
+        # HTTPServer resolves its hostname after binding. This local UI needs
+        # only its bound address; reverse DNS can stall macOS startup offline.
+        from socketserver import TCPServer
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
     def handle_error(self, request, client_address) -> None:
         exception = sys.exception()
         if isinstance(exception, (BrokenPipeError, ConnectionResetError, TimeoutError)):
