@@ -177,6 +177,11 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 payload = {**payload, "session_id": "launch:" + digest([launch_id, child])}
             with ContinuityStore(root) as ledger:
                 validate(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id, adapter=adapter, worker_id=item_id)
+                from .native_launch import _row
+                from . import token_controls
+                launch = _row(ledger, env['HX_CONTINUITY_RUN'])
+                if launch and event in {'request', 'tool-start'}:
+                    token_controls.guard(ledger, launch)
                 if event == "tool-start":
                     from .native_tools import admit
                     admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload)
@@ -196,6 +201,8 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                     line = observe(ledger, env["HX_CONTINUITY_RUN"], launch_id, event, payload)
                     if line:
                         print(line)
+                if launch:
+                    token_controls.observe(ledger, launch, event, payload)
             return 0
 
         # These extra observation routes are consumed by the planned runtime.

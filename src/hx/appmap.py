@@ -561,6 +561,17 @@ def get_record(store: ContinuityStore, repository: Path, snapshot: str, record_i
 
 
 def export_snapshot(store: ContinuityStore, repository: Path, snapshot: str) -> dict:
+    import fcntl
+    from .map_export import recover
+    git_dir = Path(_git(repository, 'rev-parse', '--absolute-git-dir'))
+    with (git_dir / 'hx-map-publication.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if recover(repository, git_dir / 'hx-map-export', snapshot):
+            return {'repo_id': manifest(repository)['repo_id'], 'snapshot': snapshot, 'recovered': True}
+        return _export_snapshot(store, repository, snapshot, git_dir / 'hx-map-export')
+
+
+def _export_snapshot(store, repository, snapshot, journal):
     """Validate a staged export before touching portable shards; output is deterministic."""
     info, _ = _snapshot(store, repository, snapshot)
     if _dirty(repository, ".hx/map"):
@@ -583,17 +594,16 @@ def export_snapshot(store: ContinuityStore, repository: Path, snapshot: str) -> 
         # Nodes/edges were validated by import/proposal transactions. Source
         # anchors were revalidated above against the actual combined worktree.
         target = repository / ".hx" / "map"
-        for path, record in records(staged_repo):
-            atomic_write_text(target / path.relative_to(destination), canonical(record) + "\n")
-        for path, record in records(repository):
-            if not (destination / path.relative_to(target)).exists():
-                path.unlink()
+        writes = ((target / path.relative_to(destination), canonical(record) + "\n") for path, record in records(staged_repo))
+        deletes = (path for path, record in records(repository) if not (destination / path.relative_to(target)).exists())
         from .map_learning import portable_vocabulary
         vocabulary_nodes = (get_record(store, repository, snapshot, row[0])['record'] for row in store.db.execute('SELECT DISTINCT record_id FROM map_aliases WHERE repository=? AND snapshot=? ORDER BY record_id LIMIT 128', (info['repo_id'], snapshot)))
         vocabulary_write = portable_vocabulary(store, repository, snapshot, vocabulary_nodes)
-        if vocabulary_write:
-            atomic_write_text(*vocabulary_write)
-        atomic_write_text(target / "manifest.json", canonical(info) + "\n")
+        tail = [vocabulary_write] if vocabulary_write else []
+        tail.append((target / "manifest.json", canonical(info) + "\n"))
+        from .map_export import publish
+        from itertools import chain
+        publish(repository, journal, chain(writes, tail), deletes, snapshot=snapshot)
     return {"repo_id": info["repo_id"], "snapshot": snapshot, "records": count}
 
 
@@ -607,6 +617,8 @@ def export_records(store, repository, snapshot, record_ids):
     git_dir = Path(_git(repository, 'rev-parse', '--absolute-git-dir'))
     with (git_dir / 'hx-map-publication.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        from .map_export import recover
+        recover(repository, git_dir / 'hx-map-export')
         selected = {}
         for identity in ids:
             current = get_record(store, repository, snapshot, identity, refresh=True)

@@ -74,7 +74,7 @@ def source_snapshot(tx, run_id):
     Completion, dependency admission, and context compilation share this gate.
     """
     rows = tx.db.execute("""SELECT source_id,revision,generation,committed_offset,payload
-        FROM capture_sources WHERE run_id=? ORDER BY source_id LIMIT ?""",
+        FROM capture_sources WHERE run_id=? AND json_extract(payload,'$.retired') IS NULL ORDER BY source_id LIMIT ?""",
         (run_id, MAX_SOURCES + 1)).fetchall()
     sources = []
     for row in rows[:MAX_SOURCES]:
@@ -144,7 +144,7 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
             return source_id
         # A changed branch requires a fresh run. Fact invalidation/rebinding must
         # also happen at the lifecycle boundary before preparing new context.
-        rows = tx.db.execute("SELECT stream_id,payload FROM capture_sources WHERE run_id=? LIMIT ?",
+        rows = tx.db.execute("SELECT stream_id,payload FROM capture_sources WHERE run_id=? AND json_extract(payload,'$.retired') IS NULL LIMIT ?",
                              (run_id, MAX_SOURCES + 1 if native_scope else -1))
         if native_scope:
             rows = rows.fetchall()
@@ -285,6 +285,8 @@ def append_observation(tx, *, run_id: str, stream_id: str, session_id: str,
     capture_key, payload, encoded = encode_observation(session_id=session_id, event=event,
                                                       fallback_identity=fallback_identity)
     captured = tx.append_event(run_id, stream_id, capture_key, event.kind, payload)
+    from .token_controls import captured_usage
+    captured_usage(tx, run_id, stream_id, event)
     if "artifact_hash" in payload:
         tx.put_artifact(encoded, owner_type="event", owner_id=captured["event_id"], slot="observation")
     return captured
@@ -328,7 +330,7 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
         source = dict(row)
         state = json.loads(source["payload"])
         run = tx.db.execute("SELECT * FROM runs WHERE run_id=?", (source["run_id"],)).fetchone()
-        if run["ended_at"] is not None:
+        if run["ended_at"] is not None or state.get("retired"):
             return {"source_id": source_id, "status": "closed", "events": 0, "bytes": 0}
         if state.get("native_scope") and tx.task(run["task_id"])["revision"] != run["task_revision"]:
             return {"source_id": source_id, "status": "stale", "events": 0, "bytes": 0}
@@ -462,7 +464,7 @@ def reconcile(store: ContinuityStore) -> list[dict]:
     from .native_producer import retry
     deliveries = retry(store)
     sources = store.db.execute(
-        "SELECT source_id FROM capture_sources JOIN runs USING(run_id) WHERE runs.ended_at IS NULL ORDER BY source_id"
+        "SELECT source_id FROM capture_sources JOIN runs USING(run_id) WHERE runs.ended_at IS NULL AND json_extract(payload,'$.retired') IS NULL ORDER BY source_id"
     ).fetchall()
     return [*deliveries, *(drain(store, row[0]) for row in sources)]
 
@@ -481,7 +483,7 @@ class FileNotifications:
     def refresh(self, store: ContinuityStore) -> None:
         if not self.queue:
             return
-        rows = store.db.execute("SELECT source_id,payload FROM capture_sources JOIN runs USING(run_id) WHERE ended_at IS NULL")
+        rows = store.db.execute("SELECT source_id,payload FROM capture_sources JOIN runs USING(run_id) WHERE ended_at IS NULL AND json_extract(payload,'$.retired') IS NULL")
         wanted = {row["source_id"]: json.loads(row["payload"])["path"] for row in rows}
         for source, (fd, identity) in list(self.files.items()):
             try:

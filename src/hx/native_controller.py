@@ -30,7 +30,7 @@ def _transition(tx, run_id, expected, status, *, payload=None, error=None):
     if row is None or row["status"] not in expected:
         return False
     tx._change()
-    tx.db.execute("UPDATE native_launches SET status=?,payload=?,error=? WHERE run_id=?",
+    tx.db.execute("UPDATE native_launches SET status=?,payload=?,error=? WHERE run_id=? AND status<>'archived'",
                   (status, canonical(payload or row["payload"]), error, run_id))
     return True
 
@@ -77,6 +77,8 @@ def _owned_pane(row):
     if process is None:
         raise Conflict("native main process exited before ownership was recorded")
     actual["process"] = process["identity"]
+    if row['payload'].get('supervisor_process') not in (None, actual['process']):
+        raise Conflict('native pane is not the recorded supervisor instance')
     if row["payload"].get("pane") not in (None, actual):
         raise Conflict("native main pane was replaced")
     return actual
@@ -98,7 +100,7 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
         with ledger.transaction() as tx:
             row = native_launch.verify_inputs(tx, run_id)
             payload = {**row["payload"], "session": "hx-" + row["launch_id"], "tmux": tmux.tmux_command(env),
-                       "supervisor": "shell-wait-v1"}
+                       "supervisor": "receipt-wait-v1"}
             _transition(tx, run_id, {"prepared"}, "installing", payload=payload)
         row = native_launch._row(ledger, run_id)
         capsule = Path(payload["capsule"])
@@ -136,14 +138,14 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
             if name.startswith("HX_") or name in {"HARNESS_ROOT", "HOME", "PATH", "PYTHONPATH"}:
                 environment += ["-e", f"{name}={value}"]
         try:
-            # new-session fails on a collision. Unlike legacy start.sh session
-            # mode, this command can never respawn or replace an existing pane.
+            # new-session fails on a collision. The supervisor records its own
+            # process instance before it starts the native executable.
             launched = _tmux(row, "new-session", "-d", "-s", payload["session"], "-n", "main",
                 "-c", json.loads(native_launch._bytes(capsule / "config" / worker / "harness.json"))["workdir"],
-                # tmux resumes its immediate child after SIGSTOP. Keep a small
-                # waiting shell as that child, so the native executable and its
-                # descendants can be stopped without suspending a shared server.
-                *environment, "/bin/sh", "-c", '"$@"; result=$?; exit "$result"', "hx-native-wait",
+                # tmux resumes its immediate child after SIGSTOP. Keep the
+                # waiting supervisor as that child so its native descendants
+                # can be stopped without suspending a shared tmux server.
+                *environment, str(capsule / 'bin/hx-supervise'), str(ledger.root), run_id, row['launch_id'],
                 "bash", str(capsule / "adapters" / child["HX_CONTINUITY_ADAPTER"] / "start.sh"),
                 "--exec", worker)
             if launched.returncode:
@@ -151,13 +153,18 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
             with ledger.transaction() as tx:
                 current = native_launch._row(tx, run_id)
                 tx._change()
-                tx.db.execute("UPDATE native_launches SET payload=? WHERE run_id=?",
+                tx.db.execute("UPDATE native_launches SET payload=? WHERE run_id=? AND status<>'archived'",
                               (canonical({**current["payload"], "spawn_returned": True}), run_id))
         except Exception as exc:
             with ledger.transaction() as tx:
                 _transition(tx, run_id, {"starting"}, "start_uncertain", error=type(exc).__name__)
             raise
     row = native_launch._row(ledger, run_id)
+    if row['status'] == 'start_uncertain' and row['payload'].get('supervisor_process'):
+        _owned_pane(row)
+        with ledger.transaction() as tx:
+            _transition(tx, run_id, {'start_uncertain'}, 'starting')
+        row = native_launch._row(ledger, run_id)
     if submit and row['status'] in {'starting', 'ready', 'submitted', 'submission_unconfirmed'}:
         from .application_loop import ensure
         ensure(ledger.root, env=env)
@@ -177,6 +184,16 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
         target = row["payload"]["session"]
         visible = goal.capture_pane(target, child)
         if visible is None or not goal.pane_is_idle(visible):
+            return _result(ledger, run_id)
+        try:
+            with ledger.transaction() as tx:
+                native_launch.verify_inputs(tx, run_id, states={"starting", "ready"})
+        except Conflict as exc:
+            if 'newer execution evidence' not in str(exc):
+                raise
+            current = native_launch._row(ledger, run_id)
+            if current['status'] == 'ready' and current['payload'].get('startup_observed'):
+                refresh_before_submission(ledger, current)
             return _result(ledger, run_id)
         with ledger.transaction() as tx:
             row = native_launch.verify_inputs(tx, run_id, states={"starting", "ready"})
@@ -213,7 +230,7 @@ def drain(ledger, worker, run_id, request_id, *, env=None):
             return _result(tx, run_id)
         if row["status"] != "draining":
             if row["status"] not in {"ready", "submitted", "submission_unconfirmed", "submission_uncertain",
-                                      "submission_rejected", "continuation_required", "session_uncertain"}:
+                                      "submission_rejected", "continuation_required", "session_uncertain", "starting", "start_uncertain"}:
                 raise Conflict("native launch is changing state; reconcile startup before draining")
             # Closing admission must work even when task inputs were invalidated.
             # The immutable launch tuple, not a fresh assignment, owns shutdown.
@@ -324,3 +341,26 @@ def guard_release(tx, run_id):
             require_drained(tx, run_id)
             if tx.db.execute('SELECT 1 FROM cursors WHERE run_id=? AND head_seq<>classified_seq LIMIT 1', (run_id,)).fetchone() or tx.db.execute("SELECT 1 FROM events WHERE run_id=? AND disposition='pending' LIMIT 1", (run_id,)).fetchone():
                 raise Conflict('late native evidence must be classified before releasing assignment leases')
+
+
+def refresh_before_submission(ledger, row):
+    """Refresh the delivered pointer before the initial prompt can execute."""
+    payload = row['payload']
+    _, rendered = prompt_compiler.verified_bundle(ledger.root, payload['worker_id'],
+        Path(payload['manifest']), workdir=payload['workdir'])
+    with ledger.transaction() as tx:
+        native_launch.verify_inputs(tx, row['run_id'], states={'ready'}, check_evidence=False)
+        cursors, pending = context_packets._pending(tx, row['run_id'])
+        sources = context_packets._sources(tx, row['run_id'])
+    overhead = len((rendered['system'] + _prompt(row['launch_id']) + _pointer(payload['packet_path'])).encode())
+    budget = payload['initial_input_limit'] - overhead
+    packet = context_packets.issue(ledger, row['run_id'], request_id='startup-refresh-' + digest([row['launch_id'], cursors, pending, sources]),
+        mode='forced', instructions=rendered['context'], max_tokens=budget, optional_tokens=min(1000, budget))
+    with ledger.transaction() as tx:
+        current = native_launch._row(tx, row['run_id'])
+        if current['status'] != 'ready' or current['payload'] != payload:
+            return
+        atomic_write_text(Path(payload['packet_path']), packet['text'])
+        updated = {**payload, 'checkpoint_id': packet['checkpoint_id'], 'packet_hash': packet['packet_hash'],
+                   'charged_initial_tokens': packet['charged_tokens'] + overhead}
+        _transition(tx, row['run_id'], {'ready'}, 'ready', payload=updated)

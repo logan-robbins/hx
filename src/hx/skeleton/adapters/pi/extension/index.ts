@@ -220,6 +220,26 @@ export default function (pi: {
     }
   });
 
+  pi.on("before_provider_request", (event) => {
+    const cap = Number(process.env.HX_MAX_OUTPUT_TOKENS);
+    if (!Number.isSafeInteger(cap) || cap < 1 || !event.payload || typeof event.payload !== "object") return;
+    const payload = { ...(event.payload as Record<string, any>) };
+    // Only change fields emitted by the selected provider serializer.
+    for (const key of ["max_tokens", "max_completion_tokens", "max_output_tokens"]) {
+      if (typeof payload[key] === "number") payload[key] = Math.min(payload[key], cap);
+    }
+    for (const key of ["generationConfig", "config"]) {
+      if (typeof payload[key]?.maxOutputTokens === "number") {
+        payload[key] = { ...payload[key], maxOutputTokens: Math.min(payload[key].maxOutputTokens, cap) };
+      }
+    }
+    if (payload.thinking?.type === "enabled" && typeof payload.thinking.budget_tokens === "number") {
+      if (cap <= 1024) throw new Error("hx output cap cannot fit the provider's minimum thinking budget");
+      payload.thinking = { ...payload.thinking, budget_tokens: Math.min(payload.thinking.budget_tokens, cap - 1) };
+    }
+    return payload;
+  });
+
   pi.on("session_start", (event, ctx) => {
     if (subagent) return;
     settledThisRun = false;

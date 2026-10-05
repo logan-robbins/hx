@@ -143,7 +143,7 @@ check output. Details are retrieved only when they affect a decision.
 
 Instructions, pass, and supplied tool schemas are limited to 32 KiB. Native execution
 is limited to six turns, 60 seconds, and 64 KiB captured output, with a requested
-4,096-token generation limit. This is not complete provider-request/cost accounting.
+4,096-token generation limit. Worker output caps use the same model-level layer; the runtime controls tokens rather than forecasting dollar spend.
 One durable root-wide running slot serializes model execution on low-memory hosts.
 The current implementation honors the configured model and creates no worker memory.
 
@@ -678,7 +678,7 @@ retains the captured result, and retrying the same request never reruns side eff
 `hx tools discover --query "next action"` judges a small optional capability catalog.
 Exact IDs bypass inference. `hx tools load ID` preserves required capabilities and
 records task-scoped selection. Select Claude launch tools before dispatch; additions
-after dispatch return `pending_restart`, never `loaded`. Pi's public extension API
+after dispatch return `pending_restart`; the root service checkpoints the current task, drains and stops its recorded process instances, and starts a fresh launch generation with the expanded set. Only verified startup/submission changes the result to `loaded`. Pi's public extension API
 updates its actual active schemas and acknowledges the observed set. Grok's TUI
 ignores its headless-only `--tools` flag, so Grok, Codex and Muse remain advisory;
 no schema-token reduction is claimed for those adapters. Catalog entries do not
@@ -691,3 +691,51 @@ tree; and publishes outputs/releases leases atomically. A failed check sends one
 bounded continuation to the same worker. Publication replay recovers after a crash.
 This contract covers managed native operations and observed descendants; arbitrary
 untracked remote jobs are outside its completion proof.
+
+
+## Token controls and adapter recovery (October 5)
+
+`config/models.json` accepts `max_output_tokens` alongside `window`, `threshold` and
+`autocompact_window`. The output reserve must fit between the threshold and model window.
+Planned launch freezes these values in its private configuration. Hook argument/file/read
+limits remain deterministic. Main-context usage arrives through incremental native capture;
+child usage and cumulative session totals do not trigger a main-context reset. Once the
+threshold is reached, further requests/tools are blocked until a classified, idle boundary
+can restore the companion-maintained checkpoint. The reset is recorded before sending, so
+an uncertain delivery never repeatedly clears the session.
+
+Claude receives `CLAUDE_CODE_MAX_OUTPUT_TOKENS` and its native autocompact window.
+Grok receives the documented per-model `max_completion_tokens`. Pi's public
+`before_provider_request` callback lowers serialized provider output limits and keeps a
+smaller existing limit; native compaction uses its reserve-token setting. Codex receives
+`model_auto_compact_token_limit`. No unsupported output-limit or schema-filtering flag is
+invented for another adapter. These are token controls, not financial budget accounting.
+
+Sources: [Claude environment variables](https://code.claude.com/docs/en/env-vars),
+[Grok configuration reference](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/26-config-reference.md),
+and the installed Pi public extension/provider interfaces.
+
+The launch supervisor records a durable OS process-instance identity before starting the
+native executable. Startup recovery and shutdown can use that receipt after a controller
+interruption. Missing identity is never repaired by adopting a reused PID. Tool expansion
+uses a new launch generation in the same active assignment, retains leases and dirty source
+state, and rejects retired hooks. Classified old capture sources leave the active watch set.
+
+Register MCP server argv and named skill files in `config/capabilities.json`:
+
+```json
+{"schema_version":1,"servers":{"project":{"command":["/absolute/server"]}},"skills":{"checks":"/absolute/checks/SKILL.md"}}
+```
+
+The Partner runs `hx tools index`; it calls MCP initialization and `tools/list`, never a tool.
+Discovery uses bounded pages and a versioned continuation cursor. `hx tools load mcp:project:NAME`
+returns only that tool's schema and invocation recipe. `hx tools call mcp:project:NAME
+--request ID --input FILE` invokes it once; retries reuse its saved result and uncertain
+executions cannot be silently repeated. Results over 4 KiB return an evidence address.
+`hx tools load skill:checks` validates the current file identity and returns its bounded body.
+The shell facade works across adapters without claiming to change their native schemas.
+
+Full portable-map export stages a journal before changing shards. Recovery validates all
+old/new hashes before replay and refuses to overwrite intervening local edits. Completed
+worker event bodies and frozen pass inputs retire in batches; current map citations, check
+artifacts, and small replay receipts stay available.

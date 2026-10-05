@@ -27,8 +27,8 @@ interruption recovery; ambiguous ownership remains unresolved.
 | Application learning | Completion publishes current findings and bounded retrieval terms. Integration transfers matching findings with collision checks; scoped Git publication carries source-bound vocabulary into fresh clones. Older record versions lose their retrieval hints. |
 | Inspection efficiency | ≤160 lines per source read; ≤80 scoped search results. An unchanged successful range cannot be reread in the same checkpoint. Changed files, errors and fresh contexts remain readable. Exact bounded searches reuse small unchanged results across contexts/workers in the same worktree; partial output never establishes absence. The root search cache is capped at 256 entries. Common noisy shell inspections route through bounded output capture. These gates do not sandbox arbitrary programs. |
 | Output | `hx tool-exec` executes a request once, captures ≤1 MiB and returns ≤4 KiB of selected verbatim output with status, diagnostics and recovery addresses. Jev only judges surplus chunks. A failed reduction can be retried without repeating the command. |
-| Tools | Small per-adapter catalog, Jev discovery and exact-ID selection. Required tools survive. Claude can select its launch tools before dispatch; live expansions report `pending_restart`. Pi updates real active schemas through its public API. Grok TUI, Codex and Muse remain advisory; no native schema savings are claimed. |
-| Compaction | The companion maintains current state for clear and restoration without a second conversation summary. Partner restoration omits worker investigation and personal-memory lookup; engineering/QA retain task-specific continuation. Bounded Claude reset state is attached through `SessionStart.additionalContext`. Forced continuation preserves unresolved corrections/gaps without acknowledging them. Codex receives `compact_prompt`; Claude receives compact instructions; Pi can use the checkpoint pointer as its summary. No synchronous inference in compaction hooks. |
+| Tools | Small per-adapter catalog, Jev discovery and exact-ID selection. Required tools survive. Claude can select its launch tools before dispatch; live expansions checkpoint and restart the same assignment, then confirm `loaded`. Pi updates real active schemas through its public API. A paged MCP/skill catalog exposes one selected schema or skill body through a task-scoped shell facade. Grok TUI, Codex and Muse remain advisory; no native schema savings are claimed. |
+| Compaction | Planned hooks and incremental capture enforce the model threshold; the root service waits for a classified, idle boundary, then submits one reset and waits for its startup acknowledgement. Model output caps reach Claude, Grok and Pi; native autocompaction settings reach Claude, Codex and Pi. The companion maintains current state for clear and restoration without a second conversation summary. Partner restoration omits worker investigation and personal-memory lookup; engineering/QA retain task-specific continuation. Bounded Claude reset state is attached through `SessionStart.additionalContext`. Forced continuation preserves unresolved corrections/gaps without acknowledging them. Codex receives `compact_prompt`; Claude receives compact instructions; Pi can use the checkpoint pointer as its summary. No synchronous inference in compaction hooks. |
 | Completion | Worker commits changes and requests `hx complete done`. Runtime waits for turn/tool/child/capture/companion drain, runs declared checks, stops managed native execution, publishes exact outputs and releases leases. Failure resumes the same worker once. Publication replay recovers after a crash. |
 
 ## Verification
@@ -40,6 +40,14 @@ a model. The native completion integration covers turn end, pending tool refusal
 shutdown, publication, release and publication replay.
 
 Latest verification (October 5; overlapping counts are not additive):
+
+- Token controls/adapter recovery regression: 470 passed, 7 optional checks skipped.
+- Final catalog/export/retention/schema regression: 59 passed; final retention/token checks: 8 passed.
+- Packaging text contracts: 71 passed. This fixes the previous PR head's sole Linux/macOS
+  CI failure: the stale assertion for retired personal-memory/sub-task instructions.
+- Installed Pi SDK: one passing check of actual deferred tool selection and provider-payload
+  output caps, without a model request. The restart test uses real tmux and generated hooks
+  with an isolated CLI fixture; it preserves assignment ownership and rejects retired hooks.
 
 - Application-learning and generated-goal regression: 386 passed, 2 optional checks skipped.
   Includes discovery, completion publication, fresh-clone vocabulary reuse, scoped write
@@ -82,13 +90,16 @@ public API support and unverified provider behavior.
 The functional loop above is implemented. These broader specification items remain
 outside its current capabilities and must not be presented as completed release work:
 
-- Complete provider-request/cost accounting and parent reserves; full source coverage for
-  every vendor/child/remote operation; recovery of ownership that lacks a process identity.
-- Claude live tool expansion/restart, MCP/skill catalog discovery, and adapters whose native
-  schema filtering or custom compaction surfaces have not been verified.
-- Coordinated legacy-authority migration, projection consumers, map export crash recovery,
-  and cancellation/raw-event/pass artifact retention.
+- Coordinated legacy-authority migration and projection consumers, and retention for
+  cancelled assignments that may still be resumed.
 - Optional QA triage, test-selection and review extensions after core operation.
+
+Provider-cost accounting and parent dollar reserves are not part of the design: the operator
+requires hook limits, context thresholds/autocompaction and model output caps. Schema 19
+adds restart generations without resetting task state or releasing write leases. A supervisor
+records its process-instance identity before spawning the native agent. Full map export has
+a recoverable journal, and closed-task raw events/pass inputs retire in bounded batches while
+current application citations and check artifacts remain usable.
 
 Known boundaries remain explicit: managed completion covers admitted operations and observed
 process descendants; it cannot certify arbitrary untracked remote jobs. Vendor-provided

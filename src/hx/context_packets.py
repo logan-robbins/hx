@@ -39,7 +39,7 @@ def _sources(tx, run_id):
 
 
 def _pending(tx, run_id):
-    cursors = tx.db.execute("SELECT stream_id,head_seq,classified_seq,revision FROM cursors WHERE run_id=? ORDER BY stream_id LIMIT ?", (run_id, MAX_STREAMS + 1)).fetchall()
+    cursors = tx.db.execute("SELECT stream_id,head_seq,classified_seq,revision FROM cursors WHERE run_id=? AND NOT EXISTS(SELECT 1 FROM runtime_cycles x WHERE x.scope='retired-stream:'||cursors.run_id||':'||cursors.stream_id) ORDER BY stream_id LIMIT ?", (run_id, MAX_STREAMS + 1)).fetchall()
     if len(cursors) > MAX_STREAMS:
         raise RequiredContextOverflow("checkpoint exceeds 32 streams; reconcile open child work first")
     pending = []

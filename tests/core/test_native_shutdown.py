@@ -120,6 +120,7 @@ def test_missing_process_receipt_never_adopts_current_pane(runtime):
     row = ready(runtime)
     payload = row['payload']
     original = payload['pane'].pop('process')
+    payload.pop('supervisor_process', None)
     store.db.execute('UPDATE native_launches SET payload=? WHERE run_id=?', (canonical(payload), run))
     with pytest.raises(Conflict, match='process-instance receipt'):
         native_shutdown.advance(store, 'eng-001', run, 'launch', env=env)
@@ -189,3 +190,15 @@ def test_two_controllers_resume_the_same_shutdown_without_losing_children(owned_
     receipt = native_launch._row(store, run)['payload']['shutdown']
     assert child in receipt['processes']
     assert native_processes.current(child) is None
+
+
+def test_supervisor_receipt_recovers_missing_controller_pane_receipt(runtime):
+    store, _, run, env = runtime
+    row = ready(runtime)
+    payload = row['payload']
+    original = payload['pane'].pop('process')
+    assert payload['supervisor_process'] == original
+    store.db.execute('UPDATE native_launches SET payload=? WHERE run_id=?', (canonical(payload), run))
+    result = native_shutdown.advance(store, 'eng-001', run, 'launch', env=env)
+    assert result['shutdown_phase'] == 'freezing'
+    assert native_launch._row(store, run)['payload']['shutdown']['supervisor'] == original

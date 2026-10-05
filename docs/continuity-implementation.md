@@ -224,21 +224,24 @@ fail R13: late-arrival scenario expected cursor 40, observed 41.
 artifact R13: hx evidence R13 --view failure
 ```
 
-Add `context.max_tokens=8000`, `context.optional_tokens=1000`, `companion.pass_max_tokens=6000`, and `budget.max_forecast_usd` to configuration. These are initial operating limits. Use the adapter tokenizer; without one, conservatively charge UTF-8 bytes as tokens. Count persona/instructions, tool schemas, packet, conversation already retained, and reserved next output against the model window; the packet cap alone is insufficient.
+Use bounded context packets (8,000 tokens), optional context (1,000 tokens), hook
+input/output limits, model `threshold`/`autocompact_window`, and `max_output_tokens`.
+Use the adapter tokenizer where available; otherwise charge UTF-8 bytes conservatively.
+Count instructions, selected tools, current task state and the next output reserve against
+the usable model window. Keep the native output cap above the useful per-turn minimum and
+below remaining headroom; reject invalid configurations.
 
-Before dispatch and at controlled turn boundaries, require:
+Enforce context pressure at planned request/tool hooks and reset only after capture,
+companion classification and admitted operations reach a safe idle boundary. Restore the
+companion's current checkpoint. Keep native autocompaction as the configured upper layer.
+Apply output caps through verified model/provider settings. Unknown native capabilities
+remain explicit; do not simulate schema narrowing or output enforcement with prompt prose.
+An oversized indivisible task retains its checkpoint and exact obligations for Partner
+rescoping. Splitting preserves acceptance and dependencies.
 
-```text
-known_context + packet + next_tool_output_reserve + next_model_output_reserve <= window_headroom
-packet <= context.max_tokens
-spent_usd + reserved_forecast_usd <= budget.max_forecast_usd
-```
-
-Set `window_headroom = min(model.threshold, floor(0.8 × model.window))`. Count retained conversation once; `packet` means newly delivered content. Forecast from observed task/check/tool classes; price model input, cache use, output, companion, Jev, and replanning separately. Version prices and accounting. Until calibrated, use configured upper output limits and uncached input prices. Store forecast and measured spend separately.
-
-On overflow, checkpoint and wake the Partner with the violating budget and task boundaries. The Partner splits at the next independently verifiable contract; `hx plan validate` confirms acceptance coverage before replacing the parent with child tasks plus integration. Children share the remaining parent budget, including integration and parent acceptance; splitting never resets spend. If an indivisible task cannot fit, retain its checkpoint and mark `budget_blocked`; never discard a constraint to admit it.
-
-Adapters declare usage-reporting, request-gating, output-limiting, and reset capabilities. Enforce a configured hard spend limit only through adapters with request-level accounting and admission; refuse such dispatch when capabilities are absent. Current Codex hook normalization explicitly lacks usage counts. [hook.py:15](/Users/loganrobbins/workspace/hx/src/hx/skeleton/adapters/codex/hook.py:15)
+Operator correction (October 5): do not add dollar-spend forecasting, provider-price
+accounting or shared financial reserves. The required controls operate on tokens at the
+hook, autocompaction and model layers.
 
 Large results are reduced to the evidence required for current work; retain a full artifact only when a live record or check needs it, within the storage budget. A bounded error/hit excerpt enters context. Apply limits through wrapped commands or supported pre-delivery adapters. Existing `PostToolUse` capture occurs after execution and cannot retroactively save the current tool result’s context.
 
@@ -340,7 +343,7 @@ Begin with P01 and implement the core in dependency order, including task-scoped
 | P06c / P06b | Map export/integration and `hx map check` | Source/map commit validates together; unrelated record files merge independently; conflicting records rebuild against merged source; stale anchors fail CI. |
 | P07 / P04, P05, P06c | `compose.py`, boundary hooks, `seam.py`, `flush.py` | Restart/clear yields identical checkpoint content; unresolved tail survives; exact commands remain intact; mandatory overflow blocks admission. |
 | P08 / P05–P07 | New `planning.py`, map assignment brief, tasks/dispatch/resume | Brief supplies exact owners/contracts/checks and flags missing evidence; reject cycles/overlap/missing inputs; stable task survives worker reuse; consumer requires materialized prerequisites. |
-| P09 / P07–P08 | New `budgets.py`, model config/adapters | Reserve all prompt/output/cost components; automatic split preserves parent acceptance; incapable adapter refuses hard-limit dispatch. |
+| P09 / P07–P08 | `token_controls.py`, model config/adapters | Bound prompt/output components at hooks and model settings; safe reset restores current state; task splitting preserves parent acceptance. |
 | P10 / P07 | New `jev.py`, `memory.py` | Fixed fake responses cover batching, bounds, cache keys, empty results, invalid IDs, timeout; failed decisions stop the dependent operation without replacing Jev; mandatory records remain intact. |
 | P10b / P08–P10 | New `tool_catalog.py`, adapter capability/launch integration, `hx tools discover/load` | Mandatory tools survive selection; exact requests load without scoring; unknown/stale IDs reject; unavailable tools are never reported loaded; missing capabilities remain discoverable; phase changes preserve in-flight calls; new tasks inherit no old selection; launch-only adapters expand at a checkpointed restart. |
 | P11a / P08–P10 | Jev record selection and plan review | Selection shrinks prompts without changing accepted patches; failed semantic criteria return to Partner; Jev cannot bypass deterministic gates. |

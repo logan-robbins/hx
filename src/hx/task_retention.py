@@ -53,3 +53,51 @@ def close(tx, task_id):
     tx.db.execute('DELETE FROM native_reads WHERE launch_id IN (SELECT l.launch_id FROM native_launches l JOIN runs r USING(run_id) WHERE r.task_id=?)', (task_id,))
     tx.db.execute('DELETE FROM search_calls WHERE launch_id IN (SELECT l.launch_id FROM native_launches l JOIN runs r USING(run_id) WHERE r.task_id=?)', (task_id,))
     return True
+
+
+def retire_closed(store, *, limit=64):
+    """Erase closed-task raw bodies in bounded batches; keep live cited evidence."""
+    from .continuity_store import canonical
+    with store.transaction() as tx:
+        # Cited application findings/checks remain useful beyond worker completion.
+        rows = tx.db.execute('''SELECT e.event_id,e.run_id FROM events e JOIN runs r USING(run_id)
+            WHERE r.ended_at IS NOT NULL AND r.outcome='completed'
+            AND json_extract(e.payload,'$.retired') IS NULL
+            AND NOT EXISTS(SELECT 1 FROM records f JOIN record_heads h USING(record_id,version),json_each(f.evidence) j
+                           WHERE f.validity='current' AND j.value=e.event_id)
+            AND NOT EXISTS(SELECT 1 FROM map_records m JOIN map_heads h USING(repository,snapshot,record_id,version),json_each(m.evidence) j
+                           WHERE m.applicability='current' AND j.value=e.event_id)
+            ORDER BY e.rowid LIMIT ?''', (limit,)).fetchall()
+        for row in rows:
+            tx.release_artifacts('event', row['event_id'])
+            tx.db.execute("UPDATE events SET payload=? WHERE event_id=?", (canonical({'retired': True}), row['event_id']))
+        closed = tx.db.execute("SELECT run_id FROM runs WHERE ended_at IS NOT NULL AND outcome='completed' AND NOT EXISTS(SELECT 1 FROM companion_jobs j WHERE j.run_id=runs.run_id AND j.status='running') AND NOT EXISTS(SELECT 1 FROM runtime_cycles x WHERE x.scope='retained-closed:'||runs.run_id) ORDER BY ended_at LIMIT 16").fetchall()
+        for row in closed:
+            run_id = row['run_id']
+            for frozen in tx.db.execute("SELECT pass_id FROM passes WHERE run_id=? AND status<>'prepared'", (run_id,)).fetchall():
+                tx.db.execute("DELETE FROM artifact_refs WHERE owner_type='pass' AND owner_id=? AND slot='input'", (frozen[0],))
+            # Completed pass bodies contain duplicate events/current-state snapshots.
+            tx.db.execute("UPDATE passes SET payload=? WHERE run_id=? AND status<>'prepared'", (canonical({'retired': True}), run_id))
+            jobs = tx.db.execute("SELECT job_id FROM companion_jobs WHERE run_id=? AND status<>'running'", (run_id,)).fetchall()
+            for job in jobs:
+                tx.release_artifacts('companion', job[0])
+                tx.db.execute('UPDATE companion_jobs SET payload=? WHERE job_id=?', (canonical({'retired': True}), job[0]))
+            tx.db.execute("DELETE FROM runtime_cycles WHERE scope LIKE ?", ('capability-call:' + run_id + ':%',))
+            tx.db.execute("DELETE FROM runtime_cycles WHERE scope=?", ('capabilities:' + run_id,))
+            tx.db.execute('INSERT OR REPLACE INTO runtime_cycles VALUES(?,?)', ('retained-closed:' + run_id, '{}'))
+        if rows or closed:
+            tx._change()
+    removed = 0
+    if rows:
+        with store.transaction() as tx:
+            garbage = tx.db.execute('''SELECT hash FROM artifacts a WHERE
+                NOT EXISTS(SELECT 1 FROM artifact_refs r WHERE r.hash=a.hash) AND
+                NOT EXISTS(SELECT 1 FROM receipts r WHERE r.artifact_hash=a.hash) AND
+                NOT EXISTS(SELECT 1 FROM checkpoints c WHERE c.packet_hash=a.hash) LIMIT 64''').fetchall()
+            for item in garbage:
+                (store.artifacts / item[0]).unlink(missing_ok=True)
+                tx.db.execute('DELETE FROM artifacts WHERE hash=?', (item[0],))
+                removed += 1
+            if removed:
+                tx._change()
+    return {'retired_events': len(rows), 'deleted_artifacts': removed}

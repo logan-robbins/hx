@@ -124,7 +124,7 @@ def advance_one(store, *, env=None):
             if current['status'] != 'stopped_unreconciled':
                 raise Conflict('shutdown changed during completion')
             tx._change()
-            tx.db.execute("UPDATE native_launches SET status='quiesced' WHERE run_id=?", (run_id,))
+            tx.db.execute("UPDATE native_launches SET status='quiesced' WHERE run_id=? AND status<>'archived'", (run_id,))
         intent['status'] = 'publishing'
         _save(store, scope, intent)
     result = unit_execution.complete(store, run_id, intent['receipts'], env=env)

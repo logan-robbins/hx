@@ -49,3 +49,20 @@ def test_closed_task_erases_current_facts_and_semantic_cache(planned):
     assert record['validity'] == 'dropped' and record['payload'] == {'schema_version': 1}
     assert store.db.execute('SELECT count(*) FROM retrieval_runs').fetchone()[0] == 0
     assert native_companion.prepare(store, 'eng-001', run, 'main', 'closed')['job_id'] == job['job_id']
+
+
+def test_closed_raw_events_and_frozen_pass_inputs_are_retired(planned):
+    from hx.task_retention import retire_closed
+    from hx.evidence import read
+    from hx.errors import ValidationError
+    store, run, event = planned
+    frozen = passes.prepare(store, run, 'main', prompt_version='test')
+    passes.commit(store, frozen['pass_id'], answer(frozen, []))
+    with store.transaction() as tx:
+        tx.finish_run(run, 'completed')
+    assert retire_closed(store)['retired_events'] > 0
+    with pytest.raises(ValidationError, match='retired'):
+        read(store, event['event_id'])
+    assert not store.db.execute("SELECT 1 FROM artifact_refs WHERE owner_type='pass' AND slot='input'").fetchone()
+    # Small result identity remains so committed pass retries are still idempotent.
+    assert passes.commit(store, frozen['pass_id'], answer(frozen, []))['pass_id'] == frozen['pass_id']

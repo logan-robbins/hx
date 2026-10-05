@@ -23,7 +23,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -457,9 +457,12 @@ class ContinuityStore:
             self.db.execute("PRAGMA cache_size=-2048")
             self.db.execute("PRAGMA temp_store=FILE")
             self.db.execute("PRAGMA mmap_size=0")
+            # Rebuild the launch table without rewriting the foreign-key targets.
+            if self.db.execute("PRAGMA user_version").fetchone()[0] < 19:
+                self.db.execute("PRAGMA foreign_keys=OFF")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (*range(18), SCHEMA_VERSION):
+            if version not in (*range(19), SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -555,8 +558,17 @@ class ContinuityStore:
                 self.db.execute("CREATE INDEX IF NOT EXISTS map_alias_lookup ON map_aliases(repository,snapshot,term)")
                 self.db.execute("CREATE TABLE IF NOT EXISTS search_coverage(repository TEXT NOT NULL,query_hash TEXT NOT NULL,source_hash TEXT NOT NULL,run_id TEXT NOT NULL,result TEXT NOT NULL,complete INTEGER NOT NULL,PRIMARY KEY(repository,query_hash))")
                 self.db.execute("CREATE TABLE IF NOT EXISTS search_calls(launch_id TEXT NOT NULL,session_id TEXT NOT NULL,actor_id TEXT NOT NULL,call_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(launch_id,session_id,actor_id,call_id))")
+            if version < 19:
+                self.db.execute("CREATE TABLE native_launches_next(launch_id TEXT PRIMARY KEY REFERENCES native_launch_contracts(launch_id),run_id TEXT NOT NULL REFERENCES runs(run_id),request_id TEXT NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,error TEXT)")
+                self.db.execute("INSERT INTO native_launches_next SELECT * FROM native_launches")
+                self.db.execute("DROP TABLE native_launches")
+                self.db.execute("ALTER TABLE native_launches_next RENAME TO native_launches")
+                self.db.execute("CREATE UNIQUE INDEX active_native_launch ON native_launches(run_id) WHERE status<>'archived'")
+            if version < 19 and self.db.execute("PRAGMA foreign_key_check").fetchone():
+                raise ValidationError("continuity migration has invalid foreign keys")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             self.db.commit()
+            self.db.execute("PRAGMA foreign_keys=ON")
         except BaseException:
             self.db.rollback()
             self.db.close()

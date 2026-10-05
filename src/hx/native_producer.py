@@ -42,6 +42,8 @@ def status(tx, run_id):
 
 
 def require_drained(tx, run_id):
+    if tx.db.execute("SELECT 1 FROM runtime_cycles WHERE scope LIKE ? AND json_extract(payload,'$.status')='running' LIMIT 1", ('capability-call:' + run_id + ':%',)).fetchone():
+        raise Conflict('external capability operation is still active or has an uncertain outcome')
     if status(tx, run_id)["lag"]:
         raise Conflict("native capture has unacknowledged deliveries or a gap; reconcile evidence before completion")
     snapshot = source_snapshot(tx, run_id)

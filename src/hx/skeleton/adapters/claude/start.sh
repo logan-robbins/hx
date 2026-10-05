@@ -186,6 +186,12 @@ if [ "$mode" = exec ]; then
   # 01.1 E10). Nine turns is nothing for a real task, so the cap is raised out of the way and
   # `hx heartbeat`'s re-paste stays as the fallback (spec 11, 17.4).
   export CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
+  if [ -n "${HX_MAX_OUTPUT_TOKENS:-}" ]; then
+    export CLAUDE_CODE_MAX_OUTPUT_TOKENS="$HX_MAX_OUTPUT_TOKENS"
+  fi
+  if [ -n "${HX_AUTOCOMPACT_WINDOW:-}" ]; then
+    autocompact=$HX_AUTOCOMPACT_WINDOW
+  fi
   # The operator's autocompact window, when `config/models.json` names one for this model.
   # hx's own seam threshold is below it by validation, so the seam still lands first and
   # native compaction stays the thing that never runs.

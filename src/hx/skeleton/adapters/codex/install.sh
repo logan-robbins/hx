@@ -155,6 +155,8 @@ if continuity:
     import json
     from hx.compaction_policy import PROMPT
     config = "compact_prompt = " + json.dumps(PROMPT) + "\n" + config
+    if os.environ.get("HX_AUTOCOMPACT_WINDOW"):
+        config = f"model_auto_compact_token_limit = {int(os.environ['HX_AUTOCOMPACT_WINDOW'])}\n" + config
 # The agent runs unattended in exactly one directory: pre-trust it, or the
 # first launch stops at the folder-trust prompt with nobody to answer it.
 # This is the human's own trust decision, recorded by hx at install time.

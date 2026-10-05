@@ -50,7 +50,10 @@ def continue_context(ledger, row, observation):
         raise Conflict('unknown native continuation boundary')
     session = observation.get('session_id') or observation.get('sessionId') or observation.get('transcript_path')
     if row['payload'].get('native_session') != session:
-        raise Conflict('continuation belongs to another native session')
+        from .application_loop import _state
+        if not (source == 'clear' and row['payload'].get('tool_selection', {}).get('adapter') == 'pi'
+                and _state(ledger, 'tokens:' + row['launch_id']).get('reset') == 'submitted'):
+            raise Conflict('continuation belongs to another native session')
     if row['status'] not in {'submitted', 'continuation_required'}:
         raise Conflict('continuation requires an active native assignment')
     if not row['payload'].get('submission_hash'):
@@ -81,7 +84,7 @@ def continue_context(ledger, row, observation):
         if latest['status'] not in {'submitted', 'continuation_required'} or latest['payload'].get('pane') != pane:
             raise Conflict('native assignment changed during continuation')
         payload = {**latest['payload'], 'checkpoint_id': packet['checkpoint_id'], 'packet_path': str(path),
-            'packet_hash': packet['packet_hash'], 'startup_observed': True,
+            'packet_hash': packet['packet_hash'], 'startup_observed': True, 'native_session': session,
             'instruction_delivery': 'continuation_checkpoint', 'continuation_source': source}
         native_controller._transition(tx, run_id, {latest['status']}, 'submitted', payload=payload)
         # Read reuse never crosses a model context reset.

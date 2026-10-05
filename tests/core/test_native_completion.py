@@ -101,3 +101,28 @@ def test_publication_rechecks_late_evidence_after_shutdown(runtime, monkeypatch)
     assert store.db.execute('SELECT count(*) FROM unit_completions WHERE run_id=?', (run,)).fetchone()[0] == 0
     classified(store, run)
     assert native_completion.advance_one(store, env=env)['status'] == 'completed'
+
+
+def test_tool_expansion_restarts_same_assignment_and_rejects_old_hooks(runtime):
+    from hx import native_restart, tool_catalog, hook_contract
+    store, _, run, env = runtime
+    old = submitted(runtime)
+    classified(store, run)
+    tool_catalog.load(store, run, ['WebFetch'], env={})
+    result = None
+    for _ in range(150):
+        result = native_restart.advance_one(store, env=env)
+        classified(store, run)
+        if result and result['status'] == 'restart_submitted':
+            break
+        time.sleep(.02)
+    assert result and result['status'] == 'restart_submitted', result
+    current = native_launch._row(store, run)
+    assert current['launch_id'] != old['launch_id']
+    assert current['payload']['resume_from'] == old['launch_id']
+    assert tool_catalog.selection(store, current)['status'] == 'loaded'
+    assert 'WebFetch' in tool_catalog.selection(store, current)['confirmed']
+    assert store.db.execute('SELECT count(*) FROM runs WHERE ended_at IS NULL').fetchone()[0] == 1
+    assert store.db.execute('SELECT count(*) FROM leases WHERE run_id=?', (run,)).fetchone()[0]
+    with pytest.raises(Conflict, match='retired'):
+        hook_contract.validate(store, run_id=run, launch_id=old['launch_id'], adapter='claude', worker_id='eng-001')

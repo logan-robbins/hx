@@ -130,6 +130,11 @@ auto_background_on_timeout = false
 max_timeout_secs = 60
 output_byte_limit = 4096
 """
+if os.environ.get("HX_MAX_OUTPUT_TOKENS"):
+    import json
+    harness = json.load(open(os.path.join(os.environ['HX_ROOT'], 'config', item_id, 'harness.json')))
+    config += "\n[model." + json.dumps(harness['model']) + "]\n"
+    config += "max_completion_tokens = " + str(int(os.environ['HX_MAX_OUTPUT_TOKENS'])) + "\n"
 with open(os.path.join(home, "config.toml"), "w") as handle:
     handle.write(config)
 PYEOF

@@ -372,6 +372,12 @@ for(const fn of loaded.extensions[0].handlers.get('tool_result')) await fn({tool
 const names=session.getActiveToolNames();
 if(!names.includes('grep') || names.includes('find')) throw new Error('actual tool visibility differs');
 if(!session.getToolDefinition('grep')?.parameters) throw new Error('missing actual grep schema');
+const clamp = loaded.extensions[0].handlers.get('before_provider_request')[0];
+const cap = Number(process.env.HX_MAX_OUTPUT_TOKENS);
+const bounded = await clamp({payload:{max_tokens:cap*2,messages:[],thinking:{type:'enabled',budget_tokens:cap*2}}},ctx);
+if(bounded.max_tokens!==cap || bounded.thinking.budget_tokens!==cap-1) throw new Error('provider token cap not applied');
+const small = await clamp({payload:{max_output_tokens:64,input:[]}},ctx);
+if(small.max_output_tokens!==64) throw new Error('smaller provider cap was raised');
 console.log(JSON.stringify({names}));
 session.dispose();
 ''')

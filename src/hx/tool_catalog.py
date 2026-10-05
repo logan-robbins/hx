@@ -59,25 +59,41 @@ def scope(store, run_id, env=None):
     return adapter, row
 
 
-def discover(store, run_id, query, *, env=None):
+def discover(store, run_id, query, *, env=None, cursor=None):
     if not isinstance(query, str) or not query.strip() or len(query.encode()) > 512:
         raise ValidationError('tool discovery requires a complete next action of at most 512 bytes')
     adapter, row = scope(store, run_id, env)
     catalog = CATALOG[adapter]
+    from .capability_catalog import read
+    external = read(store.root)
     entries = {name: 'Required execution/context capability.' for name in catalog['required']} | catalog['optional']
+    entries.update({name: entry['purpose'] for name, entry in external['entries'].items()})
+    version = digest([catalog, external['version']])
+    offset = 0
+    if cursor:
+        try:
+            bound, position = cursor.split(':')
+            offset = int(position)
+        except (ValueError, AttributeError):
+            raise ValidationError('invalid capability cursor') from None
+        if bound != version or offset < 0:
+            raise Conflict('capability catalog changed; restart discovery')
+    optional = {name: entries[name] for name in sorted(set(entries) - set(catalog['required']))}
+    page = dict(list(optional.items())[offset:offset + 8])
+    next_cursor = f'{version}:{offset + 8}' if offset + 8 < len(optional) else None
     if query in entries:
         selected = [query]  # Exact names need no semantic decision.
-    elif catalog['optional']:
-        questions = {name: {'type': 'noul', 'instructions': f'Would this tool help the stated next action: {purpose}'}
-                     for name, purpose in catalog['optional'].items()}
+    elif page:
+        questions = {name: {'type': 'noul', 'instructions': f'Would this tool help the stated next action: {purpose[:160]}'}
+                     for name, purpose in page.items()}
         judged = jev_decisions.decide(store, run_id, 'tool-discovery-v1', {'next_action': query}, questions,
-                                      binding=digest(catalog), env=env)
+                                      binding=version, env=env)
         selected = sorted((name for name in questions if judged['answers'][name]['noul'] >= .65),
                           key=lambda name: (-judged['answers'][name]['noul'], name))[:3]
     else:
         selected = []
     return {'adapter': adapter, 'visibility': catalog['mode'], 'required': catalog['required'],
-            'suggested': [{'id': name, 'purpose': entries[name]} for name in selected],
+            'suggested': [{'id': name, 'purpose': entries[name]} for name in selected], 'cursor': next_cursor, 'version': version,
             'note': 'Selection does not invoke tools or authorize actions. Advisory adapters retain their native tool schemas.'}
 
 
@@ -109,6 +125,11 @@ def load(store, run_id, names, *, env=None):
     from .application_loop import _save
     adapter, row = scope(store, run_id, env)
     catalog = CATALOG[adapter]
+    if names and any(name.startswith(('mcp:', 'skill:')) for name in names):
+        if len(names) != 1:
+            raise ValidationError('load one external capability body at a time')
+        from .capability_catalog import load as load_external
+        return load_external(store, run_id, names[0])
     known = set(catalog['required']) | set(catalog['optional'])
     if not names or len(names) > 8 or any(name not in known for name in names):
         raise ValidationError('load 1–8 exact IDs returned by this adapter catalog')
@@ -120,6 +141,8 @@ def load(store, run_id, names, *, env=None):
         if value['catalog'] != digest([adapter, catalog]):
             raise Conflict('tool catalog changed; reprepare the native assignment')
         chosen = list(dict.fromkeys([*value['selected'], *names]))
+        if row and row['status'] not in {'prepared', 'submitted', 'ready'} and chosen != value['selected']:
+            raise Conflict('tool selection waits for the current native transition')
         if chosen == value['selected']:
             return value
         value = {**value, 'selected': chosen,
@@ -149,19 +172,37 @@ def acknowledge(store, run_id, names, *, env=None):
 
 def main(argv, root, *, env=None):
     parser = argparse.ArgumentParser(prog='hx tools')
-    parser.add_argument('action', choices=['discover', 'load', 'status', 'acknowledge'])
+    parser.add_argument('action', choices=['discover', 'load', 'status', 'acknowledge', 'index', 'call'])
     parser.add_argument('ids', nargs='*')
     parser.add_argument('--query')
+    parser.add_argument('--cursor')
+    parser.add_argument('--input')
+    parser.add_argument('--request')
     parser.add_argument('--run')
     parser.add_argument('--root')
     args = parser.parse_args(argv)
     child = os.environ if env is None else env
     run_id = args.run or child.get('HX_CONTINUITY_RUN')
+    if args.action == 'index':
+        from .caller import require_partner_caller
+        from .capability_catalog import index
+        require_partner_caller('capability indexing', child)
+        print(canonical(index(root)))
+        return 0
     if not run_id:
         raise ValidationError('tool discovery/loading requires the current planned run')
     with ContinuityStore(root) as store:
         if args.action == 'discover':
-            result = discover(store, run_id, args.query, env=child)
+            result = discover(store, run_id, args.query, env=child, cursor=args.cursor)
+        elif args.action == 'call':
+            scope(store, run_id, child)
+            from .capability_catalog import invoke
+            if len(args.ids) != 1 or not args.input or not args.request:
+                raise ValidationError('call requires one ID, --request ID and --input JSON_FILE')
+            source = Path(args.input)
+            if source.stat().st_size > 8192:
+                raise ValidationError('capability arguments exceed 8 KiB')
+            result = invoke(store, run_id, args.ids[0], json.loads(source.read_text()), args.request)
         elif args.action == 'load':
             result = load(store, run_id, args.ids, env=child)
         elif args.action == 'acknowledge':
@@ -169,5 +210,9 @@ def main(argv, root, *, env=None):
         else:
             adapter, row = scope(store, run_id, child)
             result = selection(store, row) if row else prepared_selection(store, run_id, adapter)
+            from .application_loop import _state
+            external = _state(store, 'capabilities:' + run_id)
+            if external:
+                result = {**result, 'external': external}
     print(canonical(result))
     return 0

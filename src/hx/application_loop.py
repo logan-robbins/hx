@@ -121,6 +121,8 @@ def _records(store, task_id):
 
 
 def tick(store, *, env=None):
+    from .task_retention import retire_closed
+    retire_closed(store)
     observed = observer.reconcile(store)
     changed = watch_map(store)
     from .native_completion import advance_one
@@ -137,6 +139,14 @@ def tick(store, *, env=None):
     running = reconcile_companion(store)
     if running and running['status'] == 'running':
         return {'status': 'waiting', 'companion': running, 'map_changes': changed}
+    from .native_restart import advance_one as restart_one
+    restart = restart_one(store, env=env)
+    if restart:
+        return {**restart, 'map_changes': changed}
+    from .token_controls import reset_one
+    reset = reset_one(store, env=env)
+    if reset:
+        return {**reset, 'map_changes': changed}
     after = _state(store, 'companion-round').get('after', ['', ''])
     candidates = store.db.execute('''SELECT r.run_id,r.worker_id,r.task_id,r.task_revision,c.stream_id,c.head_seq,c.classified_seq,c.revision
         FROM runs r JOIN cursors c USING(run_id) WHERE r.ended_at IS NULL AND
@@ -244,7 +254,7 @@ def status(store, *, after=''):
         (SELECT count(*) FROM task_replan_queue q WHERE q.task_id=r.task_id AND q.task_revision=r.task_revision) AS changed_inputs,
         (SELECT coalesce(sum(head_seq-classified_seq),0) FROM cursors c WHERE c.run_id=r.run_id) AS unclassified,
         (SELECT count(*) FROM events e WHERE e.run_id=r.run_id AND e.disposition='pending') AS pending
-        FROM runs r LEFT JOIN native_launches l USING(run_id)
+        FROM runs r LEFT JOIN native_launches l ON l.run_id=r.run_id AND l.status<>'archived'
         WHERE r.ended_at IS NULL AND r.run_id>? ORDER BY r.run_id LIMIT 17''', (after,)).fetchall()
     units = []
     for row in rows[:16]:

@@ -79,3 +79,29 @@ def test_partner_can_select_optional_tools_before_native_launch(configured):
     row = prepare(configured)
     assert 'WebSearch' in row['payload']['tool_selection']['selected']
     native_launch.verify(store, run)
+
+
+def test_external_discovery_pages_and_rejects_stale_cursor(configured, monkeypatch):
+    from hx import capability_catalog
+    from hx.continuity_store import digest
+    store, _, run = configured
+    path = store.root / 'state/capabilities.json'
+    entries = {f'mcp:project:tool{i:02d}': {'purpose': 'Inspect one current project resource.', 'kind': 'mcp'} for i in range(12)}
+    path.write_text(json.dumps({'configuration': digest(capability_catalog.config(store.root)), 'version': digest(entries), 'entries': entries}))
+    monkeypatch.setattr(jev, 'credential', lambda *a, **kw: 'fixture-key')
+    sizes = []
+    def judge(state, questions, **kw):
+        sizes.append(len(questions))
+        return {'model': jev.MODEL, 'answers': {name: {'type': 'noul', 'noul': .7} for name in questions}}
+    monkeypatch.setattr(jev, 'evaluate', judge)
+    first = tool_catalog.discover(store, run, 'Inspect a current project resource.')
+    assert first['cursor'] and sizes == [8]
+    second = tool_catalog.discover(store, run, 'Inspect a current project resource.', cursor=first['cursor'])
+    assert second['cursor'] is None and sizes == [8, 8]
+    assert tool_catalog.discover(store, run, 'mcp:project:tool11')['suggested'][0]['id'] == 'mcp:project:tool11'
+    assert sizes == [8, 8]
+    body = json.loads(path.read_text())
+    body['version'] = 'changed'
+    path.write_text(json.dumps(body))
+    with pytest.raises(Conflict, match='catalog changed'):
+        tool_catalog.discover(store, run, 'Inspect a current project resource.', cursor=first['cursor'])

@@ -98,7 +98,7 @@ if os.path.isfile(models_path):
     except (json.JSONDecodeError, OSError):
         row = {}
     window = row.get("window")
-    auto = row.get("autocompact_window")
+    auto = int(os.environ["HX_AUTOCOMPACT_WINDOW"]) if os.environ.get("HX_AUTOCOMPACT_WINDOW") else row.get("autocompact_window")
     if isinstance(window, int) and isinstance(auto, int) and window > auto > 0:
         reserve = window - auto
 

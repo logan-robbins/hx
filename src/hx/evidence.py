@@ -19,6 +19,8 @@ def read(store: ContinuityStore, event_id: str, *, offset: int = 0, limit: int =
         if row is None:
             raise ValidationError(f"unknown or retired evidence {event_id}")
         payload = json.loads(row["payload"])
+        if payload.get("retired"):
+            raise ValidationError(f"retired evidence {event_id}: its task is closed and no current record cites it")
         if "artifact_hash" in payload:
             data, total = tx.read_artifact_slice(payload["artifact_hash"], offset=offset, limit=limit)
             source_hash = payload["artifact_hash"]

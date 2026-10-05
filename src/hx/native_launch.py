@@ -46,7 +46,7 @@ def _configuration(root, worker, workdir):
 def _row(ledger, run_id):
     import json
 
-    row = ledger.db.execute("SELECT * FROM native_launches WHERE run_id=?", (run_id,)).fetchone()
+    row = ledger.db.execute("SELECT * FROM native_launches WHERE run_id=? AND status<>'archived'", (run_id,)).fetchone()
     return {**dict(row), "payload": json.loads(row["payload"])} if row else None
 
 
@@ -61,11 +61,11 @@ def _capsule(root, worker, capsule, configuration, system):
     # silently select legacy hook behavior for a newly prepared assignment.
     shutil.copytree(Path(__file__).parent / "skeleton" / "adapters", capsule / "adapters")
     (capsule / "seed").symlink_to(root / "seed", target_is_directory=True)
-    for command, module in (("hx", "hx.cli"), ("hx-hook", "hx.hooks")):
+    for command, module in (("hx", "hx.cli"), ("hx-hook", "hx.hooks"), ("hx-supervise", "hx.native_supervisor")):
         wrapper = capsule / "bin" / command
         files.atomic_write_text(wrapper, f"#!{sys.executable}\nimport os, sys\n"
-            f"sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n"
-            f"os.environ['HARNESS_ROOT'] = {str(root)!r}\n"
+            f"sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n" +
+            (f"os.environ['HARNESS_ROOT'] = {str(root)!r}\n" if command != "hx-supervise" else "") +
             f"from {module} import main\nraise SystemExit(main())\n")
         wrapper.chmod(0o700)
     files.atomic_write_json(capsule / "config" / "hx.json", {
@@ -74,7 +74,7 @@ def _capsule(root, worker, capsule, configuration, system):
     })
 
 
-def prepare(ledger, worker, run_id, request_id, *, env=None):
+def prepare(ledger, worker, run_id, request_id, *, env=None, resume_from=None):
     """Reserve one preparation and freeze its instructions, packet, and home.
 
     A repeated request returns the same preparation. Interrupted preparation
@@ -95,15 +95,20 @@ def prepare(ledger, worker, run_id, request_id, *, env=None):
         manifest = prompt_compiler.build(root, worker)
         manifest, rendered = prompt_compiler.verified_bundle(root, worker, Path(manifest["manifest_path"]),
                                                              workdir=task["payload"]["workdir"])
-        state = unit_execution.workspace(task["payload"], clean=True)
-        if state != admission["workspace"]:
+        from .native_restart import workspace as restart_workspace
+        if resume_from:
+            predecessor = tx.db.execute("SELECT run_id,status FROM native_launches WHERE launch_id=?", (resume_from,)).fetchone()
+            if not predecessor or tuple(predecessor) != (run_id, 'archived'):
+                raise Conflict('restart requires a retired launch of this same active assignment')
+        state = restart_workspace(task['payload']) if resume_from else unit_execution.workspace(task["payload"], clean=True)
+        if not resume_from and state != admission["workspace"]:
             raise Conflict("fresh native launch requires the exact admitted worktree state")
         if unit_execution._prerequisites(tx, task, state) != admission["prerequisites"]:
             raise Conflict("native launch prerequisite proof changed since admission")
         configuration = _configuration(root, worker, task["payload"]["workdir"])
         config_hashes = {name: hashlib.sha256(data).hexdigest() for name, data in configuration.items()}
         request_hash = digest({"run": run_id, "worker": worker, "request": request_id,
-                               "prompt": manifest["version"], "configuration": config_hashes})
+                               "prompt": manifest["version"], "configuration": config_hashes, "resume_from": resume_from})
         previous = _row(tx, run_id)
         if previous:
             if previous["request_hash"] != request_hash:
@@ -117,7 +122,7 @@ def prepare(ledger, worker, run_id, request_id, *, env=None):
         payload = {"worker_id": worker, "capsule": str(capsule), "manifest": manifest["manifest_path"], 'workdir': task['payload']['workdir'],
                    "prompt_version": manifest["version"], "configuration": config_hashes,
                    "instruction_delivery": "prepared", "tool_visibility": "unverified",
-                   "checkpoint_id": None, "initial_input_limit": 8000}
+                   "checkpoint_id": None, "initial_input_limit": 8000, "resume_from": resume_from, "resume_workspace": state if resume_from else None}
         tx._change()
         tx.db.execute("INSERT INTO native_launch_contracts VALUES(?,?,?,?)",
                       (launch_id, run_id, worker, manifest["identity"]["runtime"]))
@@ -159,11 +164,17 @@ def environment(root, launch, *, env=None):
 
     capsule = Path(launch["payload"]["capsule"])
     worker = launch["payload"]["worker_id"]
+    from .token_controls import limits
+    controls = limits(capsule, worker)
     flavor = load_harness(capsule / "config" / worker / "harness.json", check_cross_file=False).flavor
     return {**(os.environ if env is None else env), "HARNESS_ROOT": str(capsule),
             "HX_CONTINUITY_AUTHORITY": str(root.resolve()), "HX_CONTINUITY_RUN": launch["run_id"],
             "HX_CONTINUITY_LAUNCH": launch["launch_id"], "HX_CONTINUITY_ADAPTER": flavor,
             "HX_CONTINUITY_CAPSULE": str(capsule),
+            "HX_MAX_OUTPUT_TOKENS": str(controls['max_output_tokens']),
+            "HX_AUTOCOMPACT_WINDOW": str(controls['autocompact_window']),
+            "HX_CONTEXT_THRESHOLD": str(controls['threshold']),
+            "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(controls['max_output_tokens']),
             "HX_SKILLS_DIR": "", "HX_PYTHON": sys.executable}
 
 
@@ -197,7 +208,10 @@ def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
             raise Conflict("native launch capsule configuration changed")
     if _bytes(capsule / "config" / run["worker_id"] / "AGENTS.md", 262144) != (rendered["system"] + "## UPDATES BELOW ONLY\n").encode():
         raise Conflict("native launch system instructions changed")
-    if unit_execution.workspace(task["payload"], clean=True) != admission["workspace"]:
+    from .native_restart import workspace as restart_workspace
+    actual = restart_workspace(task['payload']) if payload.get('resume_from') else unit_execution.workspace(task["payload"], clean=True)
+    expected = payload['resume_workspace'] if payload.get('resume_from') else admission['workspace']
+    if actual != expected:
         raise Conflict("native launch worktree changed")
     if unit_execution._prerequisites(tx, task, admission["workspace"]) != admission["prerequisites"]:
         raise Conflict("native launch prerequisite proof changed")

@@ -46,3 +46,7 @@ def validate(ledger, *, run_id: str, launch_id: str, adapter: str, worker_id: st
     row = ledger.db.execute("SELECT run_id,worker_id,adapter FROM native_launch_contracts WHERE launch_id=?", (launch_id,)).fetchone()
     if row is None or tuple(row) != (run_id, worker_id, adapter):
         raise Conflict("planned hook does not match a registered native launch contract")
+
+    archived = ledger.db.execute("SELECT 1 FROM native_launches WHERE launch_id=? AND status='archived'", (launch_id,)).fetchone()
+    if archived:
+        raise Conflict("hook belongs to a retired native launch generation")
