@@ -1,8 +1,7 @@
 # Continuity runtime status
 
-Branch: `codex/continuity-runtime`. Delivery: [draft PR #1](https://github.com/logan-robbins/hx/pull/1), never merged to `main`.
-Specification: [continuity-implementation.md](continuity-implementation.md).
-Existing deletions under `spec/` predate this work and are excluded from the PR commits.
+Updated October 7, 2026. The implementation was merged to `main` in [PR #1](https://github.com/logan-robbins/hx/pull/1), merge commit `b3f1b28`.
+See [system design](system-design.md) for the current architecture and [continuity runtime](continuity-runtime.md) for detailed contracts.
 
 ## Functional application loop
 

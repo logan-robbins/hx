@@ -5,14 +5,15 @@ locations, and declared checks. Stable IDs describe responsibilities independent
 language, framework, path, and worker. A stack replacement changes source anchors and
 namespaced attributes while preserving IDs whose responsibilities remain the same.
 
-This implements the portable baseline and transactional update portions of the
-[continuity specification](continuity-implementation.md). Committed baselines, selected
-reads, isolated dirty-worktree overlays, proposal collisions, indexed source refresh,
-and invalidation of declared map consumers work. Indexed assignment briefs include
-bounded neighboring contracts/consumers, checks, and current write owners; planned
-assignments acquire repository-wide leases. Source-watcher registration, automatic
-task-graph replanning, native lease enforcement, and coordinated export recovery remain.
-The native fleet has not switched to this map.
+The map is consumed by current goal drafting and planned assignments. Committed
+baselines, selected reads, isolated worktree overlays, proposal collision handling,
+indexed source refresh, and invalidation of declared map consumers are implemented.
+Assignment briefs include bounded neighboring contracts/consumers, checks, and current
+write owners; planned assignments acquire repository-wide leases. Completion can
+publish source-bound findings and retrieval terms through the coordinated export
+journal. Legacy state consumers and some projections still need to migrate to the same
+authority. See [system design](system-design.md) for how map state flows through the
+runtime.
 
 ## Repository format
 
@@ -100,9 +101,9 @@ rejected. Lookup validates the selected record's own anchors; it is not a readin
 proof for every destination record or consuming task.
 
 `export` refreshes source evidence without the lookup cache, refuses stale records and
-uncommitted map edits, and writes deterministic JSON shards. Individual file writes are
-atomic. Whole-export coordination, concurrent-edit protection during publication, and
-crash recovery remain P06c requirements; do not enable shared worker export yet.
+uncommitted map edits, and writes deterministic JSON shards. Publication uses a shared
+lock and recoverable journal; replay validates prior and intended hashes before applying
+staged shards. Normal scoped publication is available to the application-learning loop.
 
 ## Shared proposals and collisions
 
@@ -110,10 +111,11 @@ crash recovery remain P06c requirements; do not enable shared worker export yet.
 batch copies the baseline through SQLite without loading the graph into Python memory.
 The returned `worktree:HASH` is pinned to the repository ID, baseline, absolute worktree,
 Git metadata directory, branch, and HEAD. Repeated creation returns the same overlay.
-A branch switch, worktree change, or new commit requires a new overlay; reconciliation
-and promotion across those snapshots remain integration work. Dirty source changes
-within the pinned checkout can be described by proposals with current source anchors.
-Committed baselines remain immutable and visible to other workers.
+A branch switch, worktree change, or new commit requires a new overlay. The application
+loop transfers only findings whose source and target identities match; conflicting
+target edits reject the transfer. Dirty source changes within the pinned checkout can
+be described by proposals with current source anchors. Committed baselines remain
+immutable and visible to other workers.
 
 `propose` accepts this envelope:
 
@@ -201,8 +203,9 @@ path, then drains one bounded batch. Repeat `--path` for up to 128 paths. With n
 the command continues the durable queue. The default batch is 16 records; `--limit` accepts
 1–32. The result lists refreshed and invalidated IDs and `more`, indicating remaining work.
 Queueing uses the source-path index. A batch fetches only record headers first, then
-processes one body at a time. The controller will call these APIs from registered source
-watchers; that automatic registration is not wired yet.
+processes one body at a time. The root service registers indexed sources for active
+assignments and refreshes them as source changes arrive. Branch switches and resets
+require explicit rebinding to a current snapshot.
 
 Queued records are pending and cannot provide validated relationships or new dependency
 bindings. Each drain checks source outside the writer transaction, then compares the
@@ -223,10 +226,10 @@ coverage from test success.
 
 Restoring old file bytes does not revive invalidated facts, receipts, or task bindings.
 Reconcile the map, amend the task with current input versions, and explicitly bind a new
-run. Old replan entries belong to the old task revision. Downstream prerequisite expansion
-and replan scheduling remain part of P08. Direct `inputs.files` facts still use their
-existing source checks; automatic indexing of those file-only consumers is not provided
-by the map-source queue.
+run. Old replan entries belong to the old task revision. Goal replanning refreshes
+affected bindings and downstream output versions while preserving acceptance and
+ownership. Direct `inputs.files` facts still use their existing source checks; automatic
+indexing of those file-only consumers is not provided by the map-source queue.
 
 ## Memory and context bounds
 

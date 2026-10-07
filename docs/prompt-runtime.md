@@ -64,9 +64,10 @@ does not exist yet. Do not bypass that missing acknowledgement by calling the pr
 loaded in a status message.
 
 An explicit instruction file remains available for already-resolved caller inputs.
-Do not supply both `--instructions` and `--prompt-manifest`. The full-request budget
-must additionally account for the installed system prefix, retained conversation,
-tool definitions, and reserved output; that integration remains P09/controller work.
+Do not supply both `--instructions` and `--prompt-manifest`. The packet accounts for
+compiled instructions and task context. Hooks, native autocompaction settings, and
+model output caps enforce token thresholds at their respective layers; host-injected
+context and native tool schemas remain adapter-specific.
 
 ## Operator policy and migration
 
@@ -104,9 +105,11 @@ companion home; planned companion dispatch still requires its own restricted pas
 controller. Credential provisioning follows the existing native adapters.
 
 The initial 8,000-token allowance conservatively charges UTF-8 bytes for the
-custom system prefix, task packet, startup pointer, and submission marker. Provider base instructions, tool schemas,
-retained conversation, and output reserves still require P09 accounting. Prepared
-files do not acknowledge native instruction delivery or tool visibility.
+custom system prefix, task packet, startup pointer, and submission marker. Provider
+base instructions, host-injected context, and tool schemas are adapter-specific and
+are controlled through the supported native token and tool-loading interfaces where
+available. Prepared files alone do not acknowledge native instruction delivery or
+tool visibility.
 
 Retries retain the same launch identity. Colliding requests cannot reserve another
 installation; interrupted preparation remains visible and retains assignment
@@ -135,10 +138,10 @@ or missing original pane retains ownership and never causes an automatic resend.
 The generated prefix check and native startup receipt do not prove that a model
 obeyed the prompt or that its full tool surface was restricted.
 
-Controlled shutdown, background-work barriers, resumable boundaries, and automatic
-controller scheduling remain unfinished. Active native runs cannot release unit
-leases until their process ownership is reconciled. Complete fleet activation and
-native unit completion remain pending those barriers. An uncontrolled clear or
-compaction invalidates startup delivery and rejects later requests until a
-controlled continuation boundary is available; it never certifies the old packet
-as a new continuation.
+The root runtime schedules planned launches and controlled continuation boundaries.
+It waits for classified capture, companion completion, tools, child processes, and
+the original native pane to reach the required idle state before resetting. It records
+reset intent before sending the native command and waits for startup acknowledgement.
+Active runs retain their leases until recorded process ownership is reconciled. Native
+receipts establish delivery and lifecycle state; they do not prove model compliance or
+restrict tools that the host preloads outside the adapter's supported interfaces.
