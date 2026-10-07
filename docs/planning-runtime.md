@@ -3,8 +3,9 @@
 The functional boundary is a complete behavior unit: relevant source context,
 implementation and fixtures, acceptance checks, and explicit outputs. The Partner
 chooses the decomposition. Deterministic gates enforce ownership, dependency order,
-and output evidence. These commands operate on the continuity ledger; native
-dispatch/resume and automatic tool-boundary auditing are not connected yet.
+and output evidence. Planned assignments use the continuity ledger and are connected
+to native dispatch, resume, capture, companion processing, and completion through the
+root service. Legacy state consumers still need coordinated migration.
 
 ## Assignment brief
 
@@ -26,8 +27,10 @@ groups are interleaved so a common relation does not consume every slot. The
 default response budget is 16,000 UTF-8 bytes (`--max-bytes` permits 2,000–64,000).
 Up to 16 required IDs bypass ranking; missing or oversized mandatory context fails
 explicitly. Coverage reports available, inspected, and omitted relationships.
-These are bounded deterministic retrieval foundations; Jev ranking, full beam
-traversal, persisted selections, and model token accounting remain separate work.
+These are bounded deterministic retrieval foundations. Current plan drafts and
+replanning use the application map and required Jev judgments for bounded routing
+decisions. Token limits are enforced by hooks, context reset/autocompaction, and
+adapter model-output caps; the plan brief is not a financial budget mechanism.
 
 Use selected IDs/versions as `map_inputs` in the plan. The plan revalidates them
 before persistence, assignment, and completion. Exact commands, conditions, and
@@ -88,9 +91,10 @@ hx plan stop RUN
 ```
 
 `receipts.json` maps every assigned check ID to one receipt ID. Assignment returns
-the exact unit packet and a run ID. It starts a ledger assignment, not a native
-model process. `ready` gives a bounded plan snapshot with a reason for each blocked
-unit; `assign` rechecks admission in the same transaction that acquires leases.
+the exact unit packet and a run ID. The root service starts and monitors the configured
+native worker after admission. `ready` gives a bounded plan snapshot with a reason for
+each blocked unit; `assign` rechecks admission in the same transaction that acquires
+leases.
 
 Admission requires current map inputs, a clean committed worktree, proven
 prerequisites, and free write ownership. A worktree can have only one active
@@ -99,16 +103,18 @@ overlaps conflict across branches, worktrees, and plans. Independent units can r
 in separate worktrees. This does not automatically launch every ready unit or
 override future controller RAM/concurrency budgets.
 
-Leases survive restart and have no time-based expiry. Completion or explicit stop
-releases them. Native controller integration must stop the actual worker before
-using the stop transition. A revision cannot replace an active assignment or a
-contract used by an active downstream assignment.
+Leases survive restart and have no time-based expiry. Completion or reconciled stop
+releases them. The controller stops its recorded worker before applying stop; uncertain
+process ownership keeps the assignment unresolved. A revision cannot replace an active
+assignment or a contract used by an active downstream assignment.
 
 Audit compares Git-visible changes against the frozen scope and pauses unexpected
 writes while retaining leases. A paused run requires stop/reconciliation; deleting
 the offending file does not silently resume it. Git-visible auditing does not
 detect arbitrary ignored writes or changes made and reverted within one tool call.
-Automatic post-tool audits and registered source watcher integration remain pending.
+Source changes invalidate indexed consumers, and the root service refreshes changed
+inputs. Detection remains limited to registered sources and observable repository
+state.
 
 Completion requires a clean committed worktree, current passing receipts for all
 assigned checks, unchanged prerequisite proofs, and explicit source outputs covering
@@ -150,7 +156,8 @@ fixtures, and tests remain together in that consumer unit. After admission, the
 consumer may intentionally change its input files within its owned scope; the
 entry snapshot and acceptance checks preserve what it actually started from.
 
-The serial tests cover this entire ledger/CLI path, stale and failed proof, failed
-integration, worker ownership, task version changes, worktree isolation, scoped
-writes, restart, and two concurrent prefix-reservation writers. Actual native
-adapter launches and automatic controller dispatch are not certified by these tests.
+The serial tests cover the ledger/CLI path, stale and failed proof, failed integration,
+worker ownership, task version changes, worktree isolation, scoped writes, restart,
+and concurrent prefix-reservation writers. Native transport and lifecycle fixtures
+cover launch, reset, tool expansion, drain, checks, publication, and recovery; they do
+not establish general model extraction accuracy or certify untracked remote jobs.

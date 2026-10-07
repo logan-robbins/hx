@@ -1,12 +1,13 @@
 # Continuity capture and progress contracts
 
-These commands implement the staged ledger runtime on `codex/continuity-runtime`.
-The legacy fleet remains authoritative until the coordinated migration in
-[the implementation specification](continuity-implementation.md). Command availability
-does not mean the installed native adapters have switched to this runtime.
+The root service connects planned assignment, native launch, incremental capture,
+required Jev judgments, companion patches, context reset, acceptance checks, and output
+publication. Legacy work-item and projection consumers remain during coordinated state
+authority migration; see [system design](system-design.md) and
+[implementation status](continuity-build-status.md).
 
-The [application-map contract](application-map.md) covers `hx map`, portable repository
-records, source validation, selected reads, and remaining shared-update integration.
+The [application-map contract](application-map.md) describes the portable map and its
+current source validation, scoped updates, collision handling, and publication path.
 
 ## Planned-assignment context
 
@@ -55,9 +56,9 @@ supports at most 64 required facts, 32 streams, 16 registered log sources, and 3
 unresolved events; larger unresolved sets require reduction or task decomposition.
 
 `--instructions FILE` includes already-resolved operator/role instructions exactly
-once and charges them to the packet. Native installation of compiled personas,
-remaining conversation, tool schemas, and reserved output accounting still need
-integration; packet size alone is not full-request admission.
+once and charges them to the packet. Native prompts, selected tool schemas, remaining
+conversation, and output generation are controlled by their respective adapter and
+token-limit layers; packet size alone is not full-request admission.
 
 `--prompt-manifest FILE` instead validates a [compiled prompt bundle](prompt-runtime.md)
 against current sources, identity, channel placement, and assignment workdir. Context-channel
@@ -66,10 +67,10 @@ system prefixes remain unusable through this path until native installation is a
 
 Forced mode, the default, retains pending extraction, explicit capture gaps, and
 lag detected by comparing registered file identity/size with committed offsets.
-`--planned` refuses while known lag or unresolved evidence remains. This establishes
-extraction readiness only: a packet always reports `native_reset_ready: false`
-because the adapter's final-message/background-work barrier is not wired yet. No
-composition command resets a native model or blocks native compaction.
+`--planned` refuses while known lag or unresolved evidence remains. The root service
+uses this checkpoint with the adapter's turn, tool, child-process, capture, and
+companion readiness checks before issuing one controlled reset. Reset acceptance is
+recorded before sending the native command so uncertain delivery is never repeated.
 
 Issuance freezes its stream vector and pending IDs without classifying events.
 Reusing the same retained boundary request returns the same bytes; changed request
@@ -79,11 +80,13 @@ next packet. Acknowledgement names the current checkpoint and does not advance a
 event cursor. Retain the current packet and its immediate predecessor; acknowledgement
 retires the predecessor. Retired artifact references become eligible for the existing
 GC. Compact request keys prevent a retired request from being silently reissued;
-closed-task key cleanup remains part of the retention lifecycle implementation.
+closed-task request keys and event/pass payloads are retired by bounded retention;
+cancelled assignments that may still be resumed retain a dedicated lifecycle policy.
 
-The existing compose route without `--run` remains legacy. Native dispatch, hooks,
-seams, personas, and controller replay must switch together; this explicit interface
-does not activate a partial fleet migration.
+The compose route without `--run` remains a legacy compatibility path. Planned runs use
+the root service and registered native launch, hooks, seams, companion, and controller
+reset path. The remaining migration concerns legacy task-state authorities and their
+projections, not whether the planned native loop is connected.
 
 ## Planned companion execution
 
