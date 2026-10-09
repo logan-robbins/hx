@@ -12,11 +12,10 @@ camelCase variants map to snake_case, and `tool_response` is filled from
 `toolResult` when only the latter is present. Unknown keys pass through;
 hx-hook ignores what it does not read. Two deliberate gaps, not oversights:
 
-- context tokens: hook payloads carry no usage counts, so `context_tokens`
-  stays absent and the seam threshold does not fire for codex rows.
-- persona: the CLI surface has no verifiable system-prompt injection, so
-  the persona file is derived for inspection and identity arrives through the
-  context file and the pasted goal pointer.
+- context tokens: hook payloads carry no usage counts. Planned continuity gets
+  usage from its version-pinned rollout decoder; the legacy hook field remains absent.
+- persona: the legacy route derives a persona file for inspection. Planned
+  sessions use the launch manifest and verified startup context delivery.
 
 A `guard` denial (exit 2, reason on stderr) is additionally translated into
 Codex's `permissionDecision` deny JSON on stdout: exit 2 alone is a documented
@@ -61,31 +60,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hook-bin", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument("event")
+    for field in ("run", "launch", "adapter"):
+        parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
+    continuity = [getattr(args, "continuity_" + field) for field in ("run", "launch", "adapter")]
+    if any(continuity) and not all(continuity):
+        parser.error("planned hook identity must be complete")
+    extra = [part for field, value in zip(("run", "launch", "adapter"), continuity)
+             if value is not None for part in ("--continuity-" + field, value)]
 
     try:
-        body = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        body = {}
+        raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError("oversized hook input")
+        body = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        body = {"_hx_capture_error": True}
     if not isinstance(body, dict):
-        body = {}
+        body = {"_hx_capture_error": True}
 
     payload = json.dumps(translate(body)).encode()
     # --hook-bin can be a bare path or a command with arguments.
     try:
         proc = subprocess.run(
-            [*shlex.split(args.hook_bin), "--id", args.id, "--root", args.root, args.event],
+            [*shlex.split(args.hook_bin), "--id", args.id, "--root", args.root, *extra, args.event],
             input=payload,
             capture_output=True,
         )
     except OSError as exc:
         print(f"hook.py: cannot run {args.hook_bin}: {exc}", file=sys.stderr)
-        return 1
+        return 2 if any(continuity) and args.event in {"request", "tool-start"} else 1
     if proc.stdout:
         sys.stdout.buffer.write(proc.stdout)
     if proc.stderr:
         sys.stderr.buffer.write(proc.stderr)
-    if args.event == "guard" and proc.returncode == 2:
+    if args.event in {"guard", "tool-start"} and proc.returncode == 2:
         reason = (proc.stderr or b"").decode("utf-8", "replace").strip()
         sys.stdout.write(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

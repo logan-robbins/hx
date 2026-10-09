@@ -22,28 +22,29 @@ def last_usage(transcript: str | Path | None) -> dict | None:
     path = Path(transcript)
     if not path.is_file():
         return None
-    found = None
     try:
-        with path.open(errors="replace") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line or '"usage"' not in line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                message = record.get("message")
-                if not isinstance(message, dict):
-                    continue
-                if message.get("role") not in (None, "assistant"):
-                    continue
-                usage = message.get("usage")
-                if isinstance(usage, dict):
-                    found = usage
+        # Legacy hook consumers need only the latest usage. Read a bounded tail;
+        # planned execution gets usage from the incremental observer instead.
+        with path.open('rb') as handle:
+            end = handle.seek(0, 2)
+            start = max(0, end - 65536)
+            handle.seek(start)
+            lines = handle.read(65536).splitlines()
+        if start:
+            lines = lines[1:]  # The first record may start before the selected tail.
+        for line in reversed(lines):
+            if b'"usage"' not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except (ValueError, UnicodeDecodeError):
+                continue
+            message = record.get("message")
+            if isinstance(message, dict) and message.get("role") in (None, "assistant") and isinstance(message.get("usage"), dict):
+                return message['usage']
     except OSError:
-        return None
-    return found
+        pass
+    return None
 
 
 def context_tokens(transcript: str | Path | None) -> int | None:

@@ -9,9 +9,11 @@ description = "HarnessAgent Runtime: Claude Code fleet control plane (spec/HARNE
 requires-python = ">=3.14"
 # Episode memory (docs/memory.md): the local embedding store `hx memory` indexes into.
 # Its default embedding function is an ONNX all-MiniLM-L6-v2 cached under ~/.cache/chroma;
-# nothing here talks to a network at runtime and nothing here is a model call (spec 02).
+# Legacy episodes remain until cutover. Planned semantic selection calls Jev through httpx;
+# it does not load an embedding model or switch the executor model.
 dependencies = [
     "chromadb>=1.5.9",
+    "httpx>=0.28,<1",
 ]
 
 [project.scripts]

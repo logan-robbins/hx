@@ -545,15 +545,20 @@ def test_doctor_warns_rather_than_failing_while_start_sh_has_not_execd(instance)
         doctor_mod.pane_command = original
 
 
-def test_a_pending_partner_seam_is_acted_on(instance):
+def test_a_pending_partner_seam_is_acted_on(instance, monkeypatch):
     """spec 14 D14: the Partner takes seams like any agent — `/clear` plus rehydrate from
     its context file, with no goal pointer. The old "no work item" refusal is gone: a
     pending marker runs the readiness checks, and while the Companion is behind the
     marker stays for the next boundary with a watcher record.
     """
-    from hx import hook_stop, streams
+    from hx import hook_stop, streams, seam
     from hx.hook_log import seam_marker
     from hx.streams import iter_records, stream_path
+
+    # This case exercises the companion-behind gate after pane readiness.
+    # No external tmux session is part of this test's fixture.
+    monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: True)
+    monkeypatch.setattr(seam.flush_mod, 'signal', lambda *a, **kw: [])
 
     streams.append_record(
         instance, "partner", "partner-main",

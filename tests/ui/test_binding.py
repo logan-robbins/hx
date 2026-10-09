@@ -176,6 +176,16 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
+def test_local_ui_binding_does_not_wait_for_reverse_dns(monkeypatch):
+    import socket
+    from hx.ui.server import UIServer, UIHandler
+
+    monkeypatch.setattr(socket, 'getfqdn', lambda *a: pytest.fail('local UI must not resolve reverse DNS'))
+    with UIServer(('127.0.0.1', 0), UIHandler) as server:
+        assert server.server_name == '127.0.0.1'
+        assert server.server_port > 0
+
+
 def test_hx_ui_starts_this_server(instance_root):
     """ui-2 asked for `hx ui` to call `serve(root, port)`; this proves it does."""
     port = free_port()

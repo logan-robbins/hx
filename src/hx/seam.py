@@ -149,13 +149,14 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     goal_mod.paste(item_id, seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
 
-    # A seam is the one boundary where the whole conversation ends, so the state at that point
-    # is the most complete episode this agent will produce before the next one (docs/memory.md).
+    # Legacy workers retain their seam episode. The Partner restores current scheduling
+    # state and does not need an additional conversation archive here.
     from . import memory as memory_mod
 
-    memory_mod.enqueue_quietly(
-        root, item_id, f"{item_id}-main", "seam", step_state(root, item_id), seq=seq
-    )
+    if item_id != PARTNER:
+        memory_mod.enqueue_quietly(
+            root, item_id, f"{item_id}-main", "seam", step_state(root, item_id), seq=seq
+        )
 
     marker.unlink(missing_ok=True)
     return {"id": item_id, "outcome": TAKEN, "seq": seq, "background_tasks": []}

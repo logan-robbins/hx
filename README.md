@@ -1,192 +1,102 @@
 # hx — Game of Harnesses
 
-A control plane for a fleet of agent harnesses that keeps working when you are not
-watching.
+hx runs a coordinated fleet of native coding-agent harnesses. A Partner turns a goal
+into bounded assignments; workers execute in their own sessions; a companion maintains
+the small current state needed to continue; and hx checks, publishes, and reports
+completed work.
 
-Each agent is a **full instance of an agent harness in its native vendor flavor** — Claude Code, Pi, Grok, Muse, or Codex,
-subagents, hooks, skills, all of it — in its own tmux session, running under a `/goal`. hx
-gives it a task, keeps its context coherent across every boundary, checks its work by running
-commands rather than by believing it, and tells the Partner when it is done.
+hx is designed to make each assignment start with the right context, use only the
+tools it needs, avoid repeated repository searches, and finish with machine-checked
+outputs. The current implementation includes application mapping, task planning,
+required Jev calls for bounded observation and routing judgments, token controls,
+incremental capture, context reset, tool-output reduction, and managed completion.
 
-You talk to one of them. The rest is theirs.
+**→ [Getting started](docs/getting-started.md)** sets up a Partner. [Operating hx](docs/operating.md)
+covers day-to-day use. [System design](docs/system-design.md) describes the runtime as
+implemented and its remaining integration work.
 
-**→ [docs/getting-started.md](docs/getting-started.md)** takes you from a fresh machine to a
-working Partner. After that, [docs/operating.md](docs/operating.md) is the day-to-day.
+Inside Claude Code, the plugin provides setup and Partner commands:
 
-Inside Claude Code, the fastest path is the plugin — install, status, doctor, and talking
-to the Partner as slash commands:
-
-```
+```text
 /plugin marketplace add logan-robbins/hx
 /plugin install hx
+/hx:setup
 ```
 
-then `/hx:setup` walks the same getting-started procedure for you.
 For a local checkout, add its absolute path as the marketplace source and install
-`hx@hx-marketplace`. Installing that Claude plugin is separate from creating an hx
-instance; the instance keeps its own isolated Claude homes.
+`hx@hx-marketplace`. Plugin installation and hx instance creation are separate; each
+instance uses isolated Claude homes.
 
-## The idea
-
-Three problems stand between an agent and unattended work. hx is three answers.
-
-**An agent stops at the end of a turn.** So every worker runs under a `/goal`: a session-scoped
-evaluator that decides, after each turn, whether the task is met, not yet met, or impossible.
-The goal is never prose in a command line — it is a fixed pointer to a work item on disk, and
-the goal it points at can be as long as it needs to be.
-
-**An agent forgets when its context is cut.** So hx never lets Claude's compaction summarizer
-decide what survives. Each agent is paired one-to-one with a small **Companion** — another
-Claude Code harness in the next tmux window, with two tools and nothing else — that reads the
-agent's tool-call stream and keeps a bounded, structured *step state*: open steps with their
-next action, closed steps with their commit shas, decisions with reasons, dead ends, and the
-facts the agent had to read a file to learn. At a boundary, hx composes that plus the agent's
-memory, its goal and its own task list into **one file**, and a hook hands over the path. The
-agent reads one file and continues. It does not search, and it does not re-read what it
-already knew.
-
-The cut itself is a **seam**: `/clear` plus rehydration, taken at a quiet turn boundary either
-when a step closes or when context crosses a threshold. It is planned, not survived.
-
-**An agent that says it is done may not be.** So `hx complete done` is machine-checked. The
-goal carries a `### Checks` bash block; it runs in the agent's `workdir`, the directory must
-be clean if it is a git repository, and no subagent stream may be open. Any failure prints
-`HX-CHECK-FAILED` with the output, changes nothing, and leaves the goal active — the agent
-fixes it and retries. Only success prints `HX-COMPLETE <id> done`, and that line, in the
-transcript, is what the goal evaluator reads. Not a claim; a result.
-
-## Architecture
+## How the runtime works
 
 ```mermaid
 flowchart TB
-    YOU(["You"]) -->|"chat"| P_MAIN
-
-    subgraph TMUXP["tmux session: partner"]
-        direction TB
-        P_MAIN["partner:main<br/>Claude Code"]
-        P_COMP["partner:companion<br/>Partner step state"]
-    end
-
-    P_MAIN -->|"hx dispatch id goal"| PODS["pods/pod/id-working.md<br/>tasks.json"]
-    PODS -->|"hx launch id"| W_MAIN
-
-    subgraph TMUXW["tmux session: id"]
-        direction TB
-        W_MAIN["id:main<br/>any vendor flavor + hx hooks, /goal"]
-        W_COMP["id:companion<br/>worker step state"]
-        GOALEV["/goal evaluator<br/>hx goal pastes pointer<br/>met · not yet · impossible"]
-    end
-
-    W_MAIN -->|"hook events via hx-hook"| STREAMS["logs/id streams<br/>main + subagents"]
-    STREAMS --> W_COMP
-    W_COMP -->|"state/id"| CTX["context file<br/>memory + goal + state + tasks"]
-    CTX -->|"/new + rehydrate"| W_MAIN
-    W_MAIN -->|"hx complete"| CHECKS["HX-COMPLETE id outcome<br/>wake partner"]
-    CHECKS --> P_MAIN
-    W_MAIN -->|"precompact flush"| CTX
-    P_MAIN -->|"hx resume + addendum"| W_MAIN
-    P_MAIN -->|"hx read digest"| CHECKS
+    U[User goal and corrections] --> P[Partner]
+    M[Versioned semantic application map] --> P
+    P --> A[Validated assignments<br/>scope · dependencies · checks · outputs]
+    A --> C[Current task context]
+    C --> W[Native worker harness]
+    W --> T[Tools · repository · child agents]
+    T --> E[Incremental event capture]
+    E --> J[Jev: bounded delta and routing judgments]
+    J --> K[Companion: task and map patches]
+    K --> S[Validated current task state]
+    K --> M
+    S --> C
+    W --> X[Drain · checks · output publication]
+    X --> P
 ```
 
-Why a harness of harnesses: every vendor flavor already runs an agent harness, but none was built
-for a fleet. hx adds the four things fleet work needs and vendors never will — **custom
-compaction** (planned seams, never the vendor summarizer), **custom memory** (a Companion's
-bounded step state, not chat history), **separation of specialties** (Partner supervises,
-workers build, Companions remember, Checks verify), and **no fork** (adapters are config,
-hooks, and isolated homes, so the fleet outlives any single CLI).
+The application map records semantic responsibilities, behaviors, interfaces, source
+anchors, and checks. Stable IDs survive stack changes when responsibilities remain the
+same. Planning uses a bounded slice of that map to define assignments and avoid asking
+workers to rediscover known paths, contracts, and checks.
 
-## How work flows
+The companion processes new captured events and submits structured changes to current
+task state and the application map. Jev is required for its bounded judgments about
+observation deltas, repeated tool observations, optional tool discovery, and surplus
+output. Jev does not choose which facts survive, write facts, generate task plans, or
+switch models. The companion handles factual changes; deterministic code validates
+scope, versions, evidence references, and source applicability.
 
-You talk to the **Partner**, in `tmux attach -t partner`. It is a Claude Code harness with its
-own Companion and its own memory file, and it is the only one you talk to.
+Workers receive a bounded packet for the active assignment: goal and corrections,
+acceptance, next action, relevant findings and commands, required map records, and
+unresolved events. Obsolete state can be compressed or deleted. Workers do not carry
+personal episodic memory across independent assignments. Planned context boundaries
+use incremental capture and hooks; the runtime restores the current packet after a
+controlled reset. Token thresholds, native autocompaction settings, and model output
+caps provide the enforcement layers.
 
-1. You tell it what you want, in chat. That is its goal — there is no goal file for the
-   Partner, no dispatch, and no `/goal`. It asks back what is unclear and starts.
-2. It decomposes the work into one goal file per item, each with a definition of done and
-   checks that can actually run, sized to finish inside one context window.
-3. It creates the workers it needs — a config directory, a persona, a `workdir` it picks —
-   and `hx dispatch be-001 <goal-file>` starts one. Several id/file pairs in one call start
-   several at once. **There is no dependency field and no queue:** if one item must wait for
-   another, the Partner waits and then dispatches, the way you would.
-4. Workers work, spawn subagents, commit as they go, take seams, and finish with
-   `hx complete <outcome>`.
-5. Completion wakes the Partner over cross-session messaging. It reads the Companion-written
-   digest, updates `PARTNER.md`, and acts: dispatch what that unblocks, resume a `blocked` or
-   `decision` with an addendum that keeps the agent's step state intact, split an `exhausted`.
-6. When the ask is met, the Partner tells you in chat. Nothing completes the Partner; you do.
+Completion waits for managed work and capture to drain, runs the declared checks,
+publishes the exact accepted outputs, and releases assignment ownership. A worker's
+claim alone does not complete a task.
 
-You run no hx command at any point.
+## Requirements and current limits
 
-What the Partner runs, and what stops it running anything else:
+hx requires Python 3.14, `tmux`, `git`, and a supported Claude installation for the
+Partner. Other native harnesses can be assigned as workers when configured. TypeSafe
+API access is required for Jev; the runtime has no inference fallback for Jev decisions.
+See [getting started](docs/getting-started.md) for credentials and installation.
 
-| Command | What it does |
-|---|---|
-| `hx dispatch <id> <goal-file>` | Starts an item. The goal's `### Checks` run first in the worker's workdir: a block that already passes is refused with `HX-GATE-EMPTY`, because it gates nothing |
-| `hx amend <id> <addendum-file>` | Adds to a `working` or `complete` goal without pausing it; a `### Checks` block in the addendum replaces the gate `hx complete done` will run |
-| `hx resume <id> <addendum-file>` | Continues a `blocked` or `decision` item with its step state, the same addendum rules |
-| `hx read <id>` · `hx board` | The digest of a finished item; what is on disk, one line per id |
-| `hx bench <id>` | Archives a finished item and frees the id |
+The merged runtime is covered by Linux and macOS CI, focused integration tests, and
+installed adapter checks. A live native engineering-to-QA fleet run has not yet been
+completed. Coordinated migration of remaining legacy state consumers and retention for
+cancelled assignments that may be resumed remain open. Provider-specific tool schema
+reduction is available only where the native public interface supports it; advisory
+adapters do not claim native schema savings. See [current implementation status](docs/continuity-build-status.md)
+for verified behavior and boundaries.
 
-The Partner's own Claude home carries one `PreToolUse` hook, `guard`, over
-`config/partner/guard.json`: the test runs, oracle tools and product-tree reads it names are
-denied, because verification belongs to QA and the engineers. Workers are never guarded.
+## Documentation
 
-## Shape of an instance
-
-```
-$HARNESS_ROOT/
-  PARTNER.md                  the Partner's memory
-  config/CLAUDE.md            the one CLAUDE.md that loads
-  config/<id>/AGENTS.md       persona above the header → system prompt
-                              the agent's own memory below it → context file
-  config/<id>/harness.json    model, effort, role, and the workdir it works in
-  personas/<role>/AGENTS.md   the personas the Partner copies to make a worker
-  templates/                  work-item, goal, addendum, worker
-  tasks.json                  the control-plane record, written only by hx
-  pods/<pod>/<id>-<state>.md  the work item; the state is the filename suffix
-  logs/<id>/<id>-main.jsonl   raw stream, one line per tool call, read by the Companion
-  logs/<id>/<id>-sNNN-*.jsonl one stream per subagent, open until it stops
-  state/<id>/…                step state, written only by the Companion
-  run/<id>/…                  context files, per-agent Claude home, turn and goal markers
-  seed/token                  OAuth credential or Anthropic API fallback, mode 0600
-  seed/*-token                optional provider credentials for other worker flavors
-```
-
-`config/` is the part worth committing to your own git. Everything else is runtime state.
-
-## Status
-
-Pre-release. The code is the contract: [`src/hx/`](src/hx/) plus the
-[`tests/`](tests/) suites that pin it. [`CONTRACTS.md`](CONTRACTS.md) records the
-machine-readable shapes; [`docs/`](docs/) is the operator read.
-
-- Python 3.14, standard library only but for one runtime dependency: `chromadb`, the local
-  embedding store behind `hx memory` ([`docs/memory.md`](docs/memory.md)). Nothing else in hx
-  imports it, and nothing in hx fails when it is missing.
-- Requires `tmux`, `git`, and `claude`. Installation checks the
-  [tested versions](src/hx/packaging/tested-claude-versions.json) unless
-  `--ignore-claude-version` is supplied.
-- A Claude subscription with an hx OAuth token, or an Anthropic API key in a supplied
-  `.env` file. An existing OAuth token takes precedence. The same file can supply
-  OpenAI and Grok keys for those worker flavors.
-- Tested on macOS and Linux.
-
-The install path works end to end — `packaging/e2e-deploy.sh` builds the wheel, installs it as
-a uv tool into a `HOME` that did not exist a moment ago, runs the full `hx install` including
-its stop for the seed token, launches a worker, and proves no Claude home was touched. What is
-still unproven is everything the agents do once running: the Companion, seams, and the metrics
-that judge them. That needs a live Claude Code, not a packaging script.
-
-## Docs
-
-- [docs/getting-started.md](docs/getting-started.md) — a fresh machine to a working Partner
-- [src/hx/skills/hx-setup/SKILL.md](src/hx/skills/hx-setup/SKILL.md) — the same, as a skill for
-  an agent harness or another harness doing the setup for you (the token step stays yours)
-- [docs/operating.md](docs/operating.md) — what you see and do day to day
-- [docs/two-worlds.md](docs/two-worlds.md) — how your own Claude stays untouched
-- [docs/companion-eval.md](docs/companion-eval.md) — how the Companion gets measured
-- [docs/github-plan.md](docs/github-plan.md) — how this repository gets published
-- [CONTRACTS.md](CONTRACTS.md) — the JSON shapes shared between the CLI and the UI
+- [Getting started](docs/getting-started.md) — setup and first Partner
+- [Operating hx](docs/operating.md) — daily use
+- [System design](docs/system-design.md) — current architecture and remaining integration
+- [Application map](docs/application-map.md) — semantic records, validation, and updates
+- [Continuity runtime](docs/continuity-runtime.md) — capture, state, checks, and reset contracts
+- [Planning runtime](docs/planning-runtime.md) — assignments, ownership, and completion
+- [Current implementation status](docs/continuity-build-status.md) — merged scope and verification
+- [Native interface verification](docs/native-interface-verification.md) — adapter support boundaries
+- [CONTRACTS.md](CONTRACTS.md) — shared machine-readable shapes
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## License

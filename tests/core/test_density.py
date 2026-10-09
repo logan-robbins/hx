@@ -2,8 +2,8 @@
 
 The reader of `render_step_state`'s output is a Claude session resuming a half-built change
 after `/clear`, and it pays for every character of it at every boundary. So the rendering is
-telegraphic — one tagged line per fact, no headings, no bullets, no blank lines — and the
-Companion prompts that produce the strings say the same thing about the strings themselves.
+compact — one tagged line per fact, no headings, no bullets, no blank lines.
+Companion prompts request concise complete statements within those tagged lines.
 
 What is checked here:
 
@@ -187,7 +187,7 @@ def test_base_md_tells_the_companion_to_pre_answer_the_next_tool_calls():
 
 def test_base_md_states_the_style_and_a_length_budget_per_field():
     text = (COMPANION / "BASE.md").read_text()
-    for fragment in ("telegraph", "No articles", "path:line", "Numbers, not adjectives"):
+    for fragment in ("concise complete statements", "negation, conditions, uncertainty", "path:line", "Numbers, not adjectives"):
         assert fragment in text, f"companion/BASE.md no longer says {fragment!r}"
     # A cap per field, in a table, so "short" is a number rather than an adjective.
     for field in ("`goal`", "`constraints[]`", "`open_steps[].next`",

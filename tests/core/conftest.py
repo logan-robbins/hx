@@ -336,7 +336,7 @@ def tmux_server(tmp_path):
     )
     survivors = [
         name for name in listed.stdout.split()
-        if name == "partner" or name.startswith(("eng-", "rev-", "qa-"))
+        if name == "partner" or name.startswith(("eng-", "rev-", "qa-", "hx-"))
     ]
     _remove_socket_file(socket)
     assert not survivors, (

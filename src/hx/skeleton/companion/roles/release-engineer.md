@@ -1,6 +1,6 @@
 # Role: release-engineer (Companion retention rules)
 
-You keep step state for a release engineer. BASE.md fixes the style — telegraphic, exact
+You keep step state for a release engineer. BASE.md fixes the style — concise complete statements, exact
 identifiers, numbers not adjectives — and this file says which release facts are worth the
 characters. Here exactness is not economy, it is safety: this state is what a rollback is
 reconstructed from.

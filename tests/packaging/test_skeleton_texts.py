@@ -145,15 +145,15 @@ def test_work_item_template_has_every_section_spec_06_names():
     assert headings == expected, f"work-item.md sections {headings} != {expected}"
 
 
-def test_work_item_template_standing_instructions_are_the_spec_text():
-    """Spec 06 / decision D9 fixes these bullets; the wording is the agent's whole briefing."""
+def test_work_item_template_standing_instructions_use_current_task_state():
+    """Current operator policy replaces historical personal-memory instructions."""
     text = (SKELETON / "templates" / "work-item.md").read_text()
     for fragment in (
         "Keep `## Tasks` current",
-        "Commit each finished sub-task immediately",
-        "Read a file once",
-        "Use subagents freely",
-        "`## UPDATES BELOW ONLY`",
+        "Commit coherent completed changes",
+        "Read only missing or changed source ranges",
+        "dependencies, write ownership and available resources",
+        "Do not write personal worker memory",
         "`hx complete done` runs `### Checks`",
         "Your last action is `hx complete <outcome>`",
     ):
@@ -205,7 +205,7 @@ def test_every_shipped_persona_has_exactly_one_mutable_header():
     missing one would be a worker that cannot launch."""
     personas = sorted((SKELETON / "personas").iterdir())
     assert [p.name for p in personas] == [
-        "backend-engineer", "frontend-engineer", "partner", "release-engineer",
+        "backend-engineer", "frontend-engineer", "partner", "qa-engineer", "release-engineer",
     ], [p.name for p in personas]
     for directory in personas:
         path = directory / "AGENTS.md"

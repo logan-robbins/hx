@@ -532,7 +532,38 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--ingest", metavar="STREAM", default=None,
                         help="validate and install what it wrote (its stop hook does this)")
     parser.add_argument("--root", help=argparse.SUPPRESS)
+    parser.add_argument("--run", help="prepare and execute a planned ledger companion pass")
+    parser.add_argument("--stream", default="main")
+    parser.add_argument("--request", help="stable idempotency identity for this pass")
+    parser.add_argument("--record", action="append", default=[])
+    parser.add_argument("--map-snapshot", help="worktree map snapshot for this pass")
+    parser.add_argument("--map-record", action="append", default=[], help="selected map ID (at most eight)")
+    parser.add_argument("--job", help="inspect a previously prepared native companion job")
+    parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.run or args.job:
+        from .continuity_store import ContinuityStore, canonical
+        from . import native_companion
+        if args.wake or args.ingest or (args.job and args.run):
+            parser.error("planned companion requests cannot use legacy wake/ingest or combine job and run")
+        with ContinuityStore(root) as ledger:
+            if args.job:
+                from .companion_protocol import row
+                if row(ledger, args.job)["worker_id"] != args.id:
+                    parser.error("job belongs to a different executor")
+                result = native_companion.status(ledger, args.job)
+            else:
+                if not args.request:
+                    parser.error("planned companion requires --request")
+                job = native_companion.prepare(ledger, args.id, args.run, args.stream, args.request, record_ids=args.record,
+                    map_snapshot=args.map_snapshot, map_record_ids=args.map_record, env=env)
+                result = ({"status": "no_work"} if job is None else native_companion.status(ledger, job["job_id"])
+                          if args.prepare_only else native_companion.execute(ledger, job["job_id"], env=env))
+            print(canonical(result))
+        return 0
+    if args.request or args.record or args.prepare_only or args.map_snapshot or args.map_record:
+        parser.error("planned companion options require --run")
 
     if args.ingest:
         state = ingest(root, args.id, args.ingest, env=env)
