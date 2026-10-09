@@ -259,6 +259,14 @@ def test_postcompact_without_a_summary_queues_nothing(instance):
     assert queue_items(instance) == []
 
 
+def test_partner_native_summary_does_not_become_episode_memory(instance):
+    from hx.hook_compact import post
+
+    post({"hook_event_name": "PostCompact", "trigger": "auto",
+          "compact_summary": "old intermediate transcript"}, "partner", instance)
+    assert queue_items(instance) == []
+
+
 def test_complete_enqueues_the_digest_with_its_outcome(instance, hx, launched, goals):
     launched("eng-001")
     dispatch_working(instance, hx, goals)

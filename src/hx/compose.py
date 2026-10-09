@@ -28,10 +28,9 @@ Sections, in the order spec 07.3 fixes them:
   5. Open handles  — `run/<id>/subagents.json` and every `-open` stream
 
 Everywhere else the persona is never here: it is in the system prompt, via
-`--append-system-prompt-file` (spec 02 Identity, 11). For `partner` the file also
-carries `PARTNER.md` and the `hx board` text, which is what it supervises from
-(spec 09.1). No size cap applies, because nothing is injected: the agent reads the
-file with a tool call (spec 02).
+`--append-system-prompt-file` (spec 02 Identity, 11). For `partner` the file
+carries `PARTNER.md` and a command to fetch the live board. Its old Companion
+step state, cross-agent episodes, and whole board snapshot are omitted.
 """
 
 from __future__ import annotations
@@ -495,12 +494,13 @@ def compose_text(
         source, text = tasks_section(root, item_id)
         parts.append(_section("Tasks", source, text))
 
-    source, text = step_state(root, item_id, stream)
-    parts.append(_section("Step state", source, text))
+    if item_id != PARTNER:
+        source, text = step_state(root, item_id, stream)
+        parts.append(_section("Step state", source, text))
 
-    injected = memory_episodes(root, item_id, stream, fallback=goal_text)
-    if injected is not None:
-        parts.append(_section("Memory episodes", injected[0], injected[1]))
+        injected = memory_episodes(root, item_id, stream, fallback=goal_text)
+        if injected is not None:
+            parts.append(_section("Memory episodes", injected[0], injected[1]))
 
     source, text = open_handles(root, item_id)
     parts.append(_section("Open subagent handles", source, text))
@@ -514,11 +514,7 @@ def compose_text(
                 _bound_partner_md(partner_md.read_text()) if partner_md.is_file() else "",
             )
         )
-        try:
-            rendered = board_mod.render_text(board_mod.collect(root, env=env))
-        except Exception as exc:  # the board must never stop the Partner from starting
-            rendered = f"_hx board failed: {exc}_"
-        parts.append(_section("Board", "hx board", f"```\n{rendered}\n```" if rendered else ""))
+        parts.append(_section("Board", "hx board", "Run `hx board` when current lane status is needed."))
 
     return "\n".join(parts).rstrip("\n") + "\n"
 

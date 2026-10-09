@@ -268,14 +268,25 @@ def goal_was_lost(root: Path, item_id: str, *, env=None) -> bool:
     idempotent for an agent that is merely between turns: the pointer is the same one it
     already has.
     """
-    from . import streams
+    from .tasks import load_tasks
 
     pane = goal.capture_pane(item_id, env)
-    if pane is None or not goal.pane_is_idle(pane):
+    if (pane is None or board.pane_awaits_input(pane.splitlines())
+            or not goal.pane_is_idle(pane)):
         return False
-    for record in streams.iter_records(streams.main_stream(root, item_id)):
-        if "HX-COMPLETE" in json.dumps(record, default=str):
+    task = load_tasks(root).get(item_id) or {}
+    path = find_work_item(root, item_id)
+    if not task.get("goal") or path is None or not path.name.endswith("-working.md"):
+        return False
+    if goal.task_completed(root, item_id):
+        return False
+    try:
+        if any(g["status"] != "complete" for g in goal.native_goals(root, item_id)):
             return False
+        goal.check_background_tasks(root, item_id)
+    except (HxError, OSError, ValueError):
+        # Unreadable native/handle state is not permission to disturb a live session.
+        return False
     return True
 
 

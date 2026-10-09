@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import subprocess
 from pathlib import Path
 
-from . import compose as compose_mod, flush as flush_mod, goal as goal_mod, streams
+from . import compose as compose_mod, flush as flush_mod, goal as goal_mod, streams, tmux
 from .config_harness import flavor_of
 from .errors import NotFound
 from .hook_log import seam_marker
@@ -42,10 +45,25 @@ WAITING = "waiting"
 MENU_FOOTER = "Enter to select"
 
 
+def pane_target(item_id: str, env=None) -> str:
+    """Prefer the pane that invoked this hook, after verifying its tmux session."""
+    values = os.environ if env is None else env
+    pane = values.get("TMUX_PANE", "")
+    if re.fullmatch(r"%[0-9]+", pane):
+        result = subprocess.run(
+            [*tmux.tmux_command(env), "display-message", "-p", "-t", pane,
+             "#{session_name}"], capture_output=True, text=True, check=False,
+        )
+        session = result.stdout.strip()
+        if result.returncode == 0 and re.fullmatch(rf"{re.escape(item_id)}(?:-[0-9]+)?", session):
+            return pane
+    return item_id
+
+
 def pane_ready(root: Path, item_id: str, *, env=None) -> bool:
     """The pane exists and shows no menu awaiting the human: a `/clear` may land."""
     try:
-        pane = goal_mod.capture_pane(item_id, env)
+        pane = goal_mod.capture_pane(pane_target(item_id, env), env)
     except Exception:
         return False
     return pane is not None and MENU_FOOTER not in pane
@@ -136,7 +154,17 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     flush_mod.signal(root, item_id, env=env)
     from . import companion as companion_mod
 
-    if not companion_mod.is_caught_up(root, item_id):
+    # The Partner's own PARTNER.md is its checkpoint. An unlaunched Companion must
+    # not strand the Partner until Claude's native compactor runs. Workers still
+    # require their configured Companion to be caught up.
+    partner_file = root / "PARTNER.md"
+    partner_checkpoint = item_id == PARTNER and partner_file.is_file() and bool(
+        partner_file.read_text().strip()
+    )
+    partner_without_companion = (
+        item_id == PARTNER and partner_checkpoint and not companion_mod.is_running(item_id, env)
+    )
+    if not partner_without_companion and not companion_mod.is_caught_up(root, item_id):
         seq = streams.append_record(root, item_id, stream,
                                     {"event": "seam_waiting", "ready": "behind",
                                      "streams": waiting_streams(root, item_id)})
@@ -146,16 +174,17 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     # then the `/clear` is queued and the record written.
     context_file = Path(compose_mod.compose(root, item_id, stream, env=env))
 
-    goal_mod.paste(item_id, seam_slash(root, item_id), env)
+    goal_mod.paste(pane_target(item_id, env), seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
 
-    # A seam is the one boundary where the whole conversation ends, so the state at that point
-    # is the most complete episode this agent will produce before the next one (docs/memory.md).
-    from . import memory as memory_mod
+    # The Partner resumes from PARTNER.md; its inactive Companion's old step
+    # state must not be republished as fresh episode memory.
+    if item_id != PARTNER:
+        from . import memory as memory_mod
 
-    memory_mod.enqueue_quietly(
-        root, item_id, f"{item_id}-main", "seam", step_state(root, item_id), seq=seq
-    )
+        memory_mod.enqueue_quietly(
+            root, item_id, f"{item_id}-main", "seam", step_state(root, item_id), seq=seq
+        )
 
     marker.unlink(missing_ok=True)
     return {"id": item_id, "outcome": TAKEN, "seq": seq, "background_tasks": []}

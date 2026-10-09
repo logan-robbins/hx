@@ -52,6 +52,9 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
             f"only `{'` or `'.join(RESUMABLE)}` resumes. `hx bench {item_id}` starts it over (spec 06)"
         )
 
+    # Refuse active/unrelated native goals before changing the work item or tasks.json.
+    goal.check_native_delivery(root, item_id, resume_blocked=True)
+
     # The addendum, and the `### Checks` replacement when it carries one, are computed and
     # validated in full before anything is written: `hx amend`'s path exactly (spec 08).
     entries = tasks_mod.load_tasks(root)
@@ -59,6 +62,7 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
     amendment = amend_mod.plan(root, item_id, addendum, addendum_path, recorded)
     ts = amendment.ts
     entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))
+    goal.check_background_tasks(root, item_id)
     amend_mod.write(root, item_id, amendment, entries, entry)
     set_frontmatter(path, outcome=None)
 
@@ -68,7 +72,7 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
 
     final = rename_state(path, "working")
     compose.compose(root, item_id, f"{item_id}-main", env=env)
-    sent = goal.send_goal(root, item_id, env=env)
+    sent = goal.send_goal(root, item_id, resume_blocked=True, env=env)
 
     # Consumed, like the goal file at dispatch (spec 06).
     addendum_path.unlink(missing_ok=True)

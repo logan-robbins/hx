@@ -65,7 +65,11 @@ INPUT_PATTERNS = (
 
 def pane_awaits_input(lines) -> bool:
     """True when a pane tail carries a known awaiting-human marker."""
-    return any(marker in line for line in lines for marker in INPUT_PATTERNS)
+    from .goal import replacement_prompt
+
+    lines = list(lines)
+    return (replacement_prompt("\n".join(lines)) is not None
+            or any(marker in line for line in lines for marker in INPUT_PATTERNS))
 
 
 def scope_for(task: dict, work_item) -> str | None:

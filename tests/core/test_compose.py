@@ -3,7 +3,7 @@
 M2 pass criteria: on `startup`, `resume`, `clear` and `compact` the hook prints one path line;
 the file holds memory, task, `## Tasks`, step state and open handles, in that order, and no
 persona on flavors whose CLI injects one (the persona rides section 0 everywhere else);
-the Partner's file also holds `PARTNER.md` and board output.
+the Partner's file holds `PARTNER.md` and a live board pointer.
 """
 
 from __future__ import annotations
@@ -334,7 +334,7 @@ def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched
     assert "## Who your subagents are" in text
 
 
-def test_the_partner_file_holds_partner_md_and_the_board(instance, hx, launched, goals):
+def test_the_partner_file_uses_its_checkpoint_and_live_board_pointer(instance, hx, launched, goals):
     launched("partner")
     (instance / "PARTNER.md").write_text("# Partner state\n\nTwo workers idle.\n")
     result = hx("compose", "partner")
@@ -342,8 +342,10 @@ def test_the_partner_file_holds_partner_md_and_the_board(instance, hx, launched,
     text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
     assert "Two workers idle." in text
     assert "## Board" in text
-    assert "eng-001" in text, "the board is a listing of the workers (spec 14 D25)"
-    assert "partner" not in text.split("## Board", 1)[1], "the Partner is not an item"
+    assert "Run `hx board`" in text
+    assert "## Step state" not in text
+    assert "## Memory episodes" not in text
+    assert "eng-001" not in text.split("## Board", 1)[1], "the board is queried live"
 
 
 def test_compose_of_an_unknown_id_is_not_found(instance, hx):

@@ -9,6 +9,8 @@ is `/clear` + rehydrate from its context file; no goal pointer is ever sent.
 
 from __future__ import annotations
 
+import subprocess
+
 from .test_compose import run_hook
 from .test_streams import events, post_tool, transcript_with
 
@@ -64,3 +66,19 @@ def test_a_partner_seam_rehydrates_without_a_goal_pointer(instance, launched, tm
     context = instance / "run" / "partner" / "partner-main.context.md"
     assert "PARTNER.md" in context.read_text()
     assert "/goal" not in pasted(instance, "partner")
+
+
+def test_partner_seam_targets_its_actual_suffixed_tmux_pane(instance, tmux_server):
+    """A hook from partner-460 must not look for an absent partner:main pane."""
+    from hx.goal import capture_pane, target_of
+    from hx.seam import pane_target
+
+    subprocess.run([*tmux_server, "new-session", "-d", "-s", "partner-460",
+                    "-n", "claude.exe", "sleep", "30"], check=True)
+    pane = subprocess.run([*tmux_server, "display-message", "-p", "-t", "partner-460",
+                           "#{pane_id}"], capture_output=True, text=True, check=True).stdout.strip()
+    env = {"HX_TMUX": " ".join(tmux_server), "TMUX_PANE": pane}
+    assert pane_target("partner", env) == pane
+    assert target_of(pane) == pane
+    assert capture_pane(pane, env) is not None
+    assert pane_target("eng-001", env) == "eng-001", "a foreign pane is never selected"
