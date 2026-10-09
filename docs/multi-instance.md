@@ -93,3 +93,24 @@ Instances merge into one branch. Serialize the merges with a host-wide lock
 "push", so two instances never race the same integration branch, and let the release goal's
 Checks require the exact merge result to have been tested (`git merge-base --is-ancestor
 origin/<base> HEAD` plus a local gate line with the head SHA).
+
+## 8. Channels between instances
+
+Four channels, each one line, and nothing else:
+
+- **Partner → human session**: an append-only inbox file in the fleet root, written through a
+  helper that takes a per-file `flock`, stamps the instance (from `HARNESS_ROOT`) and the UTC time,
+  and refuses anything but one line. Reasons are closed: wave complete, blocker outside the area,
+  remote-write authorization needed. The human's board view prints the lines after the last
+  `## ACK` line before the boards; the human closes a batch by appending an `## ACK <date>` line.
+- **Human → Partner**: `hx wake partner "<text>"` per instance, or a loop over all of them.
+- **Partner → Partner**: the other instance's `hx wake partner "<area>: <request>"`, only for a
+  dependency that instance owns (a shared provider, a lint rule).
+- **Partner → everyone**: the same append helper into the shared learnings file and the area's
+  map file. A rule line written as `**Rule T?** · Signal … · Check … · Evidence …` gets the next
+  free number under the lock, so two instances never claim the same one and lines never
+  interleave. Nobody opens a shared file for writing; nobody pastes into a pane.
+
+Status rows stay in each instance's own `BOARD.md`. A heartbeat cron loops over the instances
+with each one's `HARNESS_ROOT` and `HX_TMUX`, and skips every instance whose standing
+instructions carry no `GO` line, because `hx heartbeat` launches a missing Partner.
