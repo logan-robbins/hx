@@ -233,3 +233,25 @@ def test_a_session_without_a_main_window_still_captures(tmp_path, tmux_socket):
     pane = capture(tmp_path, session, socket=tmux_socket)
     assert pane["alive"] is True
     assert "NO-MAIN-WINDOW" in "\n".join(pane["lines"])
+
+
+@tmux_only
+def test_capture_follows_hx_tmux(tmp_path, live_session, monkeypatch):
+    """Without an explicit socket the capture runs the same tmux command every other hx
+    command runs, so `HX_TMUX="tmux -L <server>"` (one private server per instance on a
+    shared host) reaches the pane; a bare `tmux` would look at the default server and
+    report the session dead."""
+    socket, session = live_session
+    run_in_pane(socket, session, "echo FLEET-PANE-MARK", expect="FLEET-PANE-MARK")
+
+    by_env = capture(tmp_path, session, env={"HX_TMUX": f"tmux -L {socket}"})
+    assert by_env["alive"] is True and by_env["source"] == "session"
+    assert any("FLEET-PANE-MARK" in line for line in by_env["lines"])
+
+    monkeypatch.setenv("HX_TMUX", f"tmux -L {socket}")
+    by_process_env = capture(tmp_path, session)
+    assert by_process_env["alive"] is True
+
+    elsewhere = capture(tmp_path, session, env={"HX_TMUX": f"tmux -L {socket}-nowhere"})
+    assert elsewhere["alive"] is False
+    assert elsewhere["error"].startswith(f"no live tmux session {session}")

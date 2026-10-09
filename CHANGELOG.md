@@ -10,6 +10,18 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ## [Unreleased]
 
+### Fixed
+
+- `hx ui` on a host that serves several instances: the token cookie is now named after the
+  server's port (`hx_ui_token_<port>`). Browsers scope cookies by host, never by port
+  (RFC 6265 §8.5), so with one fixed name the last instance opened overwrote every other
+  tab's cookie and they answered 401 until reloaded. An API client that carried the cookie
+  by its old name must use `hx_ui_token_<port>` or `Authorization: Bearer`.
+- The UI's Agent and Partner pane views now observe the tmux server named by `HX_TMUX`, as
+  every other hx command does, instead of a bare `tmux`: with one private tmux server per
+  instance the pane was always reported dead. `hx.ui.pane.capture` and `session_alive` take
+  an `env` like the rest of the readers.
+
 ### Added
 
 - `docs/multi-instance.md`: running a fleet of Partners on one host (private tmux servers via `HX_TMUX`, per-instance credentials and usage limits, go-gate, clean product repository, bound evidence, serialized merges); pointers in the `hx-setup` and `hx-partner` skills, the operating table and the README.

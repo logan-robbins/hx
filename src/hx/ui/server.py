@@ -3,7 +3,7 @@
 Python stdlib `http.server` on `127.0.0.1`, no build step and no CDN. Every
 request but the static index carries the bearer token from `run/ui-token`,
 either as `Authorization: Bearer <token>` (API clients, `hx` itself, curl) or as
-the `hx_ui_token` cookie that `GET /` sets.
+the `hx_ui_token_<port>` cookie that `GET /` sets.
 
 The cookie is what the browser uses: `<link>`, `<script>` and `EventSource`
 cannot set a request header, and a token in a query string ends up in browser
@@ -44,8 +44,15 @@ from hx.ui.data import (
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 1_000_000
-#: Set by `GET /`; the browser's only way of carrying the token.
+#: Set by `GET /`; the browser's only way of carrying the token. The name carries the
+#: server's port (`token_cookie_name`): browsers scope cookies by host, never by port
+#: (RFC 6265 §8.5), so two instances on 127.0.0.1 with one fixed name would overwrite
+#: each other's cookie and every tab but the last opened would get 401.
 TOKEN_COOKIE = "hx_ui_token"
+
+
+def token_cookie_name(port: int) -> str:
+    return f"{TOKEN_COOKIE}_{port}"
 #: Spec 16.1: the mtime sweep runs once a second.
 SCAN_INTERVAL = 1.0
 #: Scans between SSE comment frames, so a proxy or a dead peer is noticed without
@@ -206,7 +213,7 @@ class UIHandler(BaseHTTPRequestHandler):
                 jar.load(header)
             except CookieError:
                 continue
-        morsel = jar.get(TOKEN_COOKIE)
+        morsel = jar.get(token_cookie_name(self.server.server_port))
         return morsel.value if morsel else None
 
     def _offered_token(self) -> str | None:
@@ -335,8 +342,9 @@ class UIHandler(BaseHTTPRequestHandler):
         except OSError as exc:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"cannot read the index: {exc}")
             return
+        name = token_cookie_name(self.server.server_port)
         cookie = (
-            f"{TOKEN_COOKIE}={quote(self.token, safe='')}; HttpOnly; SameSite=Strict; Path=/"
+            f"{name}={quote(self.token, safe='')}; HttpOnly; SameSite=Strict; Path=/"
         )  # no Secure: this server is http on 127.0.0.1 and a Secure cookie would never be sent
         self._send(
             HTTPStatus.OK, template.encode(), "text/html; charset=utf-8", [("Set-Cookie", cookie)]

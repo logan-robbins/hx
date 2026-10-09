@@ -20,6 +20,15 @@ between them. Everything below was learned running thirteen instances on one 96-
   hxc payments board; hxc payments attach partner
   ```
 - `config/ui.json` (or `hx ui --port N`) gets a distinct port per instance: `8800 + index`.
+- Start each instance's UI **inside that instance's environment** (`hxc <area> ui`, in a `ui`
+  session on its private server): the server reads `HX_TMUX` from its own process to capture
+  panes and to reach the Partner, so a UI started with the default tmux shows every pane as
+  dead. Thirteen UIs on `127.0.0.1:8800…8812` in one browser work because the token cookie
+  carries the port (`hx_ui_token_<port>`); forward them in one line,
+  `ssh -L 8800:127.0.0.1:8800 -L 8801:127.0.0.1:8801 … host`, and tell the tabs apart by the
+  instance name the page shows, which is the root directory's name.
+- A heartbeat cron must loop over the instances with the same two variables, and it launches
+  a missing Partner: never install it for an instance that is deliberately stopped.
 - The Partner persona of each instance states its area, its prefixes and who owns the rest; the
   shared instance owns cross-cutting code and the others consume it after merge. "Never more than
   one new shared component per wave per worker" keeps the shared instance from becoming the queue.

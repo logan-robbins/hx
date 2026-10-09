@@ -16,6 +16,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .. import tmux as tmux_layer
+
 #: Spec 16.2: the Agent view shows the last 120 lines of the pane.
 PANE_LINES = 120
 
@@ -39,20 +41,35 @@ def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
 
 
-def _tmux(args: list[str], *, socket: str | None = None) -> subprocess.CompletedProcess | None:
-    """Run tmux read-only. None when tmux is not installed."""
-    binary = shutil.which("tmux")
-    if binary is None:
-        return None
-    command = [binary]
+def _command(socket: str | None, env: dict[str, str] | None) -> list[str] | None:
+    """The tmux command to observe with, or None when tmux is not installed.
+
+    `socket` names a private server outright (`-L socket`, the tests). Without it the
+    command is `hx.tmux.tmux_command`, which honours `HX_TMUX` exactly as `hx board`,
+    `hx show` and `hx wake` do: on a host that runs one instance per private tmux server
+    (`HX_TMUX="tmux -L hx-<area>"`), a bare `tmux` reaches the default server, where none
+    of this instance's panes live, and every Agent view says "no live tmux session".
+    """
     if socket:
-        command += ["-L", socket]
+        binary = shutil.which("tmux")
+        return None if binary is None else [binary, "-L", socket]
+    command = tmux_layer.tmux_command(env)
+    return command if shutil.which(command[0]) else None
+
+
+def _tmux(
+    args: list[str], *, socket: str | None = None, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess | None:
+    """Run tmux read-only. None when tmux is not installed."""
+    command = _command(socket, env)
+    if command is None:
+        return None
     return subprocess.run(command + args, capture_output=True, text=True, check=False)
 
 
-def session_alive(session: str, *, socket: str | None = None) -> bool:
+def session_alive(session: str, *, socket: str | None = None, env: dict[str, str] | None = None) -> bool:
     """`=name` is tmux's exact-match session target: `eng-001` never matches `eng-0011`."""
-    result = _tmux(["has-session", "-t", f"={session}"], socket=socket)
+    result = _tmux(["has-session", "-t", f"={session}"], socket=socket, env=env)
     return bool(result and result.returncode == 0)
 
 
@@ -96,6 +113,7 @@ def capture(
     session: str | None = None,
     lines: int = PANE_LINES,
     socket: str | None = None,
+    env: dict[str, str] | None = None,
     window: str = MAIN_WINDOW,
 ) -> dict[str, Any]:
     """The `pane` block of `hx show <id> --json` (CONTRACTS.md).
@@ -108,13 +126,13 @@ def capture(
     session = session or agent_id
     pane: dict[str, Any] = {"session": session, "alive": False, "lines": [], "source": "none", "error": None}
 
-    if shutil.which("tmux") is None:
+    if _command(socket, env) is None:
         pane["error"] = "tmux is not installed; the pane cannot be observed"
         return pane
 
     result = None
     for target in pane_targets(session, window):
-        result = _tmux(["capture-pane", "-p", "-e", "-t", target, "-S", f"-{lines}"], socket=socket)
+        result = _tmux(["capture-pane", "-p", "-e", "-t", target, "-S", f"-{lines}"], socket=socket, env=env)
         if result is not None and result.returncode == 0:
             pane["alive"] = True
             pane["source"] = "session"
