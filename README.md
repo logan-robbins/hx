@@ -90,6 +90,7 @@ for verified behavior and boundaries.
 
 - [Getting started](docs/getting-started.md) — setup and first Partner
 - [Operating hx](docs/operating.md) — daily use
+- [Several instances on one host](docs/multi-instance.md) — a fleet of Partners: private tmux servers, credentials, go-gate, clean product repository, bound evidence, serialized merges
 - [System design](docs/system-design.md) — current architecture and remaining integration
 - [Application map](docs/application-map.md) — semantic records, validation, and updates
 - [Continuity runtime](docs/continuity-runtime.md) — capture, state, checks, and reset contracts

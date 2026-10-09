@@ -192,6 +192,7 @@ the Partner does with `hx restart <id>`.
 | `HX-CHECK-FAILED` in a pane | Working as intended. The agent's checks did not pass; it fixes and retries. Nothing to do |
 | The Partner idle with work outstanding | It is waiting for a wake, which arrives when a worker completes. If a worker has completed and nothing happened, `hx show <id>` and tell the Partner |
 | A compaction summary in a worker's pane | Should not happen: hx seams first. Worth reporting |
+| `hx restart partner` does not return | The pane is frozen by a provider usage limit, so the restart's wait never ends. `tmux kill-session -t '=partner'` (with the instance's `HX_TMUX`), then `hx launch partner`; prefer an API key for that instance (`docs/multi-instance.md` §2) |
 
 ## What the Partner is told
 

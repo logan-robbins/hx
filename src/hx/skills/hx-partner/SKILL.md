@@ -128,6 +128,16 @@ Prints `HX-DISPATCH <id> working goal=sent` per id.
 done, you wait for `be-001` to complete and then dispatch `fe-001` — exactly as a human running
 two sessions would. Nothing sequences work for you; you do.
 
+## Before the first dispatch, when you are one of several Partners
+
+If your standing instructions (`PARTNER.md`) have no `GO <date>` line written by the human, do
+not dispatch: read your plan, run `hx doctor` and `hx board`, write one `READY` or `BLOCKED <why>`
+row to your board, reply with it and wait. Validate every goal template once with
+`python -c 'from hx.goals import parse_goal_text; ...'` before the fleet uses it; `hx dispatch`
+refuses a goal whose Checks already pass on the untouched tree, so Checks assert the
+deliverable, never the environment. Dispatch a whole wave in one call. See
+`docs/multi-instance.md`.
+
 ## Waiting
 
 `hx complete` wakes you with `<id> <outcome>` — completed or blocked, nothing more. Between wakes you have
