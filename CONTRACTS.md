@@ -293,6 +293,79 @@ Spec 07.4 and 08. One entry per seam record in the main stream since `dispatched
 10 when the stream ended sooner. `reads_of_context_file` must be 1 per seam (spec 13 M7);
 `reads_of_working_set` is the waste metric. Text form: one line per seam with the same fields.
 
+Turns come from the harness transcript the post-seam boundary record references
+(Claude-flavor JSONL; first 10 assistant turns at or after the seam timestamp).
+When no parseable transcript exists the whole `next_10_turns` object is `null`
+fields — a missing window is reported, never approximated. `totals` sums the
+non-null windows; `totals.seams` always counts seam records.
+
+## `hx metrics [--json]` (fleet rollup)
+
+No id: one entry per board item plus `summary`, `partner` and `graph`:
+
+```json
+{
+  "root_abs": "/home/u/hx-demo",
+  "ts": "2026-10-04T23:00:00Z",
+  "agents": [
+    {
+      "id": "eng-001", "pod": "eng", "role": "engineer", "state": "working",
+      "file": "pods/eng/eng-001-working.md", "outcome": None,
+      "dispatched": "2026-10-04T18:23:23Z", "completed": None,
+      "open_subagents": 0, "goal_ts": "2026-10-04T23:19:43Z",
+      "session_alive": true, "needs_input": false, "context_tokens": 225313,
+      "seams": 2, "turn_ts": "2026-10-04T23:24:07Z",
+      "companion_pass": false, "companion_ts": None,
+      "scope": "first line of the goal…",
+      "harness": {"flavor": "claude", "model": "claude-opus-5-5",
+                  "effort": "xhigh", "workdir": "/data/worktrees/hx-eng-001"},
+      "ties": {"mentions": ["qa-056"]},
+      "links": {"work_item": "pods/eng/eng-001-working.md",
+                "harness": "config/eng-001/harness.json",
+                "context": "run/eng-001/eng-001-main.context.md",
+                "stream": "logs/eng-001/eng-001-main.jsonl",
+                "pane_log": "logs/eng-001/eng-001-pane.log",
+                "goal_marker": "run/eng-001/goal"},
+      "limit_paused": false
+    }
+  ],
+  "summary": {"agents": 274, "working": 36,
+              "by_pod": {"eng": {"working": 36, "idle": 57}},
+              "paused_limit": ["eng-001"], "needs_input": [], "dead": []},
+  "partner": {"seq": 11191, "ts": "2026-10-04T23:00:20Z", "event": "seam_waiting"},
+  "graph": None
+}
+```
+
+The agent entry starts as the `hx board --json` item verbatim, then `harness`
+(best-effort `config/<id>/harness.json`), `ties.mentions` (id mentions in goal
+and addenda text, minus self), `links` (relative paths, `null` when the file is
+absent) and `limit_paused` (pane tail matches a usage-limit marker; `false`
+when the session is dead). `graph` is always `null` from the product: the
+instance overlay fills it (see below). Text form: one line per agent, then
+summary, paused-limit, needs-input, dead and partner lines.
+
+## `hx metrics --watch[=SECS]` (JSONL stream)
+
+For the UI and live dashboards. First object is
+`{"type": "snapshot", "ts": …, "fleet": {…the fleet document…}}`, then one
+`{"type": "delta", "ts": …, "changed": […], "agents": […], "summary": …,
+"partner": …}` per re-scan that moved anything. `changed` holds agent ids plus
+the `tasks` and `partner` pseudo-scopes (same vocabulary as SSE `changed`).
+Fast ticks compare mtime fingerprints; pane-only changes (death, limit banner,
+input prompt with no file write behind it) surface on the slow tick (30s).
+`agents` carries full entries for changed ids only; `summary` and `partner`
+ride every delta.
+
+## Instance graph overlay (UI composition)
+
+The UI's lit-nodes layer is instance-domain, not product: the instance ships a
+small reader (for DFA: `hx-dfa/tools/graph-status.py --json`) that joins the
+fleet document with its own graph source and emits
+`{"nodes": [{"id": …, "active": true, "owners": […], "kind": …}], "edges": …}`.
+The browser composes board + metrics + overlay; `hx metrics --json` leaves
+`graph` null so no product code depends on instance schema.
+
 ## `hx wake partner "<text>"` CLI form
 
 The UI's only write path reads this, so it is a contract. Last stdout line is exactly one of:

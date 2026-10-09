@@ -15,12 +15,17 @@ its delivery from the `stop` hook: it existed only for the Partner dispatching i
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
+import sqlite3
 import subprocess
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 from . import timestamps, tmux
+from .config_harness import flavor_of
 from .errors import HxError, NotFound, Refused
 from .ids import PARTNER
 from .workitems import require_work_item, state_of
@@ -71,6 +76,12 @@ _PI_BUSY_MARKERS = (
 )
 #: Footer from `footer.js` when auto-compaction is on: `12.4%/200k (auto)` or `?/1.0M (auto)`.
 _PI_IDLE_FOOTER = re.compile(r"(?:\d+\.\d+%|\?)/[\d.]+[kM]? \(auto\)")
+#: Codex draws `› Ask Codex to do anything` as its idle input box (live, 0.159.2,
+#: 2026-10-02) — the `›` is U+203A, matching neither prompt above, which hung
+#: `hx dispatch` forever on the first Codex fleet. A working Codex session draws
+#: the same box plus `◦ Working (Ns • esc to interrupt)`, so this is only
+#: consulted after the busy markers, exactly like the Claude prompt.
+_CODEX_IDLE_PROMPT = re.compile(r"^\s*›\s+Ask Codex")
 #: A bare prompt, with or without the box borders around it.
 _REAL_PROMPT = re.compile(r"^\s*(?:[│|]\s*)?[❯>]\s*(?:[│|]\s*)?$")
 #: The same prompt with the empty-input placeholder after it. The `❯` glyph is required here:
@@ -80,6 +91,94 @@ _FAKE_PROMPT = re.compile(r"^\s*hx-fake-idle>\s*$")
 IDLE_PROMPTS = (_FAKE_PROMPT, _REAL_PROMPT)
 
 GOAL_MARKER = "goal"
+
+
+def task_revision(root: Path, item_id: str) -> tuple[str, str | None]:
+    """Stable across re-delivery; changes on dispatch or amendment, including resume."""
+    from .tasks import load_tasks
+
+    task = load_tasks(root).get(item_id) or {}
+    identity = {k: task.get(k) for k in ("dispatched", "goal", "addenda")}
+    revision = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:12]
+    dates = [task.get("dispatched"), *(a.get("ts") for a in task.get("addenda", []))]
+    valid = [d for d in dates if isinstance(d, str) and timestamps.parse(d) is not None]
+    return revision, max(valid, key=timestamps.parse) if valid else None
+
+
+def check_task_revision(root: Path, item_id: str, expected: tuple[str, str | None]) -> None:
+    """A submitted pointer may acknowledge only the task revision it was built for."""
+    if task_revision(root, item_id) != expected:
+        raise Refused(f"{item_id}: task revision changed during goal delivery; session preserved, no restart")
+
+
+def check_background_tasks(root: Path, item_id: str) -> None:
+    """Refuse delivery over live handles; unreadable turn state is not clearance."""
+    from .hook_stop import turn_marker
+
+    try:
+        turn = json.loads(turn_marker(root, item_id).read_text())
+        if not isinstance(turn, dict) or not isinstance(turn.get("background_tasks", []), list):
+            raise ValueError("invalid turn state")
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError) as exc:
+        raise HxError(f"{item_id}: background task status unavailable; leaving session untouched") from exc
+    if turn.get("background_tasks"):
+        raise Refused(f"{item_id}: preserving live background tasks; goal not delivered")
+
+
+def task_completed(root: Path, item_id: str) -> bool:
+    """Only the control-plane receipt completes a task; transcript quotations never do."""
+    from .tasks import load_tasks
+
+    task = load_tasks(root).get(item_id) or {}
+    _, since = task_revision(root, item_id)
+    completed = timestamps.parse(task.get("completed") or "")
+    return bool(task.get("outcome") and completed and since
+                and completed >= timestamps.parse(since))
+
+
+def native_goals(root: Path, item_id: str) -> list[dict]:
+    """Read Codex's existing native status. Never write its store or infer missing state."""
+    if flavor_of(root, item_id) != "codex":
+        return []
+    path = run_dir(root, item_id) / "home" / "goals_1.sqlite"
+    if not path.exists():
+        return []
+    try:
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+            connection.row_factory = sqlite3.Row
+            return [dict(row) for row in connection.execute(
+                "SELECT goal_id, objective, status, updated_at_ms FROM thread_goals"
+            )]
+    except sqlite3.Error as exc:
+        raise HxError(f"{item_id}: native goal status unavailable; leaving session untouched") from exc
+
+
+def replacement_prompt(pane: str) -> str | None:
+    """Recognize the observed Codex dialog, not a mention in ordinary transcript text."""
+    match = re.search(
+        r"(?ms)^\s*Replace goal\?\s*\n\s*New objective:\s*(.*?)"
+        r"\n\s*(?:› )?1\. Replace current goal\s+Set the new objective and start it now\s*\n"
+        r"\s*(?:› )?2\. Cancel\s+Keep the current goal\s*\n\s*enter select · esc back\s*\Z",
+        pane,
+    )
+    return match.group(1) if match else None
+
+
+def check_native_delivery(root: Path, item_id: str, *, resume_blocked: bool = False) -> dict | None:
+    """Only an explicit resume may replace a blocked goal owned by this work item."""
+    check_background_tasks(root, item_id)
+    goals = [g for g in native_goals(root, item_id) if g["status"] != "complete"]
+    if not goals:
+        return None
+    path = require_work_item(root, item_id).with_name(f"{item_id}-working.md").resolve()
+    prefix = f"The goal for {item_id} is in {path}; read it first."
+    if (resume_blocked and len(goals) == 1 and goals[0]["status"] == "blocked"
+            and goals[0]["objective"].startswith(prefix)):
+        return goals[0]
+    raise Refused(f"{item_id}: preserving existing native goal ({', '.join(g['status'] for g in goals)}); "
+                  "only an explicitly resumed, same-item blocked goal may be replaced")
 
 
 def run_dir(root: Path, item_id: str) -> Path:
@@ -98,6 +197,9 @@ def pointer_text(root: Path, item_id: str) -> str:
             "chat (spec 06, 12, spec 14 D25)"
         )
     pointer = POINTER.format(id=item_id, path=require_work_item(root, item_id).resolve())
+    revision, since = task_revision(root, item_id)
+    if since:
+        pointer += f" Task revision {revision}; earlier completion is not completion of this task."
     # Muse 1.4 owns `/goal` as a native command. Send an ordinary prompt so it
     # reads the hx work item instead of trying to write Muse's goals.db.
     import json
@@ -114,6 +216,8 @@ def pane_is_idle(pane_text: str) -> bool:
     detector serves the fake suites and the live binary.
     """
     lines = pane_text.split("\n")
+    if replacement_prompt(pane_text) is not None:
+        return False
 
     # Pi, checked before Claude's "esc to interrupt": a Pi idle banner can contain
     # that phrase as a keybinding hint, while a busy Pi pane says "Working...".
@@ -127,6 +231,8 @@ def pane_is_idle(pane_text: str) -> bool:
         return False
     if any(_REAL_PROMPT.match(line) or _PLACEHOLDER_PROMPT.match(line) for line in lines):
         return True
+    if any(_CODEX_IDLE_PROMPT.match(line) for line in lines):
+        return True
 
     # The fake, and anything else: the last non-empty line is the prompt, or it is not.
     for line in reversed(lines):
@@ -137,7 +243,9 @@ def pane_is_idle(pane_text: str) -> bool:
 
 
 def target_of(name: str) -> str:
-    """`eng-001` means `eng-001:main`; `eng-001:companion` is taken as written."""
+    """Resolve an hx window name or a tmux pane id from the current hook."""
+    if re.fullmatch(r"%[0-9]+", name):
+        return name
     return f"={name}" if ":" in name else f"={name}:main"
 
 
@@ -165,9 +273,9 @@ def capture_pane(name: str, env=None, *, lines: int = 40) -> str | None:
 # input box rather than guess at a delay.
 
 #: The line that draws the input prompt, in the real TUI or in the fake.
-_PROMPT_LINE = re.compile(r"^\s*(?:[│|]\s*)?(?:[❯>]|hx-fake-idle>)")
+_PROMPT_LINE = re.compile(r"^\s*(?:[│|]\s*)?(?:[❯>›]|hx-fake-idle>)")
 #: The glyph itself, stripped so the rest of that line is what is *in* the box.
-_PROMPT_GLYPH = re.compile(r"^\s*(?:[│|]\s*)?(?:[❯>]|hx-fake-idle>)\s?")
+_PROMPT_GLYPH = re.compile(r"^\s*(?:[│|]\s*)?(?:[❯>›]|hx-fake-idle>)\s?")
 
 #: How many capture-pane polls each stage gets before the next step happens anyway. This is
 #: not a timeout in the spec-08 sense — nothing fails when it runs out, hx simply presses
@@ -217,7 +325,7 @@ def _poll(name: str, env, wanted: bool, probe: str) -> bool:
     return False
 
 
-def paste(name: str, text: str, env=None) -> None:
+def paste(name: str, text: str, env=None) -> bool:
     """Paste through a tmux buffer loaded from a file, then submit it (build-2 item 3).
 
     `load-buffer` from a file rather than `set-buffer` with an argument, so what is pasted
@@ -235,7 +343,7 @@ def paste(name: str, text: str, env=None) -> None:
     try:
         subprocess.run([*command, "load-buffer", "-b", buffer_name, source], check=True)
         subprocess.run([*command, "paste-buffer", "-b", buffer_name, "-t", target_of(name)], check=True)
-        submit(name, text, env)
+        return submit(name, text, env)
     finally:
         subprocess.run([*command, "delete-buffer", "-b", buffer_name], capture_output=True, check=False)
         Path(source).unlink(missing_ok=True)
@@ -261,6 +369,11 @@ def submit(name: str, text: str, env=None) -> bool:
 
     _poll(name, env, wanted=True, probe=probe)
     for _ in range(_ENTER_ATTEMPTS):
+        from .board import pane_awaits_input
+
+        pane = capture_pane(name, env)
+        if pane is None or pane_awaits_input(pane.splitlines()):
+            return False
         subprocess.run([*command, "send-keys", "-t", target_of(name), "Enter"], check=True)
         if _poll(name, env, wanted=False, probe=probe):
             return True
@@ -275,29 +388,101 @@ def wait_for_prompt(item_id: str, env=None) -> None:
         pane = capture_pane(item_id, env)
         if pane is None:
             raise NotFound(f"{item_id}: no tmux pane {item_id}:main; `hx launch {item_id}` starts it")
+        from .board import pane_awaits_input
+
+        if pane_awaits_input(pane.splitlines()):
+            raise Refused(f"{item_id}: pane awaits input; goal not delivered")
         if pane_is_idle(pane):
             return
         time.sleep(0.05)
 
 
-def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False, env=None) -> str:
+def _confirm_codex_delivery(root: Path, item_id: str, text: str, blocked: dict | None,
+                            env, revision: tuple[str, str | None]) -> None:
+    """Bounded observation, never restart. A modal is not a delivery acknowledgment."""
+    import time
+
+    confirmed = False
+    legacy = POINTER.format(id=item_id, path=require_work_item(root, item_id).resolve()).removeprefix("/goal ")
+    for _ in range(_POLL_ATTEMPTS):
+        check_task_revision(root, item_id, revision)
+        pane = capture_pane(item_id, env)
+        if pane is None:
+            raise HxError(f"{item_id}: pane disappeared before goal acknowledgment")
+        objective = replacement_prompt(pane)
+        if objective is not None:
+            if confirmed:
+                # The TUI can keep drawing the modal while processing the first Enter.
+                # Observe only; a second Enter could select an unrelated next prompt.
+                time.sleep(_POLL_INTERVAL_S)
+                continue
+            current = [g for g in native_goals(root, item_id) if g["status"] != "complete"]
+            shown = _squash(objective).removesuffix("...").removesuffix("…")
+            expected = text.removeprefix("/goal ")
+            path = _squash(str(require_work_item(root, item_id).resolve()))
+            if (blocked is None or current != [blocked] or path not in shown
+                    or not re.search(r"(?m)^\s*› 1\. Replace current goal", pane)
+                    or not any(_squash(p).startswith(shown) for p in (expected, legacy))):
+                raise Refused(f"{item_id}: replacement dialog not safely attributable to this blocked resume")
+            check_background_tasks(root, item_id)
+            check_task_revision(root, item_id, revision)
+            subprocess.run([*tmux.tmux_command(env), "send-keys", "-t", target_of(item_id), "Enter"], check=True)
+            confirmed = True
+        else:
+            for native in native_goals(root, item_id):
+                matches = native["objective"] == text.removeprefix("/goal ")
+                if confirmed and blocked is not None and native["goal_id"] != blocked["goal_id"]:
+                    matches = matches or native["objective"] == legacy
+                if matches and native["status"] == "active":
+                    return
+            if task_completed(root, item_id):
+                return
+        time.sleep(_POLL_INTERVAL_S)
+    raise HxError(f"{item_id}: native goal acknowledgment not observed; session preserved, no restart")
+
+
+def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False,
+              resume_blocked: bool = False, env=None) -> str:
     """Deliver the pointer. Returns `pasted`.
 
     It waits for the idle prompt first (no timeout, spec 08) unless `now` is set, which is
     the `context` hook on `clear`, where the pane is by construction about to be ready.
     """
+    revision = task_revision(root, item_id)
     text = pointer_text(root, item_id)
+    check_task_revision(root, item_id, revision)
+    if resume_blocked:
+        from .caller import require_partner_caller
+
+        require_partner_caller("goal --resume-blocked", env)
+        if state_of(require_work_item(root, item_id)) != "working":
+            raise Refused(f"{item_id}: resume delivery requires a current working item")
+    blocked = check_native_delivery(root, item_id, resume_blocked=resume_blocked)
     run_dir(root, item_id).mkdir(parents=True, exist_ok=True)
 
+    pane = capture_pane(item_id, env) if not now else None
+    if pane is not None and replacement_prompt(pane) is not None:
+        if blocked is None:
+            raise Refused(f"{item_id}: replacement dialog requires an explicit blocked-goal resume")
+        _confirm_codex_delivery(root, item_id, text, blocked, env, revision)
+        check_task_revision(root, item_id, revision)
+        marker(root, item_id).write_text(timestamps.now() + "\n")
+        return "pasted"
     if not now:
-        if capture_pane(item_id, env) is None:
+        if pane is None:
             raise NotFound(
                 f"{item_id}: no tmux pane {item_id}:main to paste the goal into; "
                 f"`hx launch {item_id}` starts it"
             )
         wait_for_prompt(item_id, env)
 
-    paste(item_id, text, env)
+    check_background_tasks(root, item_id)
+    check_task_revision(root, item_id, revision)
+    submitted = paste(item_id, text, env)
+    if flavor_of(root, item_id) == "codex":
+        _confirm_codex_delivery(root, item_id, text, blocked, env, revision)
+    elif submitted is False:
+        raise HxError(f"{item_id}: goal pointer was not submitted; session preserved")
     # Muse 1.4 redraws the composer after the first Enter: the box can read
     # empty transiently and then redraw the still-unsent pointer, so a single
     # clear observation is not a submission. A clear counts only when a second
@@ -315,9 +500,12 @@ def send_goal(root: Path, item_id: str, *, now: bool = False, wait: bool = False
                 confirm = capture_pane(item_id, env)
                 if confirm is not None and probe not in _squash(input_box(confirm)):
                     break
+            check_background_tasks(root, item_id)
+            check_task_revision(root, item_id, revision)
             submit(item_id, text, env)
         else:
             raise HxError(f"{item_id}: Muse goal pointer remains in the input box")
+    check_task_revision(root, item_id, revision)
     marker(root, item_id).write_text(timestamps.now() + "\n")
     return "pasted"
 
@@ -331,11 +519,14 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("id")
     parser.add_argument("--now", action="store_true", help="paste without waiting (the `clear` hook)")
     parser.add_argument("--wait", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--resume-blocked", action="store_true",
+                        help="finish an explicitly requested same-item blocked Codex goal replacement")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args.now and args.wait:
         raise HxError("goal: --now and --wait are mutually exclusive")
-    outcome = send_goal(root, args.id, now=args.now, wait=args.wait, env=env)
+    outcome = send_goal(root, args.id, now=args.now, wait=args.wait,
+                        resume_blocked=args.resume_blocked, env=env)
     print(f"HX-GOAL {args.id} {outcome}")
     return 0

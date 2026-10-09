@@ -263,8 +263,8 @@ PUBLISHED = {
     "goals": ("hx.goals", "collect"),
     "archive": ("hx.archive", "collect"),
     "wake": ("hx.wake", "wake_partner_status"),
-    # `hx metrics` is M7. Nothing to bind yet; `hx.show.collect` is what fills the
-    # `metrics` block of its own document, so this lights up without a UI change.
+    # M7 shipped: the fleet document. `hx.show.collect` also fills the `metrics`
+    # block of its own document, so per-id metrics light up without a UI change.
     "metrics": ("hx.metrics", "collect"),
 }
 

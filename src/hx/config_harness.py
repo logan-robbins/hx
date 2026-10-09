@@ -60,7 +60,10 @@ _COMPANION_BOOL_FIELDS = ("disabled",)
 
 #: Spec 05: `claude-cli` goes through the pinned binary with the seed token and is the only one
 #: built; `anthropic` is the Messages API with an API key, for instances that have one.
-COMPANION_PROVIDERS = ("claude-cli", "anthropic")
+#: `openai-api` is the OpenAI API companion for Codex/OpenAI lanes (fleet direction
+#: 2026-10-05); validation-only, like the other two — Companion sessions are still
+#: created and routed by `start.sh --companion` in tmux, independent of this value.
+COMPANION_PROVIDERS = ("claude-cli", "anthropic", "openai-api")
 
 
 def resolve_workdir(workdir: str, root: Path) -> Path:

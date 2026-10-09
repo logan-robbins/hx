@@ -68,7 +68,10 @@ def test_show_nulls_what_later_milestones_produce(instance, hx, launched, goals)
     assert document["step_state"] == {}, "the Companion writes step state at M5"
     assert document["context_file"]["text"] is None, "hx compose lands at M2"
     assert document["context_file"]["path"] == "run/eng-001/eng-001-main.context.md"
-    assert document["metrics"] is None, "hx metrics lands at M7"
+    # M7 shipped: `metrics` is the contracted `hx metrics <id>` document now,
+    # null only when it cannot be built — never a milestone placeholder.
+    assert set(document["metrics"]) == {"id", "stream", "dispatched", "seams", "totals"}
+    assert document["metrics"]["id"] == "eng-001"
     assert document["subagents"] == {}
     assert document["archive"] and document["bench"] == []
 

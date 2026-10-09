@@ -21,6 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import streams
+from .ids import PARTNER
 from .subagents import handle_for
 
 #: `PreCompact` fires for subagents too, so the record goes to the stream that is compacting.
@@ -72,7 +73,7 @@ def post(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str
     # Native compaction is the fallback path, and what it kept is the only record of the part
     # of the conversation it threw away. It goes into episode memory next to the Companion's
     # own chunks, marked `compact` so a search can tell them apart (docs/memory.md).
-    if summary:
+    if summary and item_id != PARTNER:
         from . import memory as memory_mod
         from .companion import state_path
         from .stepstate import load as load_state

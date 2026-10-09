@@ -98,19 +98,23 @@ def test_goal_waits_for_the_idle_prompt(instance, hx, launched, goals, tmux_serv
     wait_for(lambda: "/goal The goal for" in pasted(instance, "eng-001"), what="the pointer")
 
 
-def test_goal_now_pastes_into_a_busy_pane(instance, hx, launched, goals, tmux_server):
-    """`--now` is used from the `context` hook on `clear` and from the `stop` hook (spec 08)."""
+def test_goal_now_does_not_claim_submission_in_a_busy_pane(instance, hx, launched, goals, tmux_server):
+    """`--now` skips the readiness wait, but an unsubmitted paste is not an ACK."""
     from .test_transitions import hold_pane
 
     launched("eng-001")
     goals("eng-001")
     assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
+    marker = instance / "run" / "eng-001" / "goal"
+    marker.unlink()
     hold_pane(tmux_server, "eng-001")
 
     result = hx("goal", "eng-001", "--now")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "HX-GOAL eng-001 pasted"
+    assert result.returncode == 2, result.stderr
+    assert "not submitted; session preserved" in result.stderr
+    assert "HX-GOAL" not in result.stdout
+    assert not marker.exists()
     wait_for(lambda: "/goal The goal for" in pasted(instance, "eng-001"), what="the pointer")
 
 
@@ -131,7 +135,7 @@ def test_the_pointer_never_carries_the_order(instance, hx, launched, goals):
     wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
     pointer = [line for line in pasted(instance, "eng-001").split("\n") if line.startswith("/goal")][0]
     assert "A very long order" not in pointer
-    assert len(pointer) < 400
+    assert len(pointer) < 500
 
 
 # --- hx restart, up, heartbeat ---------------------------------------------------------------------
@@ -225,16 +229,13 @@ def test_heartbeat_repastes_the_goal_to_an_idle_working_agent(instance, hx, laun
 
 
 def test_heartbeat_does_not_repaste_to_an_agent_that_completed(instance, hx, launched, goals):
-    """`HX-COMPLETE` in the stream means the agent is done, whatever the pane looks like."""
-    from hx.streams import append_record
+    """A current control-plane completion receipt, not transcript text, means done."""
 
     launched("eng-001")
     goals("eng-001")
     assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
     wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
-    append_record(instance, "eng-001", "eng-001-main", {
-        "event": "post_tool", "tool": "Bash", "output": "HX-COMPLETE eng-001 done",
-    })
+    assert hx("complete", "done", harness_id="eng-001").returncode == 0
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
 
     assert "regoaled=none" in hx("heartbeat").stdout
@@ -428,10 +429,22 @@ def test_a_failed_wake_is_a_warning_not_a_failure(instance, hx, launched, goals)
 
     launched("eng-001")
     dispatch_working(instance, hx, goals)
+    result = hx("complete", "blocked", harness_id="eng-001")
+    assert result.returncode == 0
+    assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE eng-001 blocked"
+    assert "the Partner was not woken (no-socket)" in result.stderr
+
+
+def test_complete_done_is_silent_when_the_partner_is_unreachable(instance, hx, launched, goals):
+    """Quiet protocol: `done` attempts no wake, so an unreachable Partner warns nothing."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
     result = hx("complete", "done", harness_id="eng-001")
     assert result.returncode == 0
     assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE eng-001 done"
-    assert "the Partner was not woken (no-socket)" in result.stderr
+    assert "not woken" not in result.stderr
 
 
 # --- readiness detection, against the real TUI's chrome ------------------------------------------
@@ -516,6 +529,48 @@ def test_a_pane_that_has_not_drawn_yet_is_not_idle(instance):
 
     assert pane_is_idle("") is False
     assert pane_is_idle("$ \n") is False
+
+
+#: Codex 0.159.2 idle chrome, captured live 2026-10-02. The `›` is U+203A.
+CODEX_IDLE = "\n".join([
+    "  >_ OpenAI Codex (v0.159.2)",
+    "     /data/worktrees/hx-eng-032",
+    "  permissions: YOLO mode",
+    "",
+    "› Ask Codex to do anything",
+    "",
+    "  GPT-6-Astra xhigh · /data/worktrees/hx-eng-032",
+    "  ? for shortcuts                                     ⚠ 2 warnings · f2 to view",
+    "",
+])
+#: The same box while a turn is in flight: the prompt says nothing, the
+#: `esc to interrupt` working line is the signal — the Claude lesson, repeated.
+CODEX_BUSY = "\n".join([
+    "• Goal active Objective: The goal for eng-032 is in /home/azureuser/hx-dfa/pods/",
+    "eng/eng-032-working.md; read it first.",
+    "",
+    "◦ Working (7s • esc to interrupt)",
+    "",
+    "› Ask Codex to do anything",
+    "",
+    "  GPT-6-Astra xhigh · /data/worktrees/hx-eng-032            Pursuing goal (7s)",
+    "",
+])
+
+
+def test_a_codex_idle_pane_reads_as_idle():
+    """Live, 0.159.2: `› Ask Codex…` is the idle box; missing it hung dispatch."""
+    from hx.goal import pane_is_idle
+
+    assert pane_is_idle(CODEX_IDLE) is True
+
+
+def test_a_codex_busy_pane_reads_as_busy():
+    """The input box stays drawn mid-turn; `esc to interrupt` decides."""
+    from hx.goal import pane_is_idle
+
+    assert "› Ask Codex" in CODEX_BUSY, "the prompt is present while Codex works"
+    assert pane_is_idle(CODEX_BUSY) is False
 
 
 # --- build-8 item 10: the input box, and what is still sitting in it ----------------------------

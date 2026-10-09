@@ -279,7 +279,9 @@ def test_meta_start_exec_uses_the_long_model_option(instance, tmp_path):
     assert "-m" not in argv
 
 
-def test_dispatch_wipes_meta_data(instance):
+def test_dispatch_keeps_meta_data(instance):
+    """Muse 1.4.2 refuses every submit after `home/data/` is deleted from under
+    the running TUI (goal store custody; live 2026-10-02), so a dispatch keeps it."""
     from hx.config_harness import flavor_of
     from hx.dispatch import _reset_run_dir
 
@@ -295,5 +297,5 @@ def test_dispatch_wipes_meta_data(instance):
     kept.parent.mkdir(parents=True, exist_ok=True)
     kept.write_text("{}\n")
     _reset_run_dir(instance, "eng-001")
-    assert not (instance / "run" / "eng-001" / "home" / "data").exists()
+    assert (instance / "run" / "eng-001" / "home" / "data").is_dir()
     assert kept.is_file()

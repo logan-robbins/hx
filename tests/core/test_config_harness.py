@@ -216,7 +216,7 @@ def test_zero_is_a_valid_seam_interval(tmp_path):
     assert load_harness(path, check_cross_file=False).companion["seam_min_interval_s"] == 0
 
 
-@pytest.mark.parametrize("provider", ["claude-cli", "anthropic"])
+@pytest.mark.parametrize("provider", ["claude-cli", "anthropic", "openai-api"])
 def test_the_two_providers_of_spec_05(provider, tmp_path):
     path = tmp_path / "eng-001" / "harness.json"
     path.parent.mkdir()

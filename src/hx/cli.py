@@ -40,6 +40,7 @@ from . import checks as checks_cmd
 from . import appmap as map_cmd
 from . import planning as planning_cmd
 from . import evidence as evidence_cmd
+from . import metrics as metrics_cmd
 from . import goals as goals_cmd
 from . import read as read_cmd
 from . import recall as recall_cmd
@@ -54,9 +55,7 @@ from .errors import HxError, ValidationError
 #: Every command of spec 08, plus `install`, `up`, `doctor`, `ui` and `show`. The v1 cut
 #: (spec 14 D25) removed `repo`, `push` and `upgrade`: hx does not manage git or its own
 #: version. The value is the build-lane goal that delivers each remaining command.
-NOT_IMPLEMENTED = {
-    "metrics": 8,
-}
+NOT_IMPLEMENTED: dict[str, int] = {}
 
 IMPLEMENTED = {
     "amend": amend_cmd.main,
@@ -88,6 +87,7 @@ IMPLEMENTED = {
     "observe": observer_cmd.main,
     "progress": progress_cmd.main,
     "evidence": evidence_cmd.main,
+    "metrics": metrics_cmd.main,
     "goals": goals_cmd.main,
     "read": read_cmd.main,
     "recall": recall_cmd.main,
@@ -149,6 +149,7 @@ the control plane:
 read-only views:
   board [--json]                          a plain listing of what is on disk
   show ID [--json]                        everything hx knows about one id
+  metrics [ID] [--json] [--watch]         seam metrics, or the fleet rollup
   goals [--json] / archive [--json]       the goal records, and what has been archived
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken

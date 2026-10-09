@@ -306,7 +306,11 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
     final = rename_state(path, "complete")
     goal.clear_marker(root, item_id)
 
-    woke = wake.wake_partner_status(root, f"{item_id} {outcome}")
+    # Quiet protocol (LOGAN DIRECT 2026-10-05): a `done` completion is discovered by the
+    # Partner's board poll; only outcomes that need Partner action wake the Partner pane.
+    woke = None
+    if outcome != "done":
+        woke = wake.wake_partner_status(root, f"{item_id} {outcome}")
 
     return {
         "id": item_id,

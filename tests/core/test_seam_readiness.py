@@ -109,9 +109,11 @@ def test_stop_defers_while_companion_behind(instance, monkeypatch):
     """Marker stays, a watcher record lands, nothing is pasted, hook returns."""
     from hx import goal as goal_mod
     from hx import hook_stop
+    from hx import companion as companion_mod
     from hx.streams import iter_records, stream_path
 
     monkeypatch.setattr(goal_mod, "capture_pane", lambda *a, **k: "idle\n❯ ")
+    monkeypatch.setattr(companion_mod, "is_running", lambda *a, **k: True)
     _behind(instance)
     marker = _touch_marker(instance)
 
@@ -123,6 +125,22 @@ def test_stop_defers_while_companion_behind(instance, monkeypatch):
     assert records[-1]["event"] == "seam_waiting"
     assert records[-1]["ready"] == "behind"
     assert records[-1]["streams"]["partner-main"][0] < records[-1]["streams"]["partner-main"][1]
+
+
+def test_partner_checkpoint_allows_seam_without_companion(instance, monkeypatch):
+    """A dead Companion cannot force the Partner into native compaction."""
+    from hx import companion as companion_mod, goal as goal_mod
+    from hx.seam import seam
+
+    monkeypatch.setattr(goal_mod, "capture_pane", lambda *a, **k: "idle\n❯ ")
+    monkeypatch.setattr(goal_mod, "paste", lambda *a, **k: True)
+    monkeypatch.setattr(companion_mod, "is_running", lambda *a, **k: False)
+    _behind(instance)
+    _touch_marker(instance)
+    result = seam(instance, "partner", env={})
+    assert result["outcome"] == "taken"
+    context = instance / "run" / "partner" / "partner-main.context.md"
+    assert "## PARTNER.md" in context.read_text()
 
 
 def test_take_waits_out_an_open_menu(instance, monkeypatch):

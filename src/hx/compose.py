@@ -522,11 +522,7 @@ def compose_text(
                 _bound_partner_md(partner_md.read_text()) if partner_md.is_file() else "",
             )
         )
-        try:
-            rendered = board_mod.render_text(board_mod.collect(root, env=env))
-        except Exception as exc:  # the board must never stop the Partner from starting
-            rendered = f"_hx board failed: {exc}_"
-        parts.append(_section("Board", "hx board", f"```\n{rendered}\n```" if rendered else ""))
+        parts.append(_section("Board", "hx board", "Run `hx board` when current lane status is needed."))
 
     return "\n".join(parts).rstrip("\n") + "\n"
 

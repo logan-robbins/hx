@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from . import archive, companion as companion_mod, compose, streams, timestamps, tmux
+from . import archive, companion as companion_mod, compose, metrics as metrics_mod, streams, timestamps, tmux
 from .config_harness import load_harness
 from .errors import NotFound, ValidationError
 from .ids import PARTNER
@@ -55,6 +55,14 @@ def _streams(root: Path, item_id: str) -> list[dict]:
         handle = path.name.rsplit("-", 1)[0]
         found.append(_stream_entry(root, path, handle, path.name.endswith("-open.jsonl"), item_id))
     return found
+
+
+def _metrics_or_none(root: Path, item_id: str) -> dict | None:
+    """The `hx metrics <id>` document; show never fails on it."""
+    try:
+        return metrics_mod.per_id(root, item_id)
+    except Exception:
+        return None
 
 
 def _step_state(root: Path, item_id: str) -> dict:
@@ -212,8 +220,8 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         "context_file": _context_file(root, item_id),
         "streams": _streams(root, item_id),
         "subagents": subagents,
-        # `hx metrics` is M7; the key is present and null until then.
-        "metrics": None,
+        # The per-id seam document; null when metrics cannot be built.
+        "metrics": _metrics_or_none(root, item_id),
         "pane": _pane(root, item_id, env),
         "turn": _turn(root, item_id),
         "companion": companion_mod.activity(root, item_id),

@@ -45,8 +45,12 @@ PI_HOME_WIPE = ("sessions",)
 #: Grok keeps the conversation in `home/sessions/`. A new goal is a new session.
 GROK_HOME_WIPE = ("sessions",)
 #: Muse Code keeps sessions, traces, and the skill index under `home/data/`.
-#: A new goal is a new session; the config in `home/muse/` survives.
-META_HOME_WIPE = ("data",)
+#: That directory is NOT wiped: Muse 1.4.2 holds goal-store custody there and
+#: refuses every submit once it is deleted from under the running TUI ("goal
+#: store backend error ... does not exist", live 2026-10-02). A new goal still
+#: starts a fresh conversation in the live session; only the config in
+#: `home/muse/` is guaranteed stable across dispatches.
+META_HOME_WIPE = ()
 #: Codex keeps the conversation in `home/sessions/`. A new goal is a new session.
 CODEX_HOME_WIPE = ("sessions",)
 #: Kept in `run/<id>/` across a dispatch; everything else there is cleared (spec 08).
