@@ -24,6 +24,12 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Added
 
+- `docs/multi-instance.md` §6: what a handoff carries before another instance or the human acts
+  on it — an authority line and capture time, PR heads and merge states from one query made
+  after the last push (earlier ones labelled historical, a blocked state with its cause),
+  evidence carried from one tree to another only with a recorded empty product diff, skipped
+  rows never promoted, open findings closed only by a cited line, and a checksum list over the
+  directory. The release-engineer and qa-engineer Companion roles keep the same facts.
 - `docs/multi-instance.md`: running a fleet of Partners on one host (private tmux servers via `HX_TMUX`, per-instance credentials and usage limits, go-gate, clean product repository, bound evidence, serialized merges, the four channels between instances and the human session, stable launcher paths instead of versioned binary pins); pointers in the `hx-setup` and `hx-partner` skills, the operating table and the README.
 
 Pre-release. The build is tracked by milestone in `spec/13-build-order.md`; entries land here

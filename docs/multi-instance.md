@@ -93,6 +93,16 @@ database, role and fixture manifest, captured at run time; report unit, componen
 HTTP and browser UI as four separate numerators; reconcile CI, component and live outcomes in one
 table before any readiness word. A missing original proof stays missing; nothing is reconstructed.
 
+A handoff that another instance or the human will act on says in its first paragraph what it is
+and is not (an evidence index is not an approval) and when its external facts were captured. PR
+heads, check states and merge states come from one fresh query made after the last push; anything
+captured earlier is labelled historical, and a blocked merge state is reported with its cause. Evidence
+taken on one tree is quoted for another only when the product diff between the two is recorded as
+empty, and the handoff then says the later tree was not rerun. Skipped or not-executed rows keep their
+outcome; supplemental evidence sits beside them under its own label. An open finding stays listed by
+number until a line that cites new evidence closes it. Seal the directory with a checksum list so a
+reader can tell an edited handoff from the one that was reviewed.
+
 ## 7. Merges across instances
 
 Instances merge into one branch. Serialize the merges with a host-wide lock

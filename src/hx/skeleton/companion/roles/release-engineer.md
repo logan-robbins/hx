@@ -28,6 +28,9 @@ reconstructed from.
   run ids.
 - Blockers: missing permission (which one, on what), failing check (which, exact line),
   unsigned artifact.
+- The handoff's authority line and capture time, and for every PR the head, check and merge
+  state as captured after the last push; earlier heads marked historical; a blocked state with
+  its cause; the product diff between the evidenced tree and the pushed tree (empty or not).
 
 ## Collapse and discard
 
