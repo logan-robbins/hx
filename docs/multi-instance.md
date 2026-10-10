@@ -39,6 +39,13 @@ between them. Everything below was learned running thirteen instances on one 96-
   anything else is a `CLAUDE_CODE_OAUTH_TOKEN` seat. Thirteen Partners prewarming on three OAuth
   seats hit usage limits within the hour; an API key did not. Decide the credential per instance
   before the first launch and record it in the fleet table.
+- Record every agent binary by its **stable launcher path**, never a versioned file. The Muse
+  launcher's auto-update replaced `muse-bin-1.4.3-…` with `1.4.4-…` and deleted the old file within
+  the day; every instance pinned to the versioned path failed `hx doctor` at once. `config/meta.json`
+  and friends name `~/.local/bin/muse`, `/usr/bin/codex` and a version-less `claude` path; the
+  `version` field is a note, not a gate; a fleet-wide `pins-check` (grep for a version-like path
+  component, then `-x`) runs with the board. A running process keeps its unlinked binary, so the
+  deletion hurts the next launch, not the current one.
 - A pane frozen by a usage limit does not answer `hx restart partner` (restart sends the goal and
   waits; it hung seven minutes). Recovery: `HX_TMUX="tmux -L hx-<area>" tmux kill-session -t partner`
   then `hx launch partner`. Use `hx wake partner "<text>"` for cross-instance nudges; it is accepted

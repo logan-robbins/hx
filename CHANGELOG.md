@@ -24,7 +24,7 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Added
 
-- `docs/multi-instance.md`: running a fleet of Partners on one host (private tmux servers via `HX_TMUX`, per-instance credentials and usage limits, go-gate, clean product repository, bound evidence, serialized merges, the four channels between instances and the human session); pointers in the `hx-setup` and `hx-partner` skills, the operating table and the README.
+- `docs/multi-instance.md`: running a fleet of Partners on one host (private tmux servers via `HX_TMUX`, per-instance credentials and usage limits, go-gate, clean product repository, bound evidence, serialized merges, the four channels between instances and the human session, stable launcher paths instead of versioned binary pins); pointers in the `hx-setup` and `hx-partner` skills, the operating table and the README.
 
 Pre-release. The build is tracked by milestone in `spec/13-build-order.md`; entries land here
 as milestones are accepted.
