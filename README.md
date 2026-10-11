@@ -98,6 +98,7 @@ for verified behavior and boundaries.
 - [Planning runtime](docs/planning-runtime.md) — assignments, ownership, and completion
 - [Current implementation status](docs/continuity-build-status.md) — merged scope and verification
 - [Native interface verification](docs/native-interface-verification.md) — adapter support boundaries
+- [docs/learnings.md](docs/learnings.md) — the central LEARNINGS file: propose, other-session review, numbered append; the signal index every agent carries
 - [CONTRACTS.md](CONTRACTS.md) — shared machine-readable shapes
 - [CHANGELOG.md](CHANGELOG.md)
 
