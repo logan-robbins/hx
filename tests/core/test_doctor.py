@@ -274,6 +274,24 @@ def test_reports_the_learnings_directory(instance):
     assert "learnings-size" not in {check for _, check, _ in checks}
 
 
+def test_an_instance_on_a_shared_directory_is_not_asked_for_its_own_skeleton_files(instance, tmp_path):
+    """A fleet instance points `learnings` at the shared directory; its unused local
+    LEARNINGS/ skeleton is not a warning (docs/multi-instance.md §4)."""
+    import shutil
+    shared = tmp_path / "fleet" / "LEARNINGS"
+    shutil.copytree(instance / "LEARNINGS", shared)
+    shutil.rmtree(instance / "LEARNINGS")
+    hx_json = instance / "config" / "hx.json"
+    recorded = json.loads(hx_json.read_text()) if hx_json.is_file() else {}
+    recorded["learnings"] = str(shared)
+    hx_json.write_text(json.dumps(recorded))
+    checks = run_checks(instance)
+    assert not [d for s, c, d in checks if c == "skeleton" and "LEARNINGS/" in d], \
+        [d for s, c, d in checks if c == "skeleton" and "LEARNINGS/" in d]
+    assert ("learnings", OK) in statuses(checks)
+    assert str(shared) in detail_for(checks, "learnings")[0]
+
+
 def test_warns_on_the_single_file_layout_and_an_oversized_region(instance, monkeypatch):
     from hx import learn
     (instance / "LEARNINGS.md").write_text("# old\n")

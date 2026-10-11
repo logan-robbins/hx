@@ -600,14 +600,23 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     if not root.is_dir():
         return checks
 
+    # Central learnings (docs/learnings.md): where the directory is, how many rules, what waits.
+    from . import learn as learn_mod
+
+    # An instance that points `learnings` elsewhere (a fleet's shared directory) does not use
+    # its own LEARNINGS/ skeleton files; the `learnings` row below reports the directory it uses.
+    try:
+        own_learnings = learn_mod.learnings_path(root, env) == root / learn_mod.DIRECTORY_NAME
+    except ValidationError:
+        own_learnings = True
     for relative in EXPECTED_SKELETON_FILES:
+        if relative.startswith(learn_mod.DIRECTORY_NAME + "/") and not own_learnings:
+            continue
         target = root / relative
         checks.append(
             (OK, "skeleton", relative) if target.exists() else (WARN, "skeleton", f"{relative} missing")
         )
 
-    # Central learnings (docs/learnings.md): where the file is, how many rules, what waits.
-    from . import learn as learn_mod
 
     try:
         learnings = learn_mod.summary(root, env)
