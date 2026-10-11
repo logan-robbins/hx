@@ -141,4 +141,7 @@ def test_the_learnings_region_follows_the_rule_count(instance):
     proposal = learn.propose(instance, signal="s", check="c", evidence="e", env={"HARNESS_ID": "eng-001"})
     learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
     assert compile_agent(instance, "eng-001")["compiled"] is True
-    assert "1 rule(s), last L1" in agents_md(instance)
+    text = agents_md(instance)
+    assert "1 rule(s), last L1" in text
+    # The persona carries the signal index, so a matching signal costs no Read.
+    assert "- L1 · s" in text and "hx learn list <key>" in text

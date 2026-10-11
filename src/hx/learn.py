@@ -42,8 +42,14 @@ from pathlib import Path
 from . import store, timestamps
 from .errors import HxError, NotFound, ValidationError
 
-#: `**Rule T12** · Signal: … · Check: … · Evidence: …` — the one shape a rule line has.
-RULE_RE = re.compile(r"^\*\*Rule (?P<prefix>[A-Z]{1,3})(?P<number>\d+)\*\*\s*·\s*(?P<body>.*)$")
+#: `**Rule T12** · Signal: … · Check: … · Evidence: …` — the one shape a rule line has. A short
+#: parenthetical after the key (`**Rule S8 (integration evidence)**`) and a qualifier after a
+#: field name (`Check (no search):`, `Check before claiming:`) are tolerated on read, because
+#: real files have them; `hx learn accept` never writes them.
+RULE_RE = re.compile(
+    r"^\*\*Rule (?P<prefix>[A-Z]{1,3})(?P<number>\d+)(?: \([^)]{1,60}\))?\*\*\s*·\s*(?P<body>.*)$"
+)
+FIELD_QUALIFIER = r"(?: [^·:]{0,40})?"
 FIELDS = ("Signal", "Check", "Evidence")
 GO_RE = re.compile(r"^GO \d{4}-\d{2}-\d{2}\b", re.M)
 
@@ -136,7 +142,9 @@ def parse_rule(line: str) -> dict | None:
     fields: dict[str, str] = {}
     for name in FIELDS:
         found = re.search(
-            rf"(?:^|·\s*){name}:\s*(?P<value>.*?)(?=\s*·\s*(?:{'|'.join(FIELDS)}):|$)", body, re.S
+            rf"(?:^|·\s*){name}{FIELD_QUALIFIER}:\s*(?P<value>.*?)"
+            rf"(?=\s*·\s*(?:{'|'.join(FIELDS)}){FIELD_QUALIFIER}:|$)",
+            body, re.S,
         )
         fields[name.lower()] = found["value"].strip() if found else ""
     return {
@@ -422,19 +430,47 @@ def summary(root: Path, env: dict[str, str] | None = None) -> dict:
             "pending": len(pending), "last": last}
 
 
+#: Above this many rules the persona carries counts per prefix instead of the signal index.
+INDEX_LIMIT = 400
+SIGNAL_WIDTH = 160
+
+
 def persona_region(root: Path, env: dict[str, str] | None = None) -> str:
-    """The fenced text `hx compile` distributes into every agent's persona."""
+    """The fenced text `hx compile` distributes into every agent's persona.
+
+    It carries the *index* — every rule's key and Signal, one line each — not the file: an
+    agent recognises a signal from its system prompt with no Read, and pulls the one rule it
+    needs by key (`hx learn list <key>`). The file is never read whole by an agent.
+    """
     info = summary(root, env)
+    rules = read_rules(Path(info["path"]))
     count = f"{info['rules']} rule(s)" + (f", last {info['last']}" if info["last"] else "")
-    return (
+    head = (
         f"**Learnings: `{info['path']}`** ({count}). The central record of what tripped agents up "
-        "here — a wrong assumption, a correction someone had to make, a wasted cycle — written as "
-        "rules: Signal (what you see), Check (what decides it), Evidence (where it happened). Read it "
-        "before you start. When something trips you up, propose a rule the moment you understand it:\n"
+        "here — a wrong assumption, a correction someone had to make, a wasted cycle — as rules: "
+        "Signal (what you see), Check (what decides it), Evidence (where it happened). The signals "
+        "are indexed below; when one matches what you see, pull that rule by key with "
+        "`hx learn list <key>` — do not read the file. When something trips you up, propose a rule "
+        "the moment you understand it:\n"
         "`hx learn propose --signal \"<what you saw>\" --check \"<what decides it>\" --evidence \"<where>\"`\n"
         "(or `--evidence-for <Rule>` when an existing rule already says it). Never edit the file: a "
         "different session reviews every proposal, so it stays one rule per lesson."
     )
+    if not rules:
+        return head
+    if len(rules) > INDEX_LIMIT:
+        counts: dict[str, int] = {}
+        for rule in rules:
+            counts[rule["prefix"]] = counts.get(rule["prefix"], 0) + 1
+        by_prefix = ", ".join(f"{prefix} {n}" for prefix, n in sorted(counts.items()))
+        return head + f"\n\nRules by prefix: {by_prefix} (`hx learn list --prefix <P>` for the signals)."
+    lines = ["", "Signals, by rule:"]
+    for rule in rules:
+        signal = rule["signal"]
+        if len(signal) > SIGNAL_WIDTH:
+            signal = signal[:SIGNAL_WIDTH - 1].rstrip() + "…"
+        lines.append(f"- {rule['key']} · {signal}")
+    return head + "\n".join(lines)
 
 
 def go_line(root: Path) -> str | None:
