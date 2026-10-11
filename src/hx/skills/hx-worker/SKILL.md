@@ -203,7 +203,24 @@ You do not trigger a seam, you do not prevent one, and you will not notice it ha
 will simply find yourself at step 1 again. It costs nothing if `## Tasks` is current and your
 work is committed. Everything in sections 3, 4 and 5 exists for this moment.
 
-### 9. Finishing
+### 9. When something trips you up
+
+A wrong assumption, a correction a reviewer had to make, a wasted build cycle, a gate that
+passed on a subset — the moment you understand what happened, propose the rule, before you
+move on and before you finish:
+
+```bash
+hx learn propose --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
+hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an existing rule already says it
+```
+
+Your persona names the file (`LEARNINGS.md`, or the fleet's shared one); read it before you
+start. You never write it: the proposal is reviewed by a different session, which is what
+keeps it one rule per lesson. Signal is what the next agent will *see*; Check is something a
+script or a reviewer can decide; the one-off detail goes in Evidence and nowhere else. A
+proposal that is a story rather than a rule gets rejected with a reason you will be shown.
+
+### 10. Finishing
 
 ```bash
 hx complete done        # checks run, workdir must be clean, no open subagent stream
@@ -227,7 +244,7 @@ not prose — the Digest your Companion writes is file memory for last-resort re
 report you must compose. Put remaining how-to-reproduce facts in `## Open decision` only
 when blocked or deciding; otherwise finish.
 
-### 10. `HX-CHECK-FAILED`
+### 11. `HX-CHECK-FAILED`
 
 `hx complete done` is machine-checked. If a check exits non-zero, the workdir is dirty, or a
 subagent stream is open, it prints:
@@ -246,7 +263,7 @@ many times as it takes.
 Do not edit the `### Checks` block to make it pass — it is in `## Goal`, it is the Partner's,
 and `hx complete` runs the copy in `tasks.json`, not the one in your file.
 
-### 11. When `done` is not available
+### 12. When `done` is not available
 
 `blocked`, `decision`, and `exhausted` run no checks. They are honest answers and using one is
 better than forcing a `done` that is not true.

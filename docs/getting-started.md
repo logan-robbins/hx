@@ -112,7 +112,15 @@ telling the Partner what to change; it takes effect at that worker's next `hx re
 Partner's own persona is `~/hx/config/partner/AGENTS.md`; the Companions' rules are
 `~/hx/companion/BASE.md` and `~/hx/companion/roles/<role>.md`.
 
-## 6. Stopping and starting
+## 6. Learnings
+
+Every agent is told, in its persona, where the instance's `LEARNINGS.md` is. When something
+trips an agent up it proposes a rule (`hx learn propose --signal … --check … --evidence …`);
+the Partner reviews proposals on its next wake (`hx learn pending`, then `hx learn accept` or
+`hx learn reject`), and only that review writes the file — so it stays one rule per lesson.
+You can propose and review too, from your own shell. docs/learnings.md has the whole process.
+
+## 7. Stopping and starting
 
 `hx up` relaunches the Partner and every working agent after a reboot; `hx heartbeat` restarts
 dead sessions and tells the Partner. Both are plain commands; put them in your own cron or

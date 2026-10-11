@@ -56,6 +56,7 @@ tasks.json
 #: copy into `config/<id>/` when it creates an agent (CONTRACTS.md "Fresh instance contents").
 EXPECTED_SKELETON_FILES = (
     "PARTNER.md",
+    "LEARNINGS.md",
     "adapters/claude/install.sh",
     "adapters/claude/start.sh",
     "adapters/claude/seam-command",

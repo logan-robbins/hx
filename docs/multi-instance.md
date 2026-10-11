@@ -27,8 +27,10 @@ between them. Everything below was learned running thirteen instances on one 96-
   carries the port (`hx_ui_token_<port>`); forward them in one line,
   `ssh -L 8800:127.0.0.1:8800 -L 8801:127.0.0.1:8801 … host`, and tell the tabs apart by the
   instance name the page shows, which is the root directory's name.
-- A heartbeat cron must loop over the instances with the same two variables, and it launches
-  a missing Partner: never install it for an instance that is deliberately stopped.
+- A heartbeat cron loops over the instances with the same two variables and runs
+  `hx heartbeat --require-go`: an instance whose `PARTNER.md` carries no `GO <date>` line is left
+  exactly as it is (nothing launched, nobody woken), so a deliberately stopped instance stays
+  stopped and the cron can be installed before approval.
 - The Partner persona of each instance states its area, its prefixes and who owns the rest; the
   shared instance owns cross-cutting code and the others consume it after merge. "Never more than
   one new shared component per wave per worker" keeps the shared instance from becoming the queue.
@@ -58,7 +60,8 @@ carries a go-gate: unless its standing instructions contain a `GO <date>` line w
 human, on every wake the Partner reads its plan, runs `hx doctor` and `hx board`, writes one
 `READY` or `BLOCKED <why>` row to its board, replies with that row and waits. No worker is
 launched, no goal dispatched, no lane provisioned before `GO`. A fleet that is installed but
-gated costs nothing and starts in one line per instance.
+gated costs nothing and starts in one line per instance. `hx heartbeat --require-go` reads the
+same line (`hx.learn.go_line`), so the fleet's cron honours the gate without a wrapper.
 
 ## 4. Goals across many instances
 
@@ -72,7 +75,14 @@ gated costs nothing and starts in one line per instance.
 - Systematic failures are promoted to one shared `LEARNINGS.md` as category rules
   (`Rule · Signal · Check · Evidence`), never as file-and-line notes; every rule a grep can decide
   becomes a lint the Checks run. Each instance appends application facts to its own map file and
-  copies only the rule to the shared file.
+  proposes only the rule to the shared file — `hx learn propose` from the agent that was tripped
+  up, `hx learn accept` from its Partner on the next wake, with every instance's `config/hx.json`
+  `learnings` pointing at the one file (docs/learnings.md). Nobody opens the file for writing.
+- The first goal of every wave in every instance is its contract goal: the interfaces, stubs and
+  seeds that the other instances will build against, committed on a contract branch before any
+  feature lane starts. An instance that owns something another instance needs unblocks that
+  instance first; a contract change after dispatch is a new commit plus `hx resume` to every
+  lane built on the old one.
 
 ## 5. Keeping the product repository clean
 
@@ -123,11 +133,13 @@ Four channels, each one line, and nothing else:
 - **Human → Partner**: `hx wake partner "<text>"` per instance, or a loop over all of them.
 - **Partner → Partner**: the other instance's `hx wake partner "<area>: <request>"`, only for a
   dependency that instance owns (a shared provider, a lint rule).
-- **Partner → everyone**: the same append helper into the shared learnings file and the area's
-  map file. A rule line written as `**Rule T?** · Signal … · Check … · Evidence …` gets the next
-  free number under the lock, so two instances never claim the same one and lines never
-  interleave. Nobody opens a shared file for writing; nobody pastes into a pane.
+- **Anyone → everyone**: `hx learn propose` into the shared learnings file's proposal queue, and
+  the append helper into the area's map file. A proposal is numbered only when a different
+  session accepts it (`hx learn accept`, under the file's lock), so two instances never claim
+  the same number, lines never interleave, and a lesson two areas hit lands once with both
+  pieces of evidence. Nobody opens a shared file for writing; nobody pastes into a pane.
 
 Status rows stay in each instance's own `BOARD.md`. A heartbeat cron loops over the instances
-with each one's `HARNESS_ROOT` and `HX_TMUX`, and skips every instance whose standing
-instructions carry no `GO` line, because `hx heartbeat` launches a missing Partner.
+with each one's `HARNESS_ROOT` and `HX_TMUX` and runs `hx heartbeat --require-go`, which leaves
+every instance whose `PARTNER.md` carries no `GO` line untouched, because a heartbeat launches
+a missing Partner.

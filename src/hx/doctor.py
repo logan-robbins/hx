@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import platform
 import shutil
@@ -33,6 +34,9 @@ from .root import resolve_root
 PYTHON_FLOOR = (3, 14)
 
 OK, WARN, FAIL = "ok", "warn", "fail"
+
+#: A path component that is a version (`muse-bin-1.4.3-R5018.1`, `claude/2.1.278/bin/claude`).
+VERSIONED_PATH_RE = re.compile(r"(?:^|[-_/])v?[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:[-_.][A-Za-z0-9]+)*(?:/|$)")
 
 
 #: `claude --version` prints `2.1.278 (Claude Code)`; both config/claude.json and
@@ -601,6 +605,36 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         checks.append(
             (OK, "skeleton", relative) if target.exists() else (WARN, "skeleton", f"{relative} missing")
         )
+
+    # Central learnings (docs/learnings.md): where the file is, how many rules, what waits.
+    from . import learn as learn_mod
+
+    learnings = learn_mod.summary(root, env)
+    lint_failed = [detail for status, detail in learn_mod.check(root, env) if status == FAIL]
+    if lint_failed:
+        checks.append((FAIL, "learnings", f"{learnings['path']}: {lint_failed[0]} (hx learn check)"))
+    elif not learnings["exists"]:
+        checks.append((WARN, "learnings", f"{learnings['path']} does not exist yet; the first `hx learn accept` creates it"))
+    else:
+        checks.append((
+            OK if not learnings["pending"] else WARN, "learnings",
+            f"{learnings['path']}: {learnings['rules']} rule(s), {learnings['pending']} pending proposal(s)"
+            + (" (hx learn pending)" if learnings["pending"] else ""),
+        ))
+
+    # Every adapter records its binary as `bin`; a versioned path dies with the next auto-update
+    # (the launcher deletes the old version), so the path must be the stable launcher.
+    for adapter_json in sorted((root / "config").glob("*.json")):
+        if adapter_json.name in ("hx.json", "models.json", "ui.json", "partner-guard.json"):
+            continue
+        try:
+            recorded = json.loads(adapter_json.read_text())
+        except json.JSONDecodeError:
+            continue
+        binary = recorded.get("bin") if isinstance(recorded, dict) else None
+        if binary and VERSIONED_PATH_RE.search(str(binary)):
+            checks.append((FAIL, "bin-path", f"config/{adapter_json.name} bin {binary} names a version; "
+                           "record the stable launcher path instead (an auto-update deletes old versions)"))
 
     models_path = root / "config" / "models.json"
     if models_path.is_file():

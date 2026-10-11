@@ -10,7 +10,39 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ## [Unreleased]
 
+### Added
+
+- `hx learn`: the central `LEARNINGS.md` and the only way into it (docs/learnings.md). An
+  agent proposes a rule (`propose --signal … --check … --evidence …`) the moment something
+  trips it up; the proposal is filed next to the rules it most resembles and never touches the
+  file. A different session — the Partner on its next wake, a reviewer, the human — accepts it
+  as a new numbered rule or merges its evidence into the rule that already says it, or rejects
+  it with a reason; the author's own session is refused. `check` lints the file (shape, unique
+  numbers, near-duplicate pairs), `pending` is the reviewer's worklist, `list` and `path` read.
+  The skeleton ships an empty `LEARNINGS.md`; `config/hx.json` `learnings` lets a fleet point
+  every instance at one shared file; `hx compile` writes a `learnings` region (path, rule count,
+  how to propose) into every agent's persona; `hx heartbeat` reports `learnings_pending` and
+  wakes the Partner once per new batch; `hx doctor` has a `learnings` line.
+- `hx heartbeat --require-go`: the fleet go-gate in hx itself. Without a `GO <date>` line in
+  `PARTNER.md` the heartbeat launches, restarts and wakes nothing (`HX-HEARTBEAT
+  gated=no-GO-line`), so a fleet's cron can be installed before approval.
+- `hx handoff check|capture|pushed|sums`: the handoff contract of `docs/multi-instance.md` §6
+  as a command, with a `Delivery status:` line (`LOCAL_GATE_PASSED`, `CI_PENDING`, `CI_FAILED`,
+  `CI_GREEN`) that must agree with the checks captured after the last push — a push starts CI,
+  it does not pass it.
+- `hx doctor` fails `bin-path` when an adapter's `config/<adapter>.json` `bin` names a
+  versioned path: launchers auto-update and delete the old version, and every launch then fails.
+  `hx install` no longer resolves the `claude` launcher's symlink when it records `bin`, for
+  the same reason: the native installer's `~/.local/bin/claude` points into
+  `~/.local/share/claude/versions/<v>`, which its auto-update deletes.
+
 ### Fixed
+
+- `tests/ui/test_binding.py` bound `metrics` as "not shipped yet" after `hx metrics` had landed
+  (red on `main` since the eng-008 merge); the UI now binds `hx.metrics.collect_fleet` by its
+  own name. `tests/core/test_adapter_start_sh.py::test_refuses_without_a_pinned_binary` built
+  its claude-less `PATH` from `/usr/bin:/bin`, which on a developer box holds a real `claude`;
+  it now builds a `PATH` with everything but `claude`.
 
 - `hx ui` on a host that serves several instances: the token cookie is now named after the
   server's port (`hx_ui_token_<port>`). Browsers scope cookies by host, never by port

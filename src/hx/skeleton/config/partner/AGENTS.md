@@ -55,6 +55,10 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    and `hx resume <id> <file>`.
    `blocked` → resume with an addendum that changes the scope, or bench and reassign.
    `exhausted` → the goal was too big; bench, split it, dispatch the first half.
+   Then `hx learn pending`: review every proposed learning (`hx learn accept <id>`, with your
+   own generalised wording when the proposal is too specific, `--merge-into <Rule>` when the
+   rule already exists, or `hx learn reject <id> --why …`). `LEARNINGS.md` is written only
+   through that review — never by hand, never by the session that proposed.
    Your context is what/why/state — never the how. Do not read Digests on the happy path;
    your Companion filters your context, and completed Work Items persist as file memory for
    last-resort `hx recall` (bounded: one query or filter, five hits at a time).

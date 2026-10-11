@@ -637,3 +637,33 @@ def test_the_fake_pane_reads_the_same_way():
 def test_a_pane_with_no_prompt_yet_holds_everything():
     """Before the TUI draws, there is no box; the paste cannot have been submitted."""
     assert holds("starting up\n", "starting up")
+
+
+# --- the fleet go-gate (docs/multi-instance.md §3) -------------------------------------------------
+
+
+def test_heartbeat_require_go_leaves_a_gated_instance_untouched(instance, hx, tmux_server):
+    """No GO line in PARTNER.md: nothing launched, nothing restarted, nobody woken."""
+    result = hx("heartbeat", "--require-go")
+    assert result.returncode == 0, result.stderr
+    assert "gated=no-GO-line" in result.stdout
+    assert subprocess.run(
+        [*tmux_server, "has-session", "-t", "=partner"], capture_output=True
+    ).returncode != 0, "the Partner must not have been launched"
+
+
+def test_heartbeat_require_go_runs_once_the_human_wrote_go(instance, hx, tmux_server):
+    partner_md = instance / "PARTNER.md"
+    partner_md.write_text(partner_md.read_text() + "\n## Authorization lines\n\nGO 2026-10-11\n")
+    result = hx("heartbeat", "--require-go")
+    assert result.returncode == 0, result.stderr
+    assert "gated" not in result.stdout
+    assert "partner=launched" in result.stdout
+
+
+def test_heartbeat_reports_pending_learnings(instance, hx, launched):
+    launched("partner")
+    assert "learnings_pending=0" in hx("heartbeat").stdout
+    from hx import learn
+    learn.propose(instance, signal="s", check="c", evidence="e", env={"HARNESS_ID": "eng-001"})
+    assert "learnings_pending=1" in hx("heartbeat").stdout

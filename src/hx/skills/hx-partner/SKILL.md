@@ -217,6 +217,15 @@ what/why/state. Reach for `--detail` only when a `blocked` or `decision` outcome
 question answered, and for `hx recall` only as a last resort (bounded: one query or filter,
 five hits at a time).
 
+Then review what the fleet learned. `hx learn pending` lists every proposed rule beside the
+existing rules it most resembles; for each one decide, and record it: `hx learn accept <id>`
+(a new numbered rule, optionally with your own generalised `--signal`/`--check`),
+`hx learn accept <id> --merge-into <Rule>` (the rule already exists; keep its evidence), or
+`hx learn reject <id> --why "…"`. You are the different session the file requires: a worker
+cannot accept its own proposal, and nobody edits `LEARNINGS.md` by hand. A rule whose Check a
+grep can decide becomes a lint in the next goals' `### Checks`. Wakes of the form
+`learnings pending: <n>` come from `hx heartbeat` for the same reason.
+
 | Outcome | What it means | What you do |
 |---|---|---|
 | `done` | Checks passed, workdir clean, no open subagent stream | Dispatch whatever it unblocks. `hx bench <id>` when you want the id for something else |

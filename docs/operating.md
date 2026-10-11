@@ -166,7 +166,11 @@ at boot or on a schedule that is your cron, not something hx installed behind yo
 */15 * * * * hx heartbeat
 ```
 
-`HARNESS_ROOT` has to be set in that environment, the same as it is in yours.
+`HARNESS_ROOT` has to be set in that environment, the same as it is in yours. The heartbeat
+also prints `learnings_pending=<n>` and wakes the Partner once per new batch of proposed
+learnings (docs/learnings.md); `--require-go` makes it do nothing at all until `PARTNER.md`
+carries a `GO <date>` line, which is how a fleet's cron is installed before approval
+(docs/multi-instance.md §3).
 
 ## Stopping everything
 

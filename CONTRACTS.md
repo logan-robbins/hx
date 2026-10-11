@@ -203,6 +203,31 @@ Written by `hx install` (also with `--skeleton-only`), read by `adapters/claude/
 
 When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROOT/bin/hx-hook`.
 
+Two optional keys, read by `hx learn`, `hx compile`, `hx heartbeat` and `hx doctor`
+(docs/learnings.md): `"learnings"` — the absolute path of the learnings file this instance
+writes to (default `$HARNESS_ROOT/LEARNINGS.md`; a fleet names one shared file), and
+`"learnings_prefix"` — the rule prefix letter(s) a proposal gets by default (default `L`).
+`HX_LEARNINGS` and `HX_LEARNINGS_PREFIX` in the environment override both.
+
+## `hx learn` (central learnings)
+
+A rule line: `**Rule <P><n>** · Signal: … · Check: … · Evidence: …`, prefix 1–3 capitals,
+numbers unique per prefix, each cell one line. A proposal (`learnings/proposals/<id>.json`):
+
+```json
+{"id": "20261011T183601-eng-001-057487", "ts": "2026-10-11T18:36:01Z", "author": "eng-001",
+ "instance": "mc", "role": "qa-engineer", "prefix": "T", "signal": "…", "check": "…",
+ "evidence": "…", "evidence_for": null, "learnings": "/abs/LEARNINGS.md",
+ "nearest": [{"rule": "T3", "score": 0.71, "signal": "…"}]}
+```
+
+A decision (`learnings/decisions.jsonl`, one per line): `{"ts", "proposal", "author",
+"reviewer", "reviewer_instance", "decision": "new|merged|rejected", "rule": "T5"|null, "why"}`.
+The accepted or rejected proposal moves to `learnings/accepted/` or `learnings/rejected/` with
+`decision`, `rule`/`why`, `reviewer` and `decided` added. Output lines: `HX-LEARN-PROPOSED <id>
+nearest=<rule:score,…>`, `HX-LEARN-PENDING <n>`, `HX-LEARN new|merged <id> rule=<key>`,
+`HX-LEARN rejected <id>`, `HX-LEARN-CHECK rules=<n> pending=<p> fails=<f>`.
+
 ## `templates/work-item.md` placeholders
 
 The gtm lane writes the template; `hx dispatch` renders it (never reconstructs the body in
