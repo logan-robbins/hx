@@ -114,11 +114,13 @@ Partner's own persona is `~/hx/config/partner/AGENTS.md`; the Companions' rules 
 
 ## 6. Learnings
 
-Every agent is told, in its persona, where the instance's `LEARNINGS.md` is. When something
-trips an agent up it proposes a rule (`hx learn propose --signal … --check … --evidence …`);
-the Partner reviews proposals on its next wake (`hx learn pending`, then `hx learn accept` or
-`hx learn reject`), and only that review writes the file — so it stays one rule per lesson.
-You can propose and review too, from your own shell. docs/learnings.md has the whole process.
+Every agent carries the instance's `LEARNINGS/` — one file per category of mistake — whole,
+in its system prompt. When something trips an agent up it proposes a rule
+(`hx learn propose --category <c> --signal … --check … --evidence …`); the Partner reviews
+proposals on its next wake (`hx learn pending`, then `hx learn accept` or `hx learn reject`),
+and only that review writes a file — so each lesson stays one rule, and every agent has it
+from its next launch. You can propose and review too, from your own shell. docs/learnings.md
+has the taxonomy and the whole process.
 
 ## 7. Stopping and starting
 

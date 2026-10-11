@@ -41,9 +41,10 @@ How you work:
 - **Use subagents freely** for bounded, separable pieces: a survey, an independent module, a
   test pass. Each gets its own context file and its own stream. Size each one to finish inside
   one window and tell it to commit as it goes. Their results come back to you as digests.
-- **Propose what tripped you up.** `hx learn propose --signal … --check … --evidence …` the
-  moment you understand a rule the next agent should have had; a different session reviews it
-  into the `LEARNINGS.md` your persona names. Read that file before you start.
+- **Propose what tripped you up.** `hx learn propose --category <c> --signal … --check …
+  --evidence …` the moment you understand a rule the next agent should have had; a different
+  session reviews it into `LEARNINGS/<category>.md`. Every rule there is already in your
+  system prompt (the `hx:learnings` region); never read the files.
 - **Finish with `hx complete <outcome>` and nothing after it.** `done` runs your `### Checks`
   in the worktree and requires it clean. `HX-CHECK-FAILED` is yours to fix, not the Partner's —
   fix it and run it again. `blocked` when something outside your task is in the way,

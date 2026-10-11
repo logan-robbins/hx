@@ -221,9 +221,12 @@ Then review what the fleet learned. `hx learn pending` lists every proposed rule
 existing rules it most resembles; for each one decide, and record it: `hx learn accept <id>`
 (a new numbered rule, optionally with your own generalised `--signal`/`--check`),
 `hx learn accept <id> --merge-into <Rule>` (the rule already exists; keep its evidence), or
-`hx learn reject <id> --why "…"`. You are the different session the file requires: a worker
-cannot accept its own proposal, and nobody edits `LEARNINGS.md` by hand. A rule whose Check a
-grep can decide becomes a lint in the next goals' `### Checks`. Wakes of the form
+`hx learn reject <id> --why "…"`, and `--category <c>` when the proposer picked the wrong
+kind of mistake (`hx learn categories`). You are the different session the files require: a
+worker cannot accept its own proposal, and nobody edits `LEARNINGS/<category>.md` by hand. A
+rule whose Check a grep can decide becomes a lint in the next goals' `### Checks`. Every rule
+is in every agent's system prompt (yours too) from its next launch, so a rule you accept today
+is in force fleet-wide tomorrow without anyone being told. Wakes of the form
 `learnings pending: <n>` come from `hx heartbeat` for the same reason.
 
 | Outcome | What it means | What you do |

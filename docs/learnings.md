@@ -1,14 +1,40 @@
-# Learnings: one central file, written only through review
+# Learnings: one directory of category files, written only through review, in every system prompt
 
 Every agent in an instance pays for the same lessons unless something carries them across:
 the wrong assumption that cost an hour, the correction a reviewer had to make, the gate that
 passed on a subset and failed in CI. hx has places for most of what an agent knows, and all of
 them are deliberately sharded — the goal, the work item, the memory below the header, the
 episode store are each one agent's, one dispatch's, one role's. A lesson owed to everyone does
-not belong in any of them. It belongs in one file every agent is pointed at, and that file
-must not grow with duplicates or it stops being read.
+not belong in any of them. It belongs in one place every agent carries, and that place must
+not grow with duplicates or it stops being read.
 
-`LEARNINGS.md` is that file, and `hx learn` is the only way into it.
+`LEARNINGS/` is that place — one file per category of mistake — and `hx learn` is the only
+way into it. Every rule in it is in every agent's system prompt, whole.
+
+## The taxonomy
+
+The categories are fixed in hx (`hx.learn.CATEGORIES`, `hx learn categories`). A rule is
+filed by the kind of mistake it prevents, the file name says which, and nobody — agent,
+Partner or human — invents a category. A closed set is the point: a category nobody can
+invent is a category every agent can find, and a file that holds one kind of thing can be
+read, diffed and compacted as that kind of thing.
+
+| File | Holds rules about |
+|---|---|
+| `orientation.md` | where answers live and what to open first: named entry files, what never to read, status from a tool run and never from memory |
+| `ownership.md` | claims, selection and boundaries: what may be worked on or written, by whom, under which authorization |
+| `planning.md` | shaping a work item: lanes, contracts and stubs, gates to define, sizing, sequencing |
+| `domain.md` | the product under work: semantics decided from source, data access, what fixtures and seeds mean |
+| `build.md` | the local build and test loop and the tools in it |
+| `testing.md` | what a test must prove: fixtures, coverage scope, regressions from captures, never weakening a test |
+| `runtime.md` | the running application: journeys, browser proof, captures, services, ports, live status |
+| `evidence.md` | what a claim must carry: receipts, counts with scope, raw versus reconstructed, CONFIRMED versus HYPOTHESIS, timing and failure logs |
+| `delivery.md` | definition of done, CI gates, git and PR safety, delivery status, merge, handoff contents |
+| `harness.md` | hx and fleet mechanics: claim, complete, wake, boards, goals, handoff, compaction, seats and quotas |
+| `environment.md` | the box and the shell: paths, binaries, versions, disks, process control, footguns |
+
+The skeleton ships all eleven, empty. Each file is a fixed header and a `## Rules` list;
+`hx learn check` fails any rule line in a file that is not one of the eleven.
 
 ## The rule shape
 
@@ -24,72 +50,110 @@ One line per rule, three cells, invariant wording:
 - **Evidence** is the only cell that may name a file, a run, a PR or a date. The rule itself
   must still hold for a program nobody has seen yet.
 
-The prefix letter groups rules (`S` for a programme's category rules, `T` for fleet rules,
-`L` by default); the number is assigned when the rule is accepted, never by the proposer.
+The prefix letter groups rules by programme (`S` for a programme's inherited rules, `T` for
+fleet rules, `L` by default); the number is unique per prefix across the whole directory and
+is assigned when the rule is accepted, never by the proposer. The category is the file; the
+key does not encode it, so a rule can be refiled without renumbering and a citation (`S93`)
+never goes stale.
 
 ## The process
 
 ```
 agent, the moment it understands what tripped it:
-    hx learn propose --signal "…" --check "…" --evidence "…"
-        → learnings/proposals/<id>.json, printed next to the rules it most resembles
-        → HX-LEARN-PROPOSED <id> nearest=L3:0.82
+    hx learn propose --category evidence --signal "…" --check "…" --evidence "…"
+        → LEARNINGS/proposals/<id>.json, printed next to the rules it most resembles,
+          whatever category they are in
+        → HX-LEARN-PROPOSED <id> category=evidence nearest=L3:0.82
           (a near twin is named on stderr: the proposer can switch to --evidence-for L3)
 
 a different session — the Partner on its next wake, a reviewer, the human:
     hx learn pending                       the worklist, each proposal beside its nearest rules
-    hx learn accept <id>                   a new numbered rule, in the proposal's words
+    hx learn accept <id>                   a new numbered rule, in the proposal's words and category
+    hx learn accept <id> --category build  the reviewer's category: the proposer named the wrong kind of mistake
     hx learn accept <id> --signal … --check …     the reviewer's generalised wording
     hx learn accept <id> --merge-into L3   more evidence for the rule that already says it
     hx learn reject <id> --why "…"         not a category; one line for the proposer
 
 anyone, any time:
-    hx learn check                         shape, unique numbers, near-duplicates, pending count
-    hx learn list [L3]                     the rules, or one in full
+    hx learn check                         categories, shape, unique numbers, near-duplicates across files, pending count
+    hx learn list [L3] [--category c]      the rules, or one in full
+    hx learn categories                    the taxonomy
 ```
 
 The session that proposed a learning cannot accept it: `HARNESS_ID` is compared, and only the
 human (no `HARNESS_ID`) may decide on its own proposals. That is the whole mechanism against
-drift — the author knows what happened, the reviewer knows what the file already says, and
-the file is written only when both have looked. Every decision is one line in
-`learnings/decisions.jsonl`; the proposal file moves to `accepted/` or `rejected/` with the
-decision in it.
+drift — the author knows what happened, the reviewer knows what the directory already says,
+and a file is written only when both have looked. The reviewer's second job is the category:
+a proposal filed under the wrong kind of mistake is accepted with `--category`, not rejected.
+Every decision is one line in `LEARNINGS/decisions.jsonl` (with the category); the proposal
+file moves to `accepted/` or `rejected/` with the decision in it.
 
 "Nearest" is lexical — token overlap and a sequence ratio over Signal and Check, no model, no
-network — because its job is to make the reviewer's first question ("is this already a rule?")
-unavoidable, not to answer it. Two accepted rules that score as twins are reported by
-`hx learn check` as a warning until someone merges them.
+network — and runs across every category file, because its job is to make the reviewer's
+first question ("is this already a rule?") unavoidable, not to answer it. Two accepted rules
+that score as twins are reported by `hx learn check` as a warning, with both categories,
+until someone merges them.
 
-## How agents find out
+## How agents carry them
 
 `hx compile` (which runs on every `hx launch` and `hx restart`) writes a fenced `learnings`
-region into every agent's persona, after the global and role regions: the file's path, its
-rule count and last rule, the instruction to read it before starting, and the `hx learn
-propose` line. No persona has to mention it. The `hx-worker` skill says when to propose;
-the `hx-partner` skill says to review on every wake; `hx heartbeat` prints
-`learnings_pending=<n>` and wakes the Partner once per new batch of proposals;
-`hx doctor` has a `learnings` line.
+region into every agent's persona: the directory's path and rule count, the propose line, and
+then **every rule, whole**, under a `### <category> — <definition>` heading per non-empty
+category, in taxonomy order. The adapters pass the persona as the system prompt
+(`--append-system-prompt-file`), so the rules are present at every start and after every
+compaction with no Read, and prompt-cached with the rest of the invariant prompt. No agent
+is told to read the files; the persona tells it not to.
 
-## One file for a fleet
+The Partner is exempt from the global and role regions — its shipped persona stays as it is —
+but gets the learnings region like everyone else, placed last above `## UPDATES BELOW ONLY`.
+A rule accepted today is in every agent's system prompt from its next launch.
+
+The size is visible: `hx doctor` prints the rule count per category and warns
+(`learnings-size`) when the region passes `hx.learn.PERSONA_WARN_BYTES` (200 KiB, roughly
+50k tokens) in every persona. The answer to a large region is merging twins and refiling,
+not trimming what agents see: the whole point is that nobody has to decide what to load.
+
+The `hx-worker` skill says when to propose; the `hx-partner` skill says to review on every
+wake; `hx heartbeat` prints `learnings_pending=<n>` and wakes the Partner once per new batch of
+proposals; `hx doctor` has a `learnings` line.
+
+## One directory for a fleet
 
 An instance writes to `HX_LEARNINGS` if set, else the `learnings` path in `config/hx.json`,
-else `$HARNESS_ROOT/LEARNINGS.md`. A fleet of instances (docs/multi-instance.md) points every
-instance's `config/hx.json` at one shared file:
+else `$HARNESS_ROOT/LEARNINGS/`. A fleet of instances (docs/multi-instance.md) points every
+instance's `config/hx.json` at one shared directory:
 
 ```json
 {"hx_bin": "…", "hook_bin": "…", "python_bin": "…",
- "learnings": "/path/fleet/shared/LEARNINGS.md", "learnings_prefix": "T"}
+ "learnings": "/path/fleet/shared/LEARNINGS", "learnings_prefix": "T"}
 ```
 
-Proposals, decisions and the lock then live in `/path/fleet/shared/learnings/`, so a rule
-one area's agent paid for is reviewed by its own Partner against what every area has already
-learned, and lands once. `hx learn path` prints where an instance writes.
+Proposals, decisions and the lock then live in that directory, so a rule one area's agent
+paid for is reviewed by its own Partner against what every area has already learned, and
+lands once, in one file, for every instance's next launch. `hx learn path` prints where an
+instance writes.
+
+## Migration
+
+hx before this layout kept one `LEARNINGS.md`. `hx learn` refuses a `learnings` value that
+names a `.md` file, and `hx doctor` warns (`learnings-legacy`) while a `LEARNINGS.md` sits in
+the root. To move: create `LEARNINGS/` (`hx install` ships the eleven empty files; copy them
+from `src/hx/skeleton/LEARNINGS/`), put each `**Rule …**` line under the category of the
+mistake it prevents — a second model is a reasonable classifier; the Partner is the reviewer
+— keeping its key, move `learnings/{proposals,accepted,rejected,decisions.jsonl}` into the new
+directory, point `learnings` at the directory, run `hx learn check`, and archive the old file
+outside the directory. Prose that was not a rule (definitions, status tables, checklists)
+either becomes a rule in Signal/Check/Evidence form or leaves the learnings for the place its
+kind of information belongs.
 
 ## What it is not
 
 - Not episode memory (`hx memory`): that is what one agent worked out, searchable, recency-
-  weighted, sharded by role. Learnings are rules, few, and read whole.
+  weighted, sharded by role. Learnings are rules, few, and carried whole.
 - Not the agent's memory below the header: that is how *this* codebase is laid out for *this*
   agent. A learning is a category of mistake, with the one-off detail confined to Evidence.
 - Not a journal. A proposal that is a story rather than a Signal/Check/Evidence rule is
   rejected with a `--why`, and the proposer is told.
+- Not a place for status, definitions-as-prose or checklists. A definition becomes a rule
+  (`Signal: the word "finished" used for a lane · Check: …`); a checklist lives with the
+  cards or templates that use it and cites rules by key.

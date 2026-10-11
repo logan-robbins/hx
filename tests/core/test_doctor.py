@@ -266,7 +266,19 @@ def test_a_stable_launcher_path_passes(instance):
     assert "bin-path" not in {check for _, check, _ in checks}
 
 
-def test_reports_the_learnings_file(instance):
+def test_reports_the_learnings_directory(instance):
     checks = run_checks(instance)
     assert ("learnings", OK) in statuses(checks), detail_for(checks, "learnings")
-    assert "0 rule(s), 0 pending" in detail_for(checks, "learnings")[0]
+    assert "0 rule(s) (none), 0 pending" in detail_for(checks, "learnings")[0]
+    assert "learnings-legacy" not in {check for _, check, _ in checks}
+    assert "learnings-size" not in {check for _, check, _ in checks}
+
+
+def test_warns_on_the_single_file_layout_and_an_oversized_region(instance, monkeypatch):
+    from hx import learn
+    (instance / "LEARNINGS.md").write_text("# old\n")
+    monkeypatch.setattr(learn, "PERSONA_WARN_BYTES", 10)
+    checks = run_checks(instance)
+    assert ("learnings-legacy", WARN) in statuses(checks)
+    assert ("learnings-size", WARN) in statuses(checks), detail_for(checks, "learnings-size")
+    assert ("learnings", OK) in statuses(checks)

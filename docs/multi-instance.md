@@ -72,12 +72,13 @@ same line (`hx.learn.go_line`), so the fleet's cron honours the gate without a w
   deliverable, not the environment.
 - One `hx dispatch` call per wave with every independent goal in it; one stream per dispatch is
   how capacity sits idle. Completion wakes the Partner; nobody polls panes.
-- Systematic failures are promoted to one shared `LEARNINGS.md` as category rules
+- Systematic failures are promoted to one shared `LEARNINGS/` — one file per category of mistake — as rules
   (`Rule · Signal · Check · Evidence`), never as file-and-line notes; every rule a grep can decide
   becomes a lint the Checks run. Each instance appends application facts to its own map file and
   proposes only the rule to the shared file — `hx learn propose` from the agent that was tripped
   up, `hx learn accept` from its Partner on the next wake, with every instance's `config/hx.json`
-  `learnings` pointing at the one file (docs/learnings.md). Nobody opens the file for writing.
+  `learnings` pointing at the one directory (docs/learnings.md). Nobody opens a file for writing,
+  and nobody reads one either: every rule is in every agent's system prompt from its next launch.
 - The first goal of every wave in every instance is its contract goal: the interfaces, stubs and
   seeds that the other instances will build against, committed on a contract branch before any
   feature lane starts. An instance that owns something another instance needs unblocks that
@@ -133,9 +134,9 @@ Four channels, each one line, and nothing else:
 - **Human → Partner**: `hx wake partner "<text>"` per instance, or a loop over all of them.
 - **Partner → Partner**: the other instance's `hx wake partner "<area>: <request>"`, only for a
   dependency that instance owns (a shared provider, a lint rule).
-- **Anyone → everyone**: `hx learn propose` into the shared learnings file's proposal queue, and
+- **Anyone → everyone**: `hx learn propose` into the shared learnings directory's proposal queue, and
   the append helper into the area's map file. A proposal is numbered only when a different
-  session accepts it (`hx learn accept`, under the file's lock), so two instances never claim
+  session accepts it (`hx learn accept`, under the directory's lock), so two instances never claim
   the same number, lines never interleave, and a lesson two areas hit lands once with both
   pieces of evidence. Nobody opens a shared file for writing; nobody pastes into a pane.
 

@@ -12,17 +12,26 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Added
 
-- `hx learn`: the central `LEARNINGS.md` and the only way into it (docs/learnings.md). An
-  agent proposes a rule (`propose --signal … --check … --evidence …`) the moment something
-  trips it up; the proposal is filed next to the rules it most resembles and never touches the
-  file. A different session — the Partner on its next wake, a reviewer, the human — accepts it
-  as a new numbered rule or merges its evidence into the rule that already says it, or rejects
-  it with a reason; the author's own session is refused. `check` lints the file (shape, unique
-  numbers, near-duplicate pairs), `pending` is the reviewer's worklist, `list` and `path` read.
-  The skeleton ships an empty `LEARNINGS.md`; `config/hx.json` `learnings` lets a fleet point
-  every instance at one shared file; `hx compile` writes a `learnings` region (path, rule count,
-  how to propose) into every agent's persona; `hx heartbeat` reports `learnings_pending` and
-  wakes the Partner once per new batch; `hx doctor` has a `learnings` line.
+- `hx learn`: the central learnings — `LEARNINGS/<category>.md`, one file per fixed category
+  of mistake (`hx learn categories`: orientation, ownership, planning, domain, build, testing,
+  runtime, evidence, delivery, harness, environment) — and the only way into them
+  (docs/learnings.md). An agent proposes a rule (`propose --category <c> --signal … --check …
+  --evidence …`) the moment something trips it up; the proposal is filed next to the rules it
+  most resembles, in any category, and never touches a rule file. A different session — the
+  Partner on its next wake, a reviewer, the human — accepts it as a new numbered rule in that
+  category (or refiles it with `--category`), or merges its evidence into the rule that already
+  says it, or rejects it with a reason; the author's own session is refused. `check` lints the
+  directory (the eleven files, shape, numbers unique across files, nothing outside the
+  taxonomy, near-duplicate pairs across files), `pending` is the reviewer's worklist, `list`,
+  `categories` and `path` read. The skeleton ships the eleven empty files; `config/hx.json`
+  `learnings` lets a fleet point every instance at one shared directory.
+- Every agent carries every learning in its system prompt: `hx compile` writes a `learnings`
+  region into every persona — the Partner's included — with every rule whole under a heading
+  per category, so the rules are present at every start and after every compaction with no
+  Read, and cached with the invariant prompt. `hx heartbeat` reports `learnings_pending` and
+  wakes the Partner once per new batch; `hx doctor` has a `learnings` line with the count per
+  category, warns `learnings-size` above 200 KiB of region and `learnings-legacy` while a
+  single `LEARNINGS.md` remains.
 - `hx heartbeat --require-go`: the fleet go-gate in hx itself. Without a `GO <date>` line in
   `PARTNER.md` the heartbeat launches, restarts and wakes nothing (`HX-HEARTBEAT
   gated=no-GO-line`), so a fleet's cron can be installed before approval.
