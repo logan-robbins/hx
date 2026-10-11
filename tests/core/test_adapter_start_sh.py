@@ -13,6 +13,7 @@ its argv, env and cwd (ORCHESTRATION.md "Fake claude for M0-M5").
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 import pytest
@@ -119,10 +120,20 @@ def test_refuses_a_non_id(ready):
     assert "refuse" in start(ready, "Engineering").stderr
 
 
-def test_refuses_without_a_pinned_binary(ready):
+def test_refuses_without_a_pinned_binary(ready, tmp_path):
     (ready / "config" / "claude.json").write_text(json.dumps({"version": "fake-0"}))
-    # A PATH with bash and python but no `claude`, so the fallback lookup finds nothing.
-    result = start(ready, "eng-001", PATH="/usr/bin:/bin")
+    # A PATH with everything the script needs but no `claude`, so the fallback lookup finds
+    # nothing. Built from the host's own bin directories minus `claude`: on a developer box
+    # `/usr/bin/claude` exists, and a bare `/usr/bin:/bin` found it (2026-10-11).
+    path_dir = tmp_path / "path-without-claude"
+    path_dir.mkdir()
+    for directory in ("/usr/bin", "/bin"):
+        for entry in os.scandir(directory):
+            if entry.name == "claude" or (path_dir / entry.name).exists():
+                continue
+            if entry.is_file() and os.access(entry.path, os.X_OK):
+                os.symlink(entry.path, path_dir / entry.name)
+    result = start(ready, "eng-001", PATH=str(path_dir))
     assert result.returncode != 0, result.stdout
     assert "refuse" in result.stderr and "claude" in result.stderr
 

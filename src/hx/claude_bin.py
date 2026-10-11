@@ -56,18 +56,25 @@ def probe(binary: str) -> str:
 
 
 def find_binary(explicit: str | None = None) -> str:
-    """The `claude` binary: `--claude` when given, else the one on PATH."""
+    """The `claude` binary: `--claude` when given, else the one on PATH.
+
+    The path is made absolute but symlinks are *not* resolved. The native installer's
+    `~/.local/bin/claude` is a symlink into `~/.local/share/claude/versions/<v>`, and its
+    auto-update repoints the link and deletes old versions: a resolved path pins a file that
+    will not be there next week, and every launch then fails. The launcher is the stable
+    name; the version is recorded beside it.
+    """
     if explicit:
         path = Path(explicit).expanduser()
         if not path.is_file():
             raise NotFound(f"{explicit}: no such file")
-        return str(path.resolve())
+        return str(path.absolute())
     found = shutil.which("claude")
     if not found:
         raise NotFound(
             "claude is not on PATH; install Claude Code, or pass `--claude <path>` (spec 17.2 step 1)"
         )
-    return str(Path(found).resolve())
+    return str(Path(found).absolute())
 
 
 def require_tested(version: str) -> None:

@@ -247,3 +247,26 @@ def test_codex_home_checks_posture_and_hooks(instance):
     assert not [c for c in good if c[0] == FAIL]
     bad = _codex_home(instance, 'approval_policy = "never"\n')
     assert [c for c in bad if c[0] == FAIL]
+
+
+def test_a_versioned_binary_path_fails(instance):
+    """A launcher's auto-update deletes the old version; a path that names one dies with it."""
+    (instance / "config" / "meta.json").write_text(json.dumps({
+        "bin": str(instance / "muse-bin-1.4.3-R5018.1" / "muse"), "version": "1.4.3"}))
+    checks = run_checks(instance)
+    assert ("bin-path", FAIL) in statuses(checks), detail_for(checks, "bin-path")
+
+
+def test_a_stable_launcher_path_passes(instance):
+    launcher = instance / "bin" / "muse"
+    launcher.parent.mkdir(exist_ok=True)
+    launcher.write_text("#!/bin/sh\n")
+    (instance / "config" / "meta.json").write_text(json.dumps({"bin": str(launcher), "version": "1.4.3"}))
+    checks = run_checks(instance)
+    assert "bin-path" not in {check for _, check, _ in checks}
+
+
+def test_reports_the_learnings_file(instance):
+    checks = run_checks(instance)
+    assert ("learnings", OK) in statuses(checks), detail_for(checks, "learnings")
+    assert "0 rule(s), 0 pending" in detail_for(checks, "learnings")[0]

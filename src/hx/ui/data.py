@@ -265,7 +265,7 @@ PUBLISHED = {
     "wake": ("hx.wake", "wake_partner_status"),
     # M7 shipped: the fleet document. `hx.show.collect` also fills the `metrics`
     # block of its own document, so per-id metrics light up without a UI change.
-    "metrics": ("hx.metrics", "collect"),
+    "metrics": ("hx.metrics", "collect_fleet"),
 }
 
 
@@ -385,7 +385,7 @@ class InstanceSource(Source):
             document = self._translate(lambda: collect(self.root, agent_id, env=self.env))
         # Spec 16.2: the pane is re-read on the SSE tick, so the UI captures it
         # itself rather than showing whatever `hx show` happened to catch.
-        document["pane"] = pane.capture(self.root, agent_id, socket=self.tmux_socket)
+        document["pane"] = pane.capture(self.root, agent_id, socket=self.tmux_socket, env=self.env)
         return document
 
     def goals(self) -> dict[str, Any]:

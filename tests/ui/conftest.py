@@ -22,7 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from hx.ui.data import FixtureSource
-from hx.ui.server import TOKEN_COOKIE, build_server
+from hx.ui.server import build_server, token_cookie_name
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TOKEN = "test-token-not-a-real-one"
@@ -75,7 +75,7 @@ class Client:
             # The browser carries the token in the HttpOnly cookie GET / sets;
             # API clients use the header. Both are accepted, `?token=` is not.
             if as_cookie:
-                sent["Cookie"] = f"{TOKEN_COOKIE}={token}"
+                sent["Cookie"] = f"{token_cookie_name(self.port)}={token}"
             else:
                 sent["Authorization"] = f"Bearer {token}"
         payload = None
@@ -114,7 +114,7 @@ class Client:
         """
         headers = {}
         if token:
-            headers = {"Cookie": f"{TOKEN_COOKIE}={token}"} if as_cookie else {"Authorization": f"Bearer {token}"}
+            headers = {"Cookie": f"{token_cookie_name(self.port)}={token}"} if as_cookie else {"Authorization": f"Bearer {token}"}
         connection = http.client.HTTPConnection(self.host, self.port, timeout=timeout)
         connection.request("GET", path, headers=headers)
         return connection, connection.getresponse()
@@ -145,6 +145,12 @@ def _serve(source, token=TOKEN, interval=TEST_INTERVAL):
 def ui():
     """A server over the shipped fixture tree."""
     yield from _serve(FixtureSource(FIXTURES))
+
+
+@pytest.fixture
+def second_ui():
+    """A second instance on the same host: another port, another token, same fixture tree."""
+    yield from _serve(FixtureSource(FIXTURES), token="second-" + TOKEN)
 
 
 @pytest.fixture

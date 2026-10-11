@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from hx.compile import GLOBAL_BEGIN, compile_agent
+from hx.compile import GLOBAL_BEGIN, LEARNINGS_BEGIN, compile_agent
 from hx.errors import HxError
 
 
@@ -103,3 +103,45 @@ def test_launch_compiles_before_start(instance, hx, launched):
     clauses.write_text(clauses.read_text() + "\nLaunched invariant.\n")
     launched("eng-001")
     assert "Launched invariant." in agents_md(instance)
+
+
+def test_compile_distributes_the_learnings_region_to_every_agent(instance):
+    """docs/learnings.md: the agent is told where the central file is and how to propose."""
+    compile_agent(instance, "eng-001")
+    text = agents_md(instance)
+    assert LEARNINGS_BEGIN in text
+    assert str(instance / "LEARNINGS.md") in text
+    assert "hx learn propose" in text
+    assert text.index(GLOBAL_BEGIN) < text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
+
+
+def test_an_instance_compiled_before_learnings_existed_gains_the_region(instance):
+    """A file with global and role regions but no learnings region gets one, after them."""
+    compile_agent(instance, "eng-001")
+    path = instance / "config" / "eng-001" / "AGENTS.md"
+    import re
+    from hx.compile import REGION_RE
+    without = REGION_RE.sub(lambda m: "" if m.group("kind") == "learnings" else m.group(0),
+                            path.read_text())
+    without = re.sub(r"\n{3,}", "\n\n", without)
+    path.write_text(without)
+    assert LEARNINGS_BEGIN not in path.read_text()
+    report = compile_agent(instance, "eng-001")
+    assert report["compiled"] is True
+    text = path.read_text()
+    assert text.count(LEARNINGS_BEGIN) == 1
+    assert text.index(GLOBAL_BEGIN) < text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
+    assert "Things I learned: nothing yet." in text
+
+
+def test_the_learnings_region_follows_the_rule_count(instance):
+    from hx import learn
+    compile_agent(instance, "eng-001")
+    assert "0 rule(s)" in agents_md(instance)
+    proposal = learn.propose(instance, signal="s", check="c", evidence="e", env={"HARNESS_ID": "eng-001"})
+    learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
+    assert compile_agent(instance, "eng-001")["compiled"] is True
+    text = agents_md(instance)
+    assert "1 rule(s), last L1" in text
+    # The persona carries the signal index, so a matching signal costs no Read.
+    assert "- L1 · s" in text and "hx learn list <key>" in text

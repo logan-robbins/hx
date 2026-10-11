@@ -5,6 +5,10 @@ Base rules live in exactly two Partner-managed sources and nowhere else:
   `config/CLAUDE.md`         the global invariants, for every agent
   `personas/<role>/AGENTS.md` the role persona, above `## UPDATES BELOW ONLY`
 
+plus one line hx writes itself: where the central `LEARNINGS.md` is and how many rules it
+holds (`hx.learn.persona_region`), so every agent is told to read it and how to propose to
+it without a persona having to say so.
+
 `compile` distributes them into the worker's final `config/<id>/AGENTS.md` as
 fenced regions, preserving the per-id text the Partner wrote there and the
 agent's own memory below the header. It runs on every `hx launch` and
@@ -32,10 +36,15 @@ GLOBAL_BEGIN = "<!-- hx:global begin (from config/CLAUDE.md — edit the source,
 GLOBAL_END = "<!-- hx:global end -->"
 ROLE_BEGIN_TMPL = "<!-- hx:role begin (from personas/{role}/AGENTS.md — edit the source, not this copy) -->"
 ROLE_END = "<!-- hx:role end -->"
+LEARNINGS_BEGIN = "<!-- hx:learnings begin (written by hx compile from the LEARNINGS file — not by hand) -->"
+LEARNINGS_END = "<!-- hx:learnings end -->"
+
+#: The regions in the order they are rendered.
+KINDS = ("global", "role", "learnings")
 
 #: A fenced region, replaced whole on every compile.
 REGION_RE = re.compile(
-    r"<!-- hx:(?P<kind>global|role) begin .*?-->\n"
+    r"<!-- hx:(?P<kind>global|role|learnings) begin .*?-->\n"
     r"(?P<body>.*?)"
     r"<!-- hx:(?P=kind) end -->",
     re.DOTALL,
@@ -93,29 +102,34 @@ def _region(begin: str, end: str, body: str) -> str:
 
 
 def render(global_text: str, role: str | None, role_text: str | None,
-           upper: str) -> str:
+           upper: str, learnings_text: str | None = None) -> str:
     """Rebuild the above-header text: fresh fenced regions, per-id text kept.
 
-    Existing fenced regions are replaced; on a file that has none (created by
-    hand before the compiler existed) the regions are prepended and no other
-    line is touched. The below-header memory never reaches this function.
+    Existing fenced regions are replaced; a region the file never had (the
+    `learnings` region on an instance compiled before it existed) is added
+    after the last one it does have; on a file that has none (created by hand
+    before the compiler existed) the regions are prepended and no other line
+    is touched. The below-header memory never reaches this function.
     """
-    regions = [_region(GLOBAL_BEGIN, GLOBAL_END, global_text)]
+    regions: dict[str, str] = {"global": _region(GLOBAL_BEGIN, GLOBAL_END, global_text)}
     if role is not None and role_text is not None:
-        regions.append(_region(ROLE_BEGIN_TMPL.format(role=role), ROLE_END, role_text))
-    compiled = "\n\n".join(regions) + "\n"
+        regions["role"] = _region(ROLE_BEGIN_TMPL.format(role=role), ROLE_END, role_text)
+    if learnings_text:
+        regions["learnings"] = _region(LEARNINGS_BEGIN, LEARNINGS_END, learnings_text)
+    ordered = [regions[kind] for kind in KINDS if kind in regions]
+    compiled = "\n\n".join(ordered) + "\n"
 
     def replace(match: re.Match) -> str:
-        kind = match.group("kind")
-        if kind == "global":
-            return regions[0]
-        if len(regions) > 1:
-            return regions[1]
-        return ""
+        # A region the sources no longer call for is removed, not kept stale.
+        return regions.get(match.group("kind"), "")
 
     if REGION_RE.search(upper):
+        present = {match.group("kind") for match in REGION_RE.finditer(upper)}
         out = REGION_RE.sub(replace, upper)
-        # A role region the sources no longer call for is removed, not kept stale.
+        missing = [regions[kind] for kind in KINDS if kind in regions and kind not in present]
+        if missing:
+            last = max(REGION_RE.finditer(out), key=lambda match: match.end())
+            out = out[:last.end()] + "\n\n" + "\n\n".join(missing) + out[last.end():]
         out = re.sub(r"\n{3,}", "\n\n", out)
         return out.strip("\n") + "\n"
     if not upper.strip():
@@ -146,9 +160,10 @@ def compile_agent(root: Path, item_id: str) -> dict:
     custom = REGION_RE.sub("", upper)
     if role_text:
         custom = strip_known_blocks(custom, [role_text, expand_identity(role_text, values), *previous_roles])
+    from .learn import persona_region
     new_upper = render(expand_identity(global_text, values), role,
                        expand_identity(role_text, values) if role_text else None,
-                       expand_identity(custom, values))
+                       expand_identity(custom, values), persona_region(root))
     new_text = new_upper + HEADER + lower if lower else new_upper + HEADER + "\n"
     if new_text != text:
         agents.write_text(new_text)

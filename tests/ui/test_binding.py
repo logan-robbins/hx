@@ -25,13 +25,13 @@ from .conftest import archive_is_broken
 HX = Path(sys.executable).parent / "hx"
 
 #: Every reader the UI binds, and whether the build lane has shipped it.
-READERS = ["board", "show", "goals", "archive", "wake"]
+READERS = ["board", "show", "goals", "archive", "wake", "metrics"]
 
 
 # -- the binding ---------------------------------------------------------
 
 def test_the_binding_table_covers_every_reader():
-    assert set(PUBLISHED) == set(READERS) | {"metrics"}
+    assert set(PUBLISHED) == set(READERS)
 
 
 @pytest.mark.parametrize("name", READERS)
@@ -43,10 +43,11 @@ def test_every_reader_is_bound_to_a_real_function(name):
     assert function.__name__ == attribute
 
 
-def test_metrics_has_nothing_to_bind_to_yet():
-    """`hx metrics` is M7. The entry is here so it binds itself when it lands."""
-    assert published("metrics") is None
-    assert PUBLISHED["metrics"] == ("hx.metrics", "collect")
+def test_metrics_is_bound_to_the_fleet_rollup():
+    """M7 landed: the UI's metrics reader is `hx.metrics.collect_fleet`, the same function
+    `hx metrics` prints (CONTRACTS.md "hx metrics [--json] (fleet rollup)")."""
+    assert PUBLISHED["metrics"] == ("hx.metrics", "collect_fleet")
+    assert published("metrics").__name__ == "collect_fleet"
 
 
 def test_the_bound_readers_never_run_hx(instance_root, monkeypatch):

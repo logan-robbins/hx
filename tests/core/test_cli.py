@@ -32,6 +32,8 @@ SPEC_08_COMMANDS = {
     "plan",
     "evidence",
     "loop", "tool-exec", "tools",
+    # Central learnings (docs/learnings.md) and the handoff contract (docs/multi-instance.md §6).
+    "learn", "handoff",
 }
 
 

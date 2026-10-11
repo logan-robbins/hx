@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from hx.ui.server import TOKEN_COOKIE
+from hx.ui.server import TOKEN_COOKIE, token_cookie_name
 
 # Everything the server answers, other than `GET /`.
 GUARDED_GET = [
@@ -79,7 +79,7 @@ def test_index_html_is_also_the_index(ui):
 def test_the_index_sets_the_token_cookie(ui):
     """`GET /` is how the browser gets the token, and the only way it does."""
     header = ui.client.get("/", token=None).headers["Set-Cookie"]
-    assert header.startswith(f"{TOKEN_COOKIE}={ui.token}")
+    assert header.startswith(f"{token_cookie_name(ui.client.port)}={ui.token}")
     assert "HttpOnly" in header, "the page's own JavaScript must not be able to read it"
     assert "SameSite=Strict" in header
     assert "Path=/" in header
@@ -92,3 +92,22 @@ def test_the_token_never_reaches_the_page(ui):
         body = ui.client.get(path).body.decode()
         assert ui.token not in body, path
         assert "token=" not in body, f"{path} puts a token in a URL"
+
+
+def test_two_instances_on_one_host_keep_separate_cookies(ui, second_ui):
+    """Browsers scope cookies by host, never by port (RFC 6265 §8.5), so a fleet of
+    instances on 127.0.0.1 shares one jar. Each server names its cookie after its own
+    port and reads only that one: a jar holding both is accepted by both, the other
+    server's cookie alone is not, and the old fixed name is not either."""
+    mine = f"{token_cookie_name(ui.client.port)}={ui.token}"
+    theirs = f"{token_cookie_name(second_ui.client.port)}={second_ui.token}"
+    assert ui.client.port != second_ui.client.port
+    both = {"Cookie": f"{theirs}; {mine}"}
+    assert ui.client.get("/api/board", token=None, headers=both).status == 200
+    assert second_ui.client.get("/api/board", token=None, headers=both).status == 200
+    assert ui.client.get("/api/board", token=None, headers={"Cookie": theirs}).status == 401
+    assert second_ui.client.get("/api/board", token=None, headers={"Cookie": mine}).status == 401
+    legacy = {"Cookie": f"{TOKEN_COOKIE}={ui.token}"}
+    assert ui.client.get("/api/board", token=None, headers=legacy).status == 401
+    header = second_ui.client.get("/", token=None).headers["Set-Cookie"]
+    assert header.startswith(f"{token_cookie_name(second_ui.client.port)}=")

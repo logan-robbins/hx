@@ -100,6 +100,7 @@ ok "$(basename "$WHEEL")"
 step "4. the wheel carries the package data hx install needs"
 REQUIRED_IN_WHEEL="
 hx/skeleton/PARTNER.md
+hx/skeleton/LEARNINGS.md
 hx/skeleton/config/CLAUDE.md
 hx/skeleton/companion/BASE.md
 hx/skeleton/companion/roles/partner.md

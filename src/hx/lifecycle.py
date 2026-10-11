@@ -292,8 +292,22 @@ def goal_was_lost(root: Path, item_id: str, *, env=None) -> bool:
     return True
 
 
-def heartbeat(root: Path, *, env=None) -> dict:
-    """The human's own cron, if they want one (spec 08, 12 step 4, 17.2)."""
+HEARTBEAT_LEARNINGS = "run/heartbeat-learnings.txt"
+
+
+def heartbeat(root: Path, *, env=None, require_go: bool = False) -> dict:
+    """The human's own cron, if they want one (spec 08, 12 step 4, 17.2).
+
+    With `require_go` (a fleet's cron, docs/multi-instance.md §3) an instance whose
+    `PARTNER.md` carries no `GO <date>` line is left exactly as it is: nothing launched,
+    nothing restarted, nobody woken — a deliberately stopped instance stays stopped.
+    """
+    from . import learn
+
+    if require_go and learn.go_line(root) is None:
+        return {"gated": True, "restarted": [], "regoaled": [], "partner_launched": False,
+                "ui_started": False, "changed": False, "woke_partner": None,
+                "learnings_pending": learn.summary(root, env)["pending"], "ts": timestamps.now()}
     view = board.collect(root, env=env)
 
     # The Partner is not a board item, so it is checked on its own (spec 08, build-8 item 9).
@@ -325,17 +339,33 @@ def heartbeat(root: Path, *, env=None) -> dict:
 
     active = any(item["state"] == "working" for item in after["items"])
     changed = previous is not None and previous.strip() != text.strip()
+
+    # Proposed learnings are the Partner's worklist too: it is told once per new batch,
+    # the same way it is told once per board change (never nagged on every tick).
+    pending_ids = sorted(proposal["id"] for proposal in learn.list_proposals(learn.learnings_path(root, env)))
+    pending_path = root / HEARTBEAT_LEARNINGS
+    pending_before = pending_path.read_text().split() if pending_path.is_file() else None
+    store.atomic_write_text(pending_path, "\n".join(pending_ids) + "\n")
+    new_proposals = pending_before is not None and pending_ids and pending_ids != pending_before
+
     woke = None
     if active and changed:
-        woke = wake.wake_partner_status(root, f"check on each HarnessAgent: {_diff(previous, text)}")
+        message = f"check on each HarnessAgent: {_diff(previous, text)}"
+        if pending_ids:
+            message += f"; learnings pending: {len(pending_ids)} (hx learn pending)"
+        woke = wake.wake_partner_status(root, message)
+    elif new_proposals:
+        woke = wake.wake_partner_status(root, f"learnings pending: {len(pending_ids)} (hx learn pending)")
 
     return {
+        "gated": False,
         "restarted": restarted,
         "regoaled": regoaled,
         "partner_launched": partner_launched,
         "ui_started": ui_started,
         "changed": changed,
         "woke_partner": woke,
+        "learnings_pending": len(pending_ids),
         "ts": timestamps.now(),
     }
 
@@ -409,8 +439,13 @@ def main_up(argv: list[str], root: Path, *, env=None) -> int:
 def main_heartbeat(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx heartbeat", add_help=True)
     parser.add_argument("--root", help=argparse.SUPPRESS)
-    parser.parse_args(argv)
-    result = heartbeat(root, env=env)
+    parser.add_argument("--require-go", action="store_true",
+                        help="do nothing unless PARTNER.md carries a `GO <date>` line (a fleet's cron)")
+    args = parser.parse_args(argv)
+    result = heartbeat(root, env=env, require_go=args.require_go)
+    if result["gated"]:
+        print(f"HX-HEARTBEAT gated=no-GO-line partner=untouched learnings_pending={result['learnings_pending']}")
+        return 0
     if result["woke_partner"] not in (None, wake.ACCEPTED):
         # A warning: the next heartbeat compares against the same board and tries again.
         print(
@@ -422,6 +457,7 @@ def main_heartbeat(argv: list[str], root: Path, *, env=None) -> int:
         f"regoaled={','.join(result['regoaled']) or 'none'} "
         f"partner={'launched' if result['partner_launched'] else 'alive'} "
         f"ui={'started' if result['ui_started'] else 'alive'} "
-        f"changed={str(result['changed']).lower()} woke={result['woke_partner'] or 'not-needed'}"
+        f"changed={str(result['changed']).lower()} woke={result['woke_partner'] or 'not-needed'} "
+        f"learnings_pending={result['learnings_pending']}"
     )
     return 0

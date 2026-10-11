@@ -42,6 +42,8 @@ from . import planning as planning_cmd
 from . import evidence as evidence_cmd
 from . import metrics as metrics_cmd
 from . import goals as goals_cmd
+from . import handoff as handoff_cmd
+from . import learn as learn_cmd
 from . import read as read_cmd
 from . import recall as recall_cmd
 from . import resume as resume_cmd
@@ -89,6 +91,8 @@ IMPLEMENTED = {
     "evidence": evidence_cmd.main,
     "metrics": metrics_cmd.main,
     "goals": goals_cmd.main,
+    "handoff": handoff_cmd.main,
+    "learn": learn_cmd.main,
     "read": read_cmd.main,
     "recall": recall_cmd.main,
     "restart": lifecycle.main_restart,
@@ -142,6 +146,9 @@ the control plane:
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
   memory search QUERY          what other agents already learned; see `hx memory --help`
+  learn propose/pending/accept/reject/check/list  the central LEARNINGS file: propose a rule, a
+                               different session accepts or merges it; see `hx learn --help`
+  handoff check/capture/pushed/sums  what a handoff carries before another session acts on it
   loop [--once]                capture, refresh mapped sources, and run one companion at a time
   observe register/drain/serve/status  incremental continuity source capture
   evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence

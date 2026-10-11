@@ -52,7 +52,8 @@ anchors, and checks. Stable IDs survive stack changes when responsibilities rema
 same. Planning uses a bounded slice of that map to define assignments and avoid asking
 workers to rediscover known paths, contracts, and checks.
 
-The companion processes new captured events and submits structured changes to current
+The companion is a Claude Code session of its own with Read and Write — two tools and nothing else;
+it processes new captured events and submits structured changes to current
 task state and the application map. Jev is required for its bounded judgments about
 observation deltas, repeated tool observations, optional tool discovery, and surplus
 output. Jev does not choose which facts survive, write facts, generate task plans, or
@@ -90,12 +91,14 @@ for verified behavior and boundaries.
 
 - [Getting started](docs/getting-started.md) — setup and first Partner
 - [Operating hx](docs/operating.md) — daily use
+- [Several instances on one host](docs/multi-instance.md) — a fleet of Partners: private tmux servers, credentials, go-gate, clean product repository, bound evidence, serialized merges
 - [System design](docs/system-design.md) — current architecture and remaining integration
 - [Application map](docs/application-map.md) — semantic records, validation, and updates
 - [Continuity runtime](docs/continuity-runtime.md) — capture, state, checks, and reset contracts
 - [Planning runtime](docs/planning-runtime.md) — assignments, ownership, and completion
 - [Current implementation status](docs/continuity-build-status.md) — merged scope and verification
 - [Native interface verification](docs/native-interface-verification.md) — adapter support boundaries
+- [docs/learnings.md](docs/learnings.md) — the central LEARNINGS file: propose, other-session review, numbered append; the signal index every agent carries
 - [CONTRACTS.md](CONTRACTS.md) — shared machine-readable shapes
 - [CHANGELOG.md](CHANGELOG.md)
 

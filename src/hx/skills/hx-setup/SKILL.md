@@ -228,6 +228,22 @@ any session starting with `ui`, and the `=` must be quoted in zsh, which otherwi
 through `tmux attach` by the human or `hx wake partner` by the UI, and workers only through
 `hx dispatch`, `hx resume` and `hx restart` run by the Partner.
 
+## 10. Several instances on one host
+
+A programme split by ownership runs one instance per area, each with its own root, its own
+tmux server (`HX_TMUX="tmux -L hx-<area>"`), its own UI port and its own `seed/token`:
+
+```bash
+hx install --root /path/fleet/instances/<area> --claude <pinned> --skeleton-only   # layout only, idempotent
+hxc() { local a=$1; shift; HARNESS_ROOT=/path/fleet/instances/$a HX_TMUX="tmux -L hx-$a" hx "$@"; }
+```
+
+Install and verify all of them before approval, and give every Partner persona a go-gate (no
+`GO <date>` line in its standing instructions → `READY`/`BLOCKED` row, then wait). Prefer an API
+key per instance: several Partners on a few OAuth seats hit usage limits within the hour, and a
+pane frozen by a limit hangs `hx restart`. The procedure, the recovery and the product-repository
+rules are in `docs/multi-instance.md`.
+
 ## Never
 
 - Run `claude setup-token`, or read, print, paste or write the token. Relay the two steps.

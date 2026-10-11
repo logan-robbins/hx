@@ -128,6 +128,16 @@ Prints `HX-DISPATCH <id> working goal=sent` per id.
 done, you wait for `be-001` to complete and then dispatch `fe-001` — exactly as a human running
 two sessions would. Nothing sequences work for you; you do.
 
+## Before the first dispatch, when you are one of several Partners
+
+If your standing instructions (`PARTNER.md`) have no `GO <date>` line written by the human, do
+not dispatch: read your plan, run `hx doctor` and `hx board`, write one `READY` or `BLOCKED <why>`
+row to your board, reply with it and wait. Validate every goal template once with
+`python -c 'from hx.goals import parse_goal_text; ...'` before the fleet uses it; `hx dispatch`
+refuses a goal whose Checks already pass on the untouched tree, so Checks assert the
+deliverable, never the environment. Dispatch a whole wave in one call. See
+`docs/multi-instance.md`.
+
 ## Waiting
 
 `hx complete` wakes you with `<id> <outcome>` — completed or blocked, nothing more. Between wakes you have
@@ -206,6 +216,15 @@ the Digest on the happy path — the how belongs to the persona, and your contex
 what/why/state. Reach for `--detail` only when a `blocked` or `decision` outcome needs its
 question answered, and for `hx recall` only as a last resort (bounded: one query or filter,
 five hits at a time).
+
+Then review what the fleet learned. `hx learn pending` lists every proposed rule beside the
+existing rules it most resembles; for each one decide, and record it: `hx learn accept <id>`
+(a new numbered rule, optionally with your own generalised `--signal`/`--check`),
+`hx learn accept <id> --merge-into <Rule>` (the rule already exists; keep its evidence), or
+`hx learn reject <id> --why "…"`. You are the different session the file requires: a worker
+cannot accept its own proposal, and nobody edits `LEARNINGS.md` by hand. A rule whose Check a
+grep can decide becomes a lint in the next goals' `### Checks`. Wakes of the form
+`learnings pending: <n>` come from `hx heartbeat` for the same reason.
 
 | Outcome | What it means | What you do |
 |---|---|---|

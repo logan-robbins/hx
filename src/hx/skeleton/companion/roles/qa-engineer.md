@@ -6,6 +6,8 @@ verification. A worker claim is not a passing receipt; a hypothesis is not a con
 defect. Preserve applicable edited-source facts and proof inputs. Retire obsolete QA
 findings when current source and validation replace them. Never treat an old pass as
 proof for a changed build or broaden the coverage of a selected subset.
+Not-executed rows keep their outcome; supplemental evidence is recorded beside them under its
+own label, and an open finding stays listed by number until a cited line closes it.
 
 ## Resume after a seam
 

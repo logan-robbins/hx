@@ -166,7 +166,11 @@ at boot or on a schedule that is your cron, not something hx installed behind yo
 */15 * * * * hx heartbeat
 ```
 
-`HARNESS_ROOT` has to be set in that environment, the same as it is in yours.
+`HARNESS_ROOT` has to be set in that environment, the same as it is in yours. The heartbeat
+also prints `learnings_pending=<n>` and wakes the Partner once per new batch of proposed
+learnings (docs/learnings.md); `--require-go` makes it do nothing at all until `PARTNER.md`
+carries a `GO <date>` line, which is how a fleet's cron is installed before approval
+(docs/multi-instance.md §3).
 
 ## Stopping everything
 
@@ -192,6 +196,7 @@ the Partner does with `hx restart <id>`.
 | `HX-CHECK-FAILED` in a pane | Working as intended. The agent's checks did not pass; it fixes and retries. Nothing to do |
 | The Partner idle with work outstanding | It is waiting for a wake, which arrives when a worker completes. If a worker has completed and nothing happened, `hx show <id>` and tell the Partner |
 | A compaction summary in a worker's pane | Should not happen: hx seams first. Worth reporting |
+| `hx restart partner` does not return | The pane is frozen by a provider usage limit, so the restart's wait never ends. `tmux kill-session -t '=partner'` (with the instance's `HX_TMUX`), then `hx launch partner`; prefer an API key for that instance (`docs/multi-instance.md` §2) |
 
 ## What the Partner is told
 

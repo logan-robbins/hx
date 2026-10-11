@@ -559,6 +559,10 @@ def test_a_pending_partner_seam_is_acted_on(instance, monkeypatch):
     # No external tmux session is part of this test's fixture.
     monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: True)
     monkeypatch.setattr(seam.flush_mod, 'signal', lambda *a, **kw: [])
+    # A Partner whose PARTNER.md holds a checkpoint is not stranded by an unlaunched
+    # Companion (its seam is taken; see the next test). The behind gate applies when there
+    # is no checkpoint yet, which is this case.
+    (instance / "PARTNER.md").write_text("")
 
     streams.append_record(
         instance, "partner", "partner-main",
@@ -574,3 +578,33 @@ def test_a_pending_partner_seam_is_acted_on(instance, monkeypatch):
     records = list(iter_records(stream_path(instance, "partner", "partner-main")))
     assert records[-1]["event"] == "seam_waiting"
     assert records[-1]["ready"] == "behind"
+
+
+def test_a_partner_with_a_checkpoint_seams_without_a_companion(instance, monkeypatch):
+    """The Partner's own PARTNER.md is its checkpoint: an unlaunched Companion must not
+    strand it until Claude's native compactor runs. With a non-empty PARTNER.md and no
+    Companion, the seam is taken — composed, `/clear` pasted, record written, marker gone."""
+    from hx import hook_stop, streams, seam
+    from hx.hook_log import seam_marker
+    from hx.streams import iter_records, stream_path
+
+    monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: True)
+    monkeypatch.setattr(seam.flush_mod, 'signal', lambda *a, **kw: [])
+    pasted: list[tuple] = []
+    monkeypatch.setattr(seam.goal_mod, 'paste', lambda *a, **kw: pasted.append(a))
+    assert (instance / "PARTNER.md").read_text().strip(), "the skeleton PARTNER.md is the checkpoint"
+
+    streams.append_record(
+        instance, "partner", "partner-main",
+        {"event": "post_tool", "tool": "Bash", "input": "ls", "output": "a",
+         "context_tokens": 1000},
+    )
+    marker = seam_marker(instance, "partner")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    code, line = hook_stop.handle({"session_id": "s"}, "partner", instance, env=None)
+    assert (code, line) == (0, "")
+    assert not marker.exists(), "the seam was taken"
+    assert pasted and pasted[0][1] == "/clear"
+    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
+    assert records[-1]["event"] == "seam"
