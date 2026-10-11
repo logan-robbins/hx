@@ -18,8 +18,8 @@ $HARNESS_ROOT/                             # the instance (default /srv/hx on a 
   config/<id>/SUBAGENTS.md                 # identity for this HarnessAgent's subagents (→ subagent context file)
   config/<id>/harness.json                 # per-agent config (05-configuration.md)
   PARTNER.md                               # Partner state doc; the Partner's whole persistent state
-  LEARNINGS.md                             # the central rules (Signal · Check · Evidence); written only by `hx learn accept`; a fleet points config/hx.json `learnings` at one shared file
-  learnings/proposals/<id>.json            # `hx learn propose` output, next to the learnings file; accepted/ and rejected/ hold the decided ones, decisions.jsonl every decision
+  LEARNINGS/<category>.md                  # the central rules (Signal · Check · Evidence), one file per fixed category (hx.learn.CATEGORIES); written only by `hx learn accept`; every rule is compiled whole into every persona; a fleet points config/hx.json `learnings` at one shared directory
+  LEARNINGS/proposals/<id>.json            # `hx learn propose` output; accepted/ and rejected/ hold the decided ones, decisions.jsonl every decision, .lock the writers' lock
   tasks.json                               # {"<id>": {goal, addenda, outcome, dispatched, completed}}
   pods/<pod>/<id>-<state>.md               # work items, one per worker; state is the suffix
   pods/<pod>/archive/<id>-<ts>.md          # benched bodies

@@ -56,9 +56,11 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    `blocked` → resume with an addendum that changes the scope, or bench and reassign.
    `exhausted` → the goal was too big; bench, split it, dispatch the first half.
    Then `hx learn pending`: review every proposed learning (`hx learn accept <id>`, with your
-   own generalised wording when the proposal is too specific, `--merge-into <Rule>` when the
-   rule already exists, or `hx learn reject <id> --why …`). `LEARNINGS.md` is written only
-   through that review — never by hand, never by the session that proposed.
+   own generalised wording when the proposal is too specific, `--category <c>` when the
+   proposer filed it under the wrong kind of mistake, `--merge-into <Rule>` when the rule
+   already exists, or `hx learn reject <id> --why …`). `LEARNINGS/<category>.md` is written
+   only through that review — never by hand, never by the session that proposed. Every rule
+   is in your own system prompt too; a rule you accept reaches each agent at its next launch.
    Your context is what/why/state — never the how. Do not read Digests on the happy path;
    your Companion filters your context, and completed Work Items persist as file memory for
    last-resort `hx recall` (bounded: one query or filter, five hits at a time).

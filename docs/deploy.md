@@ -222,7 +222,17 @@ ok    git              git version 2.50.1 (Apple Git-155)
 ok    root             ~/hx
 ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe pinned at 2.1.278
 ok    skeleton         PARTNER.md
-ok    skeleton         LEARNINGS.md
+ok    skeleton         LEARNINGS/orientation.md
+ok    skeleton         LEARNINGS/ownership.md
+ok    skeleton         LEARNINGS/planning.md
+ok    skeleton         LEARNINGS/domain.md
+ok    skeleton         LEARNINGS/build.md
+ok    skeleton         LEARNINGS/testing.md
+ok    skeleton         LEARNINGS/runtime.md
+ok    skeleton         LEARNINGS/evidence.md
+ok    skeleton         LEARNINGS/delivery.md
+ok    skeleton         LEARNINGS/harness.md
+ok    skeleton         LEARNINGS/environment.md
 ok    skeleton         adapters/claude/install.sh
 ok    skeleton         adapters/claude/start.sh
 ok    skeleton         adapters/claude/seam-command
@@ -254,7 +264,7 @@ ok    skeleton         config/partner/SUBAGENTS.md
 ok    skeleton         config/partner/harness.json
 ok    skeleton         personas/partner/AGENTS.md
 ok    skeleton         templates/work-item.md
-ok    learnings        ~/hx/LEARNINGS.md: 0 rule(s), 0 pending proposal(s)
+ok    learnings        ~/hx/LEARNINGS: 0 rule(s) (none), 0 pending proposal(s)
 ok    models           2 model(s): claude-opus-5 window=1000000 seam=200000 autocompact=250000, claude-sonnet-5 window=1000000 seam=200000 autocompact=250000
 ok    hx.json          hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
 ok    hx.json          hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook

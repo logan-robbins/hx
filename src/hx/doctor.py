@@ -609,18 +609,35 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     # Central learnings (docs/learnings.md): where the file is, how many rules, what waits.
     from . import learn as learn_mod
 
-    learnings = learn_mod.summary(root, env)
-    lint_failed = [detail for status, detail in learn_mod.check(root, env) if status == FAIL]
-    if lint_failed:
-        checks.append((FAIL, "learnings", f"{learnings['path']}: {lint_failed[0]} (hx learn check)"))
-    elif not learnings["exists"]:
-        checks.append((WARN, "learnings", f"{learnings['path']} does not exist yet; the first `hx learn accept` creates it"))
+    try:
+        learnings = learn_mod.summary(root, env)
+    except ValidationError as exc:
+        checks.append((FAIL, "learnings", str(exc)))
     else:
-        checks.append((
-            OK if not learnings["pending"] else WARN, "learnings",
-            f"{learnings['path']}: {learnings['rules']} rule(s), {learnings['pending']} pending proposal(s)"
-            + (" (hx learn pending)" if learnings["pending"] else ""),
-        ))
+        lint_failed = [detail for status, detail in learn_mod.check(root, env) if status == FAIL]
+        if lint_failed:
+            checks.append((FAIL, "learnings", f"{learnings['path']}: {lint_failed[0]} (hx learn check)"))
+        elif not learnings["exists"]:
+            checks.append((WARN, "learnings", f"{learnings['path']} does not exist yet; `hx install` ships it"))
+        else:
+            by_category = ", ".join(f"{c} {n}" for c, n in learnings["categories"].items()) or "none"
+            checks.append((
+                OK if not learnings["pending"] else WARN, "learnings",
+                f"{learnings['path']}: {learnings['rules']} rule(s) ({by_category}), "
+                f"{learnings['pending']} pending proposal(s)"
+                + (" (hx learn pending)" if learnings["pending"] else ""),
+            ))
+            # Every agent carries the whole region in its system prompt (docs/learnings.md).
+            region_bytes = len(learn_mod.persona_region(root, env).encode())
+            if region_bytes > learn_mod.PERSONA_WARN_BYTES:
+                checks.append((WARN, "learnings-size",
+                               f"the learnings region is {region_bytes // 1024} KiB in every persona "
+                               f"(> {learn_mod.PERSONA_WARN_BYTES // 1024} KiB); merge twins (hx learn check)"))
+        legacy = root / "LEARNINGS.md"
+        if legacy.is_file():
+            checks.append((WARN, "learnings-legacy",
+                           "LEARNINGS.md is the pre-directory layout; move its rules into "
+                           "LEARNINGS/<category>.md (docs/learnings.md § Migration) and remove it"))
 
     # Every adapter records its binary as `bin`; a versioned path dies with the next auto-update
     # (the launcher deletes the old version), so the path must be the stable launcher.

@@ -5,16 +5,18 @@ Base rules live in exactly two Partner-managed sources and nowhere else:
   `config/CLAUDE.md`         the global invariants, for every agent
   `personas/<role>/AGENTS.md` the role persona, above `## UPDATES BELOW ONLY`
 
-plus one line hx writes itself: where the central `LEARNINGS.md` is and how many rules it
-holds (`hx.learn.persona_region`), so every agent is told to read it and how to propose to
-it without a persona having to say so.
+plus one region hx writes itself: every rule under the central `LEARNINGS/` directory,
+whole, category by category (`hx.learn.persona_region`), so every agent carries the fleet's
+learnings in its system prompt — at every start, after every compaction, cached with the rest
+of the invariant prompt — without a persona having to say so.
 
 `compile` distributes them into the worker's final `config/<id>/AGENTS.md` as
 fenced regions, preserving the per-id text the Partner wrote there and the
 agent's own memory below the header. It runs on every `hx launch` and
 `hx restart`, so a base edit lands at the next (re)start — the Partner never
-hand-copies a persona to push a change out. The Partner itself is exempt:
-`config/partner/AGENTS.md` stays the shipped persona byte for byte.
+hand-copies a persona to push a change out. The Partner is exempt from the global and
+role regions — `config/partner/AGENTS.md` stays the shipped persona — but receives the
+learnings region like everyone else, just above `## UPDATES BELOW ONLY`.
 
 A role with no `personas/<role>/AGENTS.md` still compiles: the global region
 is distributed and the role region is left out, so test and bespoke roles keep
@@ -36,7 +38,7 @@ GLOBAL_BEGIN = "<!-- hx:global begin (from config/CLAUDE.md — edit the source,
 GLOBAL_END = "<!-- hx:global end -->"
 ROLE_BEGIN_TMPL = "<!-- hx:role begin (from personas/{role}/AGENTS.md — edit the source, not this copy) -->"
 ROLE_END = "<!-- hx:role end -->"
-LEARNINGS_BEGIN = "<!-- hx:learnings begin (written by hx compile from the LEARNINGS file — not by hand) -->"
+LEARNINGS_BEGIN = "<!-- hx:learnings begin (written by hx compile from the LEARNINGS directory — not by hand) -->"
 LEARNINGS_END = "<!-- hx:learnings end -->"
 
 #: The regions in the order they are rendered.
@@ -139,9 +141,9 @@ def render(global_text: str, role: str | None, role_text: str | None,
 
 def compile_agent(root: Path, item_id: str) -> dict:
     """Compile base rules into `config/<id>/AGENTS.md`. Returns a small report."""
-    if item_id == PARTNER:
-        return {"id": item_id, "compiled": False, "reason": "partner-exempt"}
     agents = root / "config" / item_id / "AGENTS.md"
+    if item_id == PARTNER:
+        return compile_partner_learnings(root, agents)
     if not agents.is_file():
         raise NotFound(f"{agents}: no AGENTS.md to compile into")
     role = role_of(root, item_id)
@@ -171,6 +173,29 @@ def compile_agent(root: Path, item_id: str) -> dict:
                 "role_region": role_text is not None}
     return {"id": item_id, "compiled": False, "reason": "up-to-date",
             "role": role, "role_region": role_text is not None}
+
+
+def compile_partner_learnings(root: Path, agents: Path) -> dict:
+    """The Partner keeps its shipped persona, plus the one region every agent gets: the
+    learnings, placed last above the header (replaced whole when already there)."""
+    from .learn import persona_region
+    if not agents.is_file():
+        raise NotFound(f"{agents}: no AGENTS.md to compile into")
+    text = agents.read_text()
+    if HEADER not in text:
+        raise HxError(f"{agents}: no `{HEADER}` line; the compiler cannot tell base from memory")
+    upper, _, lower = text.partition(HEADER)
+    region = _region(LEARNINGS_BEGIN, LEARNINGS_END, persona_region(root))
+    if REGION_RE.search(upper):
+        new_upper = REGION_RE.sub(lambda m: region if m.group("kind") == "learnings" else m.group(0), upper)
+    else:
+        new_upper = upper.rstrip("\n") + "\n\n" + region + "\n\n"
+    new_text = new_upper + HEADER + lower if lower else new_upper + HEADER + "\n"
+    if new_text != text:
+        agents.write_text(new_text)
+        return {"id": PARTNER, "compiled": True, "role": PARTNER, "role_region": False,
+                "reason": "partner-learnings-only"}
+    return {"id": PARTNER, "compiled": False, "reason": "up-to-date", "role": PARTNER, "role_region": False}
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:

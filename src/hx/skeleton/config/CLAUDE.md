@@ -31,11 +31,13 @@ failure prints `HX-CHECK-FAILED <id>` with the output and changes nothing — fi
 again. `blocked`, `decision`, and `exhausted` run no checks and are the honest answers when
 `done` is not available.
 
-**What tripped you up is owed to everyone.** Your persona names this instance's
-`LEARNINGS.md`: read it before you start. When a wrong assumption, a correction you had to
-make or a wasted cycle teaches you a rule, run `hx learn propose --signal … --check …
---evidence …` the moment you understand it. Never edit that file: a different session reviews
-every proposal, which is what keeps it one rule per lesson.
+**What tripped you up is owed to everyone.** Every rule of this instance's `LEARNINGS/`
+(one file per category of mistake) is already in your system prompt, whole, at every start
+and after every compaction — never read those files. When a wrong assumption, a correction
+you had to make or a wasted cycle teaches you a rule, run `hx learn propose --category <c>
+--signal … --check … --evidence …` the moment you understand it (`hx learn categories` lists
+the categories). Never edit the files: a different session reviews every proposal, which is
+what keeps each lesson one rule.
 
 **What is not yours.** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
 `pods/` other than your own `-working` item, and `tasks.json` are managed by hx or belong to

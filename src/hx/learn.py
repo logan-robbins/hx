@@ -1,29 +1,36 @@
-"""`hx learn` — the central learnings file, and the reviewed way into it.
+"""`hx learn` — the central learnings, one file per category, and the reviewed way into them.
 
-One file, `LEARNINGS.md`, holds the category rules an instance (or a whole fleet of instances)
-has paid for: what tripped an agent up, written so the next agent recognises it (**Signal**),
-can decide it mechanically (**Check**), and can see where it came from (**Evidence**). It is
-deliberately apart from everything hx shards per agent — the goal, the work item, the memory
-below the header, the episode store — because a correction one agent had to make is owed to
-every agent, and a thing owed to everyone lives in one place or it is lost.
+`LEARNINGS/<category>.md` holds the rules an instance (or a whole fleet of instances) has paid
+for: what tripped an agent up, written so the next agent recognises it (**Signal**), can decide
+it mechanically (**Check**), and can see where it came from (**Evidence**). The categories are
+fixed (`CATEGORIES`): a rule is filed by the kind of mistake it prevents, the file name says
+which, and no agent invents a category. The learnings are deliberately apart from everything hx
+shards per agent — the goal, the work item, the memory below the header, the episode store —
+because a correction one agent had to make is owed to every agent, and a thing owed to
+everyone lives in one place or it is lost.
+
+Every rule reaches every agent whole: `hx compile` writes all of them into the persona, which
+the adapters pass as the system prompt, so they are present at every start and after every
+compaction without a Read, and prompt-cached with the rest of the invariant prompt.
 
 A file everyone writes grows with duplicates, so nobody writes it directly. Two steps, never in
 the same session:
 
-    hx learn propose   any agent, the moment something tripped it up: a proposal, next to the
-                       rules it most resembles, into `learnings/proposals/`; the rule file is
-                       not touched
+    hx learn propose   any agent, the moment something tripped it up: a proposal with the
+                       category it believes, next to the rules it most resembles, into
+                       `LEARNINGS/proposals/`; no rule file is touched
     hx learn accept    a different session — the Partner, a reviewer, the human — decides:
-                       a new numbered rule, or the proposal's evidence merged into the rule
-                       that already says it, or `hx learn reject`
+                       a new numbered rule (in the proposal's category or the reviewer's), or
+                       the proposal's evidence merged into the rule that already says it, or
+                       `hx learn reject`
 
-`hx learn pending` is the reviewer's worklist, `hx learn check` lints the file (numbering,
-shape, near-duplicates), and `hx compile` puts the file's path and rule count into every
-agent's persona so no agent has to be told to look.
+`hx learn pending` is the reviewer's worklist, `hx learn check` lints the directory
+(categories, numbering, shape, near-duplicates across every file), `hx learn categories`
+prints the taxonomy.
 
-Where the file is: `HX_LEARNINGS` in the environment, else `learnings` in `config/hx.json`
-(a fleet points every instance at one shared file), else `$HARNESS_ROOT/LEARNINGS.md`.
-Proposals, decisions and the lock live in `learnings/` next to the file.
+Where the directory is: `HX_LEARNINGS` in the environment, else `learnings` in
+`config/hx.json` (a fleet points every instance at one shared directory), else
+`$HARNESS_ROOT/LEARNINGS/`. Proposals, decisions and the lock live inside it.
 """
 
 from __future__ import annotations
@@ -42,6 +49,27 @@ from pathlib import Path
 from . import store, timestamps
 from .errors import HxError, NotFound, ValidationError
 
+#: The taxonomy, in the order the files are read and rendered. A rule is filed by the kind of
+#: mistake it prevents. Closed on purpose: a category nobody can invent is a category every
+#: agent can find.
+CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("orientation", "where answers live and what to open first: named entry files, what never to read, status from a tool run and never from memory"),
+    ("ownership", "claims, selection and boundaries: what may be worked on or written, by whom, under which authorization"),
+    ("planning", "shaping a work item: lanes, contracts and stubs, gates to define, sizing, sequencing"),
+    ("domain", "the product under work: semantics decided from source, data access, what fixtures and seeds mean"),
+    ("build", "the local build and test loop and the tools in it"),
+    ("testing", "what a test must prove: fixtures, coverage scope, regressions from captures, never weakening a test"),
+    ("runtime", "the running application: journeys, browser proof, captures, services, ports, live status"),
+    ("evidence", "what a claim must carry: receipts, counts with scope, raw versus reconstructed, CONFIRMED versus HYPOTHESIS, timing and failure logs"),
+    ("delivery", "definition of done, CI gates, git and PR safety, delivery status, merge, handoff contents"),
+    ("harness", "hx and fleet mechanics: claim, complete, wake, boards, goals, handoff, compaction, seats and quotas"),
+    ("environment", "the box and the shell: paths, binaries, versions, disks, process control, footguns"),
+)
+CATEGORY_NAMES = tuple(name for name, _ in CATEGORIES)
+DEFINITIONS = dict(CATEGORIES)
+
+DIRECTORY_NAME = "LEARNINGS"
+
 #: `**Rule T12** · Signal: … · Check: … · Evidence: …` — the one shape a rule line has. A short
 #: parenthetical after the key (`**Rule S8 (integration evidence)**`) and a qualifier after a
 #: field name (`Check (no search):`, `Check before claiming:`) are tolerated on read, because
@@ -52,6 +80,7 @@ RULE_RE = re.compile(
 FIELD_QUALIFIER = r"(?: [^·:]{0,40})?"
 FIELDS = ("Signal", "Check", "Evidence")
 GO_RE = re.compile(r"^GO \d{4}-\d{2}-\d{2}\b", re.M)
+RULES_HEADING = "## Rules"
 
 #: Two rules this alike are shown as a likely duplicate by `check`; a proposal this close
 #: to a rule is flagged on `propose` so the proposer can merge instead.
@@ -62,19 +91,8 @@ NEAREST = 3
 
 DEFAULT_PREFIX = "L"
 
-HEADER = """# LEARNINGS
-
-Category rules this instance has paid for. One line per rule, in exactly this shape:
-
-    **Rule L1** · Signal: what you see when it is about to bite · Check: the mechanical test that decides it · Evidence: where it happened (path, run, PR, date)
-
-The rule is invariant: no file name, message number or one-off detail outside the Evidence cell.
-Nobody edits this file by hand. An agent that was tripped up runs `hx learn propose …`; a
-different session reviews the proposal with `hx learn pending` and `hx learn accept` or
-`hx learn reject`, so the file never grows with duplicates. `hx learn check` lints it.
-
-## Rules
-"""
+#: Above this many bytes of persona region `hx doctor` warns: every agent carries it whole.
+PERSONA_WARN_BYTES = 200_000
 
 _STOP = frozenset("""
 a an and are as at be but by for from has have if in into is it its not of on or that the then
@@ -85,36 +103,38 @@ this to was were when which with without you your every any all one two each nev
 # --- where things are ---------------------------------------------------------------------------
 
 
+def _hx_json(root: Path) -> dict:
+    hx_json = Path(root) / "config" / "hx.json"
+    if not hx_json.is_file():
+        return {}
+    try:
+        recorded = json.loads(hx_json.read_text())
+    except json.JSONDecodeError:
+        return {}
+    return recorded if isinstance(recorded, dict) else {}
+
+
 def learnings_path(root: Path, env: dict[str, str] | None = None) -> Path:
-    """`HX_LEARNINGS`, else `config/hx.json` `learnings`, else `<root>/LEARNINGS.md`."""
+    """The learnings directory: `HX_LEARNINGS`, else `config/hx.json` `learnings`, else
+    `<root>/LEARNINGS/`. A value naming a single `.md` file is the pre-directory layout and
+    is refused with the migration pointer."""
     env = os.environ if env is None else env
-    value = env.get("HX_LEARNINGS")
-    if not value:
-        hx_json = Path(root) / "config" / "hx.json"
-        if hx_json.is_file():
-            try:
-                recorded = json.loads(hx_json.read_text())
-            except json.JSONDecodeError:
-                recorded = {}
-            if isinstance(recorded, dict):
-                value = recorded.get("learnings") or ""
+    value = env.get("HX_LEARNINGS") or _hx_json(root).get("learnings") or ""
     if value:
-        return Path(os.path.expanduser(value))
-    return Path(root) / "LEARNINGS.md"
+        path = Path(os.path.expanduser(value))
+        if path.suffix == ".md":
+            raise ValidationError(
+                f"learnings {path} names one file; hx keeps learnings as a directory of category "
+                f"files (LEARNINGS/<category>.md). Point `learnings` at the directory "
+                f"(docs/learnings.md § Migration)"
+            )
+        return path
+    return Path(root) / DIRECTORY_NAME
 
 
 def default_prefix(root: Path, env: dict[str, str] | None = None) -> str:
     env = os.environ if env is None else env
-    value = env.get("HX_LEARNINGS_PREFIX")
-    if not value:
-        hx_json = Path(root) / "config" / "hx.json"
-        if hx_json.is_file():
-            try:
-                recorded = json.loads(hx_json.read_text())
-            except json.JSONDecodeError:
-                recorded = {}
-            if isinstance(recorded, dict):
-                value = recorded.get("learnings_prefix") or ""
+    value = env.get("HX_LEARNINGS_PREFIX") or _hx_json(root).get("learnings_prefix") or ""
     value = (value or DEFAULT_PREFIX).strip().upper()
     if not re.fullmatch(r"[A-Z]{1,3}", value):
         raise ValidationError(f"learnings prefix {value!r} is not 1–3 capital letters")
@@ -122,7 +142,48 @@ def default_prefix(root: Path, env: dict[str, str] | None = None) -> str:
 
 
 def learnings_dir(path: Path) -> Path:
-    return Path(path).parent / "learnings"
+    """Where proposals, decisions and the lock live: the learnings directory itself."""
+    path = Path(path)
+    return path.parent if path.suffix == ".md" else path
+
+
+def category_file(directory: Path, category: str) -> Path:
+    return Path(directory) / f"{category}.md"
+
+
+def category_of(path: Path) -> str | None:
+    """The category a file holds, from its name; None for any other file."""
+    name = Path(path).stem
+    return name if name in DEFINITIONS and Path(path).suffix == ".md" else None
+
+
+def validate_category(category: str | None) -> str:
+    value = (category or "").strip().lower()
+    if value not in DEFINITIONS:
+        raise ValidationError(
+            f"category {category!r} is not one of: {', '.join(CATEGORY_NAMES)} "
+            "(`hx learn categories` prints what each one holds)"
+        )
+    return value
+
+
+def category_header(category: str) -> str:
+    category = validate_category(category)
+    definition = DEFINITIONS[category]
+    return (
+        f"# LEARNINGS · {category}\n"
+        f"\n"
+        f"{definition[0].upper()}{definition[1:]}.\n"
+        f"\n"
+        f"One line per rule, in exactly this shape, written only by `hx learn accept`:\n"
+        f"\n"
+        f"    **Rule L1** · Signal: what you see when it is about to bite · Check: the mechanical test that decides it · Evidence: where it happened (path, run, PR, date)\n"
+        f"\n"
+        f"The rule is invariant: no file name, message number or one-off detail outside the Evidence\n"
+        f"cell. Propose with `hx learn propose --category {category} …`; a different session reviews.\n"
+        f"\n"
+        f"{RULES_HEADING}\n"
+    )
 
 
 def _identity(root: Path, env: dict[str, str] | None) -> tuple[str, str]:
@@ -130,7 +191,7 @@ def _identity(root: Path, env: dict[str, str] | None) -> tuple[str, str]:
     return env.get("HARNESS_ID") or "human", Path(root).resolve().name
 
 
-# --- the file -----------------------------------------------------------------------------------
+# --- the files ----------------------------------------------------------------------------------
 
 
 def parse_rule(line: str) -> dict | None:
@@ -156,16 +217,31 @@ def parse_rule(line: str) -> dict | None:
     }
 
 
-def read_rules(path: Path) -> list[dict]:
-    if not Path(path).is_file():
+def read_file_rules(path: Path) -> list[dict]:
+    """The rules of one file, each with `lineno`, `file` and `category`."""
+    path = Path(path)
+    if not path.is_file():
         return []
     rules = []
-    for index, line in enumerate(Path(path).read_text().splitlines()):
+    category = category_of(path)
+    for index, line in enumerate(path.read_text().splitlines()):
         rule = parse_rule(line)
         if rule:
-            rule["lineno"] = index + 1
+            rule.update({"lineno": index + 1, "file": str(path), "category": category})
             rules.append(rule)
     return rules
+
+
+def read_rules(path: Path) -> list[dict]:
+    """Every rule under the learnings directory, categories in taxonomy order; a single file
+    reads as itself (tests and migration)."""
+    path = Path(path)
+    if path.is_dir():
+        rules: list[dict] = []
+        for category in CATEGORY_NAMES:
+            rules.extend(read_file_rules(category_file(path, category)))
+        return rules
+    return read_file_rules(path)
 
 
 def next_number(rules: list[dict], prefix: str) -> int:
@@ -182,6 +258,28 @@ def render_rule(prefix: str, number: int, signal: str, check: str, evidence: str
 
 def _one_line(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
+
+
+def _append_rule(file: Path, category: str, line: str) -> None:
+    """Add one rule line after the last rule of its file (or after `## Rules`)."""
+    text = file.read_text() if file.is_file() else category_header(category)
+    lines = text.split("\n")
+    existing = read_file_rules(file) if file.is_file() else []
+    if existing:
+        lines.insert(existing[-1]["lineno"], line)
+    else:
+        try:
+            at = lines.index(RULES_HEADING) + 1
+        except ValueError:
+            if lines and lines[-1] == "":
+                lines.pop()
+            lines.extend(["", RULES_HEADING])
+            at = len(lines)
+        lines.insert(at, line)
+    new_text = "\n".join(lines)
+    if not new_text.endswith("\n"):
+        new_text += "\n"
+    store.atomic_write_text(file, new_text)
 
 
 # --- similarity ---------------------------------------------------------------------------------
@@ -206,7 +304,8 @@ def _gist(rule_or_proposal: dict) -> str:
 def nearest(rules: list[dict], proposal: dict, limit: int = NEAREST) -> list[dict]:
     gist = _gist(proposal)
     scored = [
-        {"rule": rule["key"], "score": similarity(gist, _gist(rule)), "signal": rule["signal"]}
+        {"rule": rule["key"], "score": similarity(gist, _gist(rule)), "signal": rule["signal"],
+         "category": rule.get("category")}
         for rule in rules
     ]
     scored = [row for row in scored if row["score"] >= NEAREST_FLOOR]
@@ -253,9 +352,10 @@ def load_proposal(path: Path, proposal_id: str) -> dict:
     return json.loads(file.read_text())
 
 
-def propose(root: Path, *, signal: str, check: str, evidence: str, prefix: str | None = None,
-            evidence_for: str | None = None, env: dict[str, str] | None = None) -> dict:
-    """Write one proposal next to the rules it most resembles. The rule file is not touched."""
+def propose(root: Path, *, signal: str, check: str, evidence: str, category: str | None = None,
+            prefix: str | None = None, evidence_for: str | None = None,
+            env: dict[str, str] | None = None) -> dict:
+    """Write one proposal next to the rules it most resembles. No rule file is touched."""
     path = learnings_path(root, env)
     rules = read_rules(path)
     author, instance = _identity(root, env)
@@ -265,11 +365,18 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, prefix: str |
     if evidence_for:
         target = next((rule for rule in rules if rule["key"] == evidence_for.upper()), None)
         if target is None:
-            raise NotFound(f"--evidence-for {evidence_for}: no such rule in {path}")
+            raise NotFound(f"--evidence-for {evidence_for}: no such rule under {path}")
         signal = signal or target["signal"]
         check = check or target["check"]
+        category = category or target["category"]
     if not _one_line(signal) or not _one_line(check):
         raise ValidationError("a proposal needs --signal (what you saw) and --check (what decides it)")
+    if not category:
+        raise ValidationError(
+            "a proposal needs --category, the kind of mistake the rule prevents: "
+            + ", ".join(CATEGORY_NAMES) + " (`hx learn categories`)"
+        )
+    category = validate_category(category)
     prefix = (prefix or default_prefix(root, env)).upper()
     stamp = timestamps.now()
     proposal = {
@@ -279,6 +386,7 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, prefix: str |
         "instance": instance,
         "role": (os.environ if env is None else env).get("HX_ROLE") or None,
         "prefix": prefix,
+        "category": category,
         "signal": _one_line(signal),
         "check": _one_line(check),
         "evidence": evidence,
@@ -312,8 +420,10 @@ def _require_other_session(proposal: dict, reviewer: str) -> None:
 
 def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signal: str | None = None,
            check: str | None = None, evidence: str | None = None, prefix: str | None = None,
-           why: str | None = None, env: dict[str, str] | None = None) -> dict:
-    """A different session's decision: a new numbered rule, or evidence merged into one."""
+           category: str | None = None, why: str | None = None,
+           env: dict[str, str] | None = None) -> dict:
+    """A different session's decision: a new numbered rule in its category, or evidence merged
+    into the rule that already says it."""
     path = learnings_path(root, env)
     reviewer, instance = _identity(root, env)
     proposal = load_proposal(path, proposal_id)
@@ -322,17 +432,20 @@ def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signa
     origin = f"(from {proposal['author']}@{proposal['instance']}, {proposal['ts'][:10]})"
     merge_into = (merge_into or proposal.get("evidence_for") or "").upper() or None
     with _locked(path):
-        text = path.read_text() if path.is_file() else HEADER
-        lines = text.split("\n")
         rules = read_rules(path)
         if merge_into:
             target = next((rule for rule in rules if rule["key"] == merge_into), None)
             if target is None:
-                raise NotFound(f"--merge-into {merge_into}: no such rule in {path}")
+                raise NotFound(f"--merge-into {merge_into}: no such rule under {path}")
             added = _one_line(evidence or proposal["evidence"])
+            file = Path(target["file"])
+            lines = file.read_text().split("\n")
             lines[target["lineno"] - 1] = f"{target['line']}; {added} {origin}"
-            key, decision = target["key"], "merged"
+            new_text = "\n".join(lines)
+            store.atomic_write_text(file, new_text if new_text.endswith("\n") else new_text + "\n")
+            key, decision, use_category = target["key"], "merged", target["category"]
         else:
+            use_category = validate_category(category or proposal.get("category"))
             use_prefix = (prefix or proposal["prefix"]).upper()
             number = next_number(rules, use_prefix)
             line = render_rule(
@@ -340,25 +453,16 @@ def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signa
                 signal or proposal["signal"], check or proposal["check"],
                 f"{evidence or proposal['evidence']} {origin}",
             )
-            same = [rule for rule in rules if rule["prefix"] == use_prefix]
-            if same:
-                lines.insert(same[-1]["lineno"], line)
-            else:
-                if lines and lines[-1] != "":
-                    lines.append("")
-                lines.insert(len(lines) - 1 if lines[-1] == "" else len(lines), line)
+            _append_rule(category_file(path, use_category), use_category, line)
             key, decision = f"{use_prefix}{number}", "new"
-        new_text = "\n".join(lines)
-        if not new_text.endswith("\n"):
-            new_text += "\n"
-        store.atomic_write_text(path, new_text)
         record = {
             "ts": stamp, "proposal": proposal["id"], "author": proposal["author"],
             "reviewer": reviewer, "reviewer_instance": instance, "decision": decision,
-            "rule": key, "why": _one_line(why or ""),
+            "rule": key, "category": use_category, "why": _one_line(why or ""),
         }
         _record_decision(path, record)
-        proposal.update({"decision": decision, "rule": key, "reviewer": reviewer, "decided": stamp})
+        proposal.update({"decision": decision, "rule": key, "category": use_category,
+                         "reviewer": reviewer, "decided": stamp})
         _move(path, proposal, "accepted")
     return record
 
@@ -375,7 +479,7 @@ def reject(root: Path, proposal_id: str, *, why: str, env: dict[str, str] | None
         record = {
             "ts": stamp, "proposal": proposal["id"], "author": proposal["author"],
             "reviewer": reviewer, "reviewer_instance": instance, "decision": "rejected",
-            "rule": None, "why": _one_line(why),
+            "rule": None, "category": proposal.get("category"), "why": _one_line(why),
         }
         _record_decision(path, record)
         proposal.update({"decision": "rejected", "why": _one_line(why), "reviewer": reviewer,
@@ -388,32 +492,50 @@ def reject(root: Path, proposal_id: str, *, why: str, env: dict[str, str] | None
 
 
 def check(root: Path, env: dict[str, str] | None = None) -> list[tuple[str, str]]:
-    """`(status, detail)` rows: `ok`, `warn`, `fail`. One rule shape, unique numbers, no twins."""
+    """`(status, detail)` rows: `ok`, `warn`, `fail`. Fixed categories, one rule shape, unique
+    numbers across every file, no twins, nothing filed outside the taxonomy."""
     path = learnings_path(root, env)
     rows: list[tuple[str, str]] = []
-    if not path.is_file():
-        rows.append(("warn", f"{path} does not exist yet; the first `hx learn accept` creates it"))
+    if not path.is_dir():
+        rows.append(("warn", f"{path} does not exist yet; `hx install` ships it and the first `hx learn accept` creates the file it needs"))
         pending = list_proposals(path)
         rows.append(("ok" if not pending else "warn", f"{len(pending)} pending proposal(s)"))
         return rows
     rules = read_rules(path)
-    rows.append(("ok", f"{path}: {len(rules)} rule(s)"))
-    seen: dict[str, int] = {}
+    present = sum(1 for category in CATEGORY_NAMES if category_file(path, category).is_file())
+    rows.append(("ok", f"{path}: {len(rules)} rule(s) in {present} category file(s)"))
+    for category in CATEGORY_NAMES:
+        if not category_file(path, category).is_file():
+            rows.append(("warn", f"{category}.md missing; `hx learn accept … --category {category}` creates it"))
+    for stray in sorted(path.glob("*.md")):
+        if category_of(stray) is None:
+            held = read_file_rules(stray)
+            if held:
+                rows.append(("fail", f"{stray.name} holds {len(held)} rule(s) but is not a category "
+                             f"({', '.join(CATEGORY_NAMES)}); move them"))
+            else:
+                rows.append(("warn", f"{stray.name} is not a category file; nothing reads it"))
+    seen: dict[str, str] = {}
     for rule in rules:
+        where = f"{Path(rule['file']).name}:{rule['lineno']}"
         if rule["key"] in seen:
-            rows.append(("fail", f"line {rule['lineno']}: {rule['key']} is also line {seen[rule['key']]}"))
-        seen.setdefault(rule["key"], rule["lineno"])
+            rows.append(("fail", f"{where}: {rule['key']} is also {seen[rule['key']]}"))
+        seen.setdefault(rule["key"], where)
         missing = [name for name in FIELDS if not rule[name.lower()]]
         if missing:
-            rows.append(("fail", f"line {rule['lineno']}: {rule['key']} has no {', '.join(missing)}"))
-    for line_no, line in enumerate(path.read_text().splitlines(), 1):
-        if line.startswith("**Rule") and parse_rule(line) is None:
-            rows.append(("fail", f"line {line_no}: starts like a rule but is not `**Rule <P><n>** · …`"))
+            rows.append(("fail", f"{where}: {rule['key']} has no {', '.join(missing)}"))
+    for category in CATEGORY_NAMES:
+        file = category_file(path, category)
+        if not file.is_file():
+            continue
+        for line_no, line in enumerate(file.read_text().splitlines(), 1):
+            if line.startswith("**Rule") and parse_rule(line) is None:
+                rows.append(("fail", f"{file.name}:{line_no}: starts like a rule but is not `**Rule <P><n>** · …`"))
     for i, a in enumerate(rules):
         for b in rules[i + 1:]:
             score = similarity(_gist(a), _gist(b))
             if score >= DUPLICATE_SCORE:
-                rows.append(("warn", f"{a['key']} and {b['key']} look like one rule ({score}); merge them"))
+                rows.append(("warn", f"{a['key']} ({a['category']}) and {b['key']} ({b['category']}) look like one rule ({score}); merge them"))
     pending = list_proposals(path)
     rows.append(("ok" if not pending else "warn",
                  f"{len(pending)} pending proposal(s)" + ("" if not pending else " (hx learn pending)")))
@@ -425,52 +547,43 @@ def summary(root: Path, env: dict[str, str] | None = None) -> dict:
     path = learnings_path(root, env)
     rules = read_rules(path)
     pending = list_proposals(path)
-    last = rules[-1]["key"] if rules else None
-    return {"path": str(path), "exists": path.is_file(), "rules": len(rules),
-            "pending": len(pending), "last": last}
-
-
-#: Above this many rules the persona carries counts per prefix instead of the signal index.
-INDEX_LIMIT = 400
-SIGNAL_WIDTH = 160
+    last = max(rules, key=lambda rule: (rule["prefix"], rule["number"]))["key"] if rules else None
+    counts = {category: 0 for category in CATEGORY_NAMES}
+    for rule in rules:
+        counts[rule["category"]] += 1
+    return {"path": str(path), "exists": path.is_dir(), "rules": len(rules),
+            "pending": len(pending), "last": last,
+            "categories": {category: n for category, n in counts.items() if n}}
 
 
 def persona_region(root: Path, env: dict[str, str] | None = None) -> str:
-    """The fenced text `hx compile` distributes into every agent's persona.
-
-    It carries the *index* — every rule's key and Signal, one line each — not the file: an
-    agent recognises a signal from its system prompt with no Read, and pulls the one rule it
-    needs by key (`hx learn list <key>`). The file is never read whole by an agent.
-    """
+    """The fenced text `hx compile` distributes into every agent's persona: every rule, whole,
+    category by category. The agent never reads the files — they are in its system prompt at
+    every start and after every compaction, and cached with it."""
     info = summary(root, env)
     rules = read_rules(Path(info["path"]))
     count = f"{info['rules']} rule(s)" + (f", last {info['last']}" if info["last"] else "")
     head = (
         f"**Learnings: `{info['path']}`** ({count}). The central record of what tripped agents up "
         "here — a wrong assumption, a correction someone had to make, a wasted cycle — as rules: "
-        "Signal (what you see), Check (what decides it), Evidence (where it happened). The signals "
-        "are indexed below; when one matches what you see, pull that rule by key with "
-        "`hx learn list <key>` — do not read the file. When something trips you up, propose a rule "
-        "the moment you understand it:\n"
-        "`hx learn propose --signal \"<what you saw>\" --check \"<what decides it>\" --evidence \"<where>\"`\n"
-        "(or `--evidence-for <Rule>` when an existing rule already says it). Never edit the file: a "
-        "different session reviews every proposal, so it stays one rule per lesson."
+        "Signal (what you see), Check (what decides it), Evidence (where it happened). Every rule "
+        "is below, in full; it is in your system prompt at every start and after every compaction, "
+        "so never read the files. When something trips you up, propose a rule the moment you "
+        "understand it, in the category of the mistake it prevents:\n"
+        "`hx learn propose --category <category> --signal \"<what you saw>\" --check \"<what decides it>\" --evidence \"<where>\"`\n"
+        "(or `--evidence-for <Rule>` when an existing rule already says it). Categories: "
+        + ", ".join(CATEGORY_NAMES) + ". Never edit the files: a different session reviews every "
+        "proposal (`hx learn accept`), so each lesson is one rule."
     )
     if not rules:
         return head
-    if len(rules) > INDEX_LIMIT:
-        counts: dict[str, int] = {}
-        for rule in rules:
-            counts[rule["prefix"]] = counts.get(rule["prefix"], 0) + 1
-        by_prefix = ", ".join(f"{prefix} {n}" for prefix, n in sorted(counts.items()))
-        return head + f"\n\nRules by prefix: {by_prefix} (`hx learn list --prefix <P>` for the signals)."
-    lines = ["", "Signals, by rule:"]
-    for rule in rules:
-        signal = rule["signal"]
-        if len(signal) > SIGNAL_WIDTH:
-            signal = signal[:SIGNAL_WIDTH - 1].rstrip() + "…"
-        lines.append(f"- {rule['key']} · {signal}")
-    return head + "\n".join(lines)
+    blocks = [head]
+    for category in CATEGORY_NAMES:
+        held = [rule for rule in rules if rule["category"] == category]
+        if not held:
+            continue
+        blocks.append(f"### {category} — {DEFINITIONS[category]}\n" + "\n".join(rule["line"] for rule in held))
+    return "\n\n".join(blocks)
 
 
 def go_line(root: Path) -> str | None:
@@ -488,7 +601,7 @@ def go_line(root: Path) -> str | None:
 def _print_proposal(proposal: dict, rules: list[dict]) -> None:
     near = nearest(rules, proposal) if rules else proposal.get("nearest", [])
     print(f"{proposal['id']}  by {proposal['author']}@{proposal['instance']}  {proposal['ts']}"
-          f"  prefix {proposal['prefix']}"
+          f"  prefix {proposal['prefix']}  category {proposal.get('category')}"
           + (f"  evidence-for {proposal['evidence_for']}" if proposal.get("evidence_for") else ""))
     print(f"  Signal: {proposal['signal']}")
     print(f"  Check: {proposal['check']}")
@@ -507,12 +620,13 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
 
     p = sub.add_parser("propose", help="file a proposal next to the rules it resembles")
     p.add_argument("--root", help=argparse.SUPPRESS)
+    p.add_argument("--category", help="the kind of mistake the rule prevents: " + ", ".join(CATEGORY_NAMES))
     p.add_argument("--signal", default="", help="what you see when it is about to bite")
     p.add_argument("--check", default="", help="the mechanical test that decides it")
     p.add_argument("--evidence", default="", help="where it happened: path, run, PR, date")
     p.add_argument("--evidence-for", help="an existing rule this is more evidence for (no new rule)")
     p.add_argument("--prefix", help="rule prefix letter(s); default from config/hx.json or L")
-    p.add_argument("--file", help="read Signal:/Check:/Evidence: lines from this file instead")
+    p.add_argument("--file", help="read Category:/Signal:/Check:/Evidence: lines from this file instead")
     p.add_argument("--json", action="store_true")
 
     p = sub.add_parser("pending", help="the reviewer's worklist, each next to its nearest rules")
@@ -523,6 +637,7 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("proposal")
     p.add_argument("--merge-into", help="append the evidence to this rule instead of a new one")
+    p.add_argument("--category", help="file the rule under this category instead of the proposed one")
     p.add_argument("--signal", help="the reviewer's generalised wording")
     p.add_argument("--check", help="the reviewer's generalised wording")
     p.add_argument("--evidence", help="the reviewer's wording")
@@ -534,7 +649,7 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("proposal")
     p.add_argument("--why", required=True)
 
-    p = sub.add_parser("check", help="lint the file: shape, numbering, near-duplicates")
+    p = sub.add_parser("check", help="lint the directory: categories, shape, numbering, near-duplicates")
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--json", action="store_true")
 
@@ -542,32 +657,48 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("rule", nargs="?")
     p.add_argument("--prefix")
+    p.add_argument("--category")
     p.add_argument("--json", action="store_true")
 
-    p = sub.add_parser("path", help="print the file this instance writes learnings to")
+    p = sub.add_parser("categories", help="the fixed taxonomy: what each category holds")
+    p.add_argument("--root", help=argparse.SUPPRESS)
+    p.add_argument("--json", action="store_true")
+
+    p = sub.add_parser("path", help="print the directory this instance writes learnings to")
     p.add_argument("--root", help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
+
+    if args.command == "categories":
+        if args.json:
+            print(json.dumps(dict(CATEGORIES), indent=2))
+        else:
+            for name, definition in CATEGORIES:
+                print(f"{name:<12} {definition}")
+        return 0
+
     path = learnings_path(root, env)
 
     if args.command == "propose":
-        signal, check_text, evidence = args.signal, args.check, args.evidence
+        signal, check_text, evidence, category = args.signal, args.check, args.evidence, args.category
         if args.file:
             body = Path(args.file).read_text()
-            for name, value in re.findall(r"^(Signal|Check|Evidence):\s*(.*)$", body, re.M):
+            for name, value in re.findall(r"^(Category|Signal|Check|Evidence):\s*(.*)$", body, re.M):
                 if name == "Signal":
                     signal = signal or value
                 elif name == "Check":
                     check_text = check_text or value
+                elif name == "Category":
+                    category = category or value
                 else:
                     evidence = evidence or value
-        proposal = propose(root, signal=signal, check=check_text, evidence=evidence,
+        proposal = propose(root, signal=signal, check=check_text, evidence=evidence, category=category,
                            prefix=args.prefix, evidence_for=args.evidence_for, env=env)
         if args.json:
             print(json.dumps(proposal, indent=2, sort_keys=True))
             return 0
         near = ", ".join(f"{row['rule']}:{row['score']}" for row in proposal["nearest"]) or "none"
-        print(f"HX-LEARN-PROPOSED {proposal['id']} nearest={near}")
+        print(f"HX-LEARN-PROPOSED {proposal['id']} category={proposal['category']} nearest={near}")
         twin = next((row for row in proposal["nearest"] if row["score"] >= DUPLICATE_SCORE), None)
         if twin and not proposal.get("evidence_for"):
             print(f"hx: learn: this reads like {twin['rule']} ({twin['score']}); the reviewer may merge it "
@@ -592,9 +723,9 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
 
     if args.command == "accept":
         record = accept(root, args.proposal, merge_into=args.merge_into, signal=args.signal,
-                        check=args.check, evidence=args.evidence, prefix=args.prefix, why=args.why,
-                        env=env)
-        print(f"HX-LEARN {record['decision']} {record['proposal']} rule={record['rule']}")
+                        check=args.check, evidence=args.evidence, prefix=args.prefix,
+                        category=args.category, why=args.why, env=env)
+        print(f"HX-LEARN {record['decision']} {record['proposal']} rule={record['rule']} category={record['category']}")
         return 0
 
     if args.command == "reject":
@@ -619,17 +750,19 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
         if args.rule:
             wanted = [rule for rule in rules if rule["key"] == args.rule.upper()]
             if not wanted:
-                raise NotFound(f"no rule {args.rule} in {path}")
+                raise NotFound(f"no rule {args.rule} under {path}")
             print(json.dumps(wanted[0], indent=2, sort_keys=True) if args.json else wanted[0]["line"])
             return 0
         if args.prefix:
             rules = [rule for rule in rules if rule["prefix"] == args.prefix.upper()]
+        if args.category:
+            rules = [rule for rule in rules if rule["category"] == validate_category(args.category)]
         if args.json:
             print(json.dumps(rules, indent=2, sort_keys=True))
             return 0
         for rule in rules:
-            print(f"{rule['key']:<6} {rule['signal'][:110]}")
-        print(f"HX-LEARN-LIST {len(rules)} rule(s) in {path}")
+            print(f"{rule['key']:<6} {rule['category']:<12} {rule['signal'][:100]}")
+        print(f"HX-LEARN-LIST {len(rules)} rule(s) under {path}")
         return 0
 
     if args.command == "path":

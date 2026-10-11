@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from hx.compile import GLOBAL_BEGIN, LEARNINGS_BEGIN, compile_agent
+from hx.compile import GLOBAL_BEGIN, LEARNINGS_BEGIN, LEARNINGS_END, compile_agent
 from hx.errors import HxError
 
 
@@ -83,12 +83,24 @@ def test_stale_regions_are_replaced_not_duplicated(instance):
     assert agents_md(instance).count(GLOBAL_BEGIN) == 1
 
 
-def test_the_partner_is_exempt(instance):
+def test_the_partner_keeps_its_persona_and_gains_only_the_learnings_region(instance):
+    """The shipped Partner persona is not compiled from CLAUDE.md or a role file, but the
+    Partner carries the learnings like everyone else: one region, last above the header."""
     before = agents_md(instance, "partner")
+    report = compile_agent(instance, "partner")
+    assert report["compiled"] is True and report["reason"] == "partner-learnings-only"
+    text = agents_md(instance, "partner")
+    assert GLOBAL_BEGIN not in text and "<!-- hx:role begin" not in text
+    assert text.count(LEARNINGS_BEGIN) == 1
+    upper, _, lower = text.partition("## UPDATES BELOW ONLY")
+    assert upper.rstrip().endswith(LEARNINGS_END), "the region is the last thing above the header"
+    from hx.compile import REGION_RE
+    assert REGION_RE.sub("", upper).strip() == before.partition("## UPDATES BELOW ONLY")[0].strip()
+    assert lower == before.partition("## UPDATES BELOW ONLY")[2]
     assert compile_agent(instance, "partner") == {
-        "id": "partner", "compiled": False, "reason": "partner-exempt",
+        "id": "partner", "compiled": False, "reason": "up-to-date", "role": "partner", "role_region": False,
     }
-    assert agents_md(instance, "partner") == before
+    assert agents_md(instance, "partner").count(LEARNINGS_BEGIN) == 1
 
 
 def test_compile_refuses_an_agents_md_with_no_header(instance):
@@ -110,8 +122,8 @@ def test_compile_distributes_the_learnings_region_to_every_agent(instance):
     compile_agent(instance, "eng-001")
     text = agents_md(instance)
     assert LEARNINGS_BEGIN in text
-    assert str(instance / "LEARNINGS.md") in text
-    assert "hx learn propose" in text
+    assert str(instance / "LEARNINGS") in text
+    assert "hx learn propose --category" in text and "never read the files" in text
     assert text.index(GLOBAL_BEGIN) < text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
 
 
@@ -134,14 +146,16 @@ def test_an_instance_compiled_before_learnings_existed_gains_the_region(instance
     assert "Things I learned: nothing yet." in text
 
 
-def test_the_learnings_region_follows_the_rule_count(instance):
+def test_the_learnings_region_carries_every_rule_whole(instance):
+    """docs/learnings.md: the rules are the system prompt, not a pointer to a file."""
     from hx import learn
     compile_agent(instance, "eng-001")
     assert "0 rule(s)" in agents_md(instance)
-    proposal = learn.propose(instance, signal="s", check="c", evidence="e", env={"HARNESS_ID": "eng-001"})
+    proposal = learn.propose(instance, signal="a count quoted without its scope", check="every count carries its scope",
+                             evidence="FLAWS_3", category="evidence", env={"HARNESS_ID": "eng-001"})
     learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
     assert compile_agent(instance, "eng-001")["compiled"] is True
     text = agents_md(instance)
     assert "1 rule(s), last L1" in text
-    # The persona carries the signal index, so a matching signal costs no Read.
-    assert "- L1 · s" in text and "hx learn list <key>" in text
+    assert "### evidence — " in text
+    assert learn.read_rules(instance / "LEARNINGS")[0]["line"] in text

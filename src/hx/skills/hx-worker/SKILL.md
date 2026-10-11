@@ -210,15 +210,19 @@ passed on a subset — the moment you understand what happened, propose the rule
 move on and before you finish:
 
 ```bash
-hx learn propose --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
+hx learn propose --category <c> --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
 hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an existing rule already says it
+hx learn categories                                                         # the eleven kinds of mistake
 ```
 
-Your persona names the file (`LEARNINGS.md`, or the fleet's shared one); read it before you
-start. You never write it: the proposal is reviewed by a different session, which is what
-keeps it one rule per lesson. Signal is what the next agent will *see*; Check is something a
-script or a reviewer can decide; the one-off detail goes in Evidence and nowhere else. A
-proposal that is a story rather than a rule gets rejected with a reason you will be shown.
+Every rule already in force is in your system prompt — the `hx:learnings` region of your
+persona, whole, category by category — at every start and after every compaction. Never read
+the files (`LEARNINGS/<category>.md`, or the fleet's shared directory); `hx learn list <key>`
+prints one rule when you want to quote it. You never write them: the proposal is reviewed by
+a different session, which may refile it under another category, and that is what keeps each
+lesson one rule. Signal is what the next agent will *see*; Check is something a script or a
+reviewer can decide; the one-off detail goes in Evidence and nowhere else. A proposal that is
+a story rather than a rule gets rejected with a reason you will be shown.
 
 ### 10. Finishing
 

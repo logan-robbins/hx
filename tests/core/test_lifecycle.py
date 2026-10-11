@@ -665,5 +665,5 @@ def test_heartbeat_reports_pending_learnings(instance, hx, launched):
     launched("partner")
     assert "learnings_pending=0" in hx("heartbeat").stdout
     from hx import learn
-    learn.propose(instance, signal="s", check="c", evidence="e", env={"HARNESS_ID": "eng-001"})
+    learn.propose(instance, signal="s", check="c", evidence="e", category="harness", env={"HARNESS_ID": "eng-001"})
     assert "learnings_pending=1" in hx("heartbeat").stdout
