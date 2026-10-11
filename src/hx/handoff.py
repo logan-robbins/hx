@@ -6,6 +6,7 @@ PR heads, merge states, check results — rots the moment anyone pushes again, a
 proves locally is bound to one tree. So the contract (docs/multi-instance.md §6) is:
 
   - it opens with its authority (what it is and is not) and the time its facts were captured;
+  - no PR it reports is a draft: a PR is created ready for full CI and review;
   - the remote facts come from one query made after the last push (`final-root-check.json`,
     written by `hx handoff capture`), earlier heads are labelled historical, a blocked state
     names its cause;
@@ -180,6 +181,9 @@ def cmd_check(args: argparse.Namespace) -> int:
                 if "historical" not in header.lower() and "historical" not in line.lower():
                     fails.append(f"S90 PR #{number} row quotes {', '.join(s[:12] for s in sorted(others))} "
                                  "without the table header or row saying 'historical'")
+            if heads[number].get("isDraft") is True:
+                fails.append(f"S94 PR #{number} is a draft: PRs are created ready for full CI and review and "
+                             "never converted back to draft")
             merge_state = heads[number].get("mergeStateStatus") or heads[number].get("merge_state_status")
             decision = (heads[number].get("reviewDecision") or heads[number].get("review_decision") or "")
             if merge_state == "BLOCKED":

@@ -29,7 +29,7 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 - `hx handoff check|capture|pushed|sums`: the handoff contract of `docs/multi-instance.md` §6
   as a command, with a `Delivery status:` line (`LOCAL_GATE_PASSED`, `CI_PENDING`, `CI_FAILED`,
   `CI_GREEN`) that must agree with the checks captured after the last push — a push starts CI,
-  it does not pass it.
+  it does not pass it — and a refusal of any PR captured as a draft.
 - `hx doctor` fails `bin-path` when an adapter's `config/<adapter>.json` `bin` names a
   versioned path: launchers auto-update and delete the old version, and every launch then fails.
   `hx install` no longer resolves the `claude` launcher's symlink when it records `bin`, for

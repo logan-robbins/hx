@@ -126,6 +126,15 @@ def test_blocked_needs_its_cause(handoff_dir, capsys):
     assert code == 1 and "is BLOCKED; the handoff must name the cause (REVIEW_REQUIRED)" in out
 
 
+def test_a_draft_pr_fails(handoff_dir, capsys):
+    capture = json.loads((handoff_dir / "final-root-check.json").read_text())
+    capture["prs"][0]["isDraft"] = True
+    (handoff_dir / "final-root-check.json").write_text(json.dumps(capture))
+    reseal(handoff_dir)
+    code, out = check(handoff_dir, capsys)
+    assert code == 1 and "S94 PR #1885 is a draft" in out
+
+
 def test_the_open_section_is_mandatory(handoff_dir, capsys):
     (handoff_dir / "HANDOFF.md").write_text(good_handoff().replace("## Open findings", "## Findings"))
     reseal(handoff_dir)
