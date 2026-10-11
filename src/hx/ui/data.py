@@ -265,7 +265,7 @@ PUBLISHED = {
     "wake": ("hx.wake", "wake_partner_status"),
     # M7 shipped: the fleet document. `hx.show.collect` also fills the `metrics`
     # block of its own document, so per-id metrics light up without a UI change.
-    "metrics": ("hx.metrics", "collect"),
+    "metrics": ("hx.metrics", "collect_fleet"),
 }
 
 

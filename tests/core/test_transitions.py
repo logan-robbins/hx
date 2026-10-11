@@ -374,7 +374,11 @@ def test_complete_is_the_callers_own_item(instance, hx, launched, goals):
 
 
 def test_complete_wakes_the_partner(instance, hx, launched, goals, tmp_path):
-    """spec 08, 12 step 4: trust-model wake `<id> <outcome>` — status only, no prose."""
+    """spec 08, 12 step 4: trust-model wake `<id> <outcome>` — status only, no prose.
+
+    Quiet protocol (2026-10-05): a `done` is discovered by the Partner's board poll and wakes
+    nobody; the outcomes that need the Partner — `blocked`, `decision`, `exhausted` — wake it.
+    """
     import socket
     import threading
 
@@ -400,7 +404,7 @@ def test_complete_wakes_the_partner(instance, hx, launched, goals, tmp_path):
     socket_file.parent.mkdir(parents=True, exist_ok=True)
     socket_file.write_text(json.dumps({"socket": address, "token": "tok-123"}))
 
-    assert hx("complete", "done", harness_id="eng-001").returncode == 0
+    assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
     thread.join(timeout=10)
     server.close()
 
@@ -409,7 +413,7 @@ def test_complete_wakes_the_partner(instance, hx, launched, goals, tmp_path):
     assert lines[1]["type"] == "user"
     assert lines[1]["message"] == {
         "role": "user",
-        "content": "eng-001 done",
+        "content": "eng-001 blocked",
     }
 
 

@@ -52,7 +52,8 @@ anchors, and checks. Stable IDs survive stack changes when responsibilities rema
 same. Planning uses a bounded slice of that map to define assignments and avoid asking
 workers to rediscover known paths, contracts, and checks.
 
-The companion processes new captured events and submits structured changes to current
+The companion is a Claude Code session of its own with Read and Write — two tools and nothing else;
+it processes new captured events and submits structured changes to current
 task state and the application map. Jev is required for its bounded judgments about
 observation deltas, repeated tool observations, optional tool discovery, and surplus
 output. Jev does not choose which facts survive, write facts, generate task plans, or
