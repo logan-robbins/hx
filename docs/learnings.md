@@ -157,3 +157,24 @@ kind of information belongs.
 - Not a place for status, definitions-as-prose or checklists. A definition becomes a rule
   (`Signal: the word "finished" used for a lane · Check: …`); a checklist lives with the
   cards or templates that use it and cites rules by key.
+
+## The invariant cascade and never-twice
+
+Context cascades from most invariant to most volatile: the base model,
+global policy, the learnings (whole, in every system prompt), the persona
+and role, the assignment brief, then the current task packet. Learnings sit
+near the top because a paid-for mistake is the most valuable context any
+later agent can receive — every agent must never fall for the same mistake
+or flawed reasoning twice.
+
+Three mechanisms keep that true. Classification happens at the moment of
+learning, while the mistake is concrete: `hx learn classify` ranks the
+fixed categories deterministically and the proposer chooses from that
+shortlist. Repetition is detected, not hoped away: `hx learn repeat`
+reports `repeat` when a signal already matches a rule, and the correct
+action is merging new evidence into that rule — a repeat is also the
+measurable failure of the cascade, worth counting. And the invariant has a
+size law: `hx learn invariant` charges every rule byte-for-token against
+the prompt invariant budget (`hx cache budget`); past the ceiling the most
+valuable context starts evicting working room, so wording is compressed
+before rules are added.
