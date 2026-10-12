@@ -12,6 +12,23 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Added
 
+- Search and retrieval (docs/search-and-retrieval.md): `hx code` indexes symbols, imports,
+  and source text (Porter + trigram FTS5, reciprocal rank fusion, proximity rerank, fuzzy
+  fallback) with `search`, `symbols`, `impact`, and candidate graph `edges`; `hx content`
+  is a persistent exact-text store for docs and web (`index`, multi-query `search`, SSRF-
+  hardened TTL-cached `fetch`, `stats`); `hx exec` runs Python/JavaScript/shell in isolated
+  subprocesses where only stdout returns, with intent indexing over 5 KB and pointer-only
+  output over 100 KB, plus `exec file` (`FILE_CONTENT`) and concurrent `exec batch`;
+  `hx sift` applies Jev (`jev-1.13.0`) semantic sifting, failure triage, and check ordering
+  over deterministic candidates — advisory only, degrading to `unsifted` on provider failure.
+- Discipline and prompt caching: `hx discipline profile/orient/commit` derives module-size
+  bounds and orientation load from the repo itself and judges whether a diff is one
+  committable unit; `hx plan validate` now reports waves, level widths, max parallelism, and
+  interface-first warnings; `hx cache assess/budget` makes prompt-cache TTL and the invariant
+  budget explicit, with companion passes append-only while warm and restructuring when cold;
+  `hx learn classify/repeat/invariant` classifies at the moment of learning, detects a
+  repeated mistake against existing rules, and charges learnings against the invariant budget.
+
 - `hx learn`: the central learnings — `LEARNINGS/<category>.md`, one file per fixed category
   of mistake (`hx learn categories`: orientation, ownership, planning, domain, build, testing,
   runtime, evidence, delivery, harness, environment) — and the only way into them

@@ -114,8 +114,20 @@ state authorities/projections and retention of the minimal state needed to resum
 cancelled assignment. Optional QA triage and test selection remain follow-on features.
 The current status document tracks these boundaries and verification details.
 
+## Search, retrieval, and execution
+
+Code search, graph search, content retrieval, and isolated execution follow
+the context-economy contract in [search and retrieval](search-and-retrieval.md):
+analysis is programmed (`hx exec`) so only stdout returns, exact content is
+retrieved on demand from FTS5 indexes (`hx code`, `hx content`), graph
+traversal stays on validated map edges with code-derived candidate edges as
+input, and Jev (`hx sift`) only sifts deterministic candidates — it never
+establishes absence, validates an edge, or completes a task. These indexes
+are rebuildable derived state beside the ledger, not a second authority.
+
 ## Related contracts
 
+- [Search and retrieval](search-and-retrieval.md)
 - [Application map](application-map.md)
 - [Continuity runtime](continuity-runtime.md)
 - [Planning runtime](planning-runtime.md)

@@ -93,6 +93,8 @@ for verified behavior and boundaries.
 - [Operating hx](docs/operating.md) — daily use
 - [Several instances on one host](docs/multi-instance.md) — a fleet of Partners: private tmux servers, credentials, go-gate, clean product repository, bound evidence, serialized merges
 - [System design](docs/system-design.md) — current architecture and remaining integration
+- [Search and retrieval](docs/search-and-retrieval.md) — code/graph/content search, isolated execution, Jev sifting
+- [Provider model registry](docs/models.md) — latest model IDs per provider, pinned defaults
 - [Application map](docs/application-map.md) — semantic records, validation, and updates
 - [Continuity runtime](docs/continuity-runtime.md) — capture, state, checks, and reset contracts
 - [Planning runtime](docs/planning-runtime.md) — assignments, ownership, and completion

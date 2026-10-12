@@ -289,6 +289,22 @@ substring search over completed Work Item bodies (live `*-complete.md` plus
 files are scanned newest-first; `--limit` defaults to 5, max 20; excerpts are capped (400
 chars, 2000 with `--full`). Output lines start with `HX-RECALL`, or a single `HX-RECALL none`.
 
+## `hx code`, `hx content`, `hx exec`, `hx sift` (search and retrieval)
+
+All four print JSON to stdout and exit 0 on success (docs/search-and-retrieval.md).
+`hx code index` returns `{"files": N, "symbols": N}`; `code search` returns a list of
+`{"path", "title", "snippet", "score", "layer"}` where `layer` is `symbol`, `fts`, or
+`fuzzy`; `code symbols` returns `{"name", "qualified", "kind", "path", "line", "end_line"}`
+entries; `code impact` returns defined symbols, referencing files, and candidate tests;
+`code edges` returns `{"from_path", "to_path", "kind": "imports", "status": "candidate"}`.
+`hx content index` returns `{"label", "chunks", "code_chunks"}`; `content search` returns a
+map of query to `{"title", "content", "source", "content_type", "rank", "layer", "stale"}`
+lists. `hx exec` returns `{"exit_code", "stdout_returned", "bytes_produced", "indexed", ...}`;
+output over 100 KB returns an index pointer with no raw text. `hx sift candidates` returns
+`{"status", "sifted", "results": [{"id", "snippet", "jev_score", "candidate"}]}`; on provider
+failure `status` is `unsifted` and every `jev_score` is null. Sift and triage output is
+advisory: it never validates edges, receipts, or completion.
+
 ## SSE `changed` scopes
 
 `/api/events` pushes `{"changed": [...]}` where every entry is an id (`partner` or `[a-z]+-[0-9]{3}`) except two reserved scopes: `tasks`, emitted when `tasks.json` changed, and `memory`, emitted when anything under `state/memory/` moved (an episode queued or indexed). The browser treats `tasks` as "re-fetch the board and the goals view"; every scope re-reads the board, which is where `memory` and `companion_pass` land. An id also moves when a pass file appears or disappears under `run/<id>/companion/`.
