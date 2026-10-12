@@ -74,14 +74,14 @@ def pytest_collection_modifyitems(config, items):
 
 
 MODELS = {
-    "claude-haiku-4-5-20251001": {"window": 200000, "seam_threshold": 100000},
-    "claude-sonnet-5": {"window": 1000000, "seam_threshold": 500000},
-    "claude-opus-5": {"window": 1000000, "seam_threshold": 500000},
+    "claude-haiku-5-5": {"window": 200000, "seam_threshold": 100000},
+    "claude-sonnet-5-5": {"window": 1000000, "seam_threshold": 500000},
+    "claude-opus-5-5": {"window": 1000000, "seam_threshold": 500000},
 }
 
 #: Every live test here is about the harness, never about the model's answer. The user's
 #: standing rule (2026-09-21): tests run Sonnet at medium effort, for agents and Companions.
-LIVE_MODEL = "claude-sonnet-5"
+LIVE_MODEL = "claude-sonnet-5-5"
 LIVE_EFFORT = "medium"
 
 

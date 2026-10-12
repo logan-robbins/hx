@@ -34,6 +34,9 @@ SPEC_08_COMMANDS = {
     "loop", "tool-exec", "tools",
     # Central learnings (docs/learnings.md) and the handoff contract (docs/multi-instance.md §6).
     "learn", "handoff",
+    # Context economy: code index, content store, isolated execution, Jev sift
+    # (docs/search-and-retrieval.md), likewise post-spec-08.
+    "code", "content", "exec", "sift", "discipline", "cache",
 }
 
 

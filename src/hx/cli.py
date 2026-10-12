@@ -16,6 +16,12 @@ from pathlib import Path
 
 from . import tool_execution as tool_execution_cmd
 from . import tool_catalog as tool_catalog_cmd
+from . import code_index as code_cmd
+from . import content_store as content_cmd
+from . import search_exec as exec_cmd
+from . import search_sift as sift_cmd
+from . import discipline as discipline_cmd
+from . import prompt_cache as cache_cmd
 from . import application_loop as loop_cmd
 from . import amend as amend_cmd
 from . import archive as archive_cmd
@@ -85,6 +91,12 @@ IMPLEMENTED = {
     "loop": loop_cmd.main,
     "tool-exec": tool_execution_cmd.main,
     "tools": tool_catalog_cmd.main,
+    "code": code_cmd.main,
+    "content": content_cmd.main,
+    "exec": exec_cmd.main,
+    "sift": sift_cmd.main,
+    "discipline": discipline_cmd.main,
+    "cache": cache_cmd.main,
     "memory": memory_cmd.main,
     "observe": observer_cmd.main,
     "progress": progress_cmd.main,
@@ -152,6 +164,15 @@ the control plane:
   loop [--once]                capture, refresh mapped sources, and run one companion at a time
   observe register/drain/serve/status  incremental continuity source capture
   evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
+  code index --repo PATH       index symbols, imports, and source text for code search
+  code search QUERY            exact-symbol and FTS code search (porter + trigram, RRF)
+  code symbols NAME            symbol definitions; code impact PATH... for change impact
+  content index/search/fetch   persistent exact-text knowledge store for docs and web
+  exec --language L --code C   isolated execution: program the analysis, only stdout returns
+  exec file PATH --language L --code C  run code over a file without reading it into context
+  exec batch --file F.json     run many commands, auto-index output, search in one call
+  sift candidates/triage       Jev semantic sifting over deterministic candidates (advisory)
+  discipline profile/orient/commit  repo-derived size bounds, orientation load, committable check
 
 read-only views:
   board [--json]                          a plain listing of what is on disk

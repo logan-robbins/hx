@@ -53,13 +53,17 @@ def test_the_skeleton_models_file_validates():
     from hx.install import skeleton_dir
 
     models = load_models(skeleton_dir() / "config" / "models.json")
-    assert "claude-opus-5" in models
+    assert "claude-opus-5-5" in models
     for model in models.values():
         # The instance ships at a 250k autocompact window (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`,
         # exported by start.sh), with the seam threshold below it and inside spec 05's cap.
-        assert model.window == 1_000_000
-        assert model.autocompact_window == 250_000
-        assert model.threshold == 200_000
+        # Haiku ships its smaller real window; the frontier rows keep 1M.
+        if model.id == "claude-haiku-5-5":
+            assert (model.window, model.autocompact_window, model.threshold) == (200_000, 150_000, 100_000)
+        else:
+            assert model.window == 1_000_000
+            assert model.autocompact_window == 250_000
+            assert model.threshold == 200_000
         assert model.threshold < model.autocompact_window <= model.window
         assert model.threshold <= LARGE_WINDOW_THRESHOLD_CAP
 
