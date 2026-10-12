@@ -163,9 +163,26 @@ def _definition(body):
             else:
                 buckets.append([task])
         groups.extend(buckets)
+    # Interface-first: a consumer of a source output cannot start (even to
+    # stub) until the producer finishes, unless the producer is split so an
+    # interface/contract unit lands first. Warn, never refuse: the Partner
+    # decides whether the coupling is worth an explicit split.
+    interface_warnings = []
+    for unit in body["tasks"]:
+        for dependency in unit["prerequisites"]:
+            produced = outputs.get(dependency["task_id"], {}).get(dependency["output_id"])
+            if produced and produced["kind"] == "source":
+                interface_warnings.append(
+                    f"consumer {unit['id']} builds on source output of {dependency['task_id']} "
+                    "without an interface published first; split an interface/stub unit ahead "
+                    "of it so consumers can be discovered, searched, and stubbed early")
     return tasks, {"valid": True, "plan_id": body["plan_id"], "dependency_levels": levels,
                    "potential_parallel_groups": groups,
-                   "initial_units": levels[0], "note": "Dependency levels describe ordering; dispatch still requires current inputs, output materialization, and free leases."}
+                   "waves": len(levels),
+                   "level_widths": [len(level) for level in levels],
+                   "max_parallelism": max((len(group) for group in groups), default=0),
+                   "interface_warnings": interface_warnings,
+                   "initial_units": levels[0], "note": "Dependency levels describe ordering; dispatch still requires current inputs, output materialization, and free leases. Max parallelism is bounded by worktree-disjoint groups, free leases, and host capacity at dispatch time."}
 
 
 def validate(store, body):
