@@ -776,7 +776,9 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("propose", help="file a proposal next to the rules it resembles")
+    p = sub.add_parser("propose", help="file a proposal next to the rules it resembles", epilog=(
+        'example: hx learn propose --category testing --signal "tests pass locally, fail in CI" '
+        '--check "run the suite with the CI env file" --evidence "PR 42, 2026-10-12"'))
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--category", help="the kind of mistake the rule prevents: " + ", ".join(CATEGORY_NAMES))
     p.add_argument("--signal", default="", help="what you see when it is about to bite")
@@ -811,7 +813,8 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--json", action="store_true")
 
-    p = sub.add_parser("list", help="the rules, or one rule in full")
+    p = sub.add_parser("list", help="the rules, or one rule in full",
+                       epilog="example: hx learn list --category testing")
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("rule", nargs="?")
     p.add_argument("--prefix")
@@ -825,13 +828,16 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p = sub.add_parser("path", help="print the directory this instance writes learnings to")
     p.add_argument("--root", help=argparse.SUPPRESS)
 
-    p = sub.add_parser("classify", help="rank categories for a fresh learning")
+    p = sub.add_parser("classify", help="rank categories for a fresh learning", epilog=(
+        'example: hx learn classify --signal "tests pass locally, fail in CI" '
+        '--check "run the suite with the CI env file"'))
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--signal", required=True)
     p.add_argument("--check", required=True)
     p.add_argument("--jev", action="store_true", help="Jev Choice as second opinion")
 
-    p = sub.add_parser("repeat", help="never-twice check: is this mistake already a rule?")
+    p = sub.add_parser("repeat", help="never-twice check: is this mistake already a rule?",
+                       epilog='example: hx learn repeat --signal "tests pass locally, fail in CI"')
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--signal", required=True)
 

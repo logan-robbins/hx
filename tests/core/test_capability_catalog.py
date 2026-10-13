@@ -78,3 +78,55 @@ def test_the_new_shipped_skills_load_through_the_facade_under_8_kib(tmp_path):
             assert len(loaded['body'].encode()) <= 8192, name
             assert capabilities.read(tmp_path)['entries']['skill:' + name]['purpose'].startswith(
                 'Sign-off procedure' if name == 'hx-signoff' else 'How to run a code conversion')
+
+
+def test_index_records_the_protocol_version_each_server_answers_with(indexed):
+    """TOOL_SKILL_PLAN step 8: the catalog keeps the `initialize` answer per server."""
+    store, _ = indexed
+    catalog = capabilities.read(store.root)
+    assert catalog['servers'] == {'local': {'protocol_version': '2024-11-05'}}
+    assert capabilities.index(store.root)['servers'] == {'local': {'protocol_version': '2024-11-05'}}
+
+
+#: A modern-only stdio server (MCP 2026-07-28): `initialize` is an unknown method to it.
+#: It logs every method it receives so the test can count the discover calls.
+MODERN_SERVER = '''import json,sys
+log=open(sys.argv[1],'a')
+for line in sys.stdin:
+ q=json.loads(line)
+ log.write(q.get('method','')+chr(10)); log.flush()
+ if 'id' not in q: continue
+ if q['method']=='server/discover' and sys.argv[2]=='discover':
+  body={'result':{'resultType':'complete','supportedVersions':['2026-07-28'],'capabilities':{'tools':{}}}}
+ elif q['method']=='server/discover':
+  body={'error':{'code':-32601,'message':'Method not found'}}
+ else:
+  body={'error':{'code':-32601,'message':'Method not found'}}
+ print(json.dumps({'jsonrpc':'2.0','id':q['id'],**body}),flush=True)
+'''
+
+
+def _modern(tmp_path, mode):
+    server, log = tmp_path / 'modern.py', tmp_path / 'methods.log'
+    server.write_text(MODERN_SERVER)
+    (tmp_path / 'config').mkdir()
+    (tmp_path / 'config/capabilities.json').write_text(json.dumps({'schema_version': 1,
+        'servers': {'modern': {'command': [sys.executable, str(server), str(log), mode]}}, 'skills': {}}))
+    return log
+
+
+def test_a_refused_initialize_calls_server_discover_once_and_names_the_versions(tmp_path):
+    log = _modern(tmp_path, 'discover')
+    with pytest.raises(Conflict, match='refused initialize') as refusal:
+        capabilities.index(tmp_path)
+    assert '2026-07-28' in str(refusal.value) and 'server/discover' in str(refusal.value)
+    assert log.read_text().splitlines() == ['initialize', 'server/discover']
+    assert not (tmp_path / 'state/capabilities.json').exists()
+
+
+def test_a_server_that_refuses_discover_too_is_reported_without_versions(tmp_path):
+    log = _modern(tmp_path, 'legacy-error')
+    with pytest.raises(Conflict, match='refused initialize') as refusal:
+        capabilities.index(tmp_path)
+    assert 'reported no supported versions' in str(refusal.value)
+    assert log.read_text().splitlines() == ['initialize', 'server/discover']

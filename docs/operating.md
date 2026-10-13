@@ -234,3 +234,15 @@ instance runs on a Claude subscription token. It changes nothing: `hx models --e
 exits 3 when a configured model is no longer active or its window is larger than the provider
 allows, which is the cue to edit the registry yourself (the Partner's `hx-fleet` skill §7 says
 the same to the Partner).
+
+## Command examples and registered MCP servers
+
+Every command in a worker's `hx help` column ends its `--help` with one example invocation, and
+the `hx-worker` skill lists the same examples. An agent that is unsure of a flag should copy the
+example, not guess. `hx code` is the exception for now; its help belongs to the code-graph work.
+`hx tools index` now records, per registered MCP server, the `protocolVersion` it answered with
+(`servers` in `state/capabilities.json` and in the command's output). hx's client still opens
+with the `2024-11-05` handshake. If a server refuses that handshake (an MCP 2026-07-28 server
+that dropped backward compatibility), indexing calls `server/discover` once, stops, and names
+the versions the server supports. Unregister that server rather than expecting the client to
+change mid-release.

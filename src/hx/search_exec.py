@@ -288,18 +288,21 @@ def batch_execute(root, commands, *, queries=None, concurrency=1, timeout=60) ->
 
 
 def main(argv, root, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx exec", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx exec", add_help=True,
+                                     epilog='example: hx exec --language python --code "print(1)"')
     parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    ex = sub.add_parser("exec", help="run code in isolated execution")
+    ex = sub.add_parser("exec", help="run code in isolated execution",
+                        epilog='example: hx exec --language python --code "print(1)"')
     ex.add_argument("--language", required=True)
     ex.add_argument("--code", required=True)
     ex.add_argument("--intent", default=None)
     ex.add_argument("--timeout", type=int, default=30)
     ex.add_argument("--root", help=argparse.SUPPRESS)
 
-    ef = sub.add_parser("file", aliases=["exec-file"], help="run code against FILE_CONTENT")
+    ef = sub.add_parser("file", aliases=["exec-file"], help="run code against FILE_CONTENT",
+                        epilog='example: hx exec file app.log --language python --code "print(len(FILE_CONTENT))"')
     ef.add_argument("path")
     ef.add_argument("--language", required=True)
     ef.add_argument("--code", required=True)
@@ -307,7 +310,8 @@ def main(argv, root, *, env=None) -> int:
     ef.add_argument("--timeout", type=int, default=30)
     ef.add_argument("--root", help=argparse.SUPPRESS)
 
-    bt = sub.add_parser("batch", help="run shell commands and search outputs")
+    bt = sub.add_parser("batch", help="run shell commands and search outputs",
+                        epilog="example: hx exec batch --file commands.json --queries timeout,refused")
     bt.add_argument("--file", required=True)
     bt.add_argument("--queries", default=None, help="comma-separated queries")
     bt.add_argument("--concurrency", type=int, default=1)

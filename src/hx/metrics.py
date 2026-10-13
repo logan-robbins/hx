@@ -261,7 +261,19 @@ def per_id(root: Path, item_id: str) -> dict:
         "dispatched": dispatched,
         "seams": seams,
         "totals": totals,
+        # The invariant prompt prefix and cache age (TOOL_SKILL_PLAN step 8, `hx cache report`).
+        "cache": _cache_or_none(root, item_id),
     }
+
+
+def _cache_or_none(root: Path, item_id: str) -> dict | None:
+    """`hx cache report ID`'s row; metrics never fails on it."""
+    from . import prompt_cache
+
+    try:
+        return prompt_cache.agent_report(root, item_id)
+    except Exception:  # noqa: BLE001 — an unreadable input loses the row, not the document
+        return None
 
 
 def render_per_id_text(doc: dict) -> str:
@@ -286,6 +298,12 @@ def render_per_id_text(doc: dict) -> str:
     lines.append(f"totals seams={totals['seams']} tool_calls={totals['tool_calls']} "
                  f"reads_of_context_file={totals['reads_of_context_file']} "
                  f"reads_of_working_set={totals['reads_of_working_set']} other={totals['other']}")
+    cache = doc.get("cache")
+    if cache:
+        seam = cache.get("seam") or {}
+        lines.append(f"cache prefix_bytes={cache['invariant']['prefix_bytes']} "
+                     f"share={cache['budget']['share']} state={seam.get('state')} "
+                     "tool_schemas=unmeasured")
     return "\n".join(lines) + "\n"
 
 

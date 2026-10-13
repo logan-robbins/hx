@@ -145,3 +145,15 @@ reset intent before sending the native command and waits for startup acknowledge
 Active runs retain their leases until recorded process ownership is reconciled. Native
 receipts establish delivery and lifecycle state; they do not prove model compliance or
 restrict tools that the host preloads outside the adapter's supported interfaces.
+
+`hx cache report [ID]` measures the invariant part of each agent's prompt prefix, the part a
+seam should not have to rewrite (operator and Partner only). It adds up the persona as launched
+(`run/<id>/persona.md`, or `AGENTS.md` above the header before the first launch),
+`config/CLAUDE.md`, the learnings region when the persona does not already carry it, and the
+frontmatter descriptions of the installed skills. Skill bodies are excluded because they load on
+demand. The total is checked against `prompt_cache.invariant_budget` for the agent's model row,
+and the age of the last seam against its `harness.json` `cache_ttl` via `prompt_cache.assess`.
+Native tool schemas and host-injected context are printed as `unmeasured`, never estimated, so
+the figure is a floor. `hx metrics <id>` carries the same object under `cache`. Use the local
+number, not a vendor's published saving, before anyone claims that a prompt change reduced cost
+(CONTRACTS.md has the shape).

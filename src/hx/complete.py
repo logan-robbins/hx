@@ -330,7 +330,8 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx complete", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx complete", add_help=True,
+                                     epilog="example: hx complete done")
     parser.add_argument("outcome", choices=list(OUTCOMES))
     parser.add_argument("--id", help="the id to complete (default: HARNESS_ID)")
     parser.add_argument("--root", help=argparse.SUPPRESS)

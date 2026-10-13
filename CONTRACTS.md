@@ -774,3 +774,88 @@ warn  skills-isolation ~/.agents/skills holds 2 entries while Codex or Pi worker
 The first is per worker (never the Partner) and lists whichever of `.claude/skills`,
 `.agents/skills` and `.pi/skills` exist in its `harness.json` workdir. The second reads
 `$HOME/.agents/skills` only while some worker's flavor is `codex` or `pi`.
+
+## `hx cache report [ID] [--json]`
+
+The invariant prompt prefix per agent, against its model's budget (TOOL_SKILL_PLAN step 8).
+Operator and Partner only. It covers every `config/<id>/` directory, or one; an unknown ID is
+`NotFound` (exit 2). It never writes.
+
+```json
+{"ts": "2026-10-12T12:00:00Z",
+ "agents": [{"id": "eng-001",
+   "invariant": {"persona_bytes": 9120, "persona_source": "run/eng-001/persona.md",
+                 "claude_md_bytes": 2048, "learnings_bytes": 1400, "learnings_in_persona": true,
+                 "skills": ["hx-memory", "hx-worker"], "skills_source": "installed",
+                 "skill_descriptions_bytes": 1310, "prefix_bytes": 12478,
+                 "native_tool_schemas": "unmeasured", "host_context": "unmeasured"},
+   "budget": {"model": "claude-opus-5", "invariant_ceiling_tokens": 200000,
+              "working_room_tokens": 800000, "within": true, "share": 0.0624},
+   "seam": {"last_seam_ts": "2026-10-12T11:56:00Z", "cache_ttl": "1h",
+            "ttl_source": "harness.json cache_ttl", "state": "warm", "cacheable": true,
+            "prefix_tokens": 12478, "ttl_s": 3600, "age_s": 240,
+            "recommendation": "keep-prefix", "note": "..."}}]}
+```
+
+- `persona_source` is `run/<id>/persona.md` once a launch derived it. Before that it is
+  `config/<id>/AGENTS.md above the header`, which is what `start.sh` would derive. `null`
+  means neither exists.
+- `learnings_bytes` is `learn.persona_region` (what `hx compile` splices). It counts toward
+  `prefix_bytes` only when the persona does not already contain the learnings marker
+  (`learnings_in_persona: false`).
+- `skills` lists the installed copies in `run/<id>/home/skills` (or `home/muse/skills` for
+  Muse); `skills_source` is then `installed`. Without them it lists the manifest's choice and
+  says `manifest`. Only the frontmatter `description` bytes count: the listing cost. Skill
+  bodies are not invariant.
+- `prefix_bytes` is charged one token per byte against `invariant_ceiling_tokens`, which is
+  `prompt_cache.invariant_budget` for the `harness.json` model's row. The `budget` values are
+  `null` when the model has no row.
+- `native_tool_schemas` and `host_context` are always the string `unmeasured`. They are
+  adapter-specific and never estimated.
+- `seam` is `null` until the main stream has a seam record. Otherwise it is
+  `prompt_cache.assess` on `prefix_bytes` and the last seam's age, against `harness.json`
+  `cache_ttl`. Without that field `ttl_source` is `default` (`5m`).
+
+The text form is one line per agent, then the sentinel:
+
+```text
+eng-001: prefix 12478 B (persona 9120, CLAUDE.md 2048, learnings 1400 in persona, skill descriptions 1310 over 2) = 6.2% of claude-opus-5 ceiling 200000; tool schemas and host context unmeasured; last seam 240s ago, warm against 1h (harness.json cache_ttl)
+HX-CACHE-REPORT agents=1 over_budget=0
+```
+
+`hx metrics <id> --json` carries the same per-agent object under `cache`. It is `null` when an
+input cannot be read, so metrics never fails on it. The text form appends
+`cache prefix_bytes=N share=F state=S tool_schemas=unmeasured`.
+
+## One example per worker command in `--help`
+
+Every worker-column entry of `hx help` (`cli.AUDIENCES` worker and subagent) has an argparse
+epilog that starts `example: hx ...` (`examples:` for `hx tools`). `hx cache assess` and
+`hx cache budget` have one as well. `tests/core/test_cli.py` asserts this for each entry. The
+`code *` entries are excluded: their parser is in `src/hx/code_index.py`, which the code-graph
+work owns (GRAPH_PLAN.md). `hx-worker` lists the same examples under "One example per command".
+
+## MCP version record (`hx tools index`)
+
+`state/capabilities.json` gains `servers`, and the `hx tools index` result repeats it:
+
+```json
+{"version": "…", "capabilities": 3, "servers": {"local": {"protocol_version": "2024-11-05"}}}
+```
+
+`protocol_version` is the `protocolVersion` the server returned to hx's `initialize`, which
+still sends `2024-11-05`. It is `null` when the answer had none, or one longer than 32 chars.
+A catalog written before this change has no `servers` key and still reads.
+
+When a server answers `initialize` with a JSON-RPC error, the client calls `server/discover`
+once, with the MCP 2026-07-28 `_meta` keys. Indexing then stops with a `Conflict` (exit 2), and
+nothing is written:
+
+```text
+MCP server refused initialize (2024-11-05); server/discover: supported versions 2026-07-28. Register a server that keeps the handshake, or unregister it.
+```
+
+The versions come from three places, in this order: `data.supported` in the `initialize`
+error, `supportedVersions` in the discover result, then `data.supported` in a discover error.
+At most 16 are kept, each a printable string of at most 32 chars. When none of the three names
+a version, the message says `reported no supported versions`. No other MCP behaviour changed.

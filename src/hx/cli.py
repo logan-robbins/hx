@@ -182,6 +182,8 @@ read-only views:
   board [--json]                          a plain listing of what is on disk
   show ID [--json]                        everything hx knows about one id
   metrics [ID] [--json] [--watch]         seam metrics, or the fleet rollup
+  metrics --commands [--since TS]         hx invocations per command and agent
+  cache report [ID] [--json]              invariant prompt prefix per agent vs its budget
   goals [--json] / archive [--json]       the goal records, and what has been archived
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
@@ -225,6 +227,7 @@ AUDIENCES: dict[str, set[str]] = {
         "cache assess", "cache budget", "memory index",
         "models",
         "metrics --commands",
+        "cache report",
     },
     "partner": {
         "launch", "dispatch", "goal", "resume", "amend", "bench", "distill", "restart", "read",
@@ -243,6 +246,7 @@ AUDIENCES: dict[str, set[str]] = {
         "code contracts", "code submaps", "code stats", "code import",
         "models",
         "metrics --commands",
+        "cache report",
     },
     "worker": {
         "task", "complete", "progress",

@@ -229,3 +229,26 @@ def test_planned_workers_cannot_import_or_create_episodic_memory(run_hx, tmp_pat
     result = run_hx(command, env_extra={'HARNESS_ROOT': str(tmp_path / 'planned'), 'HX_CONTINUITY_RUN': 'current-run'})
     assert result.returncode == 2 and 'no episodic memory' in result.stderr
     assert not (tmp_path / 'planned/state').exists()
+
+
+#: TOOL_SKILL_PLAN step 8: every worker-column command's `--help` carries an example. `code *`
+#: is excluded: its parser lives in src/hx/code_index.py, which the code-graph work owns
+#: (GRAPH_PLAN.md); that plan adds its own examples.
+HELP_EXAMPLE_ENTRIES = sorted(
+    entry for entry in cli_mod.AUDIENCES["worker"] | cli_mod.AUDIENCES["subagent"]
+    if entry.split()[0] != "code"
+)
+
+
+@pytest.mark.parametrize("entry", HELP_EXAMPLE_ENTRIES)
+def test_every_worker_command_help_has_an_example(entry, tmp_path, capsys):
+    words = [word for word in entry.split() if not word.startswith("--")]
+    with pytest.raises(SystemExit) as exit_info:
+        IMPLEMENTED[words[0]](words[1:] + ["--help"], tmp_path, env={})
+    assert exit_info.value.code == 0
+    assert "example" in capsys.readouterr().out, entry
+
+
+def test_the_help_example_sweep_covers_the_worker_column():
+    assert {"complete", "task", "progress", "learn propose", "tools discover", "discipline pull"} <= set(
+        HELP_EXAMPLE_ENTRIES)

@@ -601,13 +601,13 @@ def main(argv: list[str], root, *, env=None) -> int:
     idx.add_argument("--source", default=None)
     idx.add_argument("--root", help=argparse.SUPPRESS)
 
-    sea = sub.add_parser("search")
+    sea = sub.add_parser("search", epilog='example: hx content search "cleanup pattern" --limit 3')
     sea.add_argument("query", nargs="+")
     sea.add_argument("--source", default=None)
     sea.add_argument("--limit", type=int, default=3)
     sea.add_argument("--root", help=argparse.SUPPRESS)
 
-    fet = sub.add_parser("fetch")
+    fet = sub.add_parser("fetch", epilog="example: hx content fetch https://example.com/docs --source example-docs")
     fet.add_argument("url")
     fet.add_argument("--source", default=None)
     fet.add_argument("--ttl-ms", type=int, default=86400000)

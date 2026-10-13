@@ -384,7 +384,7 @@ def main(argv, root, *, env=None) -> int:
     p = sub.add_parser("profile"); p.add_argument("--repo", required=True); p.add_argument("--root", help=argparse.SUPPRESS)
     p = sub.add_parser("orient"); p.add_argument("--goal"); p.add_argument("--file"); p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--post-seam", metavar="ID", help="orientation after ID's last seam, from its stream")
-    p = sub.add_parser("commit"); p.add_argument("--repo", required=True); p.add_argument("--root", help=argparse.SUPPRESS)
+    p = sub.add_parser("commit", epilog="example: hx discipline commit --repo ."); p.add_argument("--repo", required=True); p.add_argument("--root", help=argparse.SUPPRESS)
     p = sub.add_parser("pull", help="how far behind the principal branch this worktree is",
                        epilog="example: hx discipline pull --repo . --expect fresh")
     p.add_argument("--repo", required=True)

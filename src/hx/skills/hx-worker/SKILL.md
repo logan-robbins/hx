@@ -303,3 +303,31 @@ Your own files are your `workdir`, your `-working` work item, and your `AGENTS.m
 header. That is the whole list.
 
 You run, for yourself: `hx task`, `hx complete`. That is also the whole list.
+
+## One example per command
+
+Those two act on your own record. The rest of your `hx help` column reads, searches and records,
+and each one's `--help` ends with the same example as here:
+
+```
+hx task                                          # your own Work Item
+hx complete done                                 # runs your checks
+hx progress --file /tmp/progress.json            # planned runs: a sparse update
+hx tool-exec --request tests-1 -- python3 -m pytest -q
+hx evidence EVENT_ID --offset 8000 --limit 8000  # the next page of a captured output
+hx tools discover --query lint                   # then: hx tools load ID
+hx tools call mcp:project:NAME --request lint-1 --input input.json
+hx tools status
+hx exec --language python --code "print(1)"
+hx sift triage --file failed-output.txt
+hx content search "cleanup pattern" --limit 3
+hx content fetch https://example.com/docs --source example-docs
+hx memory search "conditional GET 304" --k 5
+hx recall "alembic revision for the assets table"
+hx discipline commit --repo .
+hx discipline pull --repo . --expect fresh       # exit 3 while behind the principal branch
+hx learn repeat --signal "tests pass locally, fail in CI"
+hx learn classify --signal "tests pass locally, fail in CI" --check "run the suite with the CI env file"
+hx learn propose --category testing --signal "tests pass locally, fail in CI" --check "run the suite with the CI env file" --evidence "PR 42, 2026-10-12"
+hx learn list --category testing
+```

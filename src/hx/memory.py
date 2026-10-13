@@ -747,7 +747,8 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    find = sub.add_parser("search", help="recency-weighted semantic search over episodes")
+    find = sub.add_parser("search", help="recency-weighted semantic search over episodes",
+                          epilog='example: hx memory search "conditional GET 304" --k 5')
     find.add_argument("query")
     find.add_argument("--role", default=None, help="persona filter (default: your own)")
     find.add_argument("--pod", default=None)

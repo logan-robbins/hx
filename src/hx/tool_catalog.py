@@ -171,7 +171,9 @@ def acknowledge(store, run_id, names, *, env=None):
 
 
 def main(argv, root, *, env=None):
-    parser = argparse.ArgumentParser(prog='hx tools')
+    parser = argparse.ArgumentParser(prog='hx tools', epilog=(
+        'examples: hx tools discover --query lint; hx tools load mcp:project:NAME; '
+        'hx tools call mcp:project:NAME --request lint-1 --input input.json; hx tools status'))
     parser.add_argument('action', choices=['discover', 'load', 'status', 'acknowledge', 'index', 'call'])
     parser.add_argument('ids', nargs='*')
     parser.add_argument('--query')

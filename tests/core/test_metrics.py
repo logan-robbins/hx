@@ -90,8 +90,11 @@ def test_per_id_shape_matches_contracts(instance, work_item):
     (instance / "state" / "eng-001" / "s.json").write_text(json.dumps(
         {"working_set": {"files": [{"path": "/x/src/wip.py", "note": "n"}]}}))
     doc = per_id(instance, "eng-001")
-    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals"}
+    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals", "cache"}
     assert (doc["id"], doc["stream"], doc["dispatched"]) == ("eng-001", "eng-001-main", DISPATCHED)
+    assert set(doc["cache"]) == {"id", "invariant", "budget", "seam"}
+    assert doc["cache"]["invariant"]["native_tool_schemas"] == "unmeasured"
+    assert doc["cache"]["seam"]["last_seam_ts"] == "2026-09-20T12:50:00Z"
     (seam,) = doc["seams"]
     assert set(seam) == {"seq", "ts", "source", "prompt_version", "context_tokens_before",
                          "context_file_bytes", "working_set_size", "next_10_turns",
