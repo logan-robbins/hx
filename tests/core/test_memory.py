@@ -583,7 +583,9 @@ def test_the_memory_section_carries_other_agents_episodes_and_not_its_own(instan
     text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
     section = text[text.index("## Memory episodes"):text.index("## Open subagent handles")]
     assert "_source: `state/memory/chroma`_" in section
-    assert 'Search more: `hx memory search "' in section and "--all-roles`" in section
+    assert 'Search more: `hx memory search "' in section
+    # `--all-roles` is the Partner's (hx.cli.AUDIENCES): a worker's hint does not name it.
+    assert "--all-roles" not in section
     assert "eng-002/seam" in section
     bullets = [line for line in section.splitlines() if line.startswith("- ")]
     assert bullets and all("my own state" not in line for line in bullets), (

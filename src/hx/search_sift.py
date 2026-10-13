@@ -175,12 +175,14 @@ def select_checks(root, changed, checks, *, env=None):
 
 def main(argv, root, *, env=None):
     import argparse
-    parser = argparse.ArgumentParser(prog="hx sift")
+    parser = argparse.ArgumentParser(prog="hx sift",
+                                     epilog="example: hx sift triage --file failed-output.txt")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("candidates")
+    p = sub.add_parser("candidates", epilog=(
+        'example: hx sift candidates --question "which file handles login?" --file candidates.json'))
     p.add_argument("--question", required=True)
     p.add_argument("--file", required=True, help="JSON list of {id, snippet}")
-    p = sub.add_parser("triage")
+    p = sub.add_parser("triage", epilog="example: hx sift triage --file failed-output.txt")
     p.add_argument("--file", required=True, help="failed output text file")
     args = parser.parse_args(argv)
     if args.command == "candidates":

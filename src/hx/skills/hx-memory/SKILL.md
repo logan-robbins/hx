@@ -1,6 +1,10 @@
 ---
 name: hx-memory
 description: How to search this instance's episode memory with `hx memory search` — every step state every agent has ever written, indexed and recency-weighted. Use when picking up a work item, when hitting a blocker someone may already have hit, when asking how something was done in this repository before, or when you need what an earlier release or merge actually did.
+metadata:
+  hx-audience: partner worker
+  hx-roles: "*"
+  hx-loads-when: picking up a work item, a blocker someone may have hit, how something was done here before
 ---
 
 # hx-memory
@@ -37,16 +41,13 @@ That is the whole of the normal case. Facts about it:
   it the problem, the symbol, the error, the area — `"alembic revision for the assets table"`,
   `"npm publish 403"`, `"where the redis client is constructed"`.
 
-Widen only when the own-role result is empty, or when what comes back is clearly about a
-different area than the one you asked about:
-
-```bash
-hx memory search "npm publish 403 on the private registry" --all-roles
-```
-
-`--all-roles` drops the role filter and nothing else. Reach for it deliberately: a frontend
+When the own-role result is empty, name the role whose work you need instead: a frontend
 episode about a release step is often exactly right, and a frontend episode about components
 is noise in a backend search.
+
+```bash
+hx memory search "npm publish 403 on the private registry" --role release-engineer
+```
 
 Other flags, when you know what you are narrowing to:
 
@@ -63,16 +64,7 @@ Other flags, when you know what you are narrowing to:
 Each hit prints a header line — timestamp, agent id, role, kind, `seq`, score — and then the
 episode text.
 
-## The other subcommands
-
-```bash
-hx memory list [--id ID] [--role R] [--limit N]   # newest first, metadata only
-hx memory stats                                   # counts by role and kind, queue length
-hx memory index                                   # force-drain the write queue into the index
-```
-
-`search` indexes what is pending before it queries, so `index` is only for when you want the
-work done now rather than on the next search.
+`search` indexes what is pending before it queries, so there is nothing to drain first.
 
 ## When to reach for it
 
@@ -88,7 +80,7 @@ work done now rather than on the next search.
 ## File memory: the last resort
 
 Completed Work Item bodies live on as files — live `*-complete.md` items and
-`pods/<pod>/archive/` bodies from `hx bench`. `hx recall` searches them with plain
+`pods/<pod>/archive/` bodies of benched items. `hx recall` searches them with plain
 substring matching, no embeddings:
 
 ```bash

@@ -1,6 +1,10 @@
 ---
 name: hx-companion
 description: Operating manual for an hx Companion session — read the pass file, read the state and the log from from_seq, write one JSON object to the write path with the Write tool, and touch nothing else. Use on every Companion pass, including a retry carrying a retry_reason.
+metadata:
+  hx-audience: companion
+  hx-roles: "*"
+  hx-loads-when: every Companion pass, reading the pass file and writing the step state
 ---
 
 # hx-companion

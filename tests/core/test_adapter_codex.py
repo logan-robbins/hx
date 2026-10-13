@@ -225,6 +225,8 @@ def test_codex_install_writes_home_and_provisions_auth(instance, tmp_path):
     assert config["projects"][workdir]["trust_level"] == "trusted"
     assert (home / "auth.json").is_file(), "login --with-api-key provisions the home auth"
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
     assert companion.is_file()
     assert "companion-stop" in companion.read_text()
@@ -252,6 +254,8 @@ def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_pat
     assert (home / "skills" / "hx-partner" / "SKILL.md").is_file()
     assert (home / "skills" / "hx-fleet" / "SKILL.md").is_file()
     assert not (home / "skills" / "hx-worker").exists(), "workers get hx-worker, the Partner does not"
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "skills") == manifest_skills(instance, "partner")
     companion = instance / "run" / "partner" / "companion-home" / "settings.json"
     assert companion.is_file()
     config = tomllib.loads((home / "config.toml").read_text())

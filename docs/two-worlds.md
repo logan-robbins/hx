@@ -50,6 +50,22 @@ into no home). They are copied, not symlinked — `install.sh` removes any previ
 so nothing in a harness home points back at the package or at you, and no skill of yours is
 visible to an agent.
 
+**Skill discovery, open verifications (2026-10-12).** Release and QA engineers also get
+`hx-signoff`, and `hx-conversion` reaches the Partner and workers only on an instance whose
+`config/hx.json` lists it in `skills`; `src/hx/skills/manifest.json` decides every home. Two
+discovery paths are not yet verified on the pinned binaries, and this paragraph is where the
+results will be recorded. First, whether the pinned Codex binary scans `$CODEX_HOME/skills`,
+where the Codex adapter installs hx skills: the current Codex documentation lists
+`$CWD/.agents/skills` up to the repository root, `$HOME/.agents/skills`, `/etc/codex/skills`
+and bundled skills, but not `$CODEX_HOME/skills`, and it scans `$HOME/.agents/skills` whatever
+`CODEX_HOME` says. Second, whether Claude 2.1.296 under `--setting-sources user` still loads a
+checkout's `.claude/skills`. Pi is already closed: it launches with `--no-skills` and one
+`--skill` per installed hx skill, so it reads neither `~/.agents/skills` nor a project's
+`.pi/skills` or `.agents/skills`. Until both checks are recorded here, `hx doctor` prints a
+`skills-isolation` warning when a worker's workdir contains `.claude/skills`, `.agents/skills`
+or `.pi/skills`, and when `~/.agents/skills` is non-empty while a Codex or Pi worker is
+configured. Overriding `HOME` for the Codex process is not adopted without a live test.
+
 ## CLAUDE.md and AGENTS.md
 
 Yours load normally. In a harness session there is exactly one CLAUDE.md —

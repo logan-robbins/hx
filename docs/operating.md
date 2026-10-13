@@ -210,3 +210,39 @@ The Partner's instructions live in two files you can read, and edit if you mean 
   world is.
 
 A persona edit takes effect at the next launch of that agent, not immediately.
+
+## Who can run what
+
+`hx help` prints the commands the caller's audience sees, and `hx help --all` prints every
+audience's list: from your shell (no `HARNESS_ID`) that is the operator view, inside the
+Partner's session the Partner's, inside a worker's session the worker's short list. The same
+table backs a refusal: a worker that runs a Partner or operator command (`hx dispatch`,
+`hx map publish`, `hx learn accept`, `hx compile`, `hx doctor`, …) gets `refuse:` and exit 1,
+and asks the Partner through `hx complete blocked|decision` instead. Which skills each home
+gets is `src/hx/skills/manifest.json`; an optional skill is turned on for an instance by
+naming it in `config/hx.json` `skills`; it reaches each home at that agent's next
+`hx launch`, which runs the adapter's `install.sh` (`hx restart` does not), and `hx doctor`'s `skills` row says which are on and whether every skill is well-formed.
+
+## Keeping model IDs current
+
+`hx models` asks Anthropic, OpenAI, xAI and Meta which models they serve now and prints, per
+provider, what is new, gone or deprecated against `config/models.json` and `docs/models.md`,
+with each model's input window; TypeSafe's decision model is printed as `pinned`. It reads
+keys from your environment, the instance's env file or its `seed/` files and never prints
+one; a provider without a key is `unverified`, which is expected for Anthropic when the
+instance runs on a Claude subscription token. It changes nothing: `hx models --expect current`
+exits 3 when a configured model is no longer active or its window is larger than the provider
+allows, which is the cue to edit the registry yourself (the Partner's `hx-fleet` skill §7 says
+the same to the Partner).
+
+## Command examples and registered MCP servers
+
+Every command in a worker's `hx help` column ends its `--help` with one example invocation, and
+the `hx-worker` skill lists the same examples. An agent that is unsure of a flag should copy the
+example, not guess. `hx code` is the exception for now; its help belongs to the code-graph work.
+`hx tools index` now records, per registered MCP server, the `protocolVersion` it answered with
+(`servers` in `state/capabilities.json` and in the command's output). hx's client still opens
+with the `2024-11-05` handshake. If a server refuses that handshake (an MCP 2026-07-28 server
+that dropped backward compatibility), indexing calls `server/discover` once, stops, and names
+the versions the server supports. Unregister that server rather than expecting the client to
+change mid-release.

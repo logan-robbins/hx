@@ -266,6 +266,7 @@ ok    skeleton         personas/partner/AGENTS.md
 ok    skeleton         templates/work-item.md
 ok    learnings        ~/hx/LEARNINGS: 0 rule(s) (none), 0 pending proposal(s)
 ok    models           2 model(s): claude-opus-5 window=1000000 seam=200000 autocompact=250000, claude-sonnet-5 window=1000000 seam=200000 autocompact=250000
+ok    skills           8 skill(s) valid (frontmatter, size, worker lint); 4 over the 8 KiB facade bound; optional on: none
 ok    hx.json          hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
 ok    hx.json          hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook
 ok    hx.json          python_bin ~/.local/share/uv/tools/hx-harness/bin/python

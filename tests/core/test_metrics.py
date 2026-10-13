@@ -90,12 +90,18 @@ def test_per_id_shape_matches_contracts(instance, work_item):
     (instance / "state" / "eng-001" / "s.json").write_text(json.dumps(
         {"working_set": {"files": [{"path": "/x/src/wip.py", "note": "n"}]}}))
     doc = per_id(instance, "eng-001")
-    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals"}
+    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals", "cache"}
     assert (doc["id"], doc["stream"], doc["dispatched"]) == ("eng-001", "eng-001-main", DISPATCHED)
+    assert set(doc["cache"]) == {"id", "invariant", "budget", "seam"}
+    assert doc["cache"]["invariant"]["native_tool_schemas"] == "unmeasured"
+    assert doc["cache"]["seam"]["last_seam_ts"] == "2026-09-20T12:50:00Z"
     (seam,) = doc["seams"]
     assert set(seam) == {"seq", "ts", "source", "prompt_version", "context_tokens_before",
-                         "context_file_bytes", "working_set_size", "next_10_turns"}
+                         "context_file_bytes", "working_set_size", "next_10_turns",
+                         "searches_before_first_edit", "modules_read_before_first_write",
+                         "task_reprints", "packet_bytes"}
     assert seam["prompt_version"] == "b1/r2"
+    assert seam["packet_bytes"] == 18422  # the composed context file is a legacy seam's packet
     assert seam["next_10_turns"] == {"turns": 2, "tool_calls": 3,
                                     "reads_of_context_file": 1,
                                     "reads_of_working_set": 1, "other": 1}
@@ -192,3 +198,151 @@ def test_watch_emits_snapshot_then_delta(instance, work_item):
     thread.join()
     assert second["type"] == "delta"
     assert "tasks" in second["changed"]
+
+
+# --- learn_repeats (TOOL_SKILL_PLAN step 4) -------------------------------------------------
+
+
+def test_fleet_summary_counts_completion_repeats_since_each_rules_last_accept(instance, monkeypatch):
+    monkeypatch.delenv("HX_LEARNINGS", raising=False)
+    repeats = instance / "state" / "learn" / "repeats.jsonl"
+    repeats.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"id": "eng-001", "rule": "L1", "score": 0.91, "ts": "2026-10-01T10:00:00Z", "check": "### Checks"},
+        {"id": "eng-001", "rule": "L1", "score": 0.88, "ts": "2026-10-03T10:00:00Z", "check": "### Checks"},
+        {"id": "eng-002", "rule": "L2", "score": 0.40, "ts": "2026-10-02T10:00:00Z", "check": "unit"},
+    ]
+    repeats.write_text("".join(json.dumps(row) + "\n" for row in rows) + "not json\n")
+    decisions = instance / "LEARNINGS" / "decisions.jsonl"
+    decisions.parent.mkdir(parents=True, exist_ok=True)
+    decisions.write_text(json.dumps({"ts": "2026-10-02T00:00:00Z", "decision": "merged", "rule": "L1"}) + "\n")
+    doc = collect_fleet(instance)
+    assert doc["summary"]["learn_repeats"] == {"L1": 1, "L2": 1}
+    assert "learn_repeats(2): L1=1 L2=1" in render_fleet_text(doc)
+
+
+def test_fleet_summary_has_empty_learn_repeats_without_records(instance):
+    assert collect_fleet(instance)["summary"]["learn_repeats"] == {}
+
+
+# --- post-seam orientation per seam and `--commands` (TOOL_SKILL_PLAN step 5) --------------------
+
+
+def _tool(tool, ts="2026-09-20T12:51:00Z", **data):
+    return {"ts": ts, "event": "post_tool", "tool": tool, "input": json.dumps(data), "output": ""}
+
+
+def test_per_id_seam_carries_post_seam_orientation(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    write_stream(instance, "eng-001", [
+        seam_record(),
+        _tool("Read", file_path="/x/run/eng-001/eng-001-main.context.md"),
+        _tool("Grep", pattern="thing"),
+        _tool("Read", file_path="/x/src/a.py"),
+        _tool("Bash", command="hx task"),
+        _tool("Edit", file_path="/x/src/a.py"),
+        _tool("Read", file_path="/x/src/b.py"),
+    ])
+    (seam,) = per_id(instance, "eng-001")["seams"]
+    assert (seam["searches_before_first_edit"], seam["modules_read_before_first_write"],
+            seam["task_reprints"]) == (1, 1, 1)
+    text = render_per_id_text(per_id(instance, "eng-001"))
+    assert text.splitlines()[1].split()[-4:] == ["1", "1", "1", "18422"]
+
+
+def test_per_id_post_seam_window_stops_at_the_next_seam(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    second = dict(seam_record(), ts="2026-09-20T13:00:00Z")
+    write_stream(instance, "eng-001", [
+        seam_record(), _tool("Grep", pattern="a"), _tool("Grep", pattern="b"),
+        second, _tool("Edit", ts="2026-09-20T13:01:00Z", file_path="/x/a.py"),
+    ])
+    first, last = per_id(instance, "eng-001")["seams"]
+    assert first["searches_before_first_edit"] == 2
+    assert last["searches_before_first_edit"] == 0
+
+
+def _commands_fixture(instance):
+    write_tasks(instance, {
+        "eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED},
+        "qa-002": {"goal": "## Goal\n\nCheck it.", "dispatched": DISPATCHED},
+    })
+    write_stream(instance, "eng-001", [
+        _tool("Bash", ts="2026-09-20T11:00:00Z", command="hx task"),  # before dispatch
+        _tool("Bash", command="hx task"),
+        _tool("Bash", ts="2026-09-20T12:40:00Z",
+              command=".venv/bin/hx code search pull && hx complete done --summary s"),
+        _tool("exec_command", ts="2026-09-20T12:45:00Z",
+              cmd=["bash", "-lc", "hx memory search 'flaky test'"]),
+        _tool("Bash", command="hx frobnicate now; ls ~/workspace/hx/src"),  # not an hx command
+        _tool("Read", file_path="/x/hx task.md"),                           # not a shell tool
+    ])
+    write_stream(instance, "qa-002", [
+        _tool("Bash", ts="2026-09-20T12:30:00Z", command="hx task"),
+        _tool("Bash", ts="2026-09-20T12:55:00Z", command="hx discipline pull --repo . --expect fresh"),
+    ])
+
+
+def test_commands_counts_five_commands_across_two_ids(instance):
+    from hx.metrics import command_counts
+
+    _commands_fixture(instance)
+    counts = command_counts(instance)
+    assert counts == {
+        "task": {"calls": 2, "agents": {"eng-001": 1, "qa-002": 1}},
+        "code search": {"calls": 1, "agents": {"eng-001": 1}},
+        "complete": {"calls": 1, "agents": {"eng-001": 1}},
+        "discipline pull": {"calls": 1, "agents": {"qa-002": 1}},
+        "memory search": {"calls": 1, "agents": {"eng-001": 1}},
+    }
+    assert list(counts)[0] == "task"  # most calls first
+
+
+def test_commands_since_overrides_the_dispatch_floor(instance):
+    from hx.metrics import command_counts
+
+    _commands_fixture(instance)
+    assert set(command_counts(instance, since="2026-09-20T12:44:00Z")) == {
+        "memory search", "discipline pull", "task"}
+    every = command_counts(instance, since="2026-09-20T00:00:00Z")
+    assert every["task"] == {"calls": 3, "agents": {"eng-001": 2, "qa-002": 1}}
+
+
+def test_commands_cli_json_text_and_usage(instance, capsys):
+    from hx.metrics import main
+
+    _commands_fixture(instance)
+    assert main(["--commands", "--json"], instance) == 0
+    assert json.loads(capsys.readouterr().out)["task"]["calls"] == 2
+    assert main(["--commands"], instance) == 0
+    text = capsys.readouterr().out
+    assert text.splitlines()[-1] == "HX-METRICS-COMMANDS commands=5 calls=6"
+    assert "eng-001=1 qa-002=1" in text
+    for argv in (["eng-001", "--commands"], ["--since", DISPATCHED], ["--commands", "--since", "soon"]):
+        with pytest.raises(SystemExit) as raised:
+            main(argv, instance)
+        assert raised.value.code == 2
+
+
+def test_commands_with_no_streams_is_empty(instance, capsys):
+    from hx.metrics import command_counts, main
+
+    assert command_counts(instance) == {}
+    assert main(["--commands"], instance) == 0
+    assert capsys.readouterr().out == "HX-METRICS-COMMANDS commands=0 calls=0\n"
+
+
+# --- packet_bytes per seam (TOOL_SKILL_PLAN step 6) -------------------------------------------
+
+
+def test_per_id_packet_bytes_prefers_the_seam_records_own_field(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    legacy = dict(seam_record())
+    packet = dict(seam_record(), ts="2026-09-20T13:00:00Z", packet_bytes=3900)
+    bare = {key: value for key, value in seam_record().items() if key != "context_file_bytes"}
+    bare["ts"] = "2026-09-20T13:10:00Z"
+    write_stream(instance, "eng-001", [legacy, packet, bare])
+    assert [seam["packet_bytes"] for seam in per_id(instance, "eng-001")["seams"]] == [18422, 3900, None]

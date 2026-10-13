@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from hx.doctor import FAIL, OK, WARN, bare_claude_version, run_checks
 
 
@@ -300,3 +302,144 @@ def test_warns_on_the_single_file_layout_and_an_oversized_region(instance, monke
     assert ("learnings-legacy", WARN) in statuses(checks)
     assert ("learnings-size", WARN) in statuses(checks), detail_for(checks, "learnings-size")
     assert ("learnings", OK) in statuses(checks)
+
+
+# --- skills (TOOL_SKILL_PLAN step 1) -----------------------------------------------------------
+
+
+def _skill(directory, name, *, description="Use when testing.", body="Body.\n", extra=""):
+    (directory / name).mkdir(parents=True, exist_ok=True)
+    text = f"---\nname: {name}\ndescription: {description}\n{extra}---\n\n{body}"
+    (directory / name / "SKILL.md").write_text(text)
+
+
+def test_the_shipped_skills_pass_the_skills_row(instance, monkeypatch):
+    monkeypatch.delenv("HX_SKILLS_DIR", raising=False)
+    checks = run_checks(instance)
+    assert [s for s, c, _ in checks if c == "skills"] == [OK], detail_for(checks, "skills")
+    assert "valid" in detail_for(checks, "skills")[0]
+
+
+def test_a_malformed_skill_fails_the_skills_row(instance, monkeypatch, tmp_path):
+    skills = tmp_path / "skills"
+    _skill(skills, "hx-good", extra="metadata:\n  hx-audience: worker\n  hx-roles: \"*\"\n")
+    _skill(skills, "Bad--Name")                               # uppercase and a double hyphen
+    _skill(skills, "hx-mismatch")
+    (skills / "hx-mismatch" / "SKILL.md").write_text("---\nname: hx-other\ndescription: d\n---\nb\n")
+    _skill(skills, "hx-long", description="x" * 1025)          # description over 1,024
+    _skill(skills, "hx-big", body="y" * (32 * 1024 + 1))       # file over 32 KiB
+    _skill(skills, "hx-ext", extra="model: opus\n")            # not a portable field
+    _skill(skills, "hx-leaky", body="Then run `hx dispatch eng-002 goal.md` yourself.\n")
+    names = ["hx-good", "Bad--Name", "hx-mismatch", "hx-long", "hx-big", "hx-ext", "hx-leaky"]
+    (skills / "manifest.json").write_text(json.dumps({
+        name: {"audiences": ["worker"], "roles": ["*"], "optional": False}
+        for name in names if name != "Bad--Name"
+    }))
+    monkeypatch.setenv("HX_SKILLS_DIR", str(skills))
+    checks = run_checks(instance)
+    rows = [(s, d) for s, c, d in checks if c == "skills"]
+    assert rows and all(status == FAIL for status, _ in rows), rows
+    text = "\n".join(d for _, d in rows)
+    assert "Bad--Name: not in manifest.json" in text
+    assert "Bad--Name: name 'Bad--Name' must be 1-64 lowercase" in text
+    assert "hx-mismatch: name 'hx-other' does not match its directory" in text
+    assert "hx-long: description is 1025 characters" in text
+    assert "hx-big: SKILL.md is" in text and "32 KiB" in text
+    assert "hx-ext: non-portable field(s) model" in text
+    assert "hx-leaky: a worker carries it, and it names `hx dispatch`" in text
+    assert "hx-good" not in text
+
+
+def test_config_hx_json_skills_must_name_optional_shipped_skills(instance, monkeypatch):
+    monkeypatch.delenv("HX_SKILLS_DIR", raising=False)
+    hx_json = instance / "config" / "hx.json"
+    hx_json.write_text(json.dumps({**json.loads(hx_json.read_text()), "skills": ["hx-nope", "hx-worker"]}))
+    text = "\n".join(detail_for(run_checks(instance), "skills"))
+    assert "names `hx-nope`, which does not ship" in text
+    assert "names `hx-worker`, which is not optional" in text
+
+
+# --- skill isolation (TOOL_SKILL_PLAN step 7, docs/two-worlds.md) -------------------------------
+
+
+def _isolation(checks):
+    return [(status, detail) for status, check, detail in checks if check == "skills-isolation"]
+
+
+def _flavor(instance, item_id, flavor):
+    harness = instance / "config" / item_id / "harness.json"
+    harness.write_text(json.dumps({**json.loads(harness.read_text()), "flavor": flavor}))
+
+
+@pytest.mark.parametrize("relative", [".claude/skills", ".agents/skills", ".pi/skills"])
+def test_a_worker_workdir_with_checkout_skills_warns(instance, monkeypatch, tmp_path, relative):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (instance / "wt" / "eng-001" / relative / "deploy").mkdir(parents=True)
+    rows = _isolation(run_checks(instance))
+    assert [status for status, _ in rows] == [WARN], rows
+    assert "eng-001" in rows[0][1] and relative in rows[0][1]
+
+
+def test_no_isolation_row_when_nothing_could_leak(instance, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home" / ".agents" / "skills" / "mine").mkdir(parents=True)  # claude-only fleet
+    assert _isolation(run_checks(instance)) == []
+
+
+@pytest.mark.parametrize("flavor", ["codex", "pi"])
+def test_a_host_agents_skills_dir_warns_while_a_codex_or_pi_worker_is_configured(
+        instance, monkeypatch, tmp_path, flavor):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    _flavor(instance, "eng-001", flavor)
+    (home / ".agents" / "skills").mkdir(parents=True)
+    assert _isolation(run_checks(instance)) == [], "an empty directory loads nothing"
+    (home / ".agents" / "skills" / "mine").mkdir()
+    rows = _isolation(run_checks(instance))
+    assert [status for status, _ in rows] == [WARN], rows
+    assert ".agents/skills" in rows[0][1] and "eng-001" in rows[0][1]
+
+
+def test_the_partners_directory_is_not_a_worker_workdir(instance, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    harness = instance / "config" / "partner" / "harness.json"
+    partner_dir = tmp_path / "partner-wd"
+    (partner_dir / ".claude" / "skills").mkdir(parents=True)
+    harness.write_text(json.dumps({**json.loads(harness.read_text()), "workdir": str(partner_dir)}))
+    assert _isolation(run_checks(instance)) == []
+
+
+def test_the_shipped_skills_pass_the_lint_one_by_one():
+    """Every shipped skill passes `validate_skill`, the worker lint for its audiences, and the
+    format rules of TOOL_SKILL_PLAN §Skills To Add that the new skills carry."""
+    from hx import skill_manifest
+    from hx.cli import AUDIENCES
+
+    directory = skill_manifest.package_dir()
+    manifest = skill_manifest.load(directory)
+    for name, row in manifest.items():
+        path = directory / name / "SKILL.md"
+        assert skill_manifest.validate_skill(directory / name) == [], name
+        if any(a in skill_manifest.WORKER_AUDIENCES for a in row["audiences"]):
+            assert skill_manifest.refused_mentions(
+                path.read_text(), AUDIENCES, partner_sections="partner" in row["audiences"]) == [], name
+    for name in ("hx-signoff", "hx-conversion"):
+        text = (directory / name / "SKILL.md").read_text()
+        fields, _ = skill_manifest.parse_frontmatter(text, name)
+        assert len(text.encode()) <= skill_manifest.FACADE_BYTES, name
+        assert {"hx-audience", "hx-roles", "hx-loads-when"} <= set(fields["metadata"]), name
+        for banned in ("context: fork", "disable-model-invocation", "\npaths:", "!`"):
+            assert banned not in text, (name, banned)
+
+
+def test_a_partner_only_section_is_exempt_only_in_a_skill_the_partner_also_carries(tmp_path):
+    from hx import skill_manifest
+    from hx.cli import AUDIENCES
+
+    text = ("# x\n\n## Workers\n\nRun `hx code contract X`.\n\n"
+            "## Partner only: publish\n\n```bash\n# a comment, not a heading\n"
+            "hx code contracts --register c.jsonl\n```\n\n## Back to workers\n\nRun `hx task`.\n")
+    assert skill_manifest.refused_mentions(text, AUDIENCES) == ["code contracts"]
+    assert skill_manifest.refused_mentions(text, AUDIENCES, partner_sections=True) == []
+    leaked = text + "\nAnd `hx code contracts --register d.jsonl` here.\n"
+    assert skill_manifest.refused_mentions(leaked, AUDIENCES, partner_sections=True) == ["code contracts"]

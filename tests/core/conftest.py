@@ -37,6 +37,20 @@ PERSONA = "You are eng-001, an engineer.\nYou commit as you go.\n"
 AGENTS_MD = PERSONA + "\n## UPDATES BELOW ONLY\n\nThings I learned: nothing yet.\n"
 
 
+def manifest_skills(root: Path, item_id: str, *, companion: bool = False, **env: str) -> set[str]:
+    """The skills `src/hx/skills/manifest.json` gives `<id>`'s home (TOOL_SKILL_PLAN step 1)."""
+    sys.path.insert(0, str(SRC))
+    from hx import skill_manifest
+
+    return set(skill_manifest.for_agent(SRC / "hx" / "skills", root, item_id,
+                                        companion=companion, env=env))
+
+
+def installed_skills(path: Path) -> set[str]:
+    """The skill directories actually installed under one home's skills directory."""
+    return {p.name for p in path.iterdir() if p.is_dir() and not p.name.startswith(".")}
+
+
 def clean_env(**extra: str) -> dict[str, str]:
     """A child environment with no inherited HARNESS_* or CLAUDE_* leakage."""
     env = {

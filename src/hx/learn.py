@@ -162,7 +162,7 @@ def validate_category(category: str | None) -> str:
     if value not in DEFINITIONS:
         raise ValidationError(
             f"category {category!r} is not one of: {', '.join(CATEGORY_NAMES)} "
-            "(`hx learn categories` prints what each one holds)"
+            "(`hx learn classify --signal … --check …` ranks them for your signal)"
         )
     return value
 
@@ -370,6 +370,76 @@ def repeat(root: Path, signal: str, *, env: dict[str, str] | None = None) -> dic
                        "new": "propose with hx learn propose"}[verdict]}
 
 
+#: How much of a failing check's output becomes the repeat signal (TOOL_SKILL_PLAN step 4).
+REPEAT_SIGNAL_BYTES = 2000
+REPEATS = Path("state") / "learn" / "repeats.jsonl"
+
+
+def completion_repeat(root: Path, item_id: str, output: str, *, check: str,
+                      env: dict[str, str] | None = None) -> str | None:
+    """A failed completion check, asked the never-twice question. Advisory only.
+
+    The first 2,000 bytes of the failing output are the signal for `repeat`. On `repeat` or
+    `related`, one `{id, rule, score, ts, check, verdict}` line is appended to
+    `state/learn/repeats.jsonl` and the line to append to the `HX-CHECK-FAILED` output is
+    returned; otherwise None. Nothing here can change whether the check passed: any failure
+    to score or record is swallowed and the completion proceeds exactly as before.
+    """
+    signal = (output or "").encode("utf-8", "replace")[:REPEAT_SIGNAL_BYTES].decode("utf-8", "ignore")
+    if not signal.strip():
+        return None
+    try:
+        verdict = repeat(root, signal, env=env)
+    except (HxError, OSError, ValueError):
+        return None
+    if verdict["verdict"] not in ("repeat", "related") or not verdict["rule"]:
+        return None
+    score = round(float(verdict["score"]), 2)
+    record = {"id": item_id, "rule": verdict["rule"], "score": score, "ts": timestamps.now(),
+              "check": check, "verdict": verdict["verdict"]}
+    try:
+        path = Path(root) / REPEATS
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    except OSError:
+        pass
+    return f"learnings: repeat of {verdict['rule']} ({score:.2f})"
+
+
+def repeats_summary(root: Path, env: dict[str, str] | None = None) -> dict[str, int]:
+    """`hx metrics` `summary.learn_repeats`: completion repeats per rule since that rule was
+    last accepted or merged into (`decisions.jsonl`), so a count resets when the rule is
+    reaffirmed. Unreadable lines are skipped."""
+    path = Path(root) / REPEATS
+    if not path.is_file():
+        return {}
+    accepted: dict[str, str] = {}
+    try:
+        decisions = learnings_dir(learnings_path(root, env)) / "decisions.jsonl"
+    except HxError:
+        decisions = None
+    if decisions is not None and decisions.is_file():
+        for line in decisions.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict) and row.get("decision") in ("new", "merged") and row.get("rule"):
+                accepted[row["rule"]] = max(accepted.get(row["rule"], ""), str(row.get("ts") or ""))
+    counts: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        rule = row.get("rule") if isinstance(row, dict) else None
+        if not rule or str(row.get("ts") or "") <= accepted.get(rule, ""):
+            continue
+        counts[rule] = counts.get(rule, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def invariant_report(root: Path, *, env: dict[str, str] | None = None) -> dict:
     """Learnings are the invariant apex of the context cascade; size is law.
 
@@ -462,7 +532,7 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
     if not category:
         raise ValidationError(
             "a proposal needs --category, the kind of mistake the rule prevents: "
-            + ", ".join(CATEGORY_NAMES) + " (`hx learn categories`)"
+            + ", ".join(CATEGORY_NAMES) + " (`hx learn classify --signal … --check …` ranks them)"
         )
     category = validate_category(category)
     prefix = (prefix or default_prefix(root, env)).upper()
@@ -706,7 +776,9 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("propose", help="file a proposal next to the rules it resembles")
+    p = sub.add_parser("propose", help="file a proposal next to the rules it resembles", epilog=(
+        'example: hx learn propose --category testing --signal "tests pass locally, fail in CI" '
+        '--check "run the suite with the CI env file" --evidence "PR 42, 2026-10-12"'))
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--category", help="the kind of mistake the rule prevents: " + ", ".join(CATEGORY_NAMES))
     p.add_argument("--signal", default="", help="what you see when it is about to bite")
@@ -741,7 +813,8 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--json", action="store_true")
 
-    p = sub.add_parser("list", help="the rules, or one rule in full")
+    p = sub.add_parser("list", help="the rules, or one rule in full",
+                       epilog="example: hx learn list --category testing")
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("rule", nargs="?")
     p.add_argument("--prefix")
@@ -755,13 +828,16 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p = sub.add_parser("path", help="print the directory this instance writes learnings to")
     p.add_argument("--root", help=argparse.SUPPRESS)
 
-    p = sub.add_parser("classify", help="rank categories for a fresh learning")
+    p = sub.add_parser("classify", help="rank categories for a fresh learning", epilog=(
+        'example: hx learn classify --signal "tests pass locally, fail in CI" '
+        '--check "run the suite with the CI env file"'))
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--signal", required=True)
     p.add_argument("--check", required=True)
     p.add_argument("--jev", action="store_true", help="Jev Choice as second opinion")
 
-    p = sub.add_parser("repeat", help="never-twice check: is this mistake already a rule?")
+    p = sub.add_parser("repeat", help="never-twice check: is this mistake already a rule?",
+                       epilog='example: hx learn repeat --signal "tests pass locally, fail in CI"')
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("--signal", required=True)
 

@@ -241,6 +241,11 @@ def test_skills_are_copied_per_role(instance, tmp_path):
     for name in ("hx-partner", "hx-worker"):
         (skills / name).mkdir(parents=True)
         (skills / name / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
+    # Which home gets which skill is the manifest's decision (TOOL_SKILL_PLAN step 1).
+    (skills / "manifest.json").write_text(json.dumps({
+        "hx-partner": {"audiences": ["partner"], "roles": ["partner"], "optional": False},
+        "hx-worker": {"audiences": ["worker"], "roles": ["*"], "optional": False},
+    }))
 
     assert run_install(instance, "eng-001", HX_SKILLS_DIR=str(skills)).returncode == 0
     assert run_install(instance, "partner", HX_SKILLS_DIR=str(skills)).returncode == 0
@@ -304,6 +309,89 @@ def test_the_companion_home_does_not_get_hx_memory(instance):
     assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
     companion = instance / "run" / "eng-001" / "companion-home" / "skills"
     assert not (companion / "hx-memory").exists()
+
+
+def _expected_skills(instance, item_id, *, companion=False):
+    """The per-role skill set, read from the shipped manifest rather than retyped."""
+    from hx import skill_manifest
+
+    return set(skill_manifest.for_agent(SRC / "hx" / "skills", instance, item_id,
+                                        companion=companion, env={}))
+
+
+def _installed(path):
+    return {p.name for p in path.iterdir() if p.is_dir()} if path.is_dir() else set()
+
+
+@pytest.mark.parametrize("item_id", ["partner", "eng-001"])
+def test_each_home_gets_exactly_the_manifests_skills(instance, item_id):
+    assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    home = instance / "run" / item_id
+    assert _installed(home / "home" / "skills") == _expected_skills(instance, item_id)
+    assert _installed(home / "companion-home" / "skills") == _expected_skills(
+        instance, item_id, companion=True) == {"hx-companion"}
+
+
+def test_a_role_skill_installs_for_its_role_only(instance, tmp_path):
+    """A manifest row with `roles` reaches only workers of those roles."""
+    import shutil
+
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS_DIR, skills)
+    (skills / "hx-qa-only").mkdir()
+    (skills / "hx-qa-only" / "SKILL.md").write_text("---\nname: hx-qa-only\ndescription: x\n---\nbody\n")
+    manifest = json.loads((skills / "manifest.json").read_text())
+    manifest["hx-qa-only"] = {"audiences": ["worker"], "roles": ["qa-engineer"], "optional": False}
+    (skills / "manifest.json").write_text(json.dumps(manifest))
+
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=str(skills)).returncode == 0
+    assert not (instance / "run" / "eng-001" / "home" / "skills" / "hx-qa-only").exists()
+    harness = instance / "config" / "eng-001" / "harness.json"
+    harness.write_text(json.dumps({**json.loads(harness.read_text()), "role": "qa-engineer"}))
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=str(skills)).returncode == 0
+    assert (instance / "run" / "eng-001" / "home" / "skills" / "hx-qa-only" / "SKILL.md").is_file()
+
+
+def test_an_optional_skill_installs_only_when_config_hx_json_names_it(instance, tmp_path):
+    import shutil
+
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS_DIR, skills)
+    (skills / "hx-extra").mkdir()
+    (skills / "hx-extra" / "SKILL.md").write_text("---\nname: hx-extra\ndescription: x\n---\nbody\n")
+    manifest = json.loads((skills / "manifest.json").read_text())
+    manifest["hx-extra"] = {"audiences": ["partner", "worker"], "roles": ["*"], "optional": True}
+    (skills / "manifest.json").write_text(json.dumps(manifest))
+
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=str(skills)).returncode == 0
+    assert not (instance / "run" / "eng-001" / "home" / "skills" / "hx-extra").exists()
+    hx_json = instance / "config" / "hx.json"
+    hx_json.write_text(json.dumps({**json.loads(hx_json.read_text()), "skills": ["hx-extra"]}))
+    for item_id in ("eng-001", "partner"):
+        assert run_install(instance, item_id, HX_SKILLS_DIR=str(skills)).returncode == 0
+        assert (instance / "run" / item_id / "home" / "skills" / "hx-extra" / "SKILL.md").is_file()
+
+
+def test_a_planned_run_gets_no_memory_skill(instance):
+    """`"planned": false` (hx-memory): a ledger run has no episodic memory. The end-to-end
+    planned install is tests/core/test_native_launch.py's; this is the manifest's half."""
+    planned = _expected_skills_env(instance, "eng-001", HX_CONTINUITY_RUN="r1")
+    assert "hx-worker" in planned and "hx-memory" not in planned
+    assert "hx-memory" in _expected_skills(instance, "eng-001")
+
+
+def _expected_skills_env(instance, item_id, **env):
+    from hx import skill_manifest
+
+    return set(skill_manifest.for_agent(SRC / "hx" / "skills", instance, item_id, env=env))
+
+
+def test_a_missing_manifest_stops_the_install(instance, tmp_path):
+    skills = tmp_path / "skills"
+    (skills / "hx-worker").mkdir(parents=True)
+    (skills / "hx-worker" / "SKILL.md").write_text("---\nname: hx-worker\n---\n")
+    result = run_install(instance, "eng-001", HX_SKILLS_DIR=str(skills))
+    assert result.returncode != 0 and "manifest" in result.stderr
 
 
 def test_python_bin_from_config_hx_json_is_preferred(instance):
@@ -370,3 +458,44 @@ def test_rerunning_keeps_what_claude_code_wrote_into_config_json(installed):
     assert after["numStartups"] == 7
     assert after["projects"][str(installed / "wt" / "eng-001")]["history"] == ["something"]
     assert after["hasCompletedOnboarding"] is True
+
+
+# --- the shipped role and optional skills (TOOL_SKILL_PLAN step 7) -------------------------------
+
+
+def _set_role(instance, item_id, role):
+    harness = instance / "config" / item_id / "harness.json"
+    harness.write_text(json.dumps({**json.loads(harness.read_text()), "role": role}))
+
+
+@pytest.mark.parametrize("role,expected", [
+    ("release-engineer", True), ("qa-engineer", True),
+    ("backend-engineer", False), ("frontend-engineer", False), ("engineer", False),
+])
+def test_hx_signoff_installs_for_release_and_qa_engineers_only(instance, role, expected):
+    _set_role(instance, "eng-001", role)
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    home = instance / "run" / "eng-001"
+    assert (home / "home" / "skills" / "hx-signoff" / "SKILL.md").is_file() is expected
+    assert "hx-signoff" not in _installed(home / "companion-home" / "skills")
+    assert _installed(home / "home" / "skills") == _expected_skills(instance, "eng-001")
+
+
+def test_the_partner_never_gets_hx_signoff(instance):
+    assert run_install(instance, "partner", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    assert "hx-signoff" not in _installed(instance / "run" / "partner" / "home" / "skills")
+
+
+def test_hx_conversion_is_off_until_config_hx_json_turns_it_on(instance):
+    for item_id in ("eng-001", "partner"):
+        assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+        assert "hx-conversion" not in _installed(instance / "run" / item_id / "home" / "skills")
+    hx_json = instance / "config" / "hx.json"
+    recorded = json.loads(hx_json.read_text()) if hx_json.is_file() else {}
+    hx_json.write_text(json.dumps({**recorded, "skills": ["hx-conversion"]}))
+    for item_id in ("eng-001", "partner"):
+        assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+        home = instance / "run" / item_id
+        assert (home / "home" / "skills" / "hx-conversion" / "SKILL.md").is_file(), item_id
+        assert "hx-conversion" not in _installed(home / "companion-home" / "skills")
+        assert _installed(home / "home" / "skills") == _expected_skills(instance, item_id)

@@ -96,6 +96,10 @@ def advance_one(store, *, env=None):
                 request_id='finish-' + intent['request_id'] + '-' + check_id, env=env)
             if not checked['valid']:
                 intent.update(status='failed', failed_check=check_id, evidence='hx evidence ' + checked['event_id'])
+                # The never-twice question, advisory only (TOOL_SKILL_PLAN step 4).
+                note = _repeat_note(store, row, check_id, checked, env)
+                if note:
+                    intent['learnings'] = note
                 _save(store, scope, intent)
                 with store.transaction() as tx:
                     tx.enqueue('unit_check_failed', 'finish:' + intent['request_id'], intent)
@@ -108,7 +112,8 @@ def advance_one(store, *, env=None):
                 native_controller._owned_pane(row)
                 child = {**(os.environ if env is None else env), 'HX_TMUX': ' '.join(row['payload']['tmux'])}
                 native_controller.goal.paste(row['payload']['session'],
-                    f"Acceptance check {check_id} failed. Read {intent['evidence']} --limit 4096, fix this unit, then request completion again.", child)
+                    f"Acceptance check {check_id} failed. Read {intent['evidence']} --limit 4096, fix this unit, then request completion again."
+                    + (f" {intent['learnings']}" if intent.get('learnings') else ''), child)
                 intent['notification'] = 'sent'
                 _save(store, scope, intent)
                 return intent
@@ -142,3 +147,23 @@ def advance_one(store, *, env=None):
     intent.update(status='completed', result=result)
     _save(store, scope, intent)
     return intent
+
+
+
+def _repeat_note(store, row, check_id, checked, env):
+    """`learnings: repeat of <Rule> (score)` for a failed acceptance check, or None.
+
+    The first 2,000 bytes of the check's retained output are the `learn.repeat` signal
+    (TOOL_SKILL_PLAN step 4). Advisory: an unreadable receipt, a missing learnings directory
+    or anything else simply yields no note, and the failure path is unchanged.
+    """
+    from . import evidence, learn
+
+    try:
+        sliced = evidence.read(store, checked['event_id'], limit=learn.REPEAT_SIGNAL_BYTES)
+        if sliced.get('encoding') != 'utf-8':
+            return None
+        worker = row['payload']['worker_id']
+    except Exception:  # noqa: BLE001 — advisory; never part of the verdict
+        return None
+    return learn.completion_repeat(store.root, worker, sliced['content'], check=check_id, env=env)

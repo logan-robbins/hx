@@ -202,6 +202,22 @@ def _seam_entries(root: Path, item_id: str, since: str | None) -> list[dict]:
                                            ts if isinstance(ts, str) else None,
                                            boundary_ref),
         })
+        # Post-seam orientation from this seam to the next (TOOL_SKILL_PLAN step 5).
+        from . import discipline
+
+        window = []
+        for later in records[index + 1:]:
+            if later.get("event") == "seam":
+                break
+            window.append(later)
+        orient = discipline.post_seam_counts(window)
+        entries[-1].update({key: orient[key] for key in (
+            "searches_before_first_edit", "modules_read_before_first_write", "task_reprints")})
+        # The restored packet's size (TOOL_SKILL_PLAN step 6): a seam record's own
+        # `packet_bytes` when a packet path writes one, else its `context_file_bytes` — a
+        # legacy seam restores from the composed context file, so those are the same bytes.
+        packet = record.get("packet_bytes", record.get("context_file_bytes"))
+        entries[-1]["packet_bytes"] = packet if isinstance(packet, int) else None
     return entries
 
 
@@ -245,7 +261,19 @@ def per_id(root: Path, item_id: str) -> dict:
         "dispatched": dispatched,
         "seams": seams,
         "totals": totals,
+        # The invariant prompt prefix and cache age (TOOL_SKILL_PLAN step 8, `hx cache report`).
+        "cache": _cache_or_none(root, item_id),
     }
+
+
+def _cache_or_none(root: Path, item_id: str) -> dict | None:
+    """`hx cache report ID`'s row; metrics never fails on it."""
+    from . import prompt_cache
+
+    try:
+        return prompt_cache.agent_report(root, item_id)
+    except Exception:  # noqa: BLE001 — an unreadable input loses the row, not the document
+        return None
 
 
 def render_per_id_text(doc: dict) -> str:
@@ -260,11 +288,22 @@ def render_per_id_text(doc: dict) -> str:
                 seam["working_set_size"], window["turns"], window["tool_calls"],
                 window["reads_of_context_file"], window["reads_of_working_set"],
                 window["other"],
+                # Post-seam orientation (TOOL_SKILL_PLAN step 5), appended.
+                seam.get("searches_before_first_edit"),
+                seam.get("modules_read_before_first_write"), seam.get("task_reprints"),
+                # Packet size (TOOL_SKILL_PLAN step 6), appended.
+                seam.get("packet_bytes"),
             ]))
     totals = doc["totals"]
     lines.append(f"totals seams={totals['seams']} tool_calls={totals['tool_calls']} "
                  f"reads_of_context_file={totals['reads_of_context_file']} "
                  f"reads_of_working_set={totals['reads_of_working_set']} other={totals['other']}")
+    cache = doc.get("cache")
+    if cache:
+        seam = cache.get("seam") or {}
+        lines.append(f"cache prefix_bytes={cache['invariant']['prefix_bytes']} "
+                     f"share={cache['budget']['share']} state={seam.get('state')} "
+                     "tool_schemas=unmeasured")
     return "\n".join(lines) + "\n"
 
 
@@ -395,11 +434,17 @@ def collect_fleet(root: Path, *, env: dict[str, str] | None = None) -> dict:
     agents = [enrich_agent(root, item, tasks.get(item["id"]) or {}, env, pane=True)
               for item in board["items"]]
     agents.sort(key=lambda agent: sort_key(agent["id"]))
+    summary = summarize(agents)
+    # Completion-time repeats per rule since that rule was last accepted (TOOL_SKILL_PLAN
+    # step 4); `summarize` stays a pure function of the agents.
+    from . import learn as learn_mod
+
+    summary["learn_repeats"] = learn_mod.repeats_summary(root, env)
     return {
         "root_abs": board["root_abs"],
         "ts": timestamps.now(),
         "agents": agents,
-        "summary": summarize(agents),
+        "summary": summary,
         "partner": _partner_tail(root),
         # The instance overlay (graph status) fills this for the UI; the
         # product has no graph of its own, so it is always null here.
@@ -437,6 +482,9 @@ def render_fleet_text(doc: dict) -> str:
     lines.append(f"needs_input({len(summary['needs_input'])}): "
                  f"{' '.join(summary['needs_input'])}")
     lines.append(f"dead({len(summary['dead'])}): {' '.join(summary['dead'])}")
+    repeats = summary.get("learn_repeats") or {}
+    lines.append(f"learn_repeats({sum(repeats.values())}): "
+                 + " ".join(f"{rule}={count}" for rule, count in repeats.items()))
     partner = doc.get("partner") or {}
     lines.append(f"partner seq={partner.get('seq')} ts={partner.get('ts')} "
                  f"event={partner.get('event')}")
@@ -543,8 +591,71 @@ def watch(root: Path, interval: float = 2.0, slow: float = 30.0,
 # --- CLI -----------------------------------------------------------------------
 
 
+# --- hx metrics --commands (TOOL_SKILL_PLAN step 5) ---------------------------------------------
+
+#: `hx <command> [<sub>]` inside a shell command line, at a word boundary.
+_HX_INVOCATION = re.compile(r"(?:^|[\s;&|(`])(?:\S*/)?hx\s+([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?")
+
+
+def command_counts(root: Path, *, since: str | None = None) -> dict[str, dict]:
+    """`{command: {calls, agents: {id: n}}}` from the shell tool inputs of every capture stream.
+
+    Each `logs/<id>/*.jsonl` stream (main and subagents) is read; a `post_tool` record of a
+    shell-type tool contributes every `hx <command> [<sub>]` in its command line, keyed
+    `command sub` when that is an `hx.cli.AUDIENCES` entry and `command` otherwise. Records
+    before `since` — or, without it, before that id's last dispatch in `tasks.json` — are
+    skipped. Unknown commands are not counted.
+    """
+    from .cli import AUDIENCES, COMMANDS
+    from .discipline import shell_command
+
+    known = set().union(*AUDIENCES.values())
+    commands = set(COMMANDS) | {"help"}
+    try:
+        tasks = load_tasks(root)
+    except Exception:  # noqa: BLE001 — a broken tasks.json only loses the default floor
+        tasks = {}
+    floor_all = timestamps.parse(since) if since else None
+    counts: dict[str, dict] = {}
+    logs = root / "logs"
+    for directory in sorted(p for p in logs.iterdir() if p.is_dir()) if logs.is_dir() else []:
+        item_id = directory.name
+        dispatched = (tasks.get(item_id) or {}).get("dispatched")
+        floor = floor_all if since else (timestamps.parse(dispatched) if isinstance(dispatched, str) else None)
+        for path in sorted(directory.glob("*.jsonl")):
+            for record in streams.iter_records(path):
+                if record.get("event") != "post_tool":
+                    continue
+                if floor is not None:
+                    stamp = timestamps.parse(record["ts"]) if isinstance(record.get("ts"), str) else None
+                    if stamp is None or stamp < floor:
+                        continue
+                command = shell_command(record)
+                if not command:
+                    continue
+                for match in _HX_INVOCATION.finditer(command):
+                    head, sub = match.group(1), match.group(2)
+                    if head not in commands:
+                        continue
+                    key = f"{head} {sub}" if sub and f"{head} {sub}" in known else head
+                    row = counts.setdefault(key, {"calls": 0, "agents": {}})
+                    row["calls"] += 1
+                    row["agents"][item_id] = row["agents"].get(item_id, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: (-kv[1]["calls"], kv[0])))
+
+
+def render_commands_text(counts: dict[str, dict]) -> str:
+    width = max((len(key) for key in counts), default=0)
+    lines = [f"{row['calls']:>6}  {key.ljust(width)}  "
+             + " ".join(f"{agent}={n}" for agent, n in sorted(row["agents"].items()))
+             for key, row in counts.items()]
+    lines.append(f"HX-METRICS-COMMANDS commands={len(counts)} "
+                 f"calls={sum(row['calls'] for row in counts.values())}")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> int:
-    """`hx metrics [ID] [--json] [--watch[=SECS]]` (spec 08)."""
+    """`hx metrics [ID] [--json] [--watch[=SECS]]`, `hx metrics --commands [--since TS]` (spec 08)."""
     parser = argparse.ArgumentParser(prog="hx metrics", description=(
         "Per-agent seam metrics (with ID), or the fleet rollup (without). "
         "--watch streams JSONL snapshot/delta objects."))
@@ -552,7 +663,24 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--watch", nargs="?", const=2.0, type=float, metavar="SECS",
                         help="stream JSONL; re-scan every SECS seconds (default 2)")
+    parser.add_argument("--commands", action="store_true",
+                        help="hx invocations per command and agent, from the capture streams")
+    parser.add_argument("--since", metavar="TS",
+                        help="with --commands: count from TS (default: each id's last dispatch)")
     args = parser.parse_args(argv)
+    if args.since and not args.commands:
+        parser.error("--since goes with --commands")
+    if args.commands:
+        if args.id is not None or args.watch is not None:
+            parser.error("--commands takes no ID and no --watch")
+        if args.since and timestamps.parse(args.since) is None:
+            parser.error(f"--since {args.since!r} is not an ISO-8601 timestamp")
+        counts = command_counts(root, since=args.since)
+        if args.json:
+            print(json.dumps(counts, indent=2))
+        else:
+            print(render_commands_text(counts), end="")
+        return 0
     if args.watch is not None:
         if args.id is not None:
             parser.error("--watch takes no ID")

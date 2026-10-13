@@ -28,7 +28,8 @@ def task(root: Path, item_id: str) -> str:
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx task", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx task", add_help=True,
+                                     epilog="example: hx task")
     parser.add_argument("--id", help="the id to print (default: HARNESS_ID)")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)

@@ -353,8 +353,10 @@ def test_cli_round_trip(instance):
     assert result.stdout.startswith("HX-LEARN-PROPOSED ") and "category=evidence" in result.stdout
     proposal_id = result.stdout.split()[1]
 
+    # `learn accept` is the Partner's (hx.cli.AUDIENCES): a worker is refused before the
+    # different-session rule is even consulted.
     result = run_learn(instance, "accept", proposal_id)
-    assert result.returncode != 0 and "different session" in result.stderr
+    assert result.returncode == 1 and "refuse" in result.stderr and "learn accept" in result.stderr
 
     result = run_learn(instance, "pending", harness_id="partner")
     assert result.returncode == 0 and proposal_id in result.stdout and "HX-LEARN-PENDING 1" in result.stdout
@@ -369,12 +371,13 @@ def test_cli_round_trip(instance):
     assert run_learn(instance, "list", "L1").stdout.startswith("**Rule L1** · Signal: a count without scope")
     assert "HX-LEARN-LIST 0 rule(s)" in run_learn(instance, "list", "--category", "build").stdout
 
-    result = run_learn(instance, "check")
+    # check, path and categories are the operator's (no HARNESS_ID).
+    result = run_learn(instance, "check", harness_id=None)
     assert result.returncode == 0 and "HX-LEARN-CHECK rules=1 pending=0 fails=0" in result.stdout
 
-    assert run_learn(instance, "path").stdout.strip() == str(instance / "LEARNINGS")
+    assert run_learn(instance, "path", harness_id=None).stdout.strip() == str(instance / "LEARNINGS")
 
-    result = run_learn(instance, "categories")
+    result = run_learn(instance, "categories", harness_id=None)
     assert result.returncode == 0
     assert [line.split()[0] for line in result.stdout.splitlines()] == list(learn.CATEGORY_NAMES)
 

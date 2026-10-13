@@ -697,7 +697,9 @@ def section_text(root: Path, item_id: str, stream: str, state: dict, *, fallback
 
     if not hits:
         return ""
-    lines = [f'Search more: `hx memory search "{query[:120]}" --all-roles`', ""]
+    # `--all-roles` is the Partner's (hx.cli.AUDIENCES); a worker's hint names only what it may run.
+    widen = " --all-roles" if item_id == "partner" else ""
+    lines = [f'Search more: `hx memory search "{query[:120]}"{widen}`', ""]
     for hit in hits:
         lines.append(
             f"- {hit['ts']} {hit['item']}/{hit['kind']} s={hit['score']:.2f}: "
@@ -745,7 +747,8 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    find = sub.add_parser("search", help="recency-weighted semantic search over episodes")
+    find = sub.add_parser("search", help="recency-weighted semantic search over episodes",
+                          epilog='example: hx memory search "conditional GET 304" --k 5')
     find.add_argument("query")
     find.add_argument("--role", default=None, help="persona filter (default: your own)")
     find.add_argument("--pod", default=None)

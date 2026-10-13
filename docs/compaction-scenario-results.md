@@ -51,3 +51,19 @@ model thresholds rewritten to 5,000 tokens. Preserved instance:
   the OAuth seed token; the earlier 401 was an API-key/OAuth mix-up, now
   understood and documented. Haiku 5.5 is configured but the installed
   CLI 2.1.289 calls it unrecognized — config-verified, not live-verified.
+
+## Rerunnable runner (added 2026-10-12; no run recorded yet)
+
+`HX_LIVE=1 .venv/bin/python -m pytest tests/live/test_compaction_scenario.py` reruns this
+scenario with the two changes the small-app run showed were missing: goals of four or five
+committed units per lane, so a lane's context crosses the 5,000-token threshold, and one
+forced `hx seam <id>` per lane once its first unit has a file, so a post-seam window exists
+even when no threshold seam fires. Companions run on Haiku at low effort. Each lane ends with
+`hx complete done` against its goal's `### Checks`, and the test re-runs those checks itself.
+The runner reads every number from `hx metrics <id>` (`packet_bytes`, `next_10_turns`,
+`searches_before_first_edit`, `modules_read_before_first_write`, `task_reprints`) and appends
+one `## Compaction scenario run <ts>` block below this section *before* it asserts, so a
+failing run is recorded too. A seam window without a parseable transcript counts as
+unmeasured and fails the waste criterion; it is never estimated. The first block appended
+here is the baseline. It has not been run yet: it was written without live credentials, so
+there is no live result to report.

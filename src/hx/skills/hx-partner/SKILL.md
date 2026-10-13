@@ -1,6 +1,10 @@
 ---
 name: hx-partner
 description: Operating manual for the hx Partner — write a goal file, create and launch a worker, dispatch, act on completion states, resume or bench by outcome, and report to the human in chat. Use when writing a goal, creating or dispatching a worker, acting on a completion, or answering the human about the fleet.
+metadata:
+  hx-audience: partner
+  hx-roles: partner
+  hx-loads-when: writing a goal, dispatching, acting on a completion, answering the human
 ---
 
 # hx-partner
@@ -184,7 +188,10 @@ The episode store holds every step state every agent in this instance has writte
 weighted toward the recent. It answers what the board cannot: what an agent tried three
 dispatches ago, which blocker someone already hit, what an earlier release actually shipped
 (`--kind complete` gets the Digests). It defaults to your own role, so as the Partner you will
-usually want `--all-roles`. The `hx-memory` skill has the rest of the flags.
+usually want `--all-roles`. The `hx-memory` skill has the rest of the flags. `--all-roles`,
+`hx memory list [--id ID] [--role R] [--limit N]` (newest first, metadata only) and
+`hx memory stats` are yours alone: a worker is refused them and searches its own role or names
+one with `--role` (`hx help --all` prints every audience's commands).
 
 Two things it is good for before you write a goal: checking whether the work has been half
 done already, and lifting the facts a previous agent learned the hard way into the goal so the

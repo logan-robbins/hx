@@ -69,6 +69,8 @@ def test_pi_install_writes_a_home_and_the_companion(instance):
     assert stat.S_IMODE((home / "auth.json").stat().st_mode) == 0o600
     assert (home / "extensions" / "hx" / "index.ts").is_file()
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
     assert companion.is_file()
     assert "companion-stop" in companion.read_text()
@@ -153,3 +155,35 @@ def test_dispatch_wipes_pi_sessions(instance):
     _reset_run_dir(instance, "eng-001")
     assert not sessions.exists()
     assert kept.is_file()
+
+
+def test_pi_start_turns_discovery_off_and_passes_each_installed_skill(instance, tmp_path):
+    """TOOL_SKILL_PLAN step 7: `--no-skills` closes Pi's discovery (`~/.agents/skills`, a
+    project's `.pi/skills` and `.agents/skills`); one `--skill` per installed hx skill
+    brings exactly the manifest's set back."""
+    _pi_token(instance)
+    skills_dir = str(Path(__file__).resolve().parents[2] / "src" / "hx" / "skills")
+    install = subprocess.run(
+        ["bash", str(instance / "adapters" / "pi" / "install.sh"), "eng-001"],
+        env=clean_env(HARNESS_ROOT=str(instance), HX_SKILLS_DIR=skills_dir),
+        capture_output=True, text=True,
+    )
+    assert install.returncode == 0, install.stderr
+    recorded = tmp_path / "argv.json"
+    fake = tmp_path / "pi"
+    fake.write_text("#!/usr/bin/env python3\nimport json, os, sys\n"
+                    "json.dump(sys.argv[1:], open(os.environ['HX_ARGV_FILE'], 'w'))\n")
+    fake.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(instance / "adapters" / "pi" / "start.sh"), "--exec", "eng-001"],
+        env=clean_env(HARNESS_ROOT=str(instance), HX_PI_BIN=str(fake), HX_ARGV_FILE=str(recorded)),
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    argv = json.loads(recorded.read_text())
+    assert "--no-skills" in argv
+    passed = [argv[i + 1] for i, arg in enumerate(argv) if arg == "--skill"]
+    home_skills = instance / "run" / "eng-001" / "home" / "skills"
+    from .conftest import manifest_skills
+    assert sorted(Path(p).name for p in passed) == sorted(manifest_skills(instance, "eng-001"))
+    assert all(Path(p).parent == home_skills for p in passed)

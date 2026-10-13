@@ -210,6 +210,12 @@ value ending in `.md` is the pre-directory layout and is refused), and `"learnin
 — the rule prefix letter(s) a proposal gets by default (default `L`).
 `HX_LEARNINGS` and `HX_LEARNINGS_PREFIX` in the environment override both.
 
+One optional key read by every adapter's `install.sh` (through `python -m hx.skill_manifest
+select`) and by `hx doctor`: `"skills"` — a list of the optional skill names this instance
+turns on, e.g. `"skills": ["hx-conversion"]`. Absent means none. A name that does not ship, or
+names a skill that is not `optional` in `src/hx/skills/manifest.json`, fails the doctor
+`skills` row. `hx install` rewrites only the three entry points and keeps every other key.
+
 ## `hx learn` (central learnings)
 
 The directory holds one file per fixed category — `orientation`, `ownership`, `planning`,
@@ -640,9 +646,300 @@ lines. `list` prints `<ts> <id> <role> <kind> seq=<n> <stream>[ <outcome>]`, new
 chromadb missing or unopenable: one `hx: memory: <reason>` line on stderr, exit 2.
 
 `hx compose` adds section **Memory episodes** after **Step state**, source
-`state/memory/chroma`, body `Search more: \`hx memory search "<query>" --all-roles\`` then one
+`state/memory/chroma`, body `Search more: \`hx memory search "<query>"\`` (with ` --all-roles` in
+the Partner's file only: the flag is the Partner's, `hx help`) then one
 `- <ts> <id>/<kind> s=<0.xx>: <document>` line per hit, truncated to
 `companion.memory_episode_chars`. Any failure is the single line
 `_memory unavailable: <reason>_`. `companion.memory_inject_k: 0` removes the section entirely;
 the other two fields are `memory_episode_chars` (default 700) and `memory_half_life_h`
 (default 24).
+
+## `hx help [--all | --audience A] [--json]` (exposure)
+
+`hx.cli.AUDIENCES` is the one table of who sees what (TOOL_SKILL_PLAN §Inventory): columns
+`operator`, `partner`, `worker`, `subagent`, `companion` (empty) and `runtime` (never listed or
+gated), each a set of `command`, `command sub` or `command sub --flag` entries. The audience
+is `operator` with no `HARNESS_ID`, `partner` for `HARNESS_ID=partner`, `companion` when
+`HX_ROLE=companion`, else `worker`. `hx help --json`:
+
+```json
+{"audience": "worker", "caller": "eng-001", "role": "backend-engineer",
+ "commands": ["code search", "complete", "learn propose", "memory search", "task", "…"]}
+```
+
+`hx help --all --json` is `{"audiences": {"operator": [...], "partner": [...], "worker": [...],
+"subagent": [...], "companion": []}}`, each list sorted. Text output is one header line, then
+one `  <command>  <sub> | <sub>` line per command family. `hx --help` prints the usage text
+for the operator and the Partner, and the worker view for any other `HARNESS_ID`.
+
+Authority backs it: before dispatch, a caller whose `HARNESS_ID` is set and is not `partner`
+is refused (exit 1, `refuse: \`hx <entry>\` is the Partner's|the operator's, and HARNESS_ID is
+\`<id>\`…`) every entry outside `worker ∪ subagent ∪ runtime`. `plan audit|finish|materialize`
+defer to planning's own-assignment check; an unknown subcommand of a family with a worker
+entry is left to that command's argparse.
+
+## `src/hx/skills/manifest.json` (skill manifest)
+
+```json
+{"hx-worker": {"audiences": ["worker"], "roles": ["*"], "optional": false},
+ "hx-memory": {"audiences": ["partner", "worker"], "roles": ["*"], "optional": false, "planned": false}}
+```
+
+One row per shipped skill directory, keyed by its name: `audiences` (non-empty, from
+`operator|partner|worker|subagent|companion`), `roles` (`"*"` or `harness.json` role names; `[]`
+installs nowhere), `optional` (installed only when `config/hx.json` `skills` names it), and
+optional `planned` (default `true`; `false` keeps it out of a planned `HX_CONTINUITY_RUN`
+home). `python -m hx.skill_manifest select --skills DIR --root ROOT --id ID [--companion]`
+prints the names one home receives, one per line, in manifest order; every adapter's
+`install.sh` copies exactly those (exit 2 and no install on an invalid manifest). The
+`skills` row of `hx doctor` checks the manifest against the directories, each `SKILL.md`
+against the Agent Skills rules (name 1–64 lowercase letters, digits and single hyphens,
+equal to the directory; description 1–1,024 characters; only `name`, `description`,
+`license`, `compatibility`, `metadata`, `allowed-tools`; values plain YAML scalars; file ≤32
+KiB) and lints that no skill a worker or subagent carries names an `hx` command a worker is
+refused. One `ok` line: `<n> skill(s) valid (frontmatter, size, worker lint); <k> over the 8
+KiB facade bound; optional on: <names|none>`; otherwise one `fail` line per problem.
+hx's skills carry `metadata: {hx-audience, hx-roles, hx-loads-when}`.
+
+## `hx models [--provider P] [--expect current] [--json]`
+
+Operator and Partner only (`hx help`). One GET per provider, in order `anthropic`, `openai`,
+`xai`, `meta`, then `typesafe` (no request), 5 s each, no retry, no fallback; writes nothing.
+Credential order per provider: the process environment, the env file of `config/auth.json`,
+then the adapter's `seed/` file (`seed/token` only when it starts with `sk-ant-api`; the OAuth
+token is never sent). `--json`:
+
+```json
+{"ts": "2026-10-12T09:00:00Z", "docs": "/abs/docs/models.md", "env_file": null,
+ "expect": "current",
+ "providers": {
+   "anthropic": {"status": "ok", "source": "https://api.anthropic.com/v1/models?lifecycle=active&limit=1000",
+                 "credential": "env-file:ANTHROPIC_API_KEY",
+                 "ids": ["claude-opus-5-5", "…"], "added": ["claude-haiku-5-5"], "removed": [],
+                 "deprecated": ["claude-opus-4-1"], "window": {"claude-opus-5-5": 1000000},
+                 "effort": {"claude-opus-5-5": ["low", "medium", "high"]},
+                 "configured": ["claude-opus-5-5"], "documented": ["claude-opus-5-5"],
+                 "missing": [], "window_over": {}},
+   "openai": {"status": "unverified", "credential": null, "reason": "no credential (…)", "…": "…"},
+   "xai": {"status": "error", "http": 401, "reason": "HTTP 401 Unauthorized", "…": "…"},
+   "typesafe": {"status": "pinned", "source": "hx.jev.MODEL", "ids": ["jev-1.13.0"], "…": "…"}},
+ "stale": ["anthropic: claude-opus-4-1 is configured but not in the active list"]}
+```
+
+`status` is `ok`, `unverified` (no credential; no request made), `error` (`http` status or
+`null`, and `reason`; the response body is never kept) or `pinned`. `ids` are the active IDs
+returned, `deprecated` the returned IDs the provider flags (`lifecycle`/`status` deprecated or
+legacy, `deprecated: true`, or a deprecation/retirement date); `added` are active IDs of the
+provider's family (`claude-`, `gpt-`/`o1`/`o3`/`o4`/`codex-`, `grok-`, `muse-`/`llama`) not
+in `docs/models.md`; `removed` are documented or configured IDs the provider no longer returns;
+`missing` are configured IDs not active; `window_over` maps a configured ID to its configured
+`window` and the provider's `max_input_tokens` when the first is larger. `window` and `effort`
+are read from the record or its `capabilities`/`limits` (`max_input_tokens`, `context_window`,
+`context_length`, `max_prompt_length`, …; effort lists or `{level: {supported: true}}` maps).
+`documented` is `null` when `docs/models.md` is not beside the package (an installed wheel);
+configured IDs are attributed to a provider by that same family prefix. Text output is one
+block per provider and a last line `HX-MODELS ok=<n> unverified=<n> error=<n> pinned=<n>
+stale=<n>`. `--expect current` exits 3 when `stale` is non-empty (only `ok` providers can be
+stale); usage errors exit 2; a worker caller is refused (exit 1).
+
+## Completion repeats (`state/learn/repeats.jsonl`, `learn_repeats`)
+
+When `hx complete done`'s `### Checks` or a planned acceptance check fails, the first 2,000
+bytes of its output are passed to `learn.repeat`. On `repeat` or `related` one line is appended
+to `$HARNESS_ROOT/state/learn/repeats.jsonl`:
+
+```json
+{"id": "eng-001", "rule": "L3", "score": 0.84, "ts": "2026-10-12T09:00:00Z",
+ "check": "### Checks", "verdict": "repeat"}
+```
+
+(`check` is `### Checks` for `hx complete`, the check ID for a planned run) and the line
+`learnings: repeat of L3 (0.84)` is appended to the `HX-CHECK-FAILED` output (or to the pasted
+acceptance-failure line; the native completion intent carries it as `learnings`). Nothing is
+written on `new`. Advisory: the exit code and verdict are the check's. The fleet document of
+`hx metrics [--json]` gains `summary.learn_repeats`: `{"L3": 2}` — records per rule whose `ts`
+is later than that rule's last `new` or `merged` decision in `decisions.jsonl` (`{}` when
+there are none); the text form adds a `learn_repeats(<total>): L3=2 …` line after `dead(…)`.
+
+## `hx discipline pull --repo DIR [--expect fresh]`
+
+Read-only git on local refs (it never fetches), 30 s timeout per call. The base is the first
+of `dev`, `origin/dev`, `main`, `master`, `origin/main`, `origin/master` that has a merge-base
+with `HEAD` (the order `commit_range` uses). Prints one object:
+
+```json
+{"base": "main", "base_sha": "4f1c2d3e5a6b", "merge_base": "9a8b7c6d5e4f",
+ "behind": 2, "ahead": 1, "diverged_files": ["src/a.py", "src/b.py"],
+ "base_age_s": 86400, "fresh": false,
+ "instruction": "pull main: 2 commit(s) behind, 2 file(s) changed there"}
+```
+
+`behind` is `git rev-list --count HEAD..BASE`, `ahead` is `BASE..HEAD`, `diverged_files` is
+`git diff --name-only HEAD...BASE` (what the base changed since the fork point), `base_age_s`
+is seconds since the merge-base commit's committer date, and `fresh` is `behind == 0`
+(`instruction` is then `"fresh"`). Exit 0; with `--expect fresh`, exit 3 and one
+`hx: discipline pull: --expect fresh: <instruction>` line on stderr when `behind > 0`. No
+principal branch, or a directory that is not a Git worktree, exits 2. A worker may run it.
+
+## `hx discipline orient --post-seam ID`
+
+The main stream of ID after its last `seam` record (exit 2 when there is none):
+
+```json
+{"id": "eng-001", "stream": "eng-001-main", "seam_seq": 812, "seam_ts": "2026-09-20T12:50:00Z",
+ "source": "clear", "tool_calls": 14, "first_edit_seq": 820,
+ "searches_before_first_edit": 1, "modules_read_before_first_write": 3, "task_reprints": 1}
+```
+
+Counted from `post_tool` records. A search is a Grep/Glob-type tool or a shell command running
+`grep`, `rg`, `ag`, `ack`, `fd`, `find`, `git grep`, `hx code search|symbols|impact|edges|callers|type|signature`,
+`hx memory search`, `hx content search` or `hx recall`; an edit is an Edit/Write-type tool or a
+shell `apply_patch`, `sed -i`, `perl -i`, `cat >`/`>>` or `tee`; a module read is a distinct path
+read by a Read-type tool or a shell `cat|head|tail|less|bat|nl`, never the `*.context.md` file.
+`searches_before_first_edit` and `modules_read_before_first_write` stop at the first edit
+(`first_edit_seq`, `null` when there is none, in which case the whole window counts);
+`task_reprints` counts every `hx task` after the seam. The same three fields are added to every
+entry of `seams` in `hx metrics <id>` (each seam's window ends at the next seam record) and
+appended, in that order, to its text line.
+
+## `hx metrics --commands [--since TS] [--json]`
+
+`hx <command> [<sub>]` invocations per command and per agent, from the shell-type tool inputs
+(`Bash`, `exec_command`, …) of every `logs/<id>/*.jsonl` stream, main and subagent:
+
+```json
+{
+  "task": {"calls": 2, "agents": {"eng-001": 1, "qa-002": 1}},
+  "code search": {"calls": 1, "agents": {"eng-001": 1}},
+  "discipline pull": {"calls": 1, "agents": {"qa-002": 1}}
+}
+```
+
+The key is `command sub` when that pair is an `hx help` (AUDIENCES) entry, else `command`;
+names that are not `hx` commands are not counted. Ordered by `calls` descending, then key.
+Records before `--since TS` are skipped; without it each id's floor is its `dispatched` in
+`tasks.json` (no floor when there is none). Text form: one `<calls>  <key>  <id>=<n> …` line
+per command, then `HX-METRICS-COMMANDS commands=<n> calls=<n>`. An ID or `--watch` with
+`--commands`, `--since` without it, or an unparseable `TS` exits 2. Operator and Partner only.
+
+## `packet_bytes` (per seam, `hx metrics <id>`)
+
+Every entry of `seams` in `hx metrics <id> [--json]` also carries `packet_bytes`: the size in
+bytes of the packet the restored conversation starts from. It is the seam record's own
+`packet_bytes` when a packet path writes one. Otherwise it is the record's
+`context_file_bytes`, because a legacy seam restores from the composed context file and the
+two are the same bytes. It is `null` when the record has neither. The text form appends it
+after `task_reprints`. `tests/live/test_compaction_scenario.py` reports it per lane in
+docs/compaction-scenario-results.md.
+
+## Skill manifest rows for `hx-signoff` and `hx-conversion`, and `skills-isolation`
+
+`src/hx/skills/manifest.json` gains two rows (TOOL_SKILL_PLAN step 7):
+
+```json
+{"hx-signoff": {"audiences": ["worker"], "roles": ["release-engineer", "qa-engineer"], "optional": false},
+ "hx-conversion": {"audiences": ["partner", "worker"], "roles": ["*"], "optional": true}}
+```
+
+`hx-conversion` installs only where `config/hx.json` has `"skills": ["hx-conversion"]`. Both
+files stay at or under 8 KiB, so `hx tools load skill:NAME` can carry them. The worker lint of
+the doctor `skills` row has one exception. In a skill whose `audiences` include `partner`, a
+section whose heading starts with `Partner only` is not linted: everything from that heading
+to the next heading of the same or a higher level, with headings inside code fences ignored.
+A worker-only skill gets no such exemption.
+
+`hx doctor` adds `warn` rows named `skills-isolation`, and prints none when nothing applies:
+
+```text
+warn  skills-isolation <id>: workdir <path> contains .claude/skills; a checkout's skills must never load into a worker (docs/two-worlds.md, Skills)
+warn  skills-isolation ~/.agents/skills holds 2 entries while Codex or Pi worker(s) <id> are configured; Codex scans it whatever CODEX_HOME says (docs/two-worlds.md, Skills)
+```
+
+The first is per worker (never the Partner) and lists whichever of `.claude/skills`,
+`.agents/skills` and `.pi/skills` exist in its `harness.json` workdir. The second reads
+`$HOME/.agents/skills` only while some worker's flavor is `codex` or `pi`.
+
+## `hx cache report [ID] [--json]`
+
+The invariant prompt prefix per agent, against its model's budget (TOOL_SKILL_PLAN step 8).
+Operator and Partner only. It covers every `config/<id>/` directory, or one; an unknown ID is
+`NotFound` (exit 2). It never writes.
+
+```json
+{"ts": "2026-10-12T12:00:00Z",
+ "agents": [{"id": "eng-001",
+   "invariant": {"persona_bytes": 9120, "persona_source": "run/eng-001/persona.md",
+                 "claude_md_bytes": 2048, "learnings_bytes": 1400, "learnings_in_persona": true,
+                 "skills": ["hx-memory", "hx-worker"], "skills_source": "installed",
+                 "skill_descriptions_bytes": 1310, "prefix_bytes": 12478,
+                 "native_tool_schemas": "unmeasured", "host_context": "unmeasured"},
+   "budget": {"model": "claude-opus-5", "invariant_ceiling_tokens": 200000,
+              "working_room_tokens": 800000, "within": true, "share": 0.0624},
+   "seam": {"last_seam_ts": "2026-10-12T11:56:00Z", "cache_ttl": "1h",
+            "ttl_source": "harness.json cache_ttl", "state": "warm", "cacheable": true,
+            "prefix_tokens": 12478, "ttl_s": 3600, "age_s": 240,
+            "recommendation": "keep-prefix", "note": "..."}}]}
+```
+
+- `persona_source` is `run/<id>/persona.md` once a launch derived it. Before that it is
+  `config/<id>/AGENTS.md above the header`, which is what `start.sh` would derive. `null`
+  means neither exists.
+- `learnings_bytes` is `learn.persona_region` (what `hx compile` splices). It counts toward
+  `prefix_bytes` only when the persona does not already contain the learnings marker
+  (`learnings_in_persona: false`).
+- `skills` lists the installed copies in `run/<id>/home/skills` (or `home/muse/skills` for
+  Muse); `skills_source` is then `installed`. Without them it lists the manifest's choice and
+  says `manifest`. Only the frontmatter `description` bytes count: the listing cost. Skill
+  bodies are not invariant.
+- `prefix_bytes` is charged one token per byte against `invariant_ceiling_tokens`, which is
+  `prompt_cache.invariant_budget` for the `harness.json` model's row. The `budget` values are
+  `null` when the model has no row.
+- `native_tool_schemas` and `host_context` are always the string `unmeasured`. They are
+  adapter-specific and never estimated.
+- `seam` is `null` until the main stream has a seam record. Otherwise it is
+  `prompt_cache.assess` on `prefix_bytes` and the last seam's age, against `harness.json`
+  `cache_ttl`. Without that field `ttl_source` is `default` (`5m`).
+
+The text form is one line per agent, then the sentinel:
+
+```text
+eng-001: prefix 12478 B (persona 9120, CLAUDE.md 2048, learnings 1400 in persona, skill descriptions 1310 over 2) = 6.2% of claude-opus-5 ceiling 200000; tool schemas and host context unmeasured; last seam 240s ago, warm against 1h (harness.json cache_ttl)
+HX-CACHE-REPORT agents=1 over_budget=0
+```
+
+`hx metrics <id> --json` carries the same per-agent object under `cache`. It is `null` when an
+input cannot be read, so metrics never fails on it. The text form appends
+`cache prefix_bytes=N share=F state=S tool_schemas=unmeasured`.
+
+## One example per worker command in `--help`
+
+Every worker-column entry of `hx help` (`cli.AUDIENCES` worker and subagent) has an argparse
+epilog that starts `example: hx ...` (`examples:` for `hx tools`). `hx cache assess` and
+`hx cache budget` have one as well. `tests/core/test_cli.py` asserts this for each entry. The
+`code *` entries are excluded: their parser is in `src/hx/code_index.py`, which the code-graph
+work owns (GRAPH_PLAN.md). `hx-worker` lists the same examples under "One example per command".
+
+## MCP version record (`hx tools index`)
+
+`state/capabilities.json` gains `servers`, and the `hx tools index` result repeats it:
+
+```json
+{"version": "…", "capabilities": 3, "servers": {"local": {"protocol_version": "2024-11-05"}}}
+```
+
+`protocol_version` is the `protocolVersion` the server returned to hx's `initialize`, which
+still sends `2024-11-05`. It is `null` when the answer had none, or one longer than 32 chars.
+A catalog written before this change has no `servers` key and still reads.
+
+When a server answers `initialize` with a JSON-RPC error, the client calls `server/discover`
+once, with the MCP 2026-07-28 `_meta` keys. Indexing then stops with a `Conflict` (exit 2), and
+nothing is written:
+
+```text
+MCP server refused initialize (2024-11-05); server/discover: supported versions 2026-07-28. Register a server that keeps the handshake, or unregister it.
+```
+
+The versions come from three places, in this order: `data.supported` in the `initialize`
+error, `supportedVersions` in the discover result, then `data.supported` in a discover error.
+At most 16 are kept, each a printable string of at most 32 chars. When none of the three names
+a version, the message says `reported no supported versions`. No other MCP behaviour changed.

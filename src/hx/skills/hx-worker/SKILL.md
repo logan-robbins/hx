@@ -1,6 +1,10 @@
 ---
 name: hx-worker
 description: Operating manual for an hx HarnessAgent — read the context file once at every boundary, keep the work item's Tasks section current, commit as you go, use subagents, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, when spawning subagents, or when completing or failing a completion.
+metadata:
+  hx-audience: worker
+  hx-roles: "*"
+  hx-loads-when: starting or resuming under a /goal pointer, after a seam, completing or failing a check
 ---
 
 # hx-worker
@@ -64,7 +68,7 @@ skill for how to search further.
 
 ### 2. The goal
 
-`hx goal` pastes a fixed pointer into your pane:
+hx pastes a fixed pointer into your pane:
 
 ```
 /goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
@@ -212,7 +216,7 @@ move on and before you finish:
 ```bash
 hx learn propose --category <c> --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
 hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an existing rule already says it
-hx learn categories                                                         # the eleven kinds of mistake
+hx learn classify --signal "<what you saw>" --check "<the test>"            # which of the eleven kinds it is
 ```
 
 Every rule already in force is in your system prompt — the `hx:learnings` region of your
@@ -299,3 +303,31 @@ Your own files are your `workdir`, your `-working` work item, and your `AGENTS.m
 header. That is the whole list.
 
 You run, for yourself: `hx task`, `hx complete`. That is also the whole list.
+
+## One example per command
+
+Those two act on your own record. The rest of your `hx help` column reads, searches and records,
+and each one's `--help` ends with the same example as here:
+
+```
+hx task                                          # your own Work Item
+hx complete done                                 # runs your checks
+hx progress --file /tmp/progress.json            # planned runs: a sparse update
+hx tool-exec --request tests-1 -- python3 -m pytest -q
+hx evidence EVENT_ID --offset 8000 --limit 8000  # the next page of a captured output
+hx tools discover --query lint                   # then: hx tools load ID
+hx tools call mcp:project:NAME --request lint-1 --input input.json
+hx tools status
+hx exec --language python --code "print(1)"
+hx sift triage --file failed-output.txt
+hx content search "cleanup pattern" --limit 3
+hx content fetch https://example.com/docs --source example-docs
+hx memory search "conditional GET 304" --k 5
+hx recall "alembic revision for the assets table"
+hx discipline commit --repo .
+hx discipline pull --repo . --expect fresh       # exit 3 while behind the principal branch
+hx learn repeat --signal "tests pass locally, fail in CI"
+hx learn classify --signal "tests pass locally, fail in CI" --check "run the suite with the CI env file"
+hx learn propose --category testing --signal "tests pass locally, fail in CI" --check "run the suite with the CI env file" --evidence "PR 42, 2026-10-12"
+hx learn list --category testing
+```

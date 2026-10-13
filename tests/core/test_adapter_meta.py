@@ -157,6 +157,8 @@ def test_meta_install_writes_an_xdg_home_and_the_companion(instance):
     assert "--id eng-001" in (home / "muse" / "settings.json").read_text()
     assert "--root" in (home / "muse" / "settings.json").read_text()
     assert (home / "muse" / "skills" / "hx-worker" / "SKILL.md").is_file()
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "muse" / "skills") == manifest_skills(instance, "eng-001")
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
     assert companion.is_file()
     assert "companion-stop" in companion.read_text()
