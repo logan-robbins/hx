@@ -111,6 +111,10 @@ Claude Code's auto memory is keyed by git repo. Without a config directory per a
 agent working in the same directory would share one memory pool — including yours. The
 per-agent home is what prevents that.
 
+What outlives a dispatch is hx's, not the home's: the step state and the episode store
+(`docs/memory.md`) for what an agent did, and the learnings (`docs/learnings.md`) for what it
+learned, scoped to its role. No agent has a memory file of its own.
+
 ## Credentials
 
 **Nothing of yours is read.** The harness authenticates with one long-lived token of its own:

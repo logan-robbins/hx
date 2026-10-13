@@ -3,8 +3,9 @@
 This is the only CLAUDE.md that loads. The repository you are working in has its own and it is
 deliberately excluded; do not go looking for it.
 
-**After any boundary, one Read.** A hook prints a line naming your context file — your memory,
-your task, your `## Tasks`, the step state your Companion kept, your open subagent handles.
+**After any boundary, one Read.** A hook prints a line naming your context file — your task,
+your `## Tasks`, the step state your Companion kept, the episodes others left, your open
+subagent handles.
 Open it with the **Read tool**, exactly once, before anything else. Not `cat`, not `head`, not
 any Bash command: those spend the same tokens and do not count as the one read the harness
 measures. Do not read it again later in the same turn. It is always current, and it is the only
@@ -31,13 +32,15 @@ failure prints `HX-CHECK-FAILED <id>` with the output and changes nothing — fi
 again. `blocked`, `decision`, and `exhausted` run no checks and are the honest answers when
 `done` is not available.
 
-**What tripped you up is owed to everyone.** Every rule of this instance's `LEARNINGS/`
-(one file per category of mistake) is already in your system prompt, whole, at every start
-and after every compaction — never read those files. When a wrong assumption, a correction
-you had to make or a wasted cycle teaches you a rule, run `hx learn propose --category <c>
---signal … --check … --evidence …` the moment you understand it (`hx learn classify --signal …
---check …` ranks the categories for it). Never edit the files: a different session reviews
-every proposal, which is what keeps each lesson one rule.
+**What tripped you up is owed to every agent like you.** Every rule of this instance's
+`LEARNINGS/` (one file per category of mistake) that applies to you — the global ones and
+your role's — is already in your system prompt, whole, at every start and after every
+compaction; never read those files. You keep no memory file: when a wrong assumption, a
+correction you had to make or a wasted cycle teaches you a rule, run `hx learn propose
+--category <c> --signal … --check … --evidence …` the moment you understand it, with
+`--role <your role>` when only your role needs it (`hx learn classify --signal … --check …`
+ranks the categories). Never edit the files: a different session reviews every proposal,
+which is what keeps each lesson one rule.
 
 **What is not yours.** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
 `pods/` other than your own `-working` item, and `tasks.json` are managed by hx or belong to

@@ -32,12 +32,12 @@ measures).
 
 That path is your context file. It holds, in order:
 
-0. Invariants — Codex and Meta only; read them, do not restate them
-1. Your memory — what you wrote below `## UPDATES BELOW ONLY` in your `AGENTS.md`
-2. Your goal — the verbatim `## Goal` and every addendum
-3. Your `## Tasks` section, as you last left it
-4. Your step state — what your Companion recorded: open steps with the next action, closed
+0. Invariants and your persona — Codex and Meta only; read them, do not restate them
+1. Your goal — the verbatim `## Goal` and every addendum
+2. Your `## Tasks` section, as you last left it
+3. Your step state — what your Companion recorded: open steps with the next action, closed
    steps with their commits, decisions, dead ends, the working set, blockers
+4. Memory episodes — the closest step states other agents of your role left behind
 5. Your open subagent handles
 
 It is always current, it is composed fresh at each boundary, and it is the only file you need.
@@ -231,8 +231,8 @@ your Companion saw a good moment.
 
 **Claude Code's own compaction is not what happens to you.** hx takes a seam long before the
 native window is reached, so nothing summarises your conversation and decides for you what
-mattered. What survives is what is on disk: your `## Tasks`, your commits, your memory below
-the header, and the step state.
+mattered. What survives is what is on disk: your `## Tasks`, your commits and the step
+state.
 
 The **Companion** is a second session, paired with you, that reads your tool calls and keeps
 that step state current. You never talk to it and it never talks to you. What it produces is
@@ -285,11 +285,13 @@ hx complete decision    # someone else has to choose
 hx complete exhausted   # the task was larger than one agent
 ```
 
-**Before you run it**, write what should outlive this task below `## UPDATES BELOW ONLY` in
-your `config/<id>/AGENTS.md`. That section is yours alone, it is not wiped by a dispatch, and
-it travels in every future context file. Write what you would otherwise rediscover: how this
-codebase is laid out, which commands actually work here, what surprised you. Nothing above
-that header is yours; `start.sh` re-derives the persona from it at every launch.
+**Before you run it**, propose what should outlive this task and is not already a rule: what
+tripped you up, which command actually works here, what surprised you. `hx learn propose
+--role <your role> …` makes it a rule every agent of your role carries in its system prompt
+once a reviewer accepts it (leave out `--role` when every agent needs it). What you did needs
+nothing more from you: your commits, your `## Tasks` and your step state are kept, and the
+episode store hands them to the next agent that works near them. There is no memory file of
+your own.
 
 `hx complete <outcome>` is your **last action**. Nothing after it. It prints
 `HX-COMPLETE <id> <outcome>` as its last line, and that line, in your transcript, is what
@@ -331,7 +333,7 @@ better than forcing a `done` that is not true.
   State the question and the options in `## Open decision`, with what each one costs.
 - `exhausted` — the task was too large. Say where the natural split is.
 
-All three keep everything: your `## Tasks`, your step state, your memory, your workdir, your
+All three keep everything: your `## Tasks`, your step state, your workdir, your
 logs. The Partner resumes you with an addendum appended to your goal, and you pick up exactly
 where you stopped. You are not restarted.
 
@@ -398,7 +400,7 @@ differ from a goal-file dispatch:
 
 ## What is not yours
 
-`config/` other than the part of your own `AGENTS.md` below the header; `companion/`; `logs/`,
+`config/`; `companion/`; `logs/`,
 `state/`, `run/` and `archive/`; `tasks.json`; and every work item except your own `-working`
 file.
 

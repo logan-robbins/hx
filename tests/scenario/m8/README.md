@@ -11,14 +11,15 @@ chat.md              what the human types, turn by turn, and what a correct repl
 orders/eng-001.md    --upper
 orders/eng-002.md    --lang, and the decision it must stop on
 orders/eng-002.addendum.md   the human's answer, as the Partner should write it
-config/eng-001/AGENTS.md     the two personas, header and all
-config/eng-002/AGENTS.md
+config/eng-001/harness.json  the two workers: role, purpose, and a {{workdir}} to fill
+config/eng-002/harness.json
 expected/NN-*.txt    the `hx board` text at each observation point below
 repo/                the product repo, with two tripwires that must never load
 ```
 
 `../test_m8_pack.py` holds it to all of this: every order parses with `hx.orders.parse_order`
-(the function `hx dispatch` validates with), both personas carry `## UPDATES BELOW ONLY`, the
+(the function `hx dispatch` validates with), both workers' `harness.json` validate with a real
+`purpose`, the
 fixture repo runs and does *not* already do the work, no cut feature survives anywhere in the
 pack, and — the part that matters most — each `expected/` file is compared against what the
 real `hx board` prints for an instance built in that state. None of the board text below is
@@ -74,7 +75,7 @@ inputs to the run, not a directory the instance keeps.
 
 `eng-002` builds everything that does not depend on the open question, commits it, writes the
 question and both options into `## Open decision`, and runs `hx complete decision`. No checks
-run for `decision`. Its logs, step state, `## Tasks`, memory and workdir stay exactly as they
+run for `decision`. Its logs, step state, `## Tasks` and workdir stay exactly as they
 are.
 
 **This is scripted, not emergent.** `orders/eng-002.md` tells the worker in as many words to
@@ -150,7 +151,7 @@ export HX_CLAUDE_BIN=<real claude>         # M8 is a live run; the fake cannot t
 hx install --root "$HARNESS_ROOT"
 #   stops with exit 4 → write seed/token (mode 0600) → run it again
 cp -R ./repo <scratch>/greet              # the workdir; hx does not create it
-cp -R config/eng-001 config/eng-002 "$HARNESS_ROOT/config/"   # the personas in this pack
+cp -R config/eng-001 config/eng-002 "$HARNESS_ROOT/config/"   # the two workers in this pack
 ```
 
 `hx install` creates no repository, no worktree and no branch: a worker's `workdir` is a
@@ -158,10 +159,10 @@ directory somebody chose, and here that is a copy of `./repo`. Both workers poin
 one, which is what makes the dependency real — `eng-002` reads the `greet.py` that `eng-001`
 left.
 
-The two `config/<id>/` directories are the ones in this pack, not `templates/worker/`: their
-personas are part of the scenario. Each needs a `harness.json` with `workdir` set to that copy,
-and a `SUBAGENTS.md`; copy them from `templates/worker/` and substitute, or take the ones the
-Partner would have written.
+The two `config/<id>/harness.json` are the ones in this pack, not `templates/worker/`: their
+`purpose` paragraphs are part of the scenario, and each worker's persona is rendered at launch
+from `personas/backend-engineer/AGENTS.md` plus that purpose. Replace `{{workdir}}` in each with
+that copy's absolute path; there is no per-id `AGENTS.md` to copy.
 
 The order files stay wherever you put them and are passed to `hx dispatch` by path. Dispatch
 reads each one, folds it into the work item, and **deletes it**; the instance keeps no
@@ -209,5 +210,5 @@ anything: the point is that the agent reached `hx complete` under its own `/goal
 ### Until then
 
 `../test_m8_pack.py` checks everything that does not need a live agent: every order parses with
-the function `hx dispatch` validates with, the personas, the fixture repo, that no cut feature
+the function `hx dispatch` validates with, the worker configs, the fixture repo, that no cut feature
 survives, and all seven board states — built directly and compared against the real `hx board`.

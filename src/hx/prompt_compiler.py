@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 from . import compile as legacy, store
+from .persona import LEGACY_HEADER
 from .config_harness import load_harness, NO_SYSTEM_PROMPT_FLAVORS
 from .continuity_store import canonical, digest
 from .errors import ValidationError
@@ -32,7 +33,9 @@ def _prefix(path, *, required=False):
             size += len(line)
             if size > SOURCE_BYTES:
                 raise ValidationError(f"prompt source exceeds 64 KiB before its memory boundary: {path}")
-            if path.name == "AGENTS.md" and line.rstrip(b"\r\n") == legacy.HEADER.encode():
+            # A persona installed before the learnings were the memory channel still ends
+            # at the old header; nothing below it is prompt.
+            if path.name == "AGENTS.md" and line.rstrip(b"\r\n") == LEGACY_HEADER.encode():
                 break
             chunks.append(line)
     try:

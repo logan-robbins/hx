@@ -3,8 +3,8 @@
 Every agent in an instance pays for the same lessons unless something carries them across:
 the wrong assumption that cost an hour, the correction a reviewer had to make, the gate that
 passed on a subset and failed in CI. hx has places for most of what an agent knows, and all of
-them are deliberately sharded — the goal, the work item, the memory below the header, the
-episode store are each one agent's, one dispatch's, one role's. A lesson owed to everyone does
+them are deliberately sharded — the goal, the work item, the step state, the episode store are
+each one agent's, one dispatch's, one role's. A lesson owed to everyone does
 not belong in any of them. It belongs in one place every agent carries, and that place must
 not grow with duplicates or it stops being read.
 
@@ -182,8 +182,9 @@ kind of information belongs.
 
 - Not episode memory (`hx memory`): that is what one agent worked out, searchable, recency-
   weighted, sharded by role. Learnings are rules, few, and carried whole.
-- Not the agent's memory below the header: that is how *this* codebase is laid out for *this*
-  agent. A learning is a category of mistake, with the one-off detail confined to Evidence.
+- Not a per-agent notebook. There is none: what one agent worked out about a codebase is a
+  rule for every agent of its role (`--role`), with the one-off detail confined to Evidence,
+  or it is step state, which the episode store already keeps.
 - Not a journal. A proposal that is a story rather than a Signal/Check/Evidence rule is
   rejected with a `--why`, and the proposer is told.
 - Not a place for status, definitions-as-prose or checklists. A definition becomes a rule

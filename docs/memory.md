@@ -9,6 +9,12 @@ them.
 It is an accelerator and never a precondition. Nothing in hx fails, blocks or slows down because
 memory is broken, empty, or not installed.
 
+It is one of two places a later agent learns from an earlier one, and there is no third: no
+agent keeps a memory file of its own. What was *done* — steps, dead ends, commits — is an
+episode, found by similarity. What was *learned* — a rule the next agent of the role should
+have had — is a learnings proposal (`hx learn propose --role <role>`, docs/learnings.md),
+reviewed once and carried whole in every system prompt of that role.
+
 ## What is in it
 
 One **episode** per boundary, four kinds:

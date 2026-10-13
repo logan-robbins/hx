@@ -19,8 +19,11 @@ Sections, in the order spec 07.3 fixes them:
                      persona is injected at launch and carrying it here too would spend
                      context for nothing. Rendered live from the sources, so it is the
                      same text `start.sh` would pass as a system prompt
-  1. Memory        — `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream),
-                     or `config/<id>/SUBAGENTS.md` whole (subagent streams)
+  1. Who your subagents are — `config/<id>/SUBAGENTS.md` whole, subagent streams only.
+                     There is no per-agent memory section: what one agent learned
+                     reaches every agent of its role as a learnings rule (the persona's
+                     `hx:learnings` region, `hx learn propose --role`), and what it did is
+                     its step state and the episode store (4, 4b)
   2. Task          — the `## Goal` section of the Work Item, with the addenda `hx resume`
                      appended to it
   3. Tasks         — the work item's `## Tasks` section (main stream only)
@@ -54,7 +57,6 @@ from .workitems import (
     split_frontmatter_text,
 )
 
-HEADER = "## UPDATES BELOW ONLY"
 MAIN_SUFFIX = "-main"
 
 #: Written where a section has nothing to show, so the agent sees the section exists and is
@@ -107,19 +109,8 @@ def invariants(root: Path) -> tuple[str | None, str]:
     return _relative(root, path), path.read_text().strip("\n")
 
 
-def memory(root: Path, item_id: str, stream: str) -> tuple[str, str]:
-    """Section 1. The agent's own long-term memory, or the subagent identity file."""
-    if is_main_stream(item_id, stream):
-        path = root / "config" / item_id / "AGENTS.md"
-        if not path.is_file():
-            return _relative(root, path), ""
-        text = path.read_text()
-        if HEADER not in text:
-            # Without the header hx cannot tell memory from persona, and the persona must
-            # never reach this file (spec 02 Identity). Nothing is safer than nothing.
-            return _relative(root, path), ""
-        return _relative(root, path), text.split(HEADER, 1)[1].strip("\n")
-
+def subagents(root: Path, item_id: str) -> tuple[str, str]:
+    """Section 1, subagent streams only: what this agent's subagents are told."""
     path = root / "config" / item_id / "SUBAGENTS.md"
     if not path.is_file():
         return _relative(root, path), ""
@@ -477,9 +468,9 @@ def compose_text(
         parts.append(_section("Persona", persona_source, persona_text))
 
     partner = item_id == PARTNER and main
-    if not partner:
-        source, text = memory(root, item_id, stream)
-        parts.append(_section("Memory" if main else "Who your subagents are", source, text))
+    if not main:
+        source, text = subagents(root, item_id)
+        parts.append(_section("Who your subagents are", source, text))
 
     source, text = task(root, item_id, None if main else (subagent_prompt or ""))
     parts.append(_section("Task", source, text))

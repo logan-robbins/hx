@@ -13,7 +13,7 @@ README.md                   this file
 chat.md                     three turns, and the two ways this can pass
 orders/eng-001.md           add --json, and the contradiction
 orders/eng-001.addendum.md  the human's answer
-config/eng-001/AGENTS.md    a persona that says what to do with an order that contradicts itself
+config/eng-001/harness.json a purpose that says what to do with an order that contradicts itself
 expected/01..04-*.txt       the hx board text at four observation points
 ```
 
@@ -104,5 +104,5 @@ never tests whether it would be reached.
 ## What this pack does not do
 
 No second worker, no subagents, no seams. All of those are m8's. Keeping this one
-small is what makes it cheap enough to run on every prompt change to `config/<id>/AGENTS.md` or
+small is what makes it cheap enough to run on every prompt change to a role persona, a `purpose` or
 to the `hx-worker` skill, which is where the behaviour under test actually lives.

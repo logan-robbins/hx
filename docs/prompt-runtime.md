@@ -70,11 +70,11 @@ access and a companion because their decisions depend on current contracts, proo
 inputs, and unresolved outcomes. The QA persona and companion also ship in the
 existing role locations so the normal configuration validator accepts `qa-engineer`.
 
-The shared legacy compiler now resolves configured identity variables and removes
-exact copied role blocks, including known previous generated role versions, without
-removing custom policy sentences. It retains active legacy state below the old
-header until the coordinated migration. Planned compilation reads only the prefix
-of legacy `AGENTS.md`, so generated memory does not enter its prompt artifacts.
+Identity variables resolve from validated configuration (`hx.compile.expand_identity`), and
+exact copies of a shared source are removed from operator text without removing custom policy
+sentences (`strip_known_blocks`). There is no memory below a header any more: a persona an
+older hx installed still ends at `## UPDATES BELOW ONLY`, and the readers stop there
+(`hx.persona.LEGACY_HEADER`), so nothing below it enters a prompt.
 
 ## Artifacts and delivery
 

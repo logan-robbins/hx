@@ -23,8 +23,10 @@ its place.
 paragraph becomes `purpose` while that is still the placeholder, anything else the file held
 that no source already says (the agent's memory below `## UPDATES BELOW ONLY`, promoted
 directives, a per-id paragraph `purpose` already replaced) becomes one pending text proposal the
-Partner reviews with `hx learn pending`, and the file is removed. `hx install`, `hx up`,
-`hx launch` and `hx restart` run it; once the file is gone it does nothing.
+Partner reviews with `hx learn pending`, and the file is removed. The Partner keeps its file —
+it is its persona — and loses only the old header and whatever was below it, which becomes a
+proposal the same way. `hx install`, `hx up`, `hx launch` and `hx restart` run it; once nothing
+is left to move it does nothing.
 """
 
 from __future__ import annotations
@@ -49,7 +51,8 @@ from .errors import NotFound, ValidationError
 from .ids import ID_RE, PARTNER
 
 #: The line that split persona from memory before the learnings were the memory channel.
-#: Only `migrate` and the source readers still look for it, to cut a file written then.
+#: Nothing writes it. Only `migrate` and the source readers (here and `prompt_compiler`) still
+#: look for it, to cut a file an older hx installed.
 LEGACY_HEADER = "## UPDATES BELOW ONLY"
 
 #: In place of a role persona that does not exist.
@@ -201,14 +204,17 @@ def _unsaid(text: str, known: set[str]) -> str:
 def migrate(root: Path, item_id: str, *, env=None) -> dict | None:
     """Move a worker's `config/<id>/AGENTS.md` into the sources that replace it, then remove it.
 
-    Returns None when there is nothing to migrate (the Partner keeps its persona file).
+    Returns None when there is nothing to migrate. The Partner keeps its persona file and loses
+    only the old header (`_migrate_partner`).
     """
     from . import learn
     from .config_harness import purpose_text
 
     root = Path(root)
+    if item_id == PARTNER:
+        return _migrate_partner(root, env=env)
     agents = root / "config" / item_id / "AGENTS.md"
-    if item_id == PARTNER or not agents.is_file():
+    if not agents.is_file():
         return None
     text = agents.read_text()
     upper, found, lower = text.partition(LEGACY_HEADER)
@@ -252,6 +258,33 @@ def migrate(root: Path, item_id: str, *, env=None) -> dict | None:
     return {"id": item_id, "purpose_moved": moved, "proposal": proposal}
 
 
+def _migrate_partner(root: Path, *, env=None) -> dict | None:
+    """`config/partner/AGENTS.md` written by an older hx: the persona above the old header
+    stays (without stamped regions), and anything below it becomes one text proposal scoped
+    to the Partner. The Partner's working memory is `PARTNER.md`; this file is persona only."""
+    from . import learn
+
+    path = root / "config" / PARTNER / "AGENTS.md"
+    if not path.is_file():
+        return None
+    text = path.read_text()
+    upper, found, lower = text.partition(LEGACY_HEADER)
+    if not found:
+        return None
+    values = identity_values(root, PARTNER)
+    _, known_lower = _known(root, values)
+    memory = _unsaid(lower, known_lower)
+    proposal = None
+    if memory:
+        proposal = learn.propose_text(
+            root, text=f"### Memory below the old header\n\n{memory}", author=PARTNER,
+            role=values["role"], source=f"migrated from config/{PARTNER}/AGENTS.md", env=env,
+        )["id"]
+    kept = re.sub(r"\n{3,}", "\n\n", REGION_RE.sub("", upper)).strip("\n") + "\n"
+    store.atomic_write_text(path, kept)
+    return {"id": PARTNER, "purpose_moved": False, "proposal": proposal, "kept": True}
+
+
 def migrate_all(root: Path, *, env=None) -> list[dict]:
     """`migrate` for every `config/<id>/`; only the ids that had something to move."""
     directory = Path(root) / "config"
@@ -272,7 +305,10 @@ def migrate_all(root: Path, *, env=None) -> list[dict]:
 
 
 def describe_migration(result: dict) -> str:
-    parts = [f"config/{result['id']}/AGENTS.md removed"]
+    if result.get("kept"):
+        parts = [f"config/{result['id']}/AGENTS.md lost its `{LEGACY_HEADER}` header"]
+    else:
+        parts = [f"config/{result['id']}/AGENTS.md removed"]
     if result["purpose_moved"]:
         parts.append("its per-id paragraph is now harness.json `purpose`")
     if result["proposal"]:

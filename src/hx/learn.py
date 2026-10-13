@@ -5,9 +5,10 @@ for: what tripped an agent up, written so the next agent recognises it (**Signal
 it mechanically (**Check**), and can see where it came from (**Evidence**). The categories are
 fixed (`CATEGORIES`): a rule is filed by the kind of mistake it prevents, the file name says
 which, and no agent invents a category. The learnings are deliberately apart from everything hx
-shards per agent — the goal, the work item, the memory below the header, the episode store —
-because a correction one agent had to make is owed to every agent, and a thing owed to
-everyone lives in one place or it is lost.
+shards per agent — the goal, the work item, the step state, the episode store — because a
+correction one agent had to make is owed to every agent of its kind, and a thing owed to many
+lives in one place or it is lost. There is no per-agent memory file: this is where a lesson
+goes.
 
 Every rule reaches every agent it applies to, whole: `hx persona` renders them into the persona,
 which the adapters pass as the system prompt, so they are present at every start and after every

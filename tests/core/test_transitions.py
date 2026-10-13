@@ -140,9 +140,8 @@ def test_dispatching_2_of_20_ids_changes_exactly_2(instance, hx, launched, goals
         (config / "harness.json").write_text(
             json.dumps({"id": item_id, "pod": "engineers", "role": "engineer",
                         "model": "claude-opus-5", "effort": "high",
-                        "workdir": f"wt/{item_id}"})
+                        "workdir": f"wt/{item_id}", "purpose": "persona"})
         )
-        (config / "AGENTS.md").write_text("persona\n\n## UPDATES BELOW ONLY\n")
         (instance / "wt" / item_id).mkdir(parents=True, exist_ok=True)
         ensure_work_item(instance, item_id)
         # Prior-dispatch logs and state, so the archive step has something to move.

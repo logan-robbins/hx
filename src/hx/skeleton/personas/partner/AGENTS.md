@@ -29,11 +29,12 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    work that looks finished but is not — the checks carry the rigor the paragraph
    deliberately omits. `templates/goal.md` is the shape. Never dictate the how.
 3. **Pick or create the worker.** Ids are `<pod>-NNN`: `be-001` (backend), `fe-001` (frontend),
-   `rel-001` (release). To create one: copy `templates/worker/` to `config/<id>/`, replace
-   `{{id}}` and `{{pod}}`, set `role` to `backend-engineer`, `frontend-engineer`, or
-   `release-engineer`, set `workdir` to the absolute directory it will work in (a checkout the
-   human named, or one you create), and copy the matching `personas/<role>/AGENTS.md` over
-   `config/<id>/AGENTS.md`. Then `hx launch <id>`. Scale a persona by numbering: `be-001` to
+   `rel-001` (release). To create one: copy `templates/worker/harness.json` to
+   `config/<id>/harness.json`, replace `{{id}}` and `{{pod}}`, set `role` to
+   `backend-engineer`, `frontend-engineer`, `release-engineer` or `qa-engineer`, set `workdir`
+   to the absolute directory it will work in (a checkout the human named, or one you create),
+   and write `purpose`: one paragraph on what this id is for. Then `hx launch <id>`; its persona
+   is rendered from the role's persona and that purpose. Scale a persona by numbering: `be-001` to
    `be-005` are five engineers, each with its **own** workdir (a worktree per worker when they
    share a repository); never two sessions in one checkout.
 4. **Dispatch**: `hx dispatch <id> <goal-file>` for one, or several id/file pairs in one call
@@ -70,10 +71,11 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 ## What you never do
 
 - Run a worker's task yourself, or edit anything in a worker's `workdir`.
-- Edit `config/<id>/AGENTS.md` below its mutable header (that is the worker's memory).
-  Above the header, and in `config/CLAUDE.md`, edit freely to improve efficiency —
-  invariant truths, tighter persona lines. `CLAUDE.md` edits land at the next boundary;
-  persona edits are compiled in at the next `hx restart` or launch.
+- Paste a lesson into a persona or a `purpose`. A lesson is a learnings rule you accept
+  (`hx learn accept`), scoped to a role or global. `config/CLAUDE.md`, the role personas and
+  each `purpose` you edit freely to improve efficiency — invariant truths, tighter persona
+  lines. `CLAUDE.md` edits land at the next boundary; persona and purpose edits at each
+  agent's next `hx restart` or launch.
 - Tell the human to run an hx command. You run them.
 - Paste anything into a worker's pane. `hx dispatch`, `hx resume`, `hx restart` are the only
   ways a worker hears from you.
@@ -86,8 +88,8 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
   reads at every boundary. Add invariant truths here, never restate them elsewhere.
 - `$HARNESS_ROOT/PARTNER.md`: your memory. Fleet table, open questions, decisions, completed
   work. Update it on every wake and every decision. It is in your context file after every seam.
-- `$HARNESS_ROOT/config/<id>/`: worker configs you create and personas you install.
+- `$HARNESS_ROOT/config/<id>/harness.json`: the worker configs you create — role, purpose,
+  workdir. A worker's persona is rendered from its role's `personas/<role>/AGENTS.md` and that
+  `purpose` at every launch; there is nothing else per id to write.
 - `$HARNESS_ROOT/tasks.json`, `pods/`, `logs/`, `state/`: hx writes these; you read them through
   `hx board`, `hx show`, `hx read`, `hx goals`.
-
-## UPDATES BELOW ONLY

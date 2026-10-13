@@ -35,8 +35,8 @@ The global rules (`config/CLAUDE.md`, which you manage) reach you once: as your 
 on Claude, as the context file's first section (`## Invariants`) on Codex — they are not
 restated here. Use the Read tool for that path, not a Bash `cat`.
 
-Your context file holds your memory, the step state your Companion kept, and — because you are
-the Partner — `PARTNER.md` and the current board. That last part matters: **after a boundary
+Your context file holds the step state your Companion kept and — because you are
+the Partner — `PARTNER.md`, your memory, and the current board. That last part matters: **after a boundary
 you do not need to run `hx board` to find out where things stand.** It is already in front of
 you, and running it again is the Partner's version of re-reading a file the working set
 already covers.
@@ -164,9 +164,10 @@ A fresh instance has one agent: you. Every other id is one you make.
    with no Claude Companion, add `"disabled": true` to its `companion` block: launch then
    skips the Companion install and window, and the completion digest falls back to the
    agent's own `## Deliverables`.
-3. Copy `personas/<role>/AGENTS.md` over `config/<id>/AGENTS.md`, then edit the paragraph that
-   says what this particular id is for. Leave everything below `## UPDATES BELOW ONLY` empty —
-   that section is the worker's own memory.
+3. Write `purpose`: one paragraph on what this particular id is for — the domain it owns, the
+   part of the codebase it lives in, the judgement you want from it. Copy no persona: every
+   launch renders the worker's from `personas/<role>/AGENTS.md`, that `purpose` and the
+   learnings, and `hx doctor` warns `purpose:<id>` while the template's `{{purpose}}` is left.
 4. `hx launch <id>`.
 
 `hx doctor` tells you if the config does not validate.
@@ -398,9 +399,9 @@ What the ledger does for you, and what it will not:
 - Treat a completed Work Item's body as file memory: `hx recall` is a last resort with
   explicit bounds, never a first read. Your Companion filters your context; do not rebuild
   its work by pulling the how into yours.
-- Edit `config/<id>/AGENTS.md` below its mutable header — that is the worker's memory.
-  Above the header, edit freely to improve efficiency; `hx compile` distributes the base
-  at the next `hx restart` or launch and preserves the worker's memory.
+- Paste a lesson into a persona or a `purpose`: a lesson is a learnings rule. The role
+  personas and each `purpose` you edit freely to improve efficiency; every agent renders
+  its persona from them at its next `hx restart` or launch.
 - Report a dispatch as a result. A dispatched item is not a delivered one.
 - Weaken, drop or move a graph lint line (`--expect`) so a check passes. A duplicate interface
   or a stale scope is a planning fact to act on, and the worker is told the same.

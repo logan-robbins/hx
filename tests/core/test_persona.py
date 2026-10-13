@@ -245,9 +245,22 @@ def test_migration_keeps_distilled_directives_and_drops_stamped_regions(instance
     assert "Always run the importer twice." in text and "old rules" not in text
 
 
-def test_the_partner_is_not_migrated(instance):
-    assert persona.migrate(instance, "partner") is None
-    assert (instance / "config" / "partner" / "AGENTS.md").is_file()
+def test_the_partner_keeps_its_file_and_loses_only_the_old_header(instance):
+    path = instance / "config" / "partner" / "AGENTS.md"
+    assert persona.migrate(instance, "partner") is None, "a current Partner file has nothing to move"
+    assert path.read_text() == "You are the Partner.\n"
+    path.write_text("You are the Partner.\n\n<!-- hx:learnings begin (old) -->\nold\n<!-- hx:learnings end -->\n\n"
+                    "## UPDATES BELOW ONLY\n\nThe CI box needs `make deps` first.\n")
+    result = persona.migrate(instance, "partner")
+    assert result["kept"] is True and result["proposal"]
+    assert path.read_text() == "You are the Partner.\n", "persona kept, header, memory and regions gone"
+    proposal = learn.load_proposal(instance / "LEARNINGS", result["proposal"])
+    assert "`make deps` first" in proposal["text"] and proposal["scope"] == "partner"
+    assert proposal["author"] == "partner", "so the Partner cannot accept its own; the human decides"
+    assert "lost its `## UPDATES BELOW ONLY` header" in persona.describe_migration(result)
+    assert persona.migrate(instance, "partner") is None, "idempotent"
+    path.write_text("You are the Partner.\n\n## UPDATES BELOW ONLY\n")
+    assert persona.migrate(instance, "partner")["proposal"] is None, "an empty memory is no proposal"
 
 
 def test_a_text_proposal_is_accepted_only_with_the_reviewers_signal_and_check(instance):

@@ -24,10 +24,6 @@ from pathlib import Path
 
 from .errors import ValidationError
 
-#: The old persona/memory split. Nothing writes it; readers of files written before the
-#: learnings became the memory channel stop at it (`hx.persona.migrate`, `prompt_compiler`).
-HEADER = "## UPDATES BELOW ONLY"
-
 GLOBAL_BEGIN = "<!-- hx:global begin (from config/CLAUDE.md — edit the source, not this copy) -->"
 GLOBAL_END = "<!-- hx:global end -->"
 ROLE_BEGIN_TMPL = "<!-- hx:role begin (from personas/{role}/AGENTS.md — edit the source, not this copy) -->"

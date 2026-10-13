@@ -59,16 +59,13 @@ That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
    (Muse contributor model with a Haiku Companion); a Meta worker with no Companion sets
    `"disabled": true` in its `companion` block, and its completion digest then falls back to
    the agent's own `## Deliverables`.
-4. **Copy the persona over the template's `AGENTS.md`:**
-
-   ```bash
-   cp "$HARNESS_ROOT/personas/backend-engineer/AGENTS.md" "$HARNESS_ROOT/config/be-001/AGENTS.md"
-   ```
-
-   Then substitute `{{id}}`/`{{pod}}` in it too, and edit the paragraph that says what *this*
-   id is for. That paragraph is the whole difference between this agent and the next one.
-   **Leave everything below `## UPDATES BELOW ONLY` empty** — that section is the worker's own
-   memory, and it must start empty.
+4. **Write `purpose`** in `harness.json`: the paragraph that says what *this* id is for — the
+   domain it owns, the part of the codebase it lives in, the judgement you want from it. That
+   paragraph is the whole difference between this agent and the next one of its role. Copy no
+   persona: every launch renders `run/<id>/persona.md` from `personas/<role>/AGENTS.md`, this
+   `purpose` and the learnings, so an edit to the role persona reaches every worker of the role
+   at its next launch. `hx doctor` warns `purpose:<id>` while the template's `{{purpose}}` is
+   left.
 5. **Keep `SUBAGENTS.md`** from the template. It is what this worker's subagents are told, and
    it is delivered by hook rather than as a system prompt, so there is no copy of it anywhere
    else.
@@ -90,8 +87,8 @@ One command does all of this. None of it is optional and none of it is yours to 
   `hx-memory` for you; `hx-worker` and `hx-memory` for every worker; `hx-signoff` for release
   and QA engineers; `hx-conversion` only where `config/hx.json` names it in `skills` — and
   pre-seeds the home's `.claude.json` so no first-run wizard or trust dialog can stop a launch.
-- **`adapters/claude/start.sh`** derives `run/<id>/persona.md` from the part of
-  `config/<id>/AGENTS.md` **above** the header, reads `seed/token` in its own process and
+- **`adapters/claude/start.sh`** renders `run/<id>/persona.md` from its sources
+  (`python -m hx.persona`: the role persona, `purpose`, the learnings), reads `seed/token` in its own process and
   exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and execs the recorded binary (`config/claude.json`,
   re-recorded at every launch so the fleet runs the current release; `DISABLE_AUTOUPDATER=1`
   keeps a running session on one version) with
@@ -127,9 +124,9 @@ is enforced rather than merely recommended.
 
 **`personas/<role>/AGENTS.md`** — the shape of the three shipped ones, which are the reference:
 identity (who it is and where it runs), how work reaches it, how it works, which files are
-its own, and how it finishes. It must contain **exactly one** `## UPDATES BELOW ONLY` line,
-with the persona above it and nothing below. Read `personas/backend-engineer/AGENTS.md` before
-writing a new one; matching its shape matters more than matching its length.
+its own, and how it finishes. It is shared by every worker of the role and holds nothing about
+any one of them — that is each worker's `purpose`. Read `personas/backend-engineer/AGENTS.md`
+before writing a new one; matching its shape matters more than matching its length.
 
 **`companion/roles/<role>.md`** — the retention rules for this kind of agent: what its
 Companion keeps until the task completes, what it collapses, what it discards. The shipped
@@ -141,18 +138,17 @@ Then create workers from it exactly as in §1.
 
 ## 4. Updating a persona
 
-Edit `config/<id>/AGENTS.md` **above** the header whenever efficiency calls for it —
-tighter persona lines, corrected facts about that id's scope. `hx compile` distributes the
-base (global invariants plus role persona) on the next `hx restart` or launch and preserves
-everything else, so an above-header edit takes effect there — not immediately, and not
-mid-task. `config/CLAUDE.md` edits land sooner: every agent re-reads them at its next
-boundary.
+Each layer has one source, and you edit the source:
 
-**Never touch anything below the header.** That is the worker's own memory, written by it,
-about what it has learned. Editing it is writing false memories into a running agent.
+- what every worker of a role is — `personas/<role>/AGENTS.md`. It reaches every worker of the
+  role at its next `hx restart` or launch, existing ones included: nothing was copied;
+- what one worker is for — its `harness.json` `purpose`, same timing;
+- what every agent must hold — `config/CLAUDE.md`, re-read at every agent's next boundary;
+- what agents have learned — the learnings, through `hx learn accept`, never by hand.
 
-To change what *future* workers of a role get, edit `personas/<role>/AGENTS.md` instead;
-existing workers are unaffected, because their persona was copied at creation.
+None of it lands mid-task. A worker's lessons are proposals you review (`hx learn pending`),
+scoped to its role unless you widen them with `--global`; there is no per-worker memory file
+to edit or to protect.
 
 ## 5. Retiring a worker
 
@@ -164,9 +160,9 @@ tmux kill-session -t be-001
 `hx bench` only applies to a `complete` item. Kill the session when you are finished with the
 agent, not to interrupt it — killing mid-task loses the conversation, though nothing on disk.
 
-**Leave `config/<id>/` in place.** It holds that id's memory below the header, which is the
-accumulated value of everything it has ever done. Deleting it to "clean up" throws that away
-and cannot be undone. An idle worker costs nothing.
+**Leave `config/<id>/` in place.** Its `harness.json` is the id: role, purpose, workdir and
+the Companion's settings. An idle worker costs nothing, and what it learned is already in the
+learnings, not in its directory.
 
 ## 6. Never
 
@@ -174,9 +170,9 @@ and cannot be undone. An idle worker costs nothing.
   worker with an addendum.
 - **Paste into a worker's pane.** `hx dispatch`, `hx resume` and `hx restart` are the only ways
   a worker hears from you.
-- **Copy one worker's memory into another.** The section below the header is that agent's own
-  record of what it learned; transplanted, it is a set of confident claims about work the new
-  agent never did.
+- **Write a lesson into a persona or a `purpose`.** A lesson is a learnings proposal: reviewed
+  once, carried by every agent of the role, and removable. Prose pasted into a persona is none
+  of those.
 - **Hand-edit anything under `run/`, `state/`, `logs/` or `pods/`.** hx and the Companion own
   those. If a worker's state looks wrong, that is worth reporting, not patching.
 

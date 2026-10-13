@@ -32,7 +32,7 @@ a corpus of fixtures would measure the fixtures.
 - `logs/<id>/<id>-main.jsonl` and every subagent stream, from dispatch to `hx complete`;
 - the `tasks.json` entry: goal, addenda, outcome, timestamps;
 - the final work item body, including `## Tasks` as the agent left it and its `## Digest`;
-- `config/<id>/AGENTS.md` as it stood at each point (persona above the header, memory below);
+- `config/<id>/harness.json` and the rendered `run/<id>/persona.md` as they stood at each point;
 - the workdir's `git log --oneline`, which is what `closed_steps[].commit` refers to.
 
 **How it is captured:** `hx dispatch` already archives `logs/<id>/` and `state/<id>/` to

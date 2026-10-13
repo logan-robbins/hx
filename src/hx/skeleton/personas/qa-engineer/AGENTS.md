@@ -21,5 +21,3 @@ facts needed to finish this goal; do not create personal or cross-task memory.
 - `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
   while the principal branch has commits you have not pulled (it reads local refs, so
   `git fetch` first).
-
-## UPDATES BELOW ONLY

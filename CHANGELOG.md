@@ -92,6 +92,16 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     migrated or distilled text proposal is scoped to its agent's role, so what one worker
     learned reaches every worker of its role. `hx doctor` bounds `learnings-size` by the
     largest region any configured role renders. Existing rules have no `Role:` and stay global.
+  - The `## UPDATES BELOW ONLY` memory channel is gone. No agent keeps a memory file: a lesson
+    is a learnings proposal (scoped to the agent's role), and what an agent did is its step
+    state and the episode store. `hx compose` has no `## Memory` section (subagent streams
+    keep `## Who your subagents are`); the shipped personas, `config/CLAUDE.md`, the skills and
+    the docs no longer tell anyone to write below a header. **Existing instances:** a
+    `config/partner/AGENTS.md` with the old header keeps its persona and loses the header; what
+    was below it becomes a text proposal scoped to `partner` (authored as the Partner, so the
+    human decides it). An installed role persona that still ends at the header is read up to
+    it (`hx.persona.LEGACY_HEADER`). The scenario packs ship each worker as a `harness.json`
+    with its `purpose` instead of a per-id `AGENTS.md`.
 
 ### Fixed
 

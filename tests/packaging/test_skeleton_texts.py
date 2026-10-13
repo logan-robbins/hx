@@ -8,7 +8,8 @@ Constraints checked here, with the section each comes from:
 * goal-shaped examples: `## Goal`, `## Definition of done`, and a non-empty fenced ``bash``
   block under `### Checks` — spec 06, `CONTRACTS.md` "Goals", and what `hx dispatch` refuses
 * `templates/work-item.md`: the frontmatter keys and every body section of spec 06
-* every `AGENTS.md`: exactly one `## UPDATES BELOW ONLY` — spec 03, 04, guard rule 1
+* every `AGENTS.md`: a persona, and no `## UPDATES BELOW ONLY` — the memory header is retired;
+  a lesson is a learnings proposal (docs/learnings.md)
 * both `SKILL.md` files: valid frontmatter with `name` and `description` — spec 17.5 and
   code.claude.com/docs/en/skills
 
@@ -183,28 +184,18 @@ def test_the_skeleton_ships_agents_files():
 
 
 @pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_exactly_one_mutable_header(path):
+def test_agents_file_carries_no_memory_header(path):
+    """The whole file is persona: `hx persona` renders it into run/<id>/persona.md. There is no
+    memory below a header any more — a lesson is a learnings proposal."""
     lines = path.read_text().splitlines()
     hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-    assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected exactly 1"
+    assert hits == [], f"{path}: the retired `{MUTABLE_HEADER}` header on line(s) {hits}"
+    assert path.read_text().strip(), f"{path}: empty, so persona.md would be empty"
 
 
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_a_persona_above_and_room_below(path):
-    """Above the header is the persona `start.sh` copies to run/<id>/persona.md (spec 11);
-    below it is the agent's own memory, which travels in the context file (spec 03)."""
-    text = path.read_text()
-    above, header, _ = text.partition(MUTABLE_HEADER)
-    assert header, f"{path}: no `{MUTABLE_HEADER}` line"
-    assert above.strip(), f"{path}: nothing above the header, so persona.md would be empty"
-    # Below the header may be empty: it is the agent's own memory, and a freshly installed
-    # persona has none yet. What matters is that the header is there to divide the two.
-
-
-def test_every_shipped_persona_has_exactly_one_mutable_header():
-    """`personas/<role>/AGENTS.md` are the texts the Partner copies over `config/<id>/AGENTS.md`
-    when it creates a worker. `start.sh` refuses an AGENTS.md with no header, so a persona
-    missing one would be a worker that cannot launch."""
+def test_every_shipped_persona_is_persona_only():
+    """`personas/<role>/AGENTS.md` are what every launch renders a worker's persona from, shared
+    by every worker of the role. Nothing in one is about any single agent."""
     personas = sorted((SKELETON / "personas").iterdir())
     assert [p.name for p in personas] == [
         "backend-engineer", "frontend-engineer", "partner", "qa-engineer", "release-engineer",
@@ -212,9 +203,9 @@ def test_every_shipped_persona_has_exactly_one_mutable_header():
     for directory in personas:
         path = directory / "AGENTS.md"
         assert path.is_file(), f"{directory.name} has no AGENTS.md"
-        lines = path.read_text().splitlines()
-        hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-        assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected 1"
+        text = path.read_text()
+        assert MUTABLE_HEADER not in text, f"{path}: carries the retired memory header"
+        assert "below the header" not in text, f"{path}: still points at a memory section"
 
 
 def test_the_installed_partner_persona_is_the_shipped_one():
@@ -435,14 +426,13 @@ def test_the_fleet_skill_roles_match_the_personas_and_the_role_files():
         assert (SKELETON / "companion" / "roles" / f"{role}.md").is_file()
 
 
-def test_the_fleet_skill_protects_the_agents_own_memory():
-    """Below the header is the worker's memory. Editing it, or copying one worker's into
-    another, writes false memories into a running agent — the one irreversible mistake
-    available here."""
+def test_the_fleet_skill_sends_lessons_to_the_learnings():
+    """No worker keeps a memory file. What one learned is a proposal the Partner reviews into
+    the learnings of its role; the skill must say so, and must not send anyone to a header."""
     text = FLEET_SKILL.read_text()
-    assert "## UPDATES BELOW ONLY" in text
-    assert "below the header" in text
-    assert "memory" in text
+    assert "## UPDATES BELOW ONLY" not in text
+    assert "below the header" not in text
+    assert "hx learn pending" in text and "purpose" in text
 
 
 # --------------------------------------------------------------- the Companion skill

@@ -7,6 +7,7 @@ import pytest
 
 from hx import compile as compiler, prompt_compiler as prompts
 from hx.errors import ValidationError
+from hx.persona import LEGACY_HEADER
 
 FLAVORS = ("claude", "codex", "meta", "grok", "pi")
 ROLES = ("backend-engineer", "frontend-engineer", "release-engineer", "qa-engineer")
@@ -86,9 +87,9 @@ def test_release_and_qa_policies_keep_uncertainty_and_current_proof(instance):
 def test_operator_policy_is_preserved_and_generated_memory_is_not_read(instance, monkeypatch):
     configure(instance)
     agent = instance / "config" / "eng-001" / "AGENTS.md"
-    role = (instance / "personas" / "backend-engineer" / "AGENTS.md").read_text().split(compiler.HEADER)[0].strip("\n")
+    role = (instance / "personas" / "backend-engineer" / "AGENTS.md").read_text().split(LEGACY_HEADER)[0].strip("\n")
     policy = "Do not publish unless integration and approval are both recorded."
-    agent.write_text(role + "\n\n" + policy + "\n\n" + compiler.HEADER + "\n" + "OLD PERSONAL STATE " * 100000)
+    agent.write_text(role + "\n\n" + policy + "\n\n" + LEGACY_HEADER + "\n" + "OLD PERSONAL STATE " * 100000)
     global_path = instance / "config" / "CLAUDE.md"
     global_path.write_text(global_path.read_text() + "\n\nPreserve the customer's deployment region exactly.\n")
     result = prompts.build(instance, "eng-001")
@@ -128,7 +129,7 @@ def test_unknown_identity_variable_fails_before_a_prompt_is_delivered(instance):
 def test_operator_policy_is_not_mistaken_for_a_personal_memory_region(instance):
     configure(instance)
     policy = instance / "continuity" / "policy.md"
-    policy.write_text("Operator policy.\n" + compiler.HEADER + "\nDo not publish before integration passes.\n")
+    policy.write_text("Operator policy.\n" + LEGACY_HEADER + "\nDo not publish before integration passes.\n")
     assert "Do not publish before integration passes." in text(prompts.build(instance, "eng-001"))
 
 

@@ -7,8 +7,8 @@ entirely in being *true* — an goal that `hx dispatch` would refuse, or an expe
 So this module does two kinds of check:
 
 * **Structural**, always: every goal parses with `hx.goals.parse_goal` (the same function
-  `hx dispatch` uses), the `after` graph is acyclic and names real ids, every `AGENTS.md` has
-  its mutable header, the fixture repo's tripwires are intact, and `expected/` covers exactly
+  `hx dispatch` uses), the `after` graph is acyclic and names real ids, every worker's
+  `harness.json` validates with a real `purpose`, the fixture repo's tripwires are intact, and `expected/` covers exactly
   the steps the README's sequence table names — no more, no fewer.
 * **Live**, when tmux is available: for each of the eight steps, build a scratch instance in
   exactly the state the README says that step reaches, run the real `hx board`, and compare its
@@ -44,7 +44,6 @@ FIXTURE_REPO = PACK / "repo"
 
 sys.path.insert(0, str(REPO / "src"))
 
-MUTABLE_HEADER = "## UPDATES BELOW ONLY"
 WORKERS = ("eng-001", "eng-002")
 POD = "engineers"
 
@@ -91,8 +90,8 @@ def order_files() -> list[pathlib.Path]:
     return sorted(p for p in GOALS.glob("*.md") if not p.name.endswith(".addendum.md"))
 
 
-def agents_files() -> list[pathlib.Path]:
-    return sorted(CONFIG.rglob("AGENTS.md"))
+def config_files() -> list[pathlib.Path]:
+    return sorted(CONFIG.glob("*/harness.json"))
 
 
 def _ids(paths):
@@ -173,23 +172,16 @@ def test_the_orders_checks_dont_pre_decide_the_open_question():
 # ------------------------------------------------------------------- the identities
 
 
-def test_the_pack_ships_a_persona_for_each_worker():
-    assert [p.parent.name for p in agents_files()] == list(WORKERS)
+def test_the_pack_ships_a_config_for_each_worker():
+    assert [p.parent.name for p in config_files()] == list(WORKERS)
 
 
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_exactly_one_mutable_header(path):
-    lines = path.read_text().splitlines()
-    hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-    assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected exactly 1"
-
-
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_a_persona_above_and_room_below(path):
-    above, _, below = path.read_text().partition(MUTABLE_HEADER)
-    assert above.strip(), f"{path}: nothing above the header, so persona.md would be empty"
-    assert below.strip(), f"{path}: nothing below the header"
-    assert path.parent.name in above, f"{path}: the persona does not name its own id"
+@pytest.mark.parametrize("path", config_files(), ids=_ids(config_files()))
+def test_pack_config_is_a_worker_the_partner_would_write(path, tmp_path):
+    """Role, purpose and a workdir to fill: the persona is rendered from the role's persona
+    and this purpose at launch, so the pack carries no AGENTS.md of its own."""
+    data = packlib.assert_pack_config(path, tmp_path)
+    assert data["role"] == "backend-engineer"
 
 
 # ------------------------------------------------------------------ the fixture repo
@@ -281,7 +273,7 @@ def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path)
         pytest.skip("tmux is not on PATH; `hx board` cannot tell which sessions are live")
 
     root = tmp_path / "hx"
-    packlib.build_instance(root, states, worker_pod=POD)
+    packlib.build_instance(root, states, worker_pod=POD, pack_config=CONFIG)
     lines, stderr = packlib.real_board(root, states)
     expected = (EXPECTED / f"{stem}.txt").read_text().strip().splitlines()
     assert lines == expected, (

@@ -107,10 +107,12 @@ instead.
 
 ## 5. Personas
 
-The Partner installs a persona when it creates a worker, from `~/hx/personas/<role>/AGENTS.md`:
-`backend-engineer`, `frontend-engineer`, `release-engineer`. Each persona is the part above
-`## UPDATES BELOW ONLY`; the worker's own memory accumulates below it. Edit a persona only by
-telling the Partner what to change; it takes effect at that worker's next `hx restart`. The
+Every worker's persona is rendered at each launch from its role's
+`~/hx/personas/<role>/AGENTS.md` (`backend-engineer`, `frontend-engineer`, `release-engineer`,
+`qa-engineer`) plus the one paragraph in its `harness.json` `purpose` that says what that id is
+for; nothing is copied per worker. What a worker learns becomes a learnings rule for its role
+(§6), not a note in a file of its own. Edit a persona only by telling the Partner what to
+change; it takes effect at each worker's next `hx restart`. The
 Partner's own persona is `~/hx/config/partner/AGENTS.md`; the Companions' rules are
 `~/hx/companion/BASE.md` and `~/hx/companion/roles/<role>.md`.
 

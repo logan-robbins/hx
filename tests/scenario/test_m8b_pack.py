@@ -50,6 +50,17 @@ def _ids(paths):
     return [str(p.relative_to(PACK)) for p in paths]
 
 
+def _purpose() -> str:
+    """The worker's `purpose`: the per-id paragraph its rendered persona carries."""
+    import json
+
+    return json.loads((CONFIG / WORKER / "harness.json").read_text())["purpose"]
+
+
+def test_the_pack_config_is_a_worker_the_partner_would_write(tmp_path):
+    packlib.assert_pack_config(CONFIG / WORKER / "harness.json", tmp_path)
+
+
 # ------------------------------------------------------------------ the pack exists
 
 
@@ -127,12 +138,11 @@ def test_the_checks_do_not_resolve_the_ambiguity():
 def test_nothing_in_the_pack_tells_the_worker_to_reach_decision():
     """m8's goal says `hx complete decision` in as many words. m8b must not, anywhere the
     worker can see — not in the goal, and not in its persona."""
-    worker_visible = [
-        GOALS / f"{WORKER}.md",
-        CONFIG / WORKER / "AGENTS.md",
-    ]
-    for path in worker_visible:
-        text = path.read_text()
+    worker_visible = {
+        GOALS / f"{WORKER}.md": (GOALS / f"{WORKER}.md").read_text(),
+        CONFIG / WORKER / "harness.json": _purpose(),
+    }
+    for path, text in worker_visible.items():
         assert "hx complete decision" not in text, f"{path} instructs the decision outcome"
         assert "complete decision" not in text, f"{path} instructs the decision outcome"
 
@@ -141,7 +151,7 @@ def test_the_persona_teaches_the_behaviour_without_naming_the_answer():
     """The behaviour under test lives in the persona and the hx-worker skill, so the persona
     has to say what to do with a self-contradicting goal — in general terms, not about this
     goal."""
-    text = (CONFIG / WORKER / "AGENTS.md").read_text()
+    text = _purpose()
     assert "## Open decision" in text
     assert "--json" not in text, "the persona must not know about this particular goal"
     assert "greeting" not in text
@@ -187,7 +197,7 @@ def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path)
         pytest.skip("tmux is not on PATH; `hx board` cannot tell which sessions are live")
 
     root = tmp_path / "hx"
-    packlib.build_instance(root, states, worker_pod=POD)
+    packlib.build_instance(root, states, worker_pod=POD, pack_config=CONFIG)
     lines, stderr = packlib.real_board(root, states)
     expected = (EXPECTED / f"{stem}.txt").read_text().strip().splitlines()
     assert lines == expected, (

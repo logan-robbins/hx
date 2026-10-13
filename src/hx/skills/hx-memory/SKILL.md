@@ -99,8 +99,9 @@ It is not authoritative about the present. An episode is what was true when an a
 the repository is what is true now. Use memory to know where to look and what not to repeat —
 then verify against the tree before you act on it.
 
-It is also not your own memory. What you want to carry into your *next* task goes below
-`## UPDATES BELOW ONLY` in your `AGENTS.md`, as always.
+It is also not where a lesson goes. A rule the next agent of your role should have had is
+`hx learn propose --role <your role>`; the episode store holds what was done, not what was
+learned.
 
 ## Two places it does not reach
 

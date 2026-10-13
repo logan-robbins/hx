@@ -1,7 +1,7 @@
 """`hx compose` and the `context` hook — milestone M2 (spec 02, 07.3, 09.1, 13).
 
 M2 pass criteria: on `startup`, `resume`, `clear` and `compact` the hook prints one path line;
-the file holds memory, task, `## Tasks`, step state and open handles, in that order, and no
+the file holds task, `## Tasks`, step state and open handles, in that order, and no
 persona on flavors whose CLI injects one (the persona rides section 0 everywhere else);
 the Partner's file holds `PARTNER.md` and a live board pointer.
 """
@@ -17,7 +17,6 @@ import pytest
 from .conftest import PERSONA, clean_env, wait_for
 
 SECTION_GOAL = [
-    "## Memory",
     "## Task",
     "## Tasks",
     "## Step state",
@@ -155,7 +154,7 @@ def test_the_persona_rides_the_context_file_without_system_prompt_injection(
     assert "\n## Persona\n" in text
     assert "_source: `hx persona eng-001`_" in text
     assert PERSONA.strip().split("\n")[0] in text
-    assert text.index("## Persona\n") < text.index("## Memory\n"), "persona reads first"
+    assert text.index("## Persona\n") < text.index("## Task\n"), "persona reads first"
 
 
 def test_no_persona_section_where_the_cli_injects_it(instance, hx, launched, goals):
@@ -185,7 +184,7 @@ def test_the_persona_section_is_the_rendered_persona_without_the_invariants(inst
     role.write_text("# {{id}}\n\nROLE BODY for {{id}}.\n\n## How you work\n\nCarefully.\n")
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
-    section = text.split("## Persona\n", 1)[1].split("## Memory\n", 1)[0]
+    section = text.split("## Persona\n", 1)[1].split("## Task\n", 1)[0]
     assert "ROLE BODY for eng-001." in section and PERSONA.strip().split("\n")[0] in section
     assert LEARNINGS_BEGIN in section and GLOBAL_BEGIN not in section
     assert persona_mod.render(instance, "eng-001").strip("\n") in section
@@ -222,8 +221,24 @@ def test_each_section_names_the_file_it_came_from(instance, hx, launched, goals)
     dispatch_working(instance, hx, goals)
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
-    assert "_source: `config/eng-001/AGENTS.md`_" in text
     assert "_source: `pods/engineers/eng-001-working.md`_" in text
+    assert "config/eng-001/AGENTS.md" not in text
+
+
+def test_there_is_no_memory_section_and_a_legacy_file_never_leaks(instance, hx, launched, goals):
+    """No agent keeps a memory file: a lesson is a learnings proposal, and what an agent did
+    is step state and episodes. A `config/<id>/AGENTS.md` an older hx left (before `hx launch`
+    migrates it) reaches nothing."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    (instance / "config" / "eng-001" / "AGENTS.md").write_text(
+        "persona\n\n## UPDATES BELOW ONLY\n\nOLD PRIVATE NOTE\n")
+    assert hx("compose", "eng-001").returncode == 0
+    text = context_file(instance, "eng-001").read_text()
+    assert "\n## Memory\n" not in text and "OLD PRIVATE NOTE" not in text
+    assert "## Who your subagents are" not in text, "main stream only carries its own sections"
 
 
 def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launched, goals):

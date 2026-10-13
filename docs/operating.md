@@ -180,7 +180,7 @@ tmux kill-server                 # the lot, Partner included
 ```
 
 Nothing is lost by killing a session. The work item, the goal, the step state, the logs and
-the agent's memory are all files; `hx launch <id>` brings a worker back, and a `working` item
+the learnings are all files; `hx launch <id>` brings a worker back, and a `working` item
 gets its `/goal` again on the way up. What you do lose is the conversation the agent was in the
 middle of, so prefer stopping between completions when you have the choice.
 
@@ -202,9 +202,8 @@ the Partner does with `hx restart <id>`.
 
 The Partner's instructions live in two files you can read, and edit if you mean to:
 
-- `$HARNESS_ROOT/config/partner/AGENTS.md` — its persona, above the `## UPDATES BELOW ONLY`
-  line. It reaches the Partner as system prompt at every launch. Below that line is the
-  Partner's own memory; leave it alone.
+- `$HARNESS_ROOT/config/partner/AGENTS.md` — its persona. It reaches the Partner as system
+  prompt at every launch, followed by the learnings.
 - `$HARNESS_ROOT/PARTNER.md` — what it has learned: the fleet, open questions, decisions,
   what has shipped. Read this when you want to know what the Partner thinks the state of the
   world is.

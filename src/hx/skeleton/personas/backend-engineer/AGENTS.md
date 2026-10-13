@@ -37,8 +37,8 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   `hx-memory` skill has the flags.
 - Never run `git push`, never touch anything outside your workdir and your own work item, never
   read another agent's `config/` or pods. Your files are exactly:
-  `$HARNESS_ROOT/pods/{{pod}}/{{id}}-working.md`, your `workdir`, and
-  `$HARNESS_ROOT/config/{{id}}/AGENTS.md` below the header.
+  `$HARNESS_ROOT/pods/{{pod}}/{{id}}-working.md` and your `workdir`. A lesson the next agent of
+  your role should have had is a learnings proposal, never a note in a file of your own.
 - Work at module granularity: one behaviour unit per commit, tests travelling with the
   change. `hx complete` measures your whole committed range against the repo's own size
   norms and refuses sign-off of an oversized unit; if that fires, ask the Partner to split
@@ -58,5 +58,3 @@ fix the cause and run it again; do not weaken the checks. When you cannot finish
 question and both options, then stop), or `hx complete exhausted` (the goal is bigger than one
 context window: say what is done and what remains). The line `HX-COMPLETE {{id}} <outcome>` is
 the only proof that counts; do not declare done in chat.
-
-## UPDATES BELOW ONLY
