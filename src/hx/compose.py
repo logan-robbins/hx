@@ -7,14 +7,17 @@ and never a second file.
 
 Sections, in the order spec 07.3 fixes them:
 
-  0. Invariants    — `config/CLAUDE.md` whole: the global rules the Partner manages.
-                     One copy, read everywhere; personas, skills, and templates point
-                     here instead of restating them
+  0. Invariants    — `config/CLAUDE.md` whole: the global rules the Partner manages,
+                     only on the flavors whose invariants channel is the context file
+                     (`config_harness.INVARIANTS_CHANNEL`: Meta and Codex, which take no
+                     system prompt). Claude already loaded the same file as its home's
+                     native CLAUDE.md, and Pi and Grok carry it in their persona; a
+                     second copy here would spend the same tokens again at every boundary
   0. Persona       — `config/<id>/AGENTS.md` above `## UPDATES BELOW ONLY`, main stream
                      only, and only on flavors whose CLI takes no system prompt
                      (`NO_SYSTEM_PROMPT_FLAVORS`): everywhere else the persona is
                      injected at launch and carrying it here too would spend context
-                     for nothing. The stamped `hx:global` region is stripped (the
+                     for nothing. A stamped `hx:global` region is stripped (the
                      Invariants section carries that source); `hx:role` and per-id
                      text stay
   1. Memory        — `config/<id>/AGENTS.md` below `## UPDATES BELOW ONLY` (main stream),
@@ -42,7 +45,7 @@ import re
 from pathlib import Path
 
 from . import board as board_mod, compile as compile_mod, store, streams
-from .config_harness import NO_SYSTEM_PROMPT_FLAVORS, flavor_of
+from .config_harness import NO_SYSTEM_PROMPT_FLAVORS, flavor_of, invariants_channel
 from .errors import NotFound, Refused, ValidationError
 from .ids import PARTNER
 from .workitems import (
@@ -86,14 +89,19 @@ def _section(title: str, source: str | None, body: str) -> str:
     return f"{head}\n\n{body.rstrip() or NONE_YET}\n"
 
 
-def invariants(root: Path) -> tuple[str | None, str]:
-    """Section 0. The global invariants, whole, on every stream.
+def carries_invariants(root: Path, item_id: str) -> bool:
+    """Whether this agent's context file is its invariants channel (`INVARIANTS_CHANNEL`)."""
+    return invariants_channel(flavor_of(root, item_id)) == "context"
 
-    One copy lives at `config/CLAUDE.md`, managed only by the Partner; the
-    agent homes natively auto-read their installed copy at launch time, while
-    this section is the hooks' live read — a Partner edit lands at the next
-    boundary on every harness flavor, not at the next reinstall. Personas,
-    skills, and templates point here instead of restating the rules.
+
+def invariants(root: Path) -> tuple[str | None, str]:
+    """Section 0. The global invariants, whole, for the flavors whose channel this is.
+
+    One copy lives at `config/CLAUDE.md`, managed only by the Partner, and it reaches each
+    agent exactly once (`config_harness.INVARIANTS_CHANNEL`): a Claude home loads its copy
+    natively (`start.sh` refreshes it at every launch), Pi and Grok carry it in the rendered
+    persona, and Meta and Codex — no system prompt — read it here, live, at every boundary.
+    Personas, skills, and templates point at it instead of restating the rules.
     """
     path = root / "config" / "CLAUDE.md"
     if not path.is_file():
@@ -467,13 +475,13 @@ def compose_text(
     persona_source, persona_text = persona(root, item_id)
     if main and persona_source is not None:
         intro = (
-            "Your persona is the first section of this file. The rest is everything "
-            "else hx has for you. Read it once; you do not need to search for "
+            "Your invariants and your persona are the first sections of this file. The rest "
+            "is everything else hx has for you. Read it once; you do not need to search for "
             "anything it contains."
         )
     else:
         intro = (
-            "This file is everything hx has for you that is not already in your system prompt. "
+            "This file is everything hx has for you that you were not already given at launch. "
             "Read it once; you do not need to search for anything it contains."
         )
     parts = [
@@ -483,8 +491,9 @@ def compose_text(
         "",
     ]
 
-    source, text = invariants(root)
-    parts.append(_section("Invariants", source, text))
+    if carries_invariants(root, item_id):
+        source, text = invariants(root)
+        parts.append(_section("Invariants", source, text))
 
     if main and persona_source is not None:
         parts.append(_section("Persona", persona_source, persona_text))

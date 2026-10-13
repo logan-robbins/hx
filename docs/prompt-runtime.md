@@ -7,6 +7,28 @@ executor. Partner uses its own audience and canonical role instead of an exempti
 The new sources live under `continuity/prompts/`; task facts remain in the current
 checkpoint or frozen pass and never become static persona history.
 
+## Prompt layers
+
+Every agent's prompt is four layers, and each layer has exactly one source:
+
+| Layer | Source | Reaches the agent through |
+|---|---|---|
+| Invariants | `config/CLAUDE.md` | one channel per flavor (below) |
+| Persona | the role persona | the system prompt (`run/<id>/persona.md`), or the context file on Codex/Meta |
+| Learnings | `LEARNINGS/rules.md` | the persona's `hx:learnings` region |
+| Session memory | the work item's `## Tasks`, step state, episodes | the context file (`hx compose`) |
+
+The invariants reach each agent once. `config_harness.INVARIANTS_CHANNEL` names the channel:
+
+| Flavor | Channel | Why |
+|---|---|---|
+| `claude` | `home` | Claude Code loads the home's `CLAUDE.md` natively; `start.sh --exec` refreshes it from `config/CLAUDE.md` at every launch and restart |
+| `pi`, `grok` | `persona` | a system prompt, but no native `CLAUDE.md`: the compiled persona carries the `hx:global` region |
+| `codex`, `meta` | `context` | no system prompt: the context file opens with `## Invariants` |
+
+A second copy is a second place to drift, and it costs prefix bytes on every turn. A recompile
+removes an `hx:global` region from an agent whose flavor no longer carries it.
+
 ## Roles and responsibilities
 
 | Audience or role | Required behavior |
@@ -149,7 +171,8 @@ restrict tools that the host preloads outside the adapter's supported interfaces
 `hx cache report [ID]` measures the invariant part of each agent's prompt prefix, the part a
 seam should not have to rewrite (operator and Partner only). It adds up the persona as launched
 (`run/<id>/persona.md`, or `AGENTS.md` above the header before the first launch),
-`config/CLAUDE.md`, the learnings region when the persona does not already carry it, and the
+`config/CLAUDE.md` when the persona does not already carry it (`claude_md_in_persona`, Pi and
+Grok), the learnings region when the persona does not already carry it, and the
 frontmatter descriptions of the installed skills. Skill bodies are excluded because they load on
 demand. The total is checked against `prompt_cache.invariant_budget` for the agent's model row,
 and the age of the last seam against its `harness.json` `cache_ttl` via `prompt_cache.assess`.

@@ -19,7 +19,18 @@ def agents_md(instance, item_id="eng-001"):
     return (instance / "config" / item_id / "AGENTS.md").read_text()
 
 
-def test_compile_distributes_global_and_role_regions(instance):
+def _set_flavor(instance, flavor, item_id="eng-001"):
+    import json
+
+    path = instance / "config" / item_id / "harness.json"
+    body = json.loads(path.read_text())
+    body["flavor"] = flavor
+    path.write_text(json.dumps(body))
+
+
+def test_compile_distributes_the_role_region_and_no_invariants_on_claude(instance):
+    """The invariants reach a Claude agent once, as its home's native CLAUDE.md
+    (`config_harness.INVARIANTS_CHANNEL`); the persona does not carry a second copy."""
     (instance / "personas").mkdir(exist_ok=True)
     role_dir = instance / "personas" / "engineer"
     role_dir.mkdir(exist_ok=True)
@@ -31,7 +42,7 @@ def test_compile_distributes_global_and_role_regions(instance):
         "id": "eng-001", "compiled": True, "role": "engineer", "role_region": True,
     }
     text = agents_md(instance)
-    assert GLOBAL_BEGIN in text
+    assert GLOBAL_BEGIN not in text
     assert "hx:role begin" in text
     assert "You are an engineer." in text
     # The role's below-header starter is not distributed: memory is per-agent.
@@ -41,13 +52,35 @@ def test_compile_distributes_global_and_role_regions(instance):
     assert "Things I learned: nothing yet." in text
 
 
-def test_compile_without_a_role_persona_distributes_global_only(instance):
+def test_compile_without_a_role_persona_distributes_no_role_region(instance):
     report = compile_agent(instance, "eng-001")
     assert report["compiled"] is True and report["role_region"] is False
     text = agents_md(instance)
-    assert GLOBAL_BEGIN in text
+    assert GLOBAL_BEGIN not in text
     assert "hx:role begin" not in text
     assert "Things I learned: nothing yet." in text
+
+
+@pytest.mark.parametrize("flavor", ["pi", "grok"])
+def test_the_invariants_ride_the_persona_only_where_no_other_channel_exists(instance, flavor):
+    """Pi and Grok take a system prompt but read no CLAUDE.md: the persona is their channel.
+    Moving the agent back to Claude removes the region instead of keeping it stale."""
+    _set_flavor(instance, flavor)
+    compile_agent(instance, "eng-001")
+    text = agents_md(instance)
+    assert text.count(GLOBAL_BEGIN) == 1
+    assert (instance / "config" / "CLAUDE.md").read_text().strip() in text
+    _set_flavor(instance, "claude")
+    assert compile_agent(instance, "eng-001")["compiled"] is True
+    assert GLOBAL_BEGIN not in agents_md(instance)
+    assert "Things I learned: nothing yet." in agents_md(instance)
+
+
+@pytest.mark.parametrize("flavor", ["meta", "codex"])
+def test_no_invariants_region_where_the_context_file_carries_them(instance, flavor):
+    _set_flavor(instance, flavor)
+    compile_agent(instance, "eng-001")
+    assert GLOBAL_BEGIN not in agents_md(instance)
 
 
 def test_compile_is_idempotent(instance):
@@ -60,6 +93,7 @@ def test_compile_is_idempotent(instance):
 
 
 def test_recompile_picks_up_base_edits_and_keeps_per_id_text(instance):
+    _set_flavor(instance, "pi")  # the flavor whose persona carries the invariants
     compile_agent(instance, "eng-001")
     clauses = instance / "config" / "CLAUDE.md"
     clauses.write_text(clauses.read_text() + "\nNew invariant truth.\n")
@@ -78,6 +112,7 @@ def test_recompile_picks_up_base_edits_and_keeps_per_id_text(instance):
 
 
 def test_stale_regions_are_replaced_not_duplicated(instance):
+    _set_flavor(instance, "grok")
     compile_agent(instance, "eng-001")
     compile_agent(instance, "eng-001")
     assert agents_md(instance).count(GLOBAL_BEGIN) == 1
@@ -109,12 +144,15 @@ def test_compile_refuses_an_agents_md_with_no_header(instance):
         compile_agent(instance, "eng-001")
 
 
-def test_launch_compiles_before_start(instance, hx, launched):
-    """A base edit lands in the worker's file through the launch path."""
+def test_launch_delivers_an_invariants_edit_through_the_home_claude_md(instance, hx, launched):
+    """On Claude the invariants' one channel is the home's native CLAUDE.md, refreshed at
+    launch; the compiled persona does not carry a second copy."""
     clauses = instance / "config" / "CLAUDE.md"
     clauses.write_text(clauses.read_text() + "\nLaunched invariant.\n")
     launched("eng-001")
-    assert "Launched invariant." in agents_md(instance)
+    assert "Launched invariant." in (instance / "run" / "eng-001" / "home" / "CLAUDE.md").read_text()
+    assert "Launched invariant." not in agents_md(instance)
+    assert "Launched invariant." not in (instance / "run" / "eng-001" / "persona.md").read_text()
 
 
 def test_compile_distributes_the_learnings_region_to_every_agent(instance):
@@ -124,7 +162,7 @@ def test_compile_distributes_the_learnings_region_to_every_agent(instance):
     assert LEARNINGS_BEGIN in text
     assert str(instance / "LEARNINGS") in text
     assert "hx learn propose --category" in text and "never read the files" in text
-    assert text.index(GLOBAL_BEGIN) < text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
+    assert text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
 
 
 def test_an_instance_compiled_before_learnings_existed_gains_the_region(instance):
@@ -142,7 +180,7 @@ def test_an_instance_compiled_before_learnings_existed_gains_the_region(instance
     assert report["compiled"] is True
     text = path.read_text()
     assert text.count(LEARNINGS_BEGIN) == 1
-    assert text.index(GLOBAL_BEGIN) < text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
+    assert text.index(LEARNINGS_BEGIN) < text.index("## UPDATES BELOW ONLY")
     assert "Things I learned: nothing yet." in text
 
 

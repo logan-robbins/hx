@@ -167,6 +167,12 @@ if [ "$mode" = exec ]; then
   else
     awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
     system_prompt=$persona
+    # The invariants' one channel on Claude is the home's native user CLAUDE.md
+    # (`config_harness.INVARIANTS_CHANNEL`), refreshed here so an edit to config/CLAUDE.md
+    # lands at the next launch or restart, like a persona edit, not only at a reinstall.
+    if [ -f "$root/config/CLAUDE.md" ]; then
+      cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
+    fi
   fi
 
   cd "$cwd"

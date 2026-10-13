@@ -17,7 +17,6 @@ import pytest
 from .conftest import PERSONA, clean_env, wait_for
 
 SECTION_GOAL = [
-    "## Invariants",
     "## Memory",
     "## Task",
     "## Tasks",
@@ -75,23 +74,55 @@ def test_the_sections_are_in_the_order_spec_07_3_fixes(instance, hx, launched, g
     assert result.stdout.strip() == str(path)
 
     text = path.read_text()
-    # Headings match with their newline: `## Task` is a prefix of `## Tasks`, which the
-    # Invariants prose mentions, so a bare substring finds the mention, not the section.
+    # Headings match with their newline: `## Task` is a prefix of `## Tasks`, which other
+    # prose may mention, so a bare substring finds the mention, not the section.
     positions = [section_index(text, heading + "\n") for heading in SECTION_GOAL]
     assert positions == sorted(positions), f"sections out of order: {positions}"
 
 
-def test_the_invariants_ride_first_from_the_single_file(instance, hx, launched, goals):
-    """One copy of the global rules (`config/CLAUDE.md`), read on every stream."""
+def test_no_invariants_section_on_claude(instance, hx, launched, goals):
+    """The invariants reach a Claude agent once, as its home's native CLAUDE.md
+    (`config_harness.INVARIANTS_CHANNEL`); the context file does not carry a second copy."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
     dispatch_working(instance, hx, goals)
     assert hx("compose", "eng-001").returncode == 0
     text = context_file(instance, "eng-001").read_text()
+    assert "\n## Invariants\n" not in text
+    assert "_source: `config/CLAUDE.md`_" not in text
+    home = (instance / "run" / "eng-001" / "home" / "CLAUDE.md").read_text()
+    assert home == (instance / "config" / "CLAUDE.md").read_text()
+
+
+@pytest.mark.parametrize("flavor", ["pi", "grok"])
+def test_no_invariants_section_where_the_persona_carries_them(instance, hx, launched, goals, flavor):
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", flavor)
+    assert hx("compose", "eng-001").returncode == 0
+    assert "\n## Invariants\n" not in context_file(instance, "eng-001").read_text()
+
+
+@pytest.mark.parametrize("flavor", ["meta", "codex"])
+def test_the_invariants_ride_first_where_there_is_no_system_prompt(
+    instance, hx, launched, goals, flavor
+):
+    """Meta and Codex take no system prompt and read no CLAUDE.md: the context file is their
+    one channel for `config/CLAUDE.md`, carried whole, first, at every boundary."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", flavor)
+    assert hx("compose", "eng-001").returncode == 0
+    text = context_file(instance, "eng-001").read_text()
     source = (instance / "config" / "CLAUDE.md").read_text().strip("\n")
     assert source in text, "the invariants file is not carried whole"
     assert "_source: `config/CLAUDE.md`_" in text
+    assert text.index("## Invariants\n") < text.index("## Persona\n") < text.index("## Task\n")
 
 
 def test_the_persona_is_never_in_the_context_file(instance, hx, launched, goals):

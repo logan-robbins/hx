@@ -32,6 +32,20 @@ FLAVORS = ("claude", "pi", "grok", "meta", "codex")
 #: (`compose.persona`, spec 02 Identity).
 NO_SYSTEM_PROMPT_FLAVORS = ("meta", "codex")
 
+#: The one channel `config/CLAUDE.md` (the invariants) reaches an agent through, per flavor.
+#: Exactly one each, never two: `home` is the home's native user CLAUDE.md, which
+#: `adapters/claude/install.sh` copies and Claude Code loads at every start (Claude is the only
+#: flavor with such a file); `persona` is the rendered `run/<id>/persona.md`, the system
+#: prompt Pi and Grok are launched with, since neither reads a CLAUDE.md; `context` is the
+#: `## Invariants` section of the context file, for the flavors that take no system prompt.
+INVARIANTS_CHANNEL = {"claude": "home", "pi": "persona", "grok": "persona",
+                      "meta": "context", "codex": "context"}
+
+
+def invariants_channel(flavor: str) -> str:
+    """`home`, `persona` or `context`: where the invariants reach an agent of this flavor."""
+    return INVARIANTS_CHANNEL.get(flavor, "home")
+
 #: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
 #: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no
 #: wake path at all (spec 12).

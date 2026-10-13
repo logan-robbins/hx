@@ -158,7 +158,7 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     from pathlib import Path
 
     from . import learn, timestamps
-    from .compile import LEARNINGS_BEGIN
+    from .compile import GLOBAL_BEGIN, LEARNINGS_BEGIN
     from .config_models import load_models
 
     root = Path(root)
@@ -169,10 +169,13 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     except (ValidationError, OSError):
         learnings = None
     in_persona = LEARNINGS_BEGIN in persona_text
+    # The invariants reach each agent once (`config_harness.INVARIANTS_CHANNEL`); on Pi and
+    # Grok that once is inside the persona, so the file is not charged a second time.
+    claude_md_in_persona = GLOBAL_BEGIN in persona_text
     skills, skills_source = _skills(root, item_id, env)
     descriptions = sum(_skill_description_bytes(path) for path in skills.values())
-    prefix = ((persona_bytes or 0) + (claude_md or 0) + descriptions
-              + (0 if in_persona else (learnings or 0)))
+    prefix = ((persona_bytes or 0) + (0 if claude_md_in_persona else (claude_md or 0))
+              + descriptions + (0 if in_persona else (learnings or 0)))
     harness = _harness_json(root, item_id)
     model = harness.get("model") if isinstance(harness.get("model"), str) else None
     budget = {"model": model, "invariant_ceiling_tokens": None, "working_room_tokens": None,
@@ -211,7 +214,7 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
         "id": item_id,
         "invariant": {
             "persona_bytes": persona_bytes, "persona_source": persona_source,
-            "claude_md_bytes": claude_md,
+            "claude_md_bytes": claude_md, "claude_md_in_persona": claude_md_in_persona,
             "learnings_bytes": learnings, "learnings_in_persona": in_persona,
             "skills": list(skills), "skills_source": skills_source,
             "skill_descriptions_bytes": descriptions,
@@ -249,7 +252,9 @@ def render_report(doc: dict) -> str:
         inv, budget, seam = row["invariant"], row["budget"], row["seam"]
         share = "n/a" if budget["share"] is None else f"{budget['share']:.1%}"
         line = (f"{row['id']}: prefix {inv['prefix_bytes']} B (persona {inv['persona_bytes']}, "
-                f"CLAUDE.md {inv['claude_md_bytes']}, learnings {inv['learnings_bytes']}"
+                f"CLAUDE.md {inv['claude_md_bytes']}"
+                f"{' in persona' if inv.get('claude_md_in_persona') else ''}, "
+                f"learnings {inv['learnings_bytes']}"
                 f"{' in persona' if inv['learnings_in_persona'] else ''}, "
                 f"skill descriptions {inv['skill_descriptions_bytes']} over {len(inv['skills'])}) "
                 f"= {share} of {budget['model'] or 'no model'} ceiling "

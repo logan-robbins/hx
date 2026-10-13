@@ -31,9 +31,9 @@ verbatim):
 Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
-The global rules are the file's first section (`## Invariants`, from `config/CLAUDE.md`,
-which you manage) — they are not restated here. Use the Read tool for that path, not a
-Bash `cat`.
+The global rules (`config/CLAUDE.md`, which you manage) reach you once: as your CLAUDE.md
+on Claude, as the context file's first section (`## Invariants`) on Codex — they are not
+restated here. Use the Read tool for that path, not a Bash `cat`.
 
 Your context file holds your memory, the step state your Companion kept, and — because you are
 the Partner — `PARTNER.md` and the current board. That last part matters: **after a boundary

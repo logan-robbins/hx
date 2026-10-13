@@ -18,9 +18,14 @@ hand-copies a persona to push a change out. The Partner is exempt from the globa
 role regions — `config/partner/AGENTS.md` stays the shipped persona — but receives the
 learnings region like everyone else, just above `## UPDATES BELOW ONLY`.
 
-A role with no `personas/<role>/AGENTS.md` still compiles: the global region
-is distributed and the role region is left out, so test and bespoke roles keep
-working.
+The invariants reach every agent through exactly one channel
+(`config_harness.INVARIANTS_CHANNEL`): Claude loads them as its home's native CLAUDE.md, Codex
+and Meta read them in the context file, and only Pi and Grok — system-prompt flavors with no
+CLAUDE.md — carry them here, as the `hx:global` region. Everywhere else the region is not
+written, and a recompile removes one an earlier compile left.
+
+A role with no `personas/<role>/AGENTS.md` still compiles: the role region is
+left out, so test and bespoke roles keep working.
 """
 
 from __future__ import annotations
@@ -103,7 +108,7 @@ def _region(begin: str, end: str, body: str) -> str:
     return f"{begin}\n{body.strip(chr(10))}\n{end}"
 
 
-def render(global_text: str, role: str | None, role_text: str | None,
+def render(global_text: str | None, role: str | None, role_text: str | None,
            upper: str, learnings_text: str | None = None) -> str:
     """Rebuild the above-header text: fresh fenced regions, per-id text kept.
 
@@ -111,9 +116,13 @@ def render(global_text: str, role: str | None, role_text: str | None,
     `learnings` region on an instance compiled before it existed) is added
     after the last one it does have; on a file that has none (created by hand
     before the compiler existed) the regions are prepended and no other line
-    is touched. The below-header memory never reaches this function.
+    is touched. A region the sources no longer call for (`global_text` None:
+    the invariants reach this agent another way) is removed. The below-header
+    memory never reaches this function.
     """
-    regions: dict[str, str] = {"global": _region(GLOBAL_BEGIN, GLOBAL_END, global_text)}
+    regions: dict[str, str] = {}
+    if global_text is not None:
+        regions["global"] = _region(GLOBAL_BEGIN, GLOBAL_END, global_text)
     if role is not None and role_text is not None:
         regions["role"] = _region(ROLE_BEGIN_TMPL.format(role=role), ROLE_END, role_text)
     if learnings_text:
@@ -162,8 +171,11 @@ def compile_agent(root: Path, item_id: str) -> dict:
     custom = REGION_RE.sub("", upper)
     if role_text:
         custom = strip_known_blocks(custom, [role_text, expand_identity(role_text, values), *previous_roles])
+    from .config_harness import invariants_channel
     from .learn import persona_region
-    new_upper = render(expand_identity(global_text, values), role,
+    # The invariants ride the persona only where no other channel reaches the agent.
+    carried = invariants_channel(values["flavor"]) == "persona"
+    new_upper = render(expand_identity(global_text, values) if carried else None, role,
                        expand_identity(role_text, values) if role_text else None,
                        expand_identity(custom, values), persona_region(root))
     new_text = new_upper + HEADER + lower if lower else new_upper + HEADER + "\n"

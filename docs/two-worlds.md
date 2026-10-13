@@ -69,9 +69,14 @@ configured. Overriding `HOME` for the Codex process is not adopted without a liv
 ## CLAUDE.md and AGENTS.md
 
 Yours load normally. In a harness session there is exactly one CLAUDE.md —
-`$HARNESS_ROOT/config/CLAUDE.md`, copied into each home — and the product repo's own
+`$HARNESS_ROOT/config/CLAUDE.md`, copied into each home by `install.sh` and refreshed by
+`start.sh` at every launch — and the product repo's own
 `CLAUDE.md` and `AGENTS.md` are excluded by `claudeMdExcludes` plus instruction-files mode
-`claude-md`, so nothing inside a worker's `workdir` is discovered. The per-agent identity
+`claude-md`, so nothing inside a worker's `workdir` is discovered. That home copy is the
+invariants' only channel on Claude: neither the persona nor the context file carries a
+second copy (`config_harness.INVARIANTS_CHANNEL`; Pi and Grok, which read no CLAUDE.md, carry
+it in the persona, and Codex and Meta, which take no system prompt, in the context file).
+The per-agent identity
 files (`config/<id>/AGENTS.md`) live in the instance rather than in any workdir for the same
 reason: Claude Code's own `AGENTS.md` discovery cannot see them, and they reach the agent only
 by the paths hx chooses.
@@ -257,7 +262,7 @@ present tense about something unbuilt.
 | seven `claudeMdExcludes` globs under `wt/**` and `repos/**` | `install.sh` |
 | `crossSessionInbound: accept` for the Partner alone | `install.sh`, `if is_partner` |
 | one skill per role, copied and not symlinked | `install.sh`, `cp -R` after `rm -rf` |
-| `config/CLAUDE.md` becomes the home's `CLAUDE.md` | `install.sh` |
+| `config/CLAUDE.md` becomes the home's `CLAUDE.md`, refreshed at every launch, and is carried nowhere else on Claude | `install.sh`; `start.sh` `--exec`; `compose.carries_invariants` |
 | auth is one token at `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`, never in argv | `start.sh`, the `export` before `exec` |
 | both adapters refuse a missing or group-readable token | `install.sh` and `start.sh`, the `token_mode` checks |
 | agent homes hold no credentials file | asserted by `packaging/e2e-deploy.sh` step 14 |

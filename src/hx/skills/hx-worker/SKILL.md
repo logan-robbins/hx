@@ -24,13 +24,15 @@ compaction. At every one of them a hook prints a single line (spec 09.1, verbati
 Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
-The global rules are the file's first section (`## Invariants`, from `config/CLAUDE.md`) —
-they are not restated here. One mechanics note the invariants do not carry: use the Read
-tool (a Bash `cat` of that path does not count as the one Read the seam metric measures).
+The global rules (`config/CLAUDE.md`) reach you once: as your CLAUDE.md on Claude, inside
+your persona on Pi and Grok, and as the context file's first section (`## Invariants`) on
+Codex and Meta — they are not restated here. One mechanics note the invariants do not carry:
+use the Read tool (a Bash `cat` of that path does not count as the one Read the seam metric
+measures).
 
 That path is your context file. It holds, in order:
 
-0. Invariants — the global rules; read them, do not restate them
+0. Invariants — Codex and Meta only; read them, do not restate them
 1. Your memory — what you wrote below `## UPDATES BELOW ONLY` in your `AGENTS.md`
 2. Your goal — the verbatim `## Goal` and every addendum
 3. Your `## Tasks` section, as you last left it

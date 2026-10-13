@@ -216,6 +216,22 @@ turns on, e.g. `"skills": ["hx-conversion"]`. Absent means none. A name that doe
 names a skill that is not `optional` in `src/hx/skills/manifest.json`, fails the doctor
 `skills` row. `hx install` rewrites only the three entry points and keeps every other key.
 
+## Prompt layers and the invariants channel
+
+An agent's prompt is four layers with one source each: the invariants (`config/CLAUDE.md`),
+the role persona, the learnings (`hx.learn.persona_region`), and session memory (the work
+item's `## Tasks`, step state, episodes). The invariants reach each agent through exactly one
+channel, `hx.config_harness.INVARIANTS_CHANNEL[flavor]`:
+
+| Flavor | Channel | Carrier |
+|---|---|---|
+| `claude` | `home` | `run/<id>/home/CLAUDE.md`, copied from `config/CLAUDE.md` by `install.sh` and refreshed by `start.sh --exec` |
+| `pi`, `grok` | `persona` | the persona's `hx:global` region (`hx compile`) |
+| `codex`, `meta` | `context` | the context file's `## Invariants` section (`hx compose`, `compose.carries_invariants`) |
+
+No other carrier holds them: `hx compile` removes an `hx:global` region from a flavor whose
+channel is not `persona`, and `hx compose` emits `## Invariants` only for `context`.
+
 ## `hx learn` (central learnings)
 
 The directory holds one file per fixed category — `orientation`, `ownership`, `planning`,
@@ -873,7 +889,8 @@ Operator and Partner only. It covers every `config/<id>/` directory, or one; an 
 {"ts": "2026-10-12T12:00:00Z",
  "agents": [{"id": "eng-001",
    "invariant": {"persona_bytes": 9120, "persona_source": "run/eng-001/persona.md",
-                 "claude_md_bytes": 2048, "learnings_bytes": 1400, "learnings_in_persona": true,
+                 "claude_md_bytes": 2048, "claude_md_in_persona": false,
+                 "learnings_bytes": 1400, "learnings_in_persona": true,
                  "skills": ["hx-memory", "hx-worker"], "skills_source": "installed",
                  "skill_descriptions_bytes": 1310, "prefix_bytes": 12478,
                  "native_tool_schemas": "unmeasured", "host_context": "unmeasured"},
@@ -888,6 +905,10 @@ Operator and Partner only. It covers every `config/<id>/` directory, or one; an 
 - `persona_source` is `run/<id>/persona.md` once a launch derived it. Before that it is
   `config/<id>/AGENTS.md above the header`, which is what `start.sh` would derive. `null`
   means neither exists.
+- `claude_md_bytes` is `config/CLAUDE.md`. It counts toward `prefix_bytes` only when the
+  persona does not already contain the `hx:global` marker (`claude_md_in_persona: false`): the
+  invariants reach each agent through one channel (`config_harness.INVARIANTS_CHANNEL`), and
+  only Pi and Grok carry them inside the persona.
 - `learnings_bytes` is `learn.persona_region` (what `hx compile` splices). It counts toward
   `prefix_bytes` only when the persona does not already contain the learnings marker
   (`learnings_in_persona: false`).
