@@ -592,6 +592,19 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
     return rows
 
 
+def _configured_roles(root: Path) -> list[str]:
+    """Every `role` a `config/<id>/harness.json` names, sorted, unreadable files skipped."""
+    roles = set()
+    for harness in sorted((root / "config").glob("*/harness.json")):
+        try:
+            role = json.loads(harness.read_text()).get("role")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(role, str) and role:
+            roles.add(role)
+    return sorted(roles)
+
+
 def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
     """What `hx persona` renders a worker from (docs/prompt-runtime.md § Prompt layers): a
     `purpose` the Partner actually wrote, a role persona, and no per-id file left over."""
@@ -730,11 +743,15 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 f"{learnings['pending']} pending proposal(s)"
                 + (" (hx learn pending)" if learnings["pending"] else ""),
             ))
-            # Every agent carries the whole region in its system prompt (docs/learnings.md).
-            region_bytes = len(learn_mod.persona_region(root, env).encode())
+            # Every agent carries the global rules and its role's in its system prompt
+            # (docs/learnings.md); the largest region any configured role renders is the bound.
+            sizes = {role: len(learn_mod.persona_region(root, env, role=role).encode())
+                     for role in [None, *_configured_roles(root)]}
+            role, region_bytes = max(sizes.items(), key=lambda item: item[1])
             if region_bytes > learn_mod.PERSONA_WARN_BYTES:
                 checks.append((WARN, "learnings-size",
-                               f"the learnings region is {region_bytes // 1024} KiB in every persona "
+                               f"the learnings region is {region_bytes // 1024} KiB in every "
+                               f"{role + ' ' if role else ''}persona "
                                f"(> {learn_mod.PERSONA_WARN_BYTES // 1024} KiB); merge twins (hx learn check)"))
         legacy = root / "LEARNINGS.md"
         if legacy.is_file():

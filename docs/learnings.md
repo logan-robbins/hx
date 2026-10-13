@@ -9,7 +9,8 @@ not belong in any of them. It belongs in one place every agent carries, and that
 not grow with duplicates or it stops being read.
 
 `LEARNINGS/` is that place — one file per category of mistake — and `hx learn` is the only
-way into it. Every rule in it is in every agent's system prompt, whole.
+way into it. Every rule in it is in the system prompt of every agent it applies to, whole: a
+global rule in every agent's, a rule scoped to a role in every agent of that role.
 
 ## The taxonomy
 
@@ -56,27 +57,45 @@ is assigned when the rule is accepted, never by the proposer. The category is th
 key does not encode it, so a rule can be refiled without renumbering and a citation (`S93`)
 never goes stale.
 
+## Scope: every agent, or every agent of one role
+
+A rule is global unless it names a role. A scoped rule carries `Role: <role>` first after its
+key, the role as `harness.json` names it:
+
+```
+**Rule L9** · Role: backend-engineer · Signal: … · Check: … · Evidence: …
+```
+
+The scope is the reason per-agent memory is gone: a lesson one backend engineer paid for is
+owed to every backend engineer, from its next launch, and to nobody else. The proposer says
+who it is for (`hx learn propose --role backend-engineer`; without `--role` it is global);
+the reviewer decides (`hx learn accept ID --role R` to scope it, `--global` to widen it), the
+same way it decides the category. A text proposal (below) is scoped to the role of the agent
+it came from. A merge keeps the scope of the rule it merges into. `hx learn list` prints the
+scope beside each rule, and `--role R` (or `--role global`) filters by it.
+
 ## The process
 
 ```
 agent, the moment it understands what tripped it:
-    hx learn propose --category evidence --signal "…" --check "…" --evidence "…"
+    hx learn propose --category evidence --signal "…" --check "…" --evidence "…" [--role R]
         → LEARNINGS/proposals/<id>.json, printed next to the rules it most resembles,
           whatever category they are in
-        → HX-LEARN-PROPOSED <id> category=evidence nearest=L3:0.82
+        → HX-LEARN-PROPOSED <id> category=evidence scope=global nearest=L3:0.82
           (a near twin is named on stderr: the proposer can switch to --evidence-for L3)
 
 a different session — the Partner on its next wake, a reviewer, the human:
     hx learn pending                       the worklist, each proposal beside its nearest rules
     hx learn accept <id>                   a new numbered rule, in the proposal's words and category
     hx learn accept <id> --category build  the reviewer's category: the proposer named the wrong kind of mistake
+    hx learn accept <id> --role R | --global   the reviewer's scope: one role, or every agent
     hx learn accept <id> --signal … --check …     the reviewer's generalised wording
     hx learn accept <id> --merge-into L3   more evidence for the rule that already says it
     hx learn reject <id> --why "…"         not a category; one line for the proposer
 
 anyone, any time:
     hx learn check                         categories, shape, unique numbers, near-duplicates across files, pending count
-    hx learn list [L3] [--category c]      the rules, or one in full
+    hx learn list [L3] [--category c] [--role r|global]   the rules with their scope, or one in full
     hx learn categories                    the taxonomy
 ```
 
@@ -98,8 +117,9 @@ until someone merges them.
 
 `hx persona` (which every `start.sh` runs immediately before it execs) renders a fenced
 `learnings` region into every agent's persona: the directory's path and rule count, the propose line, and
-then **every rule, whole**, under a `### <category> — <definition>` heading per non-empty
-category, in taxonomy order. The adapters pass the persona as the system prompt
+then **every global rule, whole**, under a `### <category> — <definition>` heading per non-empty
+category, in taxonomy order, then **every rule scoped to the agent's role**, under
+`### <role> · <category>` headings. Rules scoped to another role are not in it. The adapters pass the persona as the system prompt
 (`--append-system-prompt-file`), so the rules are present at every start and after every
 compaction with no Read, and prompt-cached with the rest of the invariant prompt. No agent
 is told to read the files; the persona tells it not to.
@@ -121,8 +141,8 @@ accept drops `--keep`), or `--merge-into` an existing rule, or rejects it. `acce
 text proposal without `--signal` and `--check`.
 
 The size is visible: `hx doctor` prints the rule count per category and warns
-(`learnings-size`) when the region passes `hx.learn.PERSONA_WARN_BYTES` (200 KiB, roughly
-50k tokens) in every persona. The answer to a large region is merging twins and refiling,
+(`learnings-size`) when the largest region any configured role renders passes
+`hx.learn.PERSONA_WARN_BYTES` (200 KiB, roughly 50k tokens). The answer to a large region is merging twins and refiling,
 not trimming what agents see: the whole point is that nobody has to decide what to load.
 
 The `hx-worker` skill says when to propose; the `hx-partner` skill says to review on every

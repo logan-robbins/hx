@@ -287,11 +287,16 @@ existing rules it most resembles; for each one decide, and record it: `hx learn 
 (a new numbered rule, optionally with your own generalised `--signal`/`--check`),
 `hx learn accept <id> --merge-into <Rule>` (the rule already exists; keep its evidence), or
 `hx learn reject <id> --why "…"`, and `--category <c>` when the proposer picked the wrong
-kind of mistake (`hx learn categories`). You are the different session the files require: a
+kind of mistake (`hx learn categories`). Decide the scope the same way: a proposal says
+`scope global` or `scope <role>`; `--role <role>` narrows a rule to the workers of one role,
+`--global` widens it to everyone. A worker's migrated or distilled text arrives as one text
+proposal scoped to its role: accept each lesson in it with your own `--signal`/`--check`,
+`--keep` until the last. You are the different session the files require: a
 worker cannot accept its own proposal, and nobody edits `LEARNINGS/<category>.md` by hand. A
-rule whose Check a grep can decide becomes a lint in the next goals' `### Checks`. Every rule
-is in every agent's system prompt (yours too) from its next launch, so a rule you accept today
-is in force fleet-wide tomorrow without anyone being told. Wakes of the form
+rule whose Check a grep can decide becomes a lint in the next goals' `### Checks`. A global
+rule is in every agent's system prompt (yours too), a role's rule in every agent of that role,
+from its next launch, so a rule you accept today is in force tomorrow without anyone being
+told. Wakes of the form
 `learnings pending: <n>` come from `hx heartbeat` for the same reason.
 
 `hx complete` also asks the never-twice question on the worker's behalf: when a check fails,

@@ -9,9 +9,12 @@ shards per agent — the goal, the work item, the memory below the header, the e
 because a correction one agent had to make is owed to every agent, and a thing owed to
 everyone lives in one place or it is lost.
 
-Every rule reaches every agent whole: `hx compile` writes all of them into the persona, which
-the adapters pass as the system prompt, so they are present at every start and after every
-compaction without a Read, and prompt-cached with the rest of the invariant prompt.
+Every rule reaches every agent it applies to, whole: `hx persona` renders them into the persona,
+which the adapters pass as the system prompt, so they are present at every start and after every
+compaction without a Read, and prompt-cached with the rest of the invariant prompt. A rule is
+global (every agent) or scoped to one role (`Role: <role>` in its line, `--role` on `propose` and
+`accept`): a lesson one backend engineer learned reaches every backend engineer, and nobody else
+pays its bytes. The region is the global rules, then the agent's role's rules.
 
 A file everyone writes grows with duplicates, so nobody writes it directly. Two steps, never in
 the same session:
@@ -79,6 +82,10 @@ RULE_RE = re.compile(
 )
 FIELD_QUALIFIER = r"(?: [^·:]{0,40})?"
 FIELDS = ("Signal", "Check", "Evidence")
+#: The optional scope, first after the key: `**Rule T12** · Role: backend-engineer · Signal: …`.
+#: Absent means global.
+ROLE_FIELD_RE = re.compile(r"^Role:\s*(?P<role>[a-z][a-z0-9-]*)\s*·\s*")
+ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 GO_RE = re.compile(r"^GO \d{4}-\d{2}-\d{2}\b", re.M)
 RULES_HEADING = "## Rules"
 
@@ -195,11 +202,16 @@ def _identity(root: Path, env: dict[str, str] | None) -> tuple[str, str]:
 
 
 def parse_rule(line: str) -> dict | None:
-    """One rule line as `{prefix, number, key, signal, check, evidence, line}`, or None."""
+    """One rule line as `{prefix, number, key, role, signal, check, evidence, line}`, or None.
+    `role` is the scope (`Role:`), None for a global rule."""
     match = RULE_RE.match(line.rstrip("\n"))
     if not match:
         return None
     body = match["body"]
+    scope = ROLE_FIELD_RE.match(body)
+    role = scope["role"] if scope else None
+    if scope:
+        body = body[scope.end():]
     fields: dict[str, str] = {}
     for name in FIELDS:
         found = re.search(
@@ -212,6 +224,7 @@ def parse_rule(line: str) -> dict | None:
         "prefix": match["prefix"],
         "number": int(match["number"]),
         "key": f"{match['prefix']}{match['number']}",
+        "role": role,
         "line": line.rstrip("\n"),
         **fields,
     }
@@ -249,11 +262,30 @@ def next_number(rules: list[dict], prefix: str) -> int:
     return (max(numbers) + 1) if numbers else 1
 
 
-def render_rule(prefix: str, number: int, signal: str, check: str, evidence: str) -> str:
+def render_rule(prefix: str, number: int, signal: str, check: str, evidence: str,
+                role: str | None = None) -> str:
+    scope = f" · Role: {role}" if role else ""
     return (
-        f"**Rule {prefix}{number}** · Signal: {_one_line(signal)} · Check: {_one_line(check)}"
+        f"**Rule {prefix}{number}**{scope} · Signal: {_one_line(signal)} · Check: {_one_line(check)}"
         f" · Evidence: {_one_line(evidence)}"
     )
+
+
+def validate_role(role: str | None) -> str | None:
+    """A role scope (`harness.json` role names), or None for global."""
+    if role is None:
+        return None
+    value = role.strip()
+    if not ROLE_NAME_RE.match(value):
+        raise ValidationError(
+            f"role {role!r} is not a role name (lowercase letters, digits and hyphens, as in "
+            "harness.json `role`)"
+        )
+    return value
+
+
+def scope_label(role: str | None) -> str:
+    return role or "global"
 
 
 def _one_line(text: str) -> str:
@@ -511,10 +543,12 @@ def load_proposal(path: Path, proposal_id: str) -> dict:
 
 
 def propose(root: Path, *, signal: str, check: str, evidence: str, category: str | None = None,
-            prefix: str | None = None, evidence_for: str | None = None,
+            prefix: str | None = None, evidence_for: str | None = None, role: str | None = None,
             env: dict[str, str] | None = None) -> dict:
-    """Write one proposal next to the rules it most resembles. No rule file is touched."""
+    """Write one proposal next to the rules it most resembles. No rule file is touched.
+    `role` scopes the rule it would become to that role (`scope`); None is global."""
     path = learnings_path(root, env)
+    role = validate_role(role)
     rules = read_rules(path)
     author, instance = _identity(root, env)
     evidence = _one_line(evidence)
@@ -549,6 +583,7 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
         "check": _one_line(check),
         "evidence": evidence,
         "evidence_for": evidence_for.upper() if evidence_for else None,
+        "scope": role,
         "learnings": str(path),
     }
     proposal["nearest"] = nearest(rules, proposal)
@@ -557,14 +592,15 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
 
 
 def propose_text(root: Path, *, text: str, author: str, source: str, category: str = "orientation",
-                 env: dict[str, str] | None = None) -> dict:
+                 role: str | None = None, env: dict[str, str] | None = None) -> dict:
     """A proposal that is prose, not yet a rule: what an agent wrote down before the learnings
     were the channel (`hx.persona.migrate`), or the directives `hx distill` promoted.
 
     hx does not guess a Signal and a Check out of prose. The reviewer reads the text in
     `hx learn pending` and turns each lesson it holds into a rule — `hx learn accept ID
     --signal … --check …`, with `--keep` while more remain — or merges or rejects it.
-    `author` is the agent the text came from, so that agent can never accept it.
+    `author` is the agent the text came from, so that agent can never accept it; `role` (its
+    role) is the scope the rules default to, so its lessons reach every agent of that role.
     """
     path = learnings_path(root, env)
     body = (text or "").strip("\n")
@@ -587,6 +623,7 @@ def propose_text(root: Path, *, text: str, author: str, source: str, category: s
         "check": "",
         "evidence": _one_line(source),
         "evidence_for": None,
+        "scope": validate_role(role),
         "learnings": str(path),
     }
     proposal["nearest"] = nearest(read_rules(path), {"signal": body[:2000], "check": ""})
@@ -622,10 +659,14 @@ def _require_other_session(proposal: dict, reviewer: str) -> None:
 def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signal: str | None = None,
            check: str | None = None, evidence: str | None = None, prefix: str | None = None,
            category: str | None = None, why: str | None = None, keep: bool = False,
+           role: str | None = None, global_scope: bool = False,
            env: dict[str, str] | None = None) -> dict:
     """A different session's decision: a new numbered rule in its category, or evidence merged
     into the rule that already says it. `keep` leaves the proposal pending after the rule is
-    written, for a text proposal that holds more than one lesson."""
+    written, for a text proposal that holds more than one lesson. The new rule's scope is
+    `role`, else global with `global_scope`, else the proposal's; a merge keeps the target's."""
+    if role and global_scope:
+        raise ValidationError("--role and --global name two scopes; give one")
     path = learnings_path(root, env)
     reviewer, instance = _identity(root, env)
     proposal = load_proposal(path, proposal_id)
@@ -652,21 +693,24 @@ def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signa
             new_text = "\n".join(lines)
             store.atomic_write_text(file, new_text if new_text.endswith("\n") else new_text + "\n")
             key, decision, use_category = target["key"], "merged", target["category"]
+            use_role = target["role"]
         else:
             use_category = validate_category(category or proposal.get("category"))
             use_prefix = (prefix or proposal["prefix"]).upper()
+            use_role = None if global_scope else validate_role(role or proposal.get("scope"))
             number = next_number(rules, use_prefix)
             line = render_rule(
                 use_prefix, number,
                 signal or proposal["signal"], check or proposal["check"],
-                f"{evidence or proposal['evidence']} {origin}",
+                f"{evidence or proposal['evidence']} {origin}", role=use_role,
             )
             _append_rule(category_file(path, use_category), use_category, line)
             key, decision = f"{use_prefix}{number}", "new"
         record = {
             "ts": stamp, "proposal": proposal["id"], "author": proposal["author"],
             "reviewer": reviewer, "reviewer_instance": instance, "decision": decision,
-            "rule": key, "category": use_category, "why": _one_line(why or ""),
+            "rule": key, "category": use_category, "scope": scope_label(use_role),
+            "why": _one_line(why or ""),
         }
         _record_decision(path, record)
         if keep:
@@ -768,13 +812,19 @@ def summary(root: Path, env: dict[str, str] | None = None) -> dict:
             "categories": {category: n for category, n in counts.items() if n}}
 
 
-def persona_region(root: Path, env: dict[str, str] | None = None) -> str:
-    """The fenced text `hx compile` distributes into every agent's persona: every rule, whole,
-    category by category. The agent never reads the files — they are in its system prompt at
-    every start and after every compaction, and cached with it."""
+def persona_region(root: Path, env: dict[str, str] | None = None, role: str | None = None) -> str:
+    """The fenced text `hx persona` renders into an agent's persona: every global rule, whole,
+    category by category, then every rule scoped to `role`. The agent never reads the files —
+    they are in its system prompt at every start and after every compaction, and cached with it.
+    Rules scoped to other roles are not here: they are not this agent's to pay for."""
     info = summary(root, env)
-    rules = read_rules(Path(info["path"]))
-    count = f"{info['rules']} rule(s)" + (f", last {info['last']}" if info["last"] else "")
+    every = read_rules(Path(info["path"]))
+    general = [rule for rule in every if not rule.get("role")]
+    own = [rule for rule in every if role and rule.get("role") == role]
+    rules = general + own
+    last = max(rules, key=lambda rule: (rule["prefix"], rule["number"]))["key"] if rules else None
+    count = (f"{len(rules)} rule(s)" + (f", {len(own)} of them for {role}" if own else "")
+             + (f", last {last}" if last else ""))
     head = (
         f"**Learnings: `{info['path']}`** ({count}). The central record of what tripped agents up "
         "here — a wrong assumption, a correction someone had to make, a wasted cycle — as rules: "
@@ -783,7 +833,8 @@ def persona_region(root: Path, env: dict[str, str] | None = None) -> str:
         "so never read the files. When something trips you up, propose a rule the moment you "
         "understand it, in the category of the mistake it prevents:\n"
         "`hx learn propose --category <category> --signal \"<what you saw>\" --check \"<what decides it>\" --evidence \"<where>\"`\n"
-        "(or `--evidence-for <Rule>` when an existing rule already says it). Categories: "
+        "(add `--role <your role>` when only your role needs it; `--evidence-for <Rule>` when an "
+        "existing rule already says it). Categories: "
         + ", ".join(CATEGORY_NAMES) + ". Never edit the files: a different session reviews every "
         "proposal (`hx learn accept`), so each lesson is one rule."
     )
@@ -791,10 +842,13 @@ def persona_region(root: Path, env: dict[str, str] | None = None) -> str:
         return head
     blocks = [head]
     for category in CATEGORY_NAMES:
-        held = [rule for rule in rules if rule["category"] == category]
-        if not held:
-            continue
-        blocks.append(f"### {category} — {DEFINITIONS[category]}\n" + "\n".join(rule["line"] for rule in held))
+        held = [rule for rule in general if rule["category"] == category]
+        if held:
+            blocks.append(f"### {category} — {DEFINITIONS[category]}\n" + "\n".join(rule["line"] for rule in held))
+    for category in CATEGORY_NAMES:
+        held = [rule for rule in own if rule["category"] == category]
+        if held:
+            blocks.append(f"### {role} · {category}\n" + "\n".join(rule["line"] for rule in held))
     return "\n\n".join(blocks)
 
 
@@ -813,7 +867,8 @@ def go_line(root: Path) -> str | None:
 def _print_proposal(proposal: dict, rules: list[dict]) -> None:
     if is_text(proposal):
         print(f"{proposal['id']}  by {proposal['author']}@{proposal['instance']}  {proposal['ts']}"
-              f"  prefix {proposal['prefix']}  category {proposal.get('category')}  text"
+              f"  prefix {proposal['prefix']}  category {proposal.get('category')}"
+              f"  scope {scope_label(proposal.get('scope'))}  text"
               f"  ({proposal.get('source')})"
               + (f"  rules so far {', '.join(proposal['rules'])}" if proposal.get("rules") else ""))
         for line in proposal["text"].splitlines():
@@ -824,6 +879,7 @@ def _print_proposal(proposal: dict, rules: list[dict]) -> None:
     near = nearest(rules, proposal) if rules else proposal.get("nearest", [])
     print(f"{proposal['id']}  by {proposal['author']}@{proposal['instance']}  {proposal['ts']}"
           f"  prefix {proposal['prefix']}  category {proposal.get('category')}"
+          f"  scope {scope_label(proposal.get('scope'))}"
           + (f"  evidence-for {proposal['evidence_for']}" if proposal.get("evidence_for") else ""))
     print(f"  Signal: {proposal['signal']}")
     print(f"  Check: {proposal['check']}")
@@ -849,6 +905,7 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--check", default="", help="the mechanical test that decides it")
     p.add_argument("--evidence", default="", help="where it happened: path, run, PR, date")
     p.add_argument("--evidence-for", help="an existing rule this is more evidence for (no new rule)")
+    p.add_argument("--role", help="scope the rule to this role (harness.json `role`); default global")
     p.add_argument("--prefix", help="rule prefix letter(s); default from config/hx.json or L")
     p.add_argument("--file", help="read Category:/Signal:/Check:/Evidence: lines from this file instead")
     p.add_argument("--json", action="store_true")
@@ -869,6 +926,9 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--why", help="one line for decisions.jsonl")
     p.add_argument("--keep", action="store_true",
                    help="leave the proposal pending after this rule (a text proposal with more lessons)")
+    p.add_argument("--role", help="scope the new rule to this role instead of the proposal's scope")
+    p.add_argument("--global", dest="global_scope", action="store_true",
+                   help="make the new rule global whatever the proposal's scope")
 
     p = sub.add_parser("reject", help="a different session's decision: not a rule")
     p.add_argument("--root", help=argparse.SUPPRESS)
@@ -885,6 +945,7 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("rule", nargs="?")
     p.add_argument("--prefix")
     p.add_argument("--category")
+    p.add_argument("--role", help="only the rules scoped to this role (`global` for the global ones)")
     p.add_argument("--json", action="store_true")
 
     p = sub.add_parser("categories", help="the fixed taxonomy: what each category holds")
@@ -936,12 +997,13 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
                 else:
                     evidence = evidence or value
         proposal = propose(root, signal=signal, check=check_text, evidence=evidence, category=category,
-                           prefix=args.prefix, evidence_for=args.evidence_for, env=env)
+                           prefix=args.prefix, evidence_for=args.evidence_for, role=args.role, env=env)
         if args.json:
             print(json.dumps(proposal, indent=2, sort_keys=True))
             return 0
         near = ", ".join(f"{row['rule']}:{row['score']}" for row in proposal["nearest"]) or "none"
-        print(f"HX-LEARN-PROPOSED {proposal['id']} category={proposal['category']} nearest={near}")
+        print(f"HX-LEARN-PROPOSED {proposal['id']} category={proposal['category']} "
+              f"scope={scope_label(proposal['scope'])} nearest={near}")
         twin = next((row for row in proposal["nearest"] if row["score"] >= DUPLICATE_SCORE), None)
         if twin and not proposal.get("evidence_for"):
             print(f"hx: learn: this reads like {twin['rule']} ({twin['score']}); the reviewer may merge it "
@@ -968,9 +1030,10 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     if args.command == "accept":
         record = accept(root, args.proposal, merge_into=args.merge_into, signal=args.signal,
                         check=args.check, evidence=args.evidence, prefix=args.prefix,
-                        category=args.category, why=args.why, keep=args.keep, env=env)
-        print(f"HX-LEARN {record['decision']} {record['proposal']} rule={record['rule']} category={record['category']}"
-              + (" kept" if args.keep else ""))
+                        category=args.category, why=args.why, keep=args.keep, role=args.role,
+                        global_scope=args.global_scope, env=env)
+        print(f"HX-LEARN {record['decision']} {record['proposal']} rule={record['rule']} "
+              f"category={record['category']} scope={record['scope']}" + (" kept" if args.keep else ""))
         return 0
 
     if args.command == "reject":
@@ -1002,11 +1065,14 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
             rules = [rule for rule in rules if rule["prefix"] == args.prefix.upper()]
         if args.category:
             rules = [rule for rule in rules if rule["category"] == validate_category(args.category)]
+        if args.role:
+            wanted = None if args.role == "global" else validate_role(args.role)
+            rules = [rule for rule in rules if rule.get("role") == wanted]
         if args.json:
             print(json.dumps(rules, indent=2, sort_keys=True))
             return 0
         for rule in rules:
-            print(f"{rule['key']:<6} {rule['category']:<12} {rule['signal'][:100]}")
+            print(f"{rule['key']:<6} {rule['category']:<12} {scope_label(rule.get('role')):<18} {rule['signal'][:100]}")
         print(f"HX-LEARN-LIST {len(rules)} rule(s) under {path}")
         return 0
 

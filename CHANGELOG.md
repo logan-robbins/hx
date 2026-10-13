@@ -84,6 +84,14 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     directives into a text proposal instead of writing them into the agent's file, and its
     `--memory` option is gone. `hx learn accept --keep` turns a text proposal holding several
     lessons into several rules.
+  - Learnings are global or scoped to one role: a scoped rule carries `Role: <role>` after its
+    key, `hx learn propose --role R` proposes one, `hx learn accept ID --role R | --global`
+    decides it, `hx learn list` prints the scope (`--role R|global` filters), and the output
+    lines and `decisions.jsonl` carry `scope`. Each persona's learnings region is the global
+    rules, then its role's (`### <role> · <category>`); other roles' rules are not in it. A
+    migrated or distilled text proposal is scoped to its agent's role, so what one worker
+    learned reaches every worker of its role. `hx doctor` bounds `learnings-size` by the
+    largest region any configured role renders. Existing rules have no `Role:` and stay global.
 
 ### Fixed
 

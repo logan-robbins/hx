@@ -343,6 +343,96 @@ def test_the_persona_region_carries_every_rule_whole(instance):
     assert summary["categories"] == {"evidence": 2, "delivery": 1} and summary["last"] == "L3"
 
 
+# --- scope: global or one role ------------------------------------------------------------------
+
+
+def test_a_rule_line_may_carry_a_role_scope():
+    rule = learn.parse_rule("**Rule T4** · Role: backend-engineer · Signal: s · Check: c · Evidence: e")
+    assert rule["key"] == "T4" and rule["role"] == "backend-engineer"
+    assert (rule["signal"], rule["check"], rule["evidence"]) == ("s", "c", "e")
+    assert learn.parse_rule("**Rule T5** · Signal: s · Check: c · Evidence: e")["role"] is None
+    assert learn.render_rule("T", 4, "s", "c", "e", role="backend-engineer") == rule["line"]
+    assert learn.render_rule("T", 5, "s", "c", "e") == "**Rule T5** · Signal: s · Check: c · Evidence: e"
+
+
+def test_propose_role_scopes_the_rule_and_accept_keeps_it(instance):
+    proposal = propose(instance, signal="the migration ran twice", role="backend-engineer", env=ENG)
+    assert proposal["scope"] == "backend-engineer"
+    record = learn.accept(instance, proposal["id"], env=PARTNER)
+    assert record["scope"] == "backend-engineer"
+    (rule,) = learn.read_rules(instance / "LEARNINGS")
+    assert rule["role"] == "backend-engineer" and rule["line"].startswith("**Rule L1** · Role: backend-engineer · ")
+    decision = json.loads((instance / "LEARNINGS" / "decisions.jsonl").read_text().splitlines()[-1])
+    assert decision["scope"] == "backend-engineer"
+    assert propose(instance, env=ENG)["scope"] is None, "global unless a role is named"
+    with pytest.raises(ValidationError):
+        propose(instance, role="Backend Engineer", env=ENG)
+
+
+def test_the_reviewer_decides_the_scope(instance):
+    widened = propose(instance, signal="a", role="backend-engineer", env=ENG)
+    assert learn.accept(instance, widened["id"], global_scope=True, env=PARTNER)["scope"] == "global"
+    narrowed = propose(instance, signal="b", env=ENG)
+    assert learn.accept(instance, narrowed["id"], role="qa-engineer", env=PARTNER)["scope"] == "qa-engineer"
+    roles = {rule["key"]: rule["role"] for rule in learn.read_rules(instance / "LEARNINGS")}
+    assert roles == {"L1": None, "L2": "qa-engineer"}
+    both = propose(instance, signal="c", env=ENG)
+    with pytest.raises(ValidationError):
+        learn.accept(instance, both["id"], role="qa-engineer", global_scope=True, env=PARTNER)
+    # A merge keeps the scope of the rule it merges into.
+    more = propose(instance, signal="b again", role="backend-engineer", evidence_for="L2", env=ENG)
+    assert learn.accept(instance, more["id"], merge_into="L2", env=PARTNER)["scope"] == "qa-engineer"
+
+
+def test_a_text_proposal_is_scoped_to_its_authors_role(instance):
+    proposal = learn.propose_text(instance, text="Run the seed before the suite.", author="eng-001",
+                                  source="test", role="backend-engineer")
+    assert proposal["scope"] == "backend-engineer"
+    record = learn.accept(instance, proposal["id"], signal="the suite is empty", check="seed first",
+                          env=PARTNER)
+    assert record["scope"] == "backend-engineer"
+
+
+def test_the_persona_region_is_global_rules_then_the_roles(instance):
+    for signal, role, category in (("everyone", None, "build"), ("backend only", "backend-engineer", "domain"),
+                                   ("qa only", "qa-engineer", "testing"),
+                                   ("backend build", "backend-engineer", "build")):
+        learn.accept(instance, propose(instance, signal=signal, role=role, category=category, env=ENG)["id"],
+                     env=PARTNER)
+    general = learn.persona_region(instance)
+    assert "everyone" in general and "backend only" not in general and "qa only" not in general
+    assert "1 rule(s), last L1" in general
+    backend = learn.persona_region(instance, role="backend-engineer")
+    assert "qa only" not in backend
+    assert "3 rule(s), 2 of them for backend-engineer, last L4" in backend
+    assert backend.index("### build — ") < backend.index("**Rule L1**") \
+        < backend.index("### backend-engineer · domain") < backend.index("**Rule L2**"), "global first"
+    assert backend.index("### backend-engineer · domain") < backend.index("### backend-engineer · build"), \
+        "the role's rules in taxonomy order"
+    assert "--role <your role>" in backend
+
+
+def test_cli_scope_round_trip(instance):
+    result = run_learn(instance, "propose", "--category", "domain", "--signal", "the seed is stale",
+                       "--check", "reseed", "--evidence", "run 4", "--role", "backend-engineer")
+    assert result.returncode == 0, result.stderr
+    assert "scope=backend-engineer" in result.stdout
+    proposal_id = result.stdout.split()[1]
+    assert "scope backend-engineer" in run_learn(instance, "pending", harness_id="partner").stdout
+    result = run_learn(instance, "accept", proposal_id, harness_id="partner")
+    assert result.stdout.strip() == f"HX-LEARN new {proposal_id} rule=L1 category=domain scope=backend-engineer"
+    listed = run_learn(instance, "list").stdout
+    assert "L1     domain       backend-engineer   the seed is stale" in listed
+    assert "HX-LEARN-LIST 1 rule(s)" in run_learn(instance, "list", "--role", "backend-engineer").stdout
+    assert "HX-LEARN-LIST 0 rule(s)" in run_learn(instance, "list", "--role", "global").stdout
+    assert json.loads(run_learn(instance, "list", "--json").stdout)[0]["role"] == "backend-engineer"
+    clash = run_learn(instance, "propose", "--category", "domain", "--signal", "x", "--check", "y",
+                      "--evidence", "z")
+    clash_id = clash.stdout.split()[1]
+    both = run_learn(instance, "accept", clash_id, "--role", "qa-engineer", "--global", harness_id="partner")
+    assert both.returncode != 0 and "two scopes" in both.stderr
+
+
 # --- the CLI ------------------------------------------------------------------------------------
 
 
@@ -360,14 +450,15 @@ def test_cli_round_trip(instance):
 
     result = run_learn(instance, "pending", harness_id="partner")
     assert result.returncode == 0 and proposal_id in result.stdout and "HX-LEARN-PENDING 1" in result.stdout
-    assert "category evidence" in result.stdout
+    assert "category evidence  scope global" in result.stdout
 
     result = run_learn(instance, "accept", proposal_id, "--why", "category", harness_id="partner")
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == f"HX-LEARN new {proposal_id} rule=L1 category=evidence"
+    assert result.stdout.strip() == f"HX-LEARN new {proposal_id} rule=L1 category=evidence scope=global"
 
     result = run_learn(instance, "list")
-    assert "L1     evidence     a count without scope" in result.stdout and "HX-LEARN-LIST 1 rule(s)" in result.stdout
+    assert "L1     evidence     global             a count without scope" in result.stdout
+    assert "HX-LEARN-LIST 1 rule(s)" in result.stdout
     assert run_learn(instance, "list", "L1").stdout.startswith("**Rule L1** · Signal: a count without scope")
     assert "HX-LEARN-LIST 0 rule(s)" in run_learn(instance, "list", "--category", "build").stdout
 

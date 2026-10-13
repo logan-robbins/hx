@@ -267,22 +267,29 @@ The directory holds one file per fixed category — `orientation`, `ownership`, 
 (`hx.learn.CATEGORIES`, `hx learn categories`) — each a fixed header, `## Rules`, and rule
 lines. A rule line: `**Rule <P><n>** · Signal: … · Check: … · Evidence: …`, prefix 1–3
 capitals, numbers unique per prefix across every file, each cell one line; the category is the
-file, never part of the key. A proposal (`LEARNINGS/proposals/<id>.json`):
+file, never part of the key. A rule scoped to one role carries `Role: <role>` first after the
+key (`**Rule <P><n>** · Role: backend-engineer · Signal: …`); without it the rule is global.
+A proposal (`LEARNINGS/proposals/<id>.json`):
 
 ```json
 {"id": "20261011T183601-eng-001-057487", "ts": "2026-10-11T18:36:01Z", "author": "eng-001",
  "instance": "mc", "role": "qa-engineer", "prefix": "T", "category": "evidence",
- "signal": "…", "check": "…", "evidence": "…", "evidence_for": null,
+ "signal": "…", "check": "…", "evidence": "…", "evidence_for": null, "scope": null,
  "learnings": "/abs/LEARNINGS",
  "nearest": [{"rule": "T3", "score": 0.71, "signal": "…", "category": "delivery"}]}
 ```
 
-A decision (`LEARNINGS/decisions.jsonl`, one per line): `{"ts", "proposal", "author",
-"reviewer", "reviewer_instance", "decision": "new|merged|rejected", "rule": "T5"|null,
-"category", "why"}`. The accepted or rejected proposal moves to `LEARNINGS/accepted/` or
+`scope` is the role the rule would be scoped to (`hx learn propose --role R`), `null` for
+global; `role` is the proposer's own role, recorded, never a scope. `hx learn accept ID` writes
+the rule with the proposal's scope; `--role R` scopes it to `R` instead, `--global` makes it
+global (both together refuse); `--merge-into` keeps the target rule's scope. A decision
+(`LEARNINGS/decisions.jsonl`, one per line): `{"ts", "proposal", "author", "reviewer",
+"reviewer_instance", "decision": "new|merged|rejected", "rule": "T5"|null, "category",
+"scope": "global|<role>", "why"}` (`scope` absent on a rejection). The accepted or rejected proposal moves to `LEARNINGS/accepted/` or
 `LEARNINGS/rejected/` with `decision`, `rule`/`why`, `category`, `reviewer` and `decided`
-added. Output lines: `HX-LEARN-PROPOSED <id> category=<c> nearest=<rule:score,…>`,
-`HX-LEARN-PENDING <n>`, `HX-LEARN new|merged <id> rule=<key> category=<c>`,
+added. Output lines: `HX-LEARN-PROPOSED <id> category=<c> scope=<global|role>
+nearest=<rule:score,…>`, `HX-LEARN-PENDING <n>`,
+`HX-LEARN new|merged <id> rule=<key> category=<c> scope=<global|role>`,
 `HX-LEARN rejected <id>`, `HX-LEARN-CHECK rules=<n> pending=<p> fails=<f>`.
 
 A text proposal (`hx.learn.propose_text`: a migrated `config/<id>/AGENTS.md`, `hx distill`) has
@@ -290,14 +297,23 @@ A text proposal (`hx.learn.propose_text`: a migrated `config/<id>/AGENTS.md`, `h
 and `check`, and `author` the agent the prose came from. `hx learn accept` refuses it without
 both `--signal` and `--check` (or `--merge-into`). `--keep` writes the rule and leaves the
 proposal pending with the rule key appended to `"rules"`; the output line ends ` kept`.
-`hx learn pending` prints its text as `  | `-prefixed lines.
+`hx learn pending` prints its text as `  | `-prefixed lines. Its scope is the role of the
+agent the prose came from, so a lesson one worker wrote reaches every worker of its role.
+
+`hx learn list [RULE] [--prefix P] [--category C] [--role R|global]` prints
+`<key> <category> <global|role> <signal>` per rule and `HX-LEARN-LIST <n> rule(s) under <dir>`;
+`--role` keeps the rules with that scope (`global`: the unscoped ones); `--json` adds `role`
+(`null` for global) to each rule.
 
 `hx distill <id> <file>` prints `HX-DISTILL <id> proposal=<proposal id> goal_addenda=<n>
 recorded=<n>`: the file's text becomes one text proposal, and the addenda are removed.
 
-The persona region (`hx persona`, `hx.learn.persona_region`) carries every rule line whole
-under `### <category> — <definition>` headings in taxonomy order; `hx doctor` warns
-`learnings-size` above `hx.learn.PERSONA_WARN_BYTES` (200 KiB).
+The persona region (`hx persona`, `hx.learn.persona_region(root, env, role)`) carries every
+global rule line whole under `### <category> — <definition>` headings in taxonomy order, then
+every rule scoped to the agent's role under `### <role> · <category>` headings; rules scoped to
+other roles are not in it. Its first line counts what it carries (`<n> rule(s)[, <k> of them
+for <role>], last <key>`). `hx doctor` warns `learnings-size` when the largest region any
+configured role renders is above `hx.learn.PERSONA_WARN_BYTES` (200 KiB).
 
 ## `templates/work-item.md` placeholders
 

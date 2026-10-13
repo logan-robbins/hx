@@ -63,6 +63,19 @@ def test_the_learnings_region_is_last_and_carries_every_rule_whole(instance):
     assert str(instance / "LEARNINGS") in text and "hx learn propose --category" in text
 
 
+def test_the_region_carries_the_agents_roles_rules_and_no_other_roles(instance):
+    _role(instance)
+    partner = {"HARNESS_ID": "partner"}
+    for signal, role in (("for everyone", None), ("for engineers", "engineer"), ("for qa", "qa-engineer")):
+        proposal = learn.propose(instance, signal=signal, check="c", evidence="e", category="build",
+                                 role=role, env={"HARNESS_ID": "eng-001"})
+        learn.accept(instance, proposal["id"], env=partner)
+    text = persona.render(instance, "eng-001")
+    assert "for everyone" in text and "for engineers" in text and "for qa" not in text
+    assert text.index("for everyone") < text.index("### engineer · build") < text.index("for engineers")
+    assert "for engineers" not in persona.render(instance, "partner")
+
+
 def test_a_role_without_a_persona_gets_one_identity_line(instance):
     text = persona.render(instance, "eng-001")
     assert text.startswith(persona.FALLBACK.format(id="eng-001", role="engineer", pod="engineers"))
@@ -190,6 +203,7 @@ def test_migration_moves_the_per_id_paragraph_into_purpose_and_memory_into_a_pro
     assert not path.exists()
     proposal = learn.load_proposal(instance / "LEARNINGS", result["proposal"])
     assert proposal["kind"] == "text" and proposal["author"] == "eng-001"
+    assert proposal["scope"] == "engineer", "what one worker learned is owed to its role"
     assert "`make fixtures` rebuilds them" in proposal["text"]
     assert persona.migrate(instance, "eng-001") is None, "idempotent: nothing left to move"
 

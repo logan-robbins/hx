@@ -165,8 +165,10 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     root = Path(root)
     persona_bytes, persona_source, persona_text = _persona(root, item_id, env)
     claude_md = _file_bytes(root / "config" / "CLAUDE.md")
+    harness = _harness_json(root, item_id)
     try:
-        learnings = len(learn.persona_region(root, env).encode())
+        # What `hx persona` renders for this agent: global rules plus its role's.
+        learnings = len(learn.persona_region(root, env, role=harness.get("role")).encode())
     except (ValidationError, OSError):
         learnings = None
     in_persona = LEARNINGS_BEGIN in persona_text
@@ -177,7 +179,6 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     descriptions = sum(_skill_description_bytes(path) for path in skills.values())
     prefix = ((persona_bytes or 0) + (0 if claude_md_in_persona else (claude_md or 0))
               + descriptions + (0 if in_persona else (learnings or 0)))
-    harness = _harness_json(root, item_id)
     model = harness.get("model") if isinstance(harness.get("model"), str) else None
     budget = {"model": model, "invariant_ceiling_tokens": None, "working_room_tokens": None,
               "within": None, "share": None}

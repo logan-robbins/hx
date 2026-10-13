@@ -30,6 +30,7 @@ A refusal names the first thing wrong and writes nothing.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -108,8 +109,13 @@ def distill(root: Path, item_id: str, distilled_file: str | Path, *, env=None) -
     recorded = len(entry.get("addenda") or [])
 
     # Everything validated: write. The proposal first, then the Work Item, then tasks.json.
+    try:
+        role = json.loads(harness.read_text()).get("role")
+    except (OSError, ValueError, AttributeError):
+        role = None
     proposal = learn.propose_text(
         root, text=distilled, author=item_id,
+        role=role if isinstance(role, str) and learn.ROLE_NAME_RE.match(role) else None,
         source=f"distilled from {item_id}'s goal addenda by hx distill", env=env,
     )
     if work_item is not None and new_body is not None:

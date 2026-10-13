@@ -306,6 +306,21 @@ def test_warns_on_the_single_file_layout_and_an_oversized_region(instance, monke
     assert ("learnings", OK) in statuses(checks)
 
 
+def test_the_region_size_bound_is_the_largest_role_region(instance, monkeypatch):
+    """A role's rules are only in that role's personas, so the bound is the largest region any
+    configured role renders, and the warning names that role."""
+    from hx import learn
+    global_size = len(learn.persona_region(instance).encode())
+    monkeypatch.setattr(learn, "PERSONA_WARN_BYTES", global_size + 200)
+    assert ("learnings-size", WARN) not in statuses(run_checks(instance))
+    proposal = learn.propose(instance, signal="x" * 400, check="c", evidence="e", category="build",
+                             role="engineer", env={"HARNESS_ID": "eng-001"})
+    learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
+    checks = run_checks(instance)
+    assert ("learnings-size", WARN) in statuses(checks)
+    assert "every engineer persona" in detail_for(checks, "learnings-size")[0]
+
+
 # --- skills (TOOL_SKILL_PLAN step 1) -----------------------------------------------------------
 
 

@@ -14,7 +14,7 @@ the next launch or restart, and nothing is copied per id:
                               the persona's opening paragraph
   config/CLAUDE.md            only where the persona is the invariants' channel (Pi, Grok),
                               as the `hx:global` region, first
-  LEARNINGS/                  `hx.learn.persona_region`, last
+  LEARNINGS/                  `hx.learn.persona_region`, last: global rules, then the role's
 
 A role without `personas/<role>/AGENTS.md` (a test or bespoke role) gets one identity line in
 its place.
@@ -135,7 +135,9 @@ def render(root: Path, item_id: str, *, env=None) -> str:
             parts.append(_region(GLOBAL_BEGIN, GLOBAL_END,
                                  expand_identity(clauses.read_text().strip("\n"), values)))
     parts.append(body)
-    parts.append(_region(LEARNINGS_BEGIN, LEARNINGS_END, persona_region(root, env)))
+    # Global rules, then the rules scoped to this agent's role (`hx learn propose --role`).
+    parts.append(_region(LEARNINGS_BEGIN, LEARNINGS_END,
+                         persona_region(root, env, role=values["role"])))
     return "\n\n".join(part for part in parts if part.strip()) + "\n"
 
 
@@ -240,8 +242,10 @@ def migrate(root: Path, item_id: str, *, env=None) -> dict | None:
     proposal = None
     if leftover:
         body = "\n\n".join(f"### {title}\n\n{block}" for title, block in leftover)
+        # Scoped to the agent's role: what one worker learned is owed to every worker of
+        # its role, and the reviewer widens it with `--global` when it is everyone's.
         proposal = learn.propose_text(
-            root, text=body, author=item_id,
+            root, text=body, author=item_id, role=values["role"],
             source=f"migrated from config/{item_id}/AGENTS.md", env=env,
         )["id"]
     agents.unlink()

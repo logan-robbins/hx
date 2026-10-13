@@ -261,12 +261,14 @@ move on and before you finish:
 
 ```bash
 hx learn propose --category <c> --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
+hx learn propose … --role <your role>                                      # only agents of your role need it
 hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an existing rule already says it
 hx learn classify --signal "<what you saw>" --check "<the test>"            # which of the eleven kinds it is
 ```
 
-Every rule already in force is in your system prompt — the `hx:learnings` region of your
-persona, whole, category by category — at every start and after every compaction. Never read
+Every rule in force for you — the global ones, then your role's — is in your system prompt,
+the `hx:learnings` region of your persona, whole, category by category, at every start and
+after every compaction. Never read
 the files (`LEARNINGS/<category>.md`, or the fleet's shared directory); `hx learn list <key>`
 prints one rule when you want to quote it. You never write them: the proposal is reviewed by
 a different session, which may refile it under another category, and that is what keeps each
