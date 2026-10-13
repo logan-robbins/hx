@@ -657,3 +657,22 @@ configured IDs are attributed to a provider by that same family prefix. Text out
 block per provider and a last line `HX-MODELS ok=<n> unverified=<n> error=<n> pinned=<n>
 stale=<n>`. `--expect current` exits 3 when `stale` is non-empty (only `ok` providers can be
 stale); usage errors exit 2; a worker caller is refused (exit 1).
+
+## Completion repeats (`state/learn/repeats.jsonl`, `learn_repeats`)
+
+When `hx complete done`'s `### Checks` or a planned acceptance check fails, the first 2,000
+bytes of its output are passed to `learn.repeat`. On `repeat` or `related` one line is appended
+to `$HARNESS_ROOT/state/learn/repeats.jsonl`:
+
+```json
+{"id": "eng-001", "rule": "L3", "score": 0.84, "ts": "2026-10-12T09:00:00Z",
+ "check": "### Checks", "verdict": "repeat"}
+```
+
+(`check` is `### Checks` for `hx complete`, the check ID for a planned run) and the line
+`learnings: repeat of L3 (0.84)` is appended to the `HX-CHECK-FAILED` output (or to the pasted
+acceptance-failure line; the native completion intent carries it as `learnings`). Nothing is
+written on `new`. Advisory: the exit code and verdict are the check's. The fleet document of
+`hx metrics [--json]` gains `summary.learn_repeats`: `{"L3": 2}` — records per rule whose `ts`
+is later than that rule's last `new` or `merged` decision in `decisions.jsonl` (`{}` when
+there are none); the text form adds a `learn_repeats(<total>): L3=2 …` line after `dead(…)`.

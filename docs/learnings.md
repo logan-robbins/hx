@@ -178,3 +178,14 @@ size law: `hx learn invariant` charges every rule byte-for-token against
 the prompt invariant budget (`hx cache budget`); past the ceiling the most
 valuable context starts evicting working room, so wording is compressed
 before rules are added.
+
+The repeat check also runs by itself at completion. When `hx complete done` fails its
+`### Checks`, or a planned run's acceptance check fails in `native_completion`, the first
+2,000 bytes of the failing output become the signal for `hx learn repeat`. A `repeat` or
+`related` verdict appends `learnings: repeat of <Rule> (score)` to the `HX-CHECK-FAILED`
+output (or to the pasted "Acceptance check … failed" line) and one record to
+`state/learn/repeats.jsonl`; a `new` verdict writes nothing. It is advisory: the check alone
+decides pass or fail, and a scoring error is silently ignored. `hx metrics` counts the records
+per rule since that rule was last accepted or merged into (`summary.learn_repeats`). Raw check
+output is noisier than a proposed signal, so the threshold is to be reviewed against
+`repeats.jsonl` after the first live wave before a repeat is treated as a cascade failure.

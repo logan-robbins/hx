@@ -395,11 +395,17 @@ def collect_fleet(root: Path, *, env: dict[str, str] | None = None) -> dict:
     agents = [enrich_agent(root, item, tasks.get(item["id"]) or {}, env, pane=True)
               for item in board["items"]]
     agents.sort(key=lambda agent: sort_key(agent["id"]))
+    summary = summarize(agents)
+    # Completion-time repeats per rule since that rule was last accepted (TOOL_SKILL_PLAN
+    # step 4); `summarize` stays a pure function of the agents.
+    from . import learn as learn_mod
+
+    summary["learn_repeats"] = learn_mod.repeats_summary(root, env)
     return {
         "root_abs": board["root_abs"],
         "ts": timestamps.now(),
         "agents": agents,
-        "summary": summarize(agents),
+        "summary": summary,
         "partner": _partner_tail(root),
         # The instance overlay (graph status) fills this for the UI; the
         # product has no graph of its own, so it is always null here.
@@ -437,6 +443,9 @@ def render_fleet_text(doc: dict) -> str:
     lines.append(f"needs_input({len(summary['needs_input'])}): "
                  f"{' '.join(summary['needs_input'])}")
     lines.append(f"dead({len(summary['dead'])}): {' '.join(summary['dead'])}")
+    repeats = summary.get("learn_repeats") or {}
+    lines.append(f"learn_repeats({sum(repeats.values())}): "
+                 + " ".join(f"{rule}={count}" for rule, count in repeats.items()))
     partner = doc.get("partner") or {}
     lines.append(f"partner seq={partner.get('seq')} ts={partner.get('ts')} "
                  f"event={partner.get('event')}")

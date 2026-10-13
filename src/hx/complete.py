@@ -143,9 +143,17 @@ def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> dict | Non
     before = fingerprints.source(workdir, [], check_env)
     result = run_checks(checks, workdir, env)
     if result.returncode != 0:
+        output = f"{result.stdout}{result.stderr}"
+        # The never-twice question, advisory only: the verdict stays the check's
+        # (TOOL_SKILL_PLAN step 4, `state/learn/repeats.jsonl`).
+        from . import learn as learn_mod
+
+        note = learn_mod.completion_repeat(root, item_id, output, check="### Checks", env=env)
+        if note:
+            output = (output if not output or output.endswith("\n") else output + "\n") + note + "\n"
         raise CheckFailed(
             f"{CHECK_FAILED} {item_id}\n`### Checks` failed with exit {result.returncode} in {workdir}:\n"
-            f"{result.stdout}{result.stderr}"
+            f"{output}"
         )
     # Checks can write files or even commit changed inputs. Recheck both content
     # identity and cleanliness after execution before allowing the completion path.

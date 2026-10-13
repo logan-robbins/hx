@@ -192,3 +192,28 @@ def test_watch_emits_snapshot_then_delta(instance, work_item):
     thread.join()
     assert second["type"] == "delta"
     assert "tasks" in second["changed"]
+
+
+# --- learn_repeats (TOOL_SKILL_PLAN step 4) -------------------------------------------------
+
+
+def test_fleet_summary_counts_completion_repeats_since_each_rules_last_accept(instance, monkeypatch):
+    monkeypatch.delenv("HX_LEARNINGS", raising=False)
+    repeats = instance / "state" / "learn" / "repeats.jsonl"
+    repeats.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"id": "eng-001", "rule": "L1", "score": 0.91, "ts": "2026-10-01T10:00:00Z", "check": "### Checks"},
+        {"id": "eng-001", "rule": "L1", "score": 0.88, "ts": "2026-10-03T10:00:00Z", "check": "### Checks"},
+        {"id": "eng-002", "rule": "L2", "score": 0.40, "ts": "2026-10-02T10:00:00Z", "check": "unit"},
+    ]
+    repeats.write_text("".join(json.dumps(row) + "\n" for row in rows) + "not json\n")
+    decisions = instance / "LEARNINGS" / "decisions.jsonl"
+    decisions.parent.mkdir(parents=True, exist_ok=True)
+    decisions.write_text(json.dumps({"ts": "2026-10-02T00:00:00Z", "decision": "merged", "rule": "L1"}) + "\n")
+    doc = collect_fleet(instance)
+    assert doc["summary"]["learn_repeats"] == {"L1": 1, "L2": 1}
+    assert "learn_repeats(2): L1=1 L2=1" in render_fleet_text(doc)
+
+
+def test_fleet_summary_has_empty_learn_repeats_without_records(instance):
+    assert collect_fleet(instance)["summary"]["learn_repeats"] == {}

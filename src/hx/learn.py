@@ -370,6 +370,76 @@ def repeat(root: Path, signal: str, *, env: dict[str, str] | None = None) -> dic
                        "new": "propose with hx learn propose"}[verdict]}
 
 
+#: How much of a failing check's output becomes the repeat signal (TOOL_SKILL_PLAN step 4).
+REPEAT_SIGNAL_BYTES = 2000
+REPEATS = Path("state") / "learn" / "repeats.jsonl"
+
+
+def completion_repeat(root: Path, item_id: str, output: str, *, check: str,
+                      env: dict[str, str] | None = None) -> str | None:
+    """A failed completion check, asked the never-twice question. Advisory only.
+
+    The first 2,000 bytes of the failing output are the signal for `repeat`. On `repeat` or
+    `related`, one `{id, rule, score, ts, check, verdict}` line is appended to
+    `state/learn/repeats.jsonl` and the line to append to the `HX-CHECK-FAILED` output is
+    returned; otherwise None. Nothing here can change whether the check passed: any failure
+    to score or record is swallowed and the completion proceeds exactly as before.
+    """
+    signal = (output or "").encode("utf-8", "replace")[:REPEAT_SIGNAL_BYTES].decode("utf-8", "ignore")
+    if not signal.strip():
+        return None
+    try:
+        verdict = repeat(root, signal, env=env)
+    except (HxError, OSError, ValueError):
+        return None
+    if verdict["verdict"] not in ("repeat", "related") or not verdict["rule"]:
+        return None
+    score = round(float(verdict["score"]), 2)
+    record = {"id": item_id, "rule": verdict["rule"], "score": score, "ts": timestamps.now(),
+              "check": check, "verdict": verdict["verdict"]}
+    try:
+        path = Path(root) / REPEATS
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    except OSError:
+        pass
+    return f"learnings: repeat of {verdict['rule']} ({score:.2f})"
+
+
+def repeats_summary(root: Path, env: dict[str, str] | None = None) -> dict[str, int]:
+    """`hx metrics` `summary.learn_repeats`: completion repeats per rule since that rule was
+    last accepted or merged into (`decisions.jsonl`), so a count resets when the rule is
+    reaffirmed. Unreadable lines are skipped."""
+    path = Path(root) / REPEATS
+    if not path.is_file():
+        return {}
+    accepted: dict[str, str] = {}
+    try:
+        decisions = learnings_dir(learnings_path(root, env)) / "decisions.jsonl"
+    except HxError:
+        decisions = None
+    if decisions is not None and decisions.is_file():
+        for line in decisions.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(row, dict) and row.get("decision") in ("new", "merged") and row.get("rule"):
+                accepted[row["rule"]] = max(accepted.get(row["rule"], ""), str(row.get("ts") or ""))
+    counts: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        rule = row.get("rule") if isinstance(row, dict) else None
+        if not rule or str(row.get("ts") or "") <= accepted.get(rule, ""):
+            continue
+        counts[rule] = counts.get(rule, 0) + 1
+    return dict(sorted(counts.items()))
+
+
 def invariant_report(root: Path, *, env: dict[str, str] | None = None) -> dict:
     """Learnings are the invariant apex of the context cascade; size is law.
 
