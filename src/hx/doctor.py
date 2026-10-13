@@ -534,6 +534,64 @@ def live_grok_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]
     return found
 
 
+#: Skill directories an agent CLI may discover inside its working directory: Claude's project
+#: skills, the Agent Skills location Codex and Pi scan, and Pi's own (TOOL_SKILL_PLAN step 7).
+WORKDIR_SKILL_DIRS = (".claude/skills", ".agents/skills", ".pi/skills")
+#: Flavors that scan `$HOME/.agents/skills` whatever their own config directory says.
+HOST_SKILL_FLAVORS = ("codex", "pi")
+
+
+def _workdir_of(root: Path, item_id: str) -> Path | None:
+    """`harness.json` `workdir`, resolved against the root; None when unreadable or unset."""
+    try:
+        data = json.loads((root / "config" / item_id / "harness.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = data.get("workdir") if isinstance(data, dict) else None
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else root / path
+
+
+def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str, str]]:
+    """`skills-isolation` warnings: skills that could reach a worker from outside its home.
+
+    A worker's workdir is a product checkout, and its `.claude/skills`, `.agents/skills` or
+    `.pi/skills` must never load into the worker. Claude under `--setting-sources user` is
+    unverified for project skills on the pinned version; Codex and Pi need project trust, which
+    hx never grants. Codex and Pi also scan `$HOME/.agents/skills` regardless of `CODEX_HOME`
+    or `PI_CODING_AGENT_DIR`, so a non-empty one is reported while such a worker is configured
+    (Pi launches with `--no-skills`). Warnings until docs/two-worlds.md records both checks.
+    """
+    env = os.environ if env is None else env
+    rows: list[tuple[str, str, str]] = []
+    workers = [item_id for item_id in ids if item_id != "partner"]
+    for item_id in workers:
+        workdir = _workdir_of(root, item_id)
+        if workdir is None:
+            continue
+        found = [rel for rel in WORKDIR_SKILL_DIRS if (workdir / rel).is_dir()]
+        if found:
+            rows.append((WARN, "skills-isolation",
+                         f"{item_id}: workdir {workdir} contains {', '.join(found)}; a checkout's "
+                         "skills must never load into a worker (docs/two-worlds.md, Skills)"))
+    host_workers = [i for i in workers if flavor_of(root, i) in HOST_SKILL_FLAVORS]
+    home = env.get("HOME")
+    if host_workers and home:
+        host = Path(home) / ".agents" / "skills"
+        try:
+            entries = sorted(p.name for p in host.iterdir()) if host.is_dir() else []
+        except OSError:
+            entries = []
+        if entries:
+            rows.append((WARN, "skills-isolation",
+                         f"~/.agents/skills holds {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+                         f"while Codex or Pi worker(s) {', '.join(host_workers)} are configured; "
+                         "Codex scans it whatever CODEX_HOME says (docs/two-worlds.md, Skills)"))
+    return rows
+
+
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
 
@@ -805,6 +863,8 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     codex_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "codex"]
     if codex_ids:
         checks.extend(_codex_instance(root, codex_ids))
+    # Two-worlds isolation for skill discovery (TOOL_SKILL_PLAN step 7).
+    checks.extend(skill_isolation(root, ids, env))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the

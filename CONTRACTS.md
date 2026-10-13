@@ -747,3 +747,30 @@ bytes of the packet the restored conversation starts from. It is the seam record
 two are the same bytes. It is `null` when the record has neither. The text form appends it
 after `task_reprints`. `tests/live/test_compaction_scenario.py` reports it per lane in
 docs/compaction-scenario-results.md.
+
+## Skill manifest rows for `hx-signoff` and `hx-conversion`, and `skills-isolation`
+
+`src/hx/skills/manifest.json` gains two rows (TOOL_SKILL_PLAN step 7):
+
+```json
+{"hx-signoff": {"audiences": ["worker"], "roles": ["release-engineer", "qa-engineer"], "optional": false},
+ "hx-conversion": {"audiences": ["partner", "worker"], "roles": ["*"], "optional": true}}
+```
+
+`hx-conversion` installs only where `config/hx.json` has `"skills": ["hx-conversion"]`. Both
+files stay at or under 8 KiB, so `hx tools load skill:NAME` can carry them. The worker lint of
+the doctor `skills` row has one exception. In a skill whose `audiences` include `partner`, a
+section whose heading starts with `Partner only` is not linted: everything from that heading
+to the next heading of the same or a higher level, with headings inside code fences ignored.
+A worker-only skill gets no such exemption.
+
+`hx doctor` adds `warn` rows named `skills-isolation`, and prints none when nothing applies:
+
+```text
+warn  skills-isolation <id>: workdir <path> contains .claude/skills; a checkout's skills must never load into a worker (docs/two-worlds.md, Skills)
+warn  skills-isolation ~/.agents/skills holds 2 entries while Codex or Pi worker(s) <id> are configured; Codex scans it whatever CODEX_HOME says (docs/two-worlds.md, Skills)
+```
+
+The first is per worker (never the Partner) and lists whichever of `.claude/skills`,
+`.agents/skills` and `.pi/skills` exist in its `harness.json` workdir. The second reads
+`$HOME/.agents/skills` only while some worker's flavor is `codex` or `pi`.

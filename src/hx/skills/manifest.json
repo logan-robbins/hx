@@ -4,5 +4,7 @@
   "hx-memory": {"audiences": ["partner", "worker"], "roles": ["*"], "optional": false, "planned": false},
   "hx-worker": {"audiences": ["worker"], "roles": ["*"], "optional": false},
   "hx-companion": {"audiences": ["companion"], "roles": ["*"], "optional": false},
-  "hx-setup": {"audiences": ["operator"], "roles": [], "optional": false}
+  "hx-setup": {"audiences": ["operator"], "roles": [], "optional": false},
+  "hx-signoff": {"audiences": ["worker"], "roles": ["release-engineer", "qa-engineer"], "optional": false},
+  "hx-conversion": {"audiences": ["partner", "worker"], "roles": ["*"], "optional": true}
 }

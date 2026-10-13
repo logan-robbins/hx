@@ -458,3 +458,44 @@ def test_rerunning_keeps_what_claude_code_wrote_into_config_json(installed):
     assert after["numStartups"] == 7
     assert after["projects"][str(installed / "wt" / "eng-001")]["history"] == ["something"]
     assert after["hasCompletedOnboarding"] is True
+
+
+# --- the shipped role and optional skills (TOOL_SKILL_PLAN step 7) -------------------------------
+
+
+def _set_role(instance, item_id, role):
+    harness = instance / "config" / item_id / "harness.json"
+    harness.write_text(json.dumps({**json.loads(harness.read_text()), "role": role}))
+
+
+@pytest.mark.parametrize("role,expected", [
+    ("release-engineer", True), ("qa-engineer", True),
+    ("backend-engineer", False), ("frontend-engineer", False), ("engineer", False),
+])
+def test_hx_signoff_installs_for_release_and_qa_engineers_only(instance, role, expected):
+    _set_role(instance, "eng-001", role)
+    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    home = instance / "run" / "eng-001"
+    assert (home / "home" / "skills" / "hx-signoff" / "SKILL.md").is_file() is expected
+    assert "hx-signoff" not in _installed(home / "companion-home" / "skills")
+    assert _installed(home / "home" / "skills") == _expected_skills(instance, "eng-001")
+
+
+def test_the_partner_never_gets_hx_signoff(instance):
+    assert run_install(instance, "partner", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+    assert "hx-signoff" not in _installed(instance / "run" / "partner" / "home" / "skills")
+
+
+def test_hx_conversion_is_off_until_config_hx_json_turns_it_on(instance):
+    for item_id in ("eng-001", "partner"):
+        assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+        assert "hx-conversion" not in _installed(instance / "run" / item_id / "home" / "skills")
+    hx_json = instance / "config" / "hx.json"
+    recorded = json.loads(hx_json.read_text()) if hx_json.is_file() else {}
+    hx_json.write_text(json.dumps({**recorded, "skills": ["hx-conversion"]}))
+    for item_id in ("eng-001", "partner"):
+        assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
+        home = instance / "run" / item_id
+        assert (home / "home" / "skills" / "hx-conversion" / "SKILL.md").is_file(), item_id
+        assert "hx-conversion" not in _installed(home / "companion-home" / "skills")
+        assert _installed(home / "home" / "skills") == _expected_skills(instance, item_id)

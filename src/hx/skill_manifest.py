@@ -15,7 +15,9 @@ The same module validates what ships, for `hx doctor`'s `skills` row: the Agent 
 frontmatter rules (agentskills.io/specification: `name` 1-64 lowercase letters, digits and
 single hyphens, equal to the directory; `description` 1-1,024 characters; portable fields
 only), a 32 KiB bound per file, and a lint that no skill a worker carries names a command
-the worker would be refused (`hx.cli.AUDIENCES`).
+the worker would be refused (`hx.cli.AUDIENCES`). A skill that is also the Partner's may keep
+its Partner steps under a heading that starts with `Partner only`; the lint skips that
+section (to the next heading of the same or a higher level) and nothing else.
 """
 
 from __future__ import annotations
@@ -240,14 +242,42 @@ def validate_skill(directory: Path) -> list[str]:
 
 #: `hx <command> [<sub>]` as written in a skill's prose or code blocks.
 _MENTION_RE = re.compile(r"(?<![\w/.-])hx\s+([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?")
+#: A Markdown heading outside a code fence, and the title that marks a Partner-only section.
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+PARTNER_ONLY = "partner only"
 
 
-def refused_mentions(text: str, audiences: dict[str, set[str]]) -> list[str]:
-    """Every `hx …` the text names that a worker caller would be refused (sorted, unique)."""
+def _linted_lines(text: str, *, partner_sections: bool):
+    """The lines the worker lint reads: all of them, or (for a skill that is also the
+    Partner's) all but the sections headed `Partner only…`."""
+    fenced, skip_level = False, None
+    for line in text.splitlines():
+        if _FENCE_RE.match(line):
+            fenced = not fenced
+        heading = None if fenced else _HEADING_RE.match(line)
+        if heading and partner_sections:
+            level = len(heading.group(1))
+            if skip_level is not None and level <= skip_level:
+                skip_level = None
+            title = heading.group(2).strip().strip("*_`").lower()
+            if skip_level is None and title.startswith(PARTNER_ONLY):
+                skip_level = level
+        if skip_level is None:
+            yield line
+
+
+def refused_mentions(text: str, audiences: dict[str, set[str]], *,
+                     partner_sections: bool = False) -> list[str]:
+    """Every `hx …` the text names that a worker caller would be refused (sorted, unique).
+
+    With `partner_sections` (the skill's audiences include the Partner), a section headed
+    `Partner only…` is the Partner's and is not linted.
+    """
     from .cli import resolve_capability, worker_may_run
 
     found = set()
-    for line in text.splitlines():
+    for line in _linted_lines(text, partner_sections=partner_sections):
         for match in _MENTION_RE.finditer(line):
             command, sub = match.group(1), match.group(2)
             rest = [sub] if sub else []
@@ -285,7 +315,8 @@ def check(directory: Path, root: Path | None = None) -> list[tuple[str, str]]:
             over_facade += 1
         row = manifest.get(name)
         if row and any(a in WORKER_AUDIENCES for a in row["audiences"]) and path.is_file():
-            for capability in refused_mentions(path.read_text(), AUDIENCES):
+            for capability in refused_mentions(path.read_text(), AUDIENCES,
+                                               partner_sections="partner" in row["audiences"]):
                 problems.append(f"{name}: a worker carries it, and it names `hx {capability}`, "
                                 "which a worker is refused")
     turned_on: list[str] = []

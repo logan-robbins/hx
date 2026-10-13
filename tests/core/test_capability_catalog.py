@@ -54,3 +54,27 @@ def test_skill_source_change_requires_reindex(indexed):
     (store.root / 'SKILL.md').write_text('Changed instructions.')
     with pytest.raises(Conflict, match='skill changed'):
         capabilities.load(store, run, 'skill:checks')
+
+
+def test_the_new_shipped_skills_load_through_the_facade_under_8_kib(tmp_path):
+    """TOOL_SKILL_PLAN step 7: hx-signoff and hx-conversion fit `hx tools load skill:NAME`,
+    so an advisory adapter can carry them whole."""
+    from pathlib import Path
+
+    package = Path(capabilities.__file__).resolve().parent / 'skills'
+    names = ('hx-signoff', 'hx-conversion')
+    (tmp_path / 'config').mkdir()
+    (tmp_path / 'config/capabilities.json').write_text(json.dumps({'schema_version': 1, 'servers': {},
+        'skills': {name: str(package / name / 'SKILL.md') for name in names}}))
+    assert capabilities.index(tmp_path)['capabilities'] == 2
+    with ContinuityStore(tmp_path) as store:
+        with store.transaction() as tx:
+            rev = tx.put_task('T', {'goal': 'Sign off the release.'}, expected_revision=0)
+            run = tx.start_run('T', rev, 'rel-001')
+        for name in names:
+            loaded = capabilities.load(store, run, 'skill:' + name)
+            text = (package / name / 'SKILL.md').read_text()
+            assert loaded['body'] == text
+            assert len(loaded['body'].encode()) <= 8192, name
+            assert capabilities.read(tmp_path)['entries']['skill:' + name]['purpose'].startswith(
+                'Sign-off procedure' if name == 'hx-signoff' else 'How to run a code conversion')

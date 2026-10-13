@@ -33,9 +33,11 @@ GOAL_EXAMPLES = [SKELETON / "templates" / "goal.md"]
 #: Every skill that ships, for the checks that apply to any skill.
 SKILL_FILES = [
     SKILLS / "hx-companion" / "SKILL.md",
+    SKILLS / "hx-conversion" / "SKILL.md",
     SKILLS / "hx-memory" / "SKILL.md",
     SKILLS / "hx-partner" / "SKILL.md",
     SKILLS / "hx-setup" / "SKILL.md",
+    SKILLS / "hx-signoff" / "SKILL.md",
     SKILLS / "hx-worker" / "SKILL.md",
 ]
 
@@ -360,16 +362,24 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
 def test_the_skills_that_ship_are_the_ones_the_spec_names():
     # `manifest.json` beside them says who gets each one (TOOL_SKILL_PLAN step 1).
     assert sorted(p.name for p in SKILLS.iterdir() if p.is_dir() and p.name != "__pycache__") == [
-        "hx-companion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup", "hx-worker",
+        "hx-companion", "hx-conversion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup",
+        "hx-signoff", "hx-worker",
     ], (
         "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
         "spec 10 adds hx-companion for the Companion's home; hx-fleet is the Partner's manual "
         "for making and retiring agents, and is the Partner's alone; hx-memory is how either "
         "kind of HarnessAgent searches the instance's episode store (docs/memory.md); "
         "hx-setup is for the coding agent or harness that installs hx, and is never copied "
-        "into an agent home"
+        "into an agent home; hx-signoff is the release and QA engineers' sign-off loop, and "
+        "hx-conversion is optional, on only where config/hx.json lists it (TOOL_SKILL_PLAN "
+        "step 7)"
     )
     assert sorted(p.name for p in SKILLS.iterdir() if p.is_file()) == ["manifest.json"]
+    manifest = json.loads((SKILLS / "manifest.json").read_text())
+    assert manifest["hx-signoff"] == {"audiences": ["worker"],
+                                     "roles": ["release-engineer", "qa-engineer"], "optional": False}
+    assert manifest["hx-conversion"] == {"audiences": ["partner", "worker"], "roles": ["*"],
+                                        "optional": True}
 
 
 def test_the_setup_skill_is_not_installed_into_any_home():
