@@ -82,7 +82,17 @@ def test_search_finds_symbol_and_body(indexed):
     body_hits = code_index.search(root, "Calc helpers")
     assert any(h["path"].endswith("calc.py") for h in body_hits)
     for hit in hits:
-        assert {"path", "title", "snippet", "score", "layer", "repo", "lane", "anchor_sha", "stale"} <= set(hit)
+        assert {
+            "path",
+            "title",
+            "snippet",
+            "score",
+            "layer",
+            "repo",
+            "lane",
+            "anchor_sha",
+            "stale",
+        } <= set(hit)
         assert len(hit["snippet"]) <= 320
 
 
@@ -122,8 +132,10 @@ def test_graph_edges_resolves_imports(indexed):
     root, _, _ = indexed
     edges = code_index.graph_edges(root)
     assert any(
-        e["from_path"] == "src/app.py" and e["to_path"] == "src/calc.py"
-        and e["kind"] == "imports" and e["status"] == "candidate"
+        e["from_path"] == "src/app.py"
+        and e["to_path"] == "src/calc.py"
+        and e["kind"] == "imports"
+        and e["status"] == "candidate"
         for e in edges
     ), edges
 
