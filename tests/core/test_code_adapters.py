@@ -1,5 +1,6 @@
 import json
 import shutil
+from pathlib import Path
 import pytest
 from hx import code_adapters, code_index
 from hx.code_store import connect, namespace
@@ -247,3 +248,39 @@ def test_external_tag_merge_preserves_same_line_overloads():
         source, "a.cs", symbols, refs, rows, "tree-sitter-0.25.10"
     )
     assert len([r for r in merged if r["name"] == "Run"]) == 2
+
+
+def test_ctags_wrapper_json_fixture_and_safe_degradation(tmp_path, monkeypatch):
+    from hx.code_extract import extract
+
+    source = "class Fixture { public int Run(int value) { return value; } }\n"
+    (tmp_path / "a.cs").write_text(source)
+    symbols, refs, _ = extract(source, "a.cs")
+    detected = {
+        "tree-sitter": {"available": False},
+        "ctags": {"available": True, "binary": "ctags"},
+    }
+    calls = []
+
+    def output(argv, **kwargs):
+        calls.append(argv)
+        return json.dumps(
+            {
+                "_type": "tag",
+                "name": "Run",
+                "kind": "method",
+                "line": 1,
+                "scope": "Fixture",
+                "end": 1,
+            }
+        )
+
+    monkeypatch.setattr(code_adapters, "run", output)
+    actual, _ = code_adapters.syntax(tmp_path, "a.cs", source, symbols, refs, detected)
+    assert any(s["extractor"] == "universal-ctags" for s in actual)
+    assert "--output-format=json" in calls[0]
+    monkeypatch.setattr(code_adapters, "run", lambda *a, **k: "unsupported format")
+    degraded, _ = code_adapters.syntax(
+        tmp_path, "a.cs", source, symbols, refs, detected
+    )
+    assert all(s["extractor"] == "stdlib-csharp" for s in degraded)

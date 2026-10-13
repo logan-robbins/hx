@@ -182,6 +182,8 @@ def admit(tx, task):
     for row in tx.db.execute("SELECT canonical_path FROM leases l JOIN runs r USING(run_id) WHERE repository=? AND r.ended_at IS NULL", (payload["repository"],)):
         if any(overlaps(path, row[0]) for path in scopes):
             raise Conflict(f"write lease overlaps active owner: {row[0]}")
+    from .code_freshness import require
+    require(tx.store.root, payload)
     state = workspace(payload, clean=True)
     return {"workspace": state, "prerequisites": _prerequisites(tx, task, state)}
 
@@ -270,6 +272,10 @@ def complete(store, run_id, receipt_ids, *, env=None):
         result = json.loads(previous[0])
         if result["checks"] != receipt_ids:
             raise Conflict("completion retry changed its acceptance receipts")
+        with store.transaction() as tx:
+            task = {'payload': json.loads(tx.db.execute('SELECT payload FROM tasks WHERE task_id=? AND revision=?', (result['task_id'], result['revision'])).fetchone()[0])}
+        from .code_freshness import refresh_completion
+        refresh_completion(store, task['payload']['workdir'], result.get('changed_paths', []))
         return result
     scope = audit(store, run_id)
     if not scope["within_scope"]:
@@ -324,7 +330,7 @@ def complete(store, run_id, receipt_ids, *, env=None):
         if workspace(payload, clean=True) != state:
             raise Conflict("source changed before output publication")
         result = {"task_id": task["task_id"], "revision": task["revision"], "run_id": run_id, "checks": receipt_ids,
-                  "commit": state["commit"], "outputs": {name: digest(proof) for name, proof in proofs.items()}}
+                  "commit": state["commit"], "outputs": {name: digest(proof) for name, proof in proofs.items()}, "changed_paths": changed}
         tx._change()
         from .map_learning import publish
         result['application_findings'] = {'count': len(publish(tx, run_id, payload))}
@@ -333,6 +339,8 @@ def complete(store, run_id, receipt_ids, *, env=None):
             tx.db.execute("INSERT INTO unit_outputs VALUES(?,?,?,?,?)", (task["task_id"], task["revision"], output_id, proof["version"], canonical(proof)))
         tx.finish_run(run_id, "completed")
         tx.enqueue("unit_completed", f"complete:{run_id}", result)
+    from .code_freshness import refresh_completion
+    refresh_completion(store, payload['workdir'], changed)
     return result
 
 

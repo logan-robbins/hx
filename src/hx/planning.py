@@ -194,6 +194,8 @@ def validate(store, body):
     tasks, result = _definition(body)
     with store.transaction() as tx:
         for task_id, payload in tasks.items():
+            from .code_freshness import require
+            require(store.root, payload)
             current = tx.task(task_id)
             if current and current["payload"] == payload:
                 active = tx.db.execute("SELECT run_id FROM runs WHERE task_id=? AND ended_at IS NULL", (current["task_id"],)).fetchone()
@@ -220,6 +222,8 @@ def apply(store, body):
         revision, task_versions = actual + 1, {}
         for unit in body["tasks"]:
             task_id, payload = unit["id"], tasks[unit["id"]]
+            from .code_freshness import require
+            require(store.root, payload)
             current = tx.task(task_id)
             if current and current["payload"].get("plan_id") != body["plan_id"]:
                 raise Conflict("task ID belongs to a different assignment/plan")

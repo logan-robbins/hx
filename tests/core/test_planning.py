@@ -201,3 +201,32 @@ def test_schema_eight_upgrade_builds_search_index(active):
     with ContinuityStore(store.root) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert retrieval.plan_context(upgraded, repo, snapshot, "compiler")["nodes"]
+
+
+def test_graph_freshness_refuses_changed_scope_and_rebuild_unlocks(active):
+    from hx import code_index
+    store, repo = active[:2]
+    body = plan(active, [unit(repo, paths=['compiler.py'])])
+    code_index.index_repo(store.root, repo)
+    assert planning.validate(store, body)
+    (repo / 'compiler.py').write_text((repo / 'compiler.py').read_text().replace('context', 'new context'))
+    git(repo, 'add', 'compiler.py')
+    git(repo, 'commit', '-qm', 'scope moved')
+    with pytest.raises(Conflict, match='hx code index'):
+        planning.validate(store, body)
+    code_index.index_repo(store.root, repo, paths=['compiler.py'])
+    assert planning.validate(store, body)
+
+
+def test_graph_freshness_ignores_unrelated_commit_and_rejects_dirty_scope(active):
+    from hx import code_index
+    store, repo = active[:2]
+    body = plan(active, [unit(repo, paths=['compiler.py'])])
+    code_index.index_repo(store.root, repo)
+    (repo / 'unrelated.txt').write_text('unrelated')
+    git(repo, 'add', 'unrelated.txt')
+    git(repo, 'commit', '-qm', 'unrelated')
+    assert planning.validate(store, body)
+    (repo / 'compiler.py').write_text('changed\n')
+    with pytest.raises(Conflict, match='stale code scope'):
+        planning.validate(store, body)
