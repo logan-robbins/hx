@@ -378,3 +378,13 @@ def test_qualified_unicode_case_folding(tmp_path):
     root = tmp_path / "root"
     code_index.index_repo(root, repo)
     assert code_index.symbols_for(root, "CAFÉ.ADD")[0]["qualified"] == "Café.add"
+
+
+def test_go_parity_normalizes_named_parameters_and_results():
+    from hx.code_reuse import normalize
+
+    expected = normalize("Read(p []byte) (n int, err error)", language="go")
+    actual = normalize(
+        "func (s *Store) Read(data []byte) (count int, failure error)", language="go"
+    )
+    assert expected == actual == ("Read([]byte)(int,error)", False)

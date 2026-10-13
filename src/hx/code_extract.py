@@ -194,7 +194,7 @@ def python(text, path):
 
 
 _TYPES = re.compile(
-    r"\b(namespace|class|interface|struct|enum|trait|mod|type|impl)\s+([A-Za-z_$][\w$.]*)"
+    r"\b(namespace|class|interface|struct|enum|trait|mod|type|impl|record(?:\s+(?:class|struct))?)\s+([A-Za-z_$][\w$.]*)"
 )
 _FUNCTIONS = re.compile(
     r"\b(?:function\s*\*?\s*|fn\s+|func\s+(?:\([^)]*\)\s*)?)([A-Za-z_$][\w$]*)\s*(?:<[^{};]*?>)?\s*\("
@@ -221,6 +221,8 @@ def braces(text, path):
         for m in pattern.finditer(code):
             is_type = pattern is _TYPES
             kind = m[1] if is_type else "function"
+            if kind.startswith("record"):
+                kind = "struct" if kind.endswith("struct") else "class"
             name = m[2] if is_type else m[1]
             start = m.start()
             # Include modifiers from the same declaration line.

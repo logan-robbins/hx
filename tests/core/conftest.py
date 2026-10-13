@@ -112,9 +112,13 @@ def instance(tmp_path):
     token.write_text("sk-ant-oat-fake-token\n")
     token.chmod(0o600)
 
-    tested = json.loads(
+    supported = json.loads(
         (SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text()
-    )["versions"][0]
+    )["versions"]
+    # Pin the selected simulator's reported version, as a real installation does.
+    tested = subprocess.run([sys.executable, str(FAKE_CLAUDE), "--version"],
+        env=clean_env(), check=True, capture_output=True, text=True).stdout.split()[0]
+    assert tested in supported, "the fake Claude version must be in the tested set"
     (root / "config" / "claude.json").write_text(
         json.dumps({"bin": str(FAKE_CLAUDE), "version": tested}, indent=2) + "\n"
     )

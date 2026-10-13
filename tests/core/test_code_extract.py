@@ -122,3 +122,17 @@ def test_attributes_are_part_of_non_python_anchor_span():
     assert row["line"] == 2
     assert row["anchor_sha"] == span_sha(text, 2, 3)
     assert row["signature"] == "public void Runs()"
+
+
+@pytest.mark.parametrize(
+    "declaration,kind",
+    [
+        ("record Customer(string Name);", "class"),
+        ("record struct Point(int X, int Y);", "struct"),
+    ],
+)
+def test_csharp_positional_records(declaration, kind):
+    rows, _, _ = extract("namespace Acme;\npublic " + declaration + "\n", "record.cs")
+    record = next(r for r in rows if r["kind"] == kind)
+    assert record["qualified"] == "Acme." + ("Customer" if kind == "class" else "Point")
+    assert record["signature"] == "public " + declaration.rstrip(";")

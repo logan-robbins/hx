@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from . import code_queries as query, code_store as store
-from .code_extract import LANGUAGES
+from .code_extract import LANGUAGES, mask
 
 
 def _members(conn, row, seen=None):
@@ -55,27 +55,57 @@ def _parameters(value):
     return [p.strip() for p in [*out, value[start:]] if p.strip()]
 
 
-def normalize(signature):
+def normalize(signature, *, language=None):
+    language = language or ("go" if signature.lstrip().startswith("func ") else None)
     signature = re.sub(r"^\s*func\s+(?:\([^)]*\)\s*)?", "", signature)
     value = re.sub(
         r"\b(public|private|protected|internal|abstract|virtual|override|async|static|sealed|readonly|unsafe|partial|export|default|pub|fn|function|def)\b",
         "",
         signature,
     )
-    m = re.search(r"([\w$]+)(<[^()]*>)?\s*\((.*)\)(.*)$", value)
+    code = mask(value, rust=language == "rust")
+    m = re.search(r"([\w$]+)(<[^()]*>)?\s*\(", code)
     if not m:
         return re.sub(r"\s+", "", value), bool(re.search(r"\bwhere\b|=|\(", value))
+    depth = 1
+    close = m.end() - 1
+    for close in range(m.end(), len(code)):
+        depth += (code[close] == "(") - (code[close] == ")")
+        if depth == 0:
+            break
+    if depth:
+        return re.sub(r"\s+", "", value), True
     before = value[: m.start()].strip()
+    parameters = value[m.end() : close]
+    tail = value[close + 1 :]
     params = []
-    uncertain = bool(m[2] or "=" in m[3] or re.search(r"\bwhere\b", m[4]))
-    for p in _parameters(m[3]):
+    uncertain = bool(m[2] or "=" in parameters or re.search(r"\bwhere\b", tail))
+    raw = _parameters(parameters)
+    for index, p in enumerate(raw):
         if p in {"self", "cls", "&self", "&mut self"}:
             continue
-        if ":" in p:
+        if language == "go":
+            matched = re.match(r"^\w+\s+(.+)$", p)
+            if matched:
+                p = matched[1]
+            elif any(re.match(r"^\w+\s+(.+)$", other) for other in raw[index + 1 :]):
+                p = next(
+                    re.match(r"^\w+\s+(.+)$", other)[1]
+                    for other in raw[index + 1 :]
+                    if re.match(r"^\w+\s+(.+)$", other)
+                )
+        elif ":" in p:
             p = p.split(":", 1)[1].strip()
         else:
             p = re.sub(r"\s+[A-Za-z_]\w*(?:\s*=.*)?$", "", p)
         params.append(re.sub(r"\s+", "", p))
+    tail = tail.strip()
+    if language == "go" and tail.startswith("(") and tail.endswith(")"):
+        tail = (
+            "("
+            + ",".join(re.sub(r"^\w+\s+", "", p) for p in _parameters(tail[1:-1]))
+            + ")"
+        )
     return (
         re.sub(r"\s+", "", before)
         + m[1]
@@ -83,8 +113,12 @@ def normalize(signature):
         + "("
         + ",".join(params)
         + ")"
-        + re.sub(r"\s+", "", m[4])
+        + re.sub(r"\s+", "", tail)
     ), uncertain
+
+
+def normalized(row):
+    return normalize(row["signature"], language=LANGUAGES.get(Path(row["path"]).suffix))
 
 
 def conform(conn, name, *, repo=None, limit=100):
@@ -139,7 +173,7 @@ def conform(conn, name, *, repo=None, limit=100):
             actual = _members(conn, implementation)
             for member in members:
                 peers = [p for p in actual if p["name"] == member["name"]]
-                expected, unknown = normalize(member["signature"])
+                expected, unknown = normalized(member)
                 overloads = (
                     sum(m["name"] == member["name"] for m in members) > 1
                     or len(peers) > 1
@@ -162,7 +196,7 @@ def conform(conn, name, *, repo=None, limit=100):
                             expected=member["signature"],
                         )
                     )
-                elif not any(normalize(p["signature"])[0] == expected for p in peers):
+                elif not any(normalized(p)[0] == expected for p in peers):
                     diffs.append(
                         dict(
                             implementation=implementation["qualified"],
@@ -172,7 +206,7 @@ def conform(conn, name, *, repo=None, limit=100):
                             actual=[p["signature"] for p in peers],
                         )
                     )
-                if any(normalize(p["signature"])[1] for p in peers):
+                if any(normalized(p)[1] for p in peers):
                     uncertain.append(
                         dict(
                             member=member["name"],
@@ -296,7 +330,7 @@ def run(conn, command, name, *, repo=None, limit=100, language=None):
         text = file[0]
         position = text.casefold().find(name.casefold())
         hit.update(
-            snippet=query.snippet(text, name, exact=True),
+            snippet=text[max(0, position - 100) : max(0, position - 100) + 300],
             line=text.count("\n", 0, position) + 1,
         )
         results.append(hit)
