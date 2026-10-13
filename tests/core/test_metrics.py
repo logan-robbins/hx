@@ -96,8 +96,9 @@ def test_per_id_shape_matches_contracts(instance, work_item):
     assert set(seam) == {"seq", "ts", "source", "prompt_version", "context_tokens_before",
                          "context_file_bytes", "working_set_size", "next_10_turns",
                          "searches_before_first_edit", "modules_read_before_first_write",
-                         "task_reprints"}
+                         "task_reprints", "packet_bytes"}
     assert seam["prompt_version"] == "b1/r2"
+    assert seam["packet_bytes"] == 18422  # the composed context file is a legacy seam's packet
     assert seam["next_10_turns"] == {"turns": 2, "tool_calls": 3,
                                     "reads_of_context_file": 1,
                                     "reads_of_working_set": 1, "other": 1}
@@ -244,7 +245,7 @@ def test_per_id_seam_carries_post_seam_orientation(instance, work_item):
     assert (seam["searches_before_first_edit"], seam["modules_read_before_first_write"],
             seam["task_reprints"]) == (1, 1, 1)
     text = render_per_id_text(per_id(instance, "eng-001"))
-    assert text.splitlines()[1].split()[-3:] == ["1", "1", "1"]
+    assert text.splitlines()[1].split()[-4:] == ["1", "1", "1", "18422"]
 
 
 def test_per_id_post_seam_window_stops_at_the_next_seam(instance, work_item):
@@ -328,3 +329,17 @@ def test_commands_with_no_streams_is_empty(instance, capsys):
     assert command_counts(instance) == {}
     assert main(["--commands"], instance) == 0
     assert capsys.readouterr().out == "HX-METRICS-COMMANDS commands=0 calls=0\n"
+
+
+# --- packet_bytes per seam (TOOL_SKILL_PLAN step 6) -------------------------------------------
+
+
+def test_per_id_packet_bytes_prefers_the_seam_records_own_field(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    legacy = dict(seam_record())
+    packet = dict(seam_record(), ts="2026-09-20T13:00:00Z", packet_bytes=3900)
+    bare = {key: value for key, value in seam_record().items() if key != "context_file_bytes"}
+    bare["ts"] = "2026-09-20T13:10:00Z"
+    write_stream(instance, "eng-001", [legacy, packet, bare])
+    assert [seam["packet_bytes"] for seam in per_id(instance, "eng-001")["seams"]] == [18422, 3900, None]

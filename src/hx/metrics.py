@@ -213,6 +213,11 @@ def _seam_entries(root: Path, item_id: str, since: str | None) -> list[dict]:
         orient = discipline.post_seam_counts(window)
         entries[-1].update({key: orient[key] for key in (
             "searches_before_first_edit", "modules_read_before_first_write", "task_reprints")})
+        # The restored packet's size (TOOL_SKILL_PLAN step 6): a seam record's own
+        # `packet_bytes` when a packet path writes one, else its `context_file_bytes` — a
+        # legacy seam restores from the composed context file, so those are the same bytes.
+        packet = record.get("packet_bytes", record.get("context_file_bytes"))
+        entries[-1]["packet_bytes"] = packet if isinstance(packet, int) else None
     return entries
 
 
@@ -274,6 +279,8 @@ def render_per_id_text(doc: dict) -> str:
                 # Post-seam orientation (TOOL_SKILL_PLAN step 5), appended.
                 seam.get("searches_before_first_edit"),
                 seam.get("modules_read_before_first_write"), seam.get("task_reprints"),
+                # Packet size (TOOL_SKILL_PLAN step 6), appended.
+                seam.get("packet_bytes"),
             ]))
     totals = doc["totals"]
     lines.append(f"totals seams={totals['seams']} tool_calls={totals['tool_calls']} "

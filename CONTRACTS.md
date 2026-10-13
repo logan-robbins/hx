@@ -737,3 +737,13 @@ Records before `--since TS` are skipped; without it each id's floor is its `disp
 `tasks.json` (no floor when there is none). Text form: one `<calls>  <key>  <id>=<n> …` line
 per command, then `HX-METRICS-COMMANDS commands=<n> calls=<n>`. An ID or `--watch` with
 `--commands`, `--since` without it, or an unparseable `TS` exits 2. Operator and Partner only.
+
+## `packet_bytes` (per seam, `hx metrics <id>`)
+
+Every entry of `seams` in `hx metrics <id> [--json]` also carries `packet_bytes`: the size in
+bytes of the packet the restored conversation starts from. It is the seam record's own
+`packet_bytes` when a packet path writes one. Otherwise it is the record's
+`context_file_bytes`, because a legacy seam restores from the composed context file and the
+two are the same bytes. It is `null` when the record has neither. The text form appends it
+after `task_reprints`. `tests/live/test_compaction_scenario.py` reports it per lane in
+docs/compaction-scenario-results.md.
