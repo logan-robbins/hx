@@ -8,6 +8,7 @@ import ast
 import re
 from pathlib import Path
 from .code_store import span_sha
+from . import code_natural
 
 LANGUAGES = {
     ".py": "python",
@@ -18,6 +19,7 @@ LANGUAGES = {
     ".jsx": "javascript",
     ".go": "go",
     ".rs": "rust",
+    **{suffix: "natural" for suffix in code_natural.OBJECT_KINDS},
 }
 
 
@@ -459,6 +461,8 @@ def braces(text, path):
 
 
 def extract(text, path):
+    if Path(path).suffix.lower() in code_natural.OBJECT_KINDS:
+        return code_natural.extract(text, path)
     if Path(path).suffix == ".py":
         return python(text, path)
     if Path(path).suffix in LANGUAGES:

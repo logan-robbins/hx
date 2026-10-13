@@ -218,7 +218,7 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
         "SELECT repo,path FROM files WHERE (? IS NULL OR repo=?)", (repo, repo)
     ):
         language = LANGUAGES.get(
-            Path(row["path"]).suffix, Path(row["path"]).suffix or "text"
+            Path(row["path"]).suffix.lower(), Path(row["path"]).suffix.lower() or "text"
         )
         coverage.setdefault(
             language,
@@ -234,7 +234,7 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
         "SELECT path,signature FROM symbols WHERE (? IS NULL OR repo=?)", (repo, repo)
     ):
         key = LANGUAGES.get(
-            Path(row["path"]).suffix, Path(row["path"]).suffix or "text"
+            Path(row["path"]).suffix.lower(), Path(row["path"]).suffix.lower() or "text"
         )
         data = coverage.setdefault(
             key,
@@ -252,7 +252,7 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
         "SELECT path,lane FROM refs WHERE (? IS NULL OR repo=?)", (repo, repo)
     ):
         key = LANGUAGES.get(
-            Path(row["path"]).suffix, Path(row["path"]).suffix or "text"
+            Path(row["path"]).suffix.lower(), Path(row["path"]).suffix.lower() or "text"
         )
         data = coverage.setdefault(
             key,

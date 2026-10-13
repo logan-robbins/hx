@@ -127,12 +127,18 @@ are rebuildable derived state beside the ledger, not a second authority.
 
 The code graph shares one SQLite store across repository namespaces. Content hashes
 refresh source bodies and declaration spans; Python, C#, TypeScript/JavaScript, Go,
-and Rust have build-free structural extraction. Optional tree-sitter/Universal Ctags
+Rust, and Software AG Natural have build-free structural extraction. Optional tree-sitter/Universal Ctags
 and batch SCIP indexers enrich those facts. Every answer carries its lane, extractor,
 source anchor and staleness; ownership is a live join against ledger leases. External
 JSONL graphs and published interface contracts share the namespace model. Bounded
 `type`, `signature`, `callers`, `register`, `tests-for`, `conform`, and `precedent`
 queries let a worker establish reuse and exact source locations before proposing code.
+Natural extraction follows exported object types, public function/subroutine names,
+parameter declarations, and literal call/dependency targets. Dynamic operands remain
+reference sites without static call edges. Source spans preserve physical listing
+lines for application-map anchors; see
+[Natural source support](search-and-retrieval.md#natural-source-support)
+for supported formats and query examples.
 
 Plan validation and admission check the indexed base and hashes for allowed writes.
 A missing derived cache is built automatically; when an assignment uses another

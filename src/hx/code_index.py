@@ -269,7 +269,16 @@ def main(argv, root, *, env=None):
                             r
                             for r in result
                             if r["kind"]
-                            in {"class", "interface", "type", "struct", "enum", "trait"}
+                            in {
+                                "class",
+                                "interface",
+                                "type",
+                                "struct",
+                                "enum",
+                                "trait",
+                                "data_area",
+                                "ddm",
+                            }
                         ]
                 elif args.command == "search":
                     result = query.search(

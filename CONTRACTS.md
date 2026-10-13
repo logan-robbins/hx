@@ -311,6 +311,24 @@ absence. No file-count cap applies.
 A derived legacy index without namespaces is rebuilt. Extractor-generation changes
 invalidate old candidates before the next refresh.
 
+Natural UTF-8 source exports use `lane=syntax`, `extractor=stdlib-natural`.
+Extension matching and symbol lookup are case insensitive. `.nat` is a generic
+Natural object; `.nsp/.nsn/.nss/.ns7/.nsc/.nsh/.nsg/.nsl/.nsa/.nsm/.nsd`
+provide exported object kinds. Functions and subroutines retain their declared
+names even when the filename differs. Routine signatures include adjacent return
+and `DEFINE DATA` declarations; external `.nss` routines include preceding data
+declarations. Listing numbers and comments are excluded from signatures while
+anchor hashes retain the original physical source lines. Fields expose
+`parameter|variable|view` kinds with level-qualified names. Maps and DDMs expose
+object anchors without interpreting their editor layouts. `type` includes
+`data_area|ddm`; callable objects use `symbols` or `signature`.
+Literal `CALLNAT`/`FETCH`, `PERFORM`, and symbolic function calls produce candidate
+call sites. Dynamic operands and `DEFINE PROTOTYPE VARIABLE` function calls carry
+`kind=dynamic_calls` and do not produce static call edges. `INCLUDE`, data-area
+`USING`, `VIEW OF`, and literal `USING MAP` dependencies produce import candidates.
+No library/steplib, dynamic assignment, database schema, or parameter parity is
+certified. See [Natural source support](docs/search-and-retrieval.md#natural-source-support).
+
 `symbols`, `type`, `signature`, `tests-for` return declaration rows:
 `{repo, name, qualified, kind, path, line, end_line, signature, lane, extractor,
 anchor_sha, attributes, stale, unanchored}`. `lane` is

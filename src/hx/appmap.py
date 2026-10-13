@@ -220,7 +220,7 @@ def source_anchor(repository: Path, path: str, symbol: str | None = None, *, wit
         else:
             if target.suffix != ".py":
                 from . import code_extract, code_index, code_store
-                if target.suffix not in code_extract.LANGUAGES:
+                if target.suffix.lower() not in code_extract.LANGUAGES:
                     raise ValidationError("this language has no qualified-symbol resolver")
                 with _source_file(target) as (handle, _):
                     raw = handle.read(SOURCE_BYTES + 1)
@@ -232,7 +232,9 @@ def source_anchor(repository: Path, path: str, symbol: str | None = None, *, wit
                     if len(candidates) != 1 or candidates[0]['stale']:
                         raise ValidationError(f"symbol {symbol} is absent, ambiguous or stale in the syntax index; run hx code index --repo {repository}")
                 else:
-                    candidates = [r for r in code_extract.extract(raw.decode('utf-8'), path)[0] if r['qualified'] == symbol]
+                    natural = code_extract.LANGUAGES.get(target.suffix.lower()) == 'natural'
+                    candidates = [r for r in code_extract.extract(raw.decode('utf-8'), path)[0] if
+                        (r['qualified'].casefold() == symbol.casefold() if natural else r['qualified'] == symbol)]
                 if len(candidates) != 1:
                     raise ValidationError(f"symbol {symbol} is absent or ambiguous in {path}")
                 line, end_line = candidates[0]['line'], candidates[0]['end_line']

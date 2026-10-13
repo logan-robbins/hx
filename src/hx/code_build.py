@@ -178,6 +178,7 @@ def index_repo(
         file_generations = {r["path"]: r["generation"] for r in existing_rows}
         generation = hashlib.sha256(
             Path(code_extract.__file__).read_bytes()
+            + Path(code_extract.code_natural.__file__).read_bytes()
             + Path(code_adapters.__file__).read_bytes()
             + Path(code_projects.__file__).read_bytes()
             + json.dumps(detected, sort_keys=True).encode()
@@ -309,12 +310,23 @@ def index_repo(
                     ref,
                     extractor=ref.get(
                         "extractor",
-                        "stdlib-" + code_extract.LANGUAGES.get(path.suffix, "text"),
+                        "stdlib-"
+                        + code_extract.LANGUAGES.get(path.suffix.lower(), "text"),
                     ),
                     anchor=sha,
                 )
             for src, dst, kind in edges:
-                insert_edge(conn, identity, src, dst, kind, anchor=sha)
+                insert_edge(
+                    conn,
+                    identity,
+                    src,
+                    dst,
+                    kind,
+                    anchor=sha,
+                    extractor="stdlib-natural"
+                    if path.suffix.lower() in code_extract.code_natural.OBJECT_KINDS
+                    else "stdlib",
+                )
             project, dependencies = code_projects.extract(text, rel)
             if project:
                 conn.execute(

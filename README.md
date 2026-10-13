@@ -54,7 +54,7 @@ workers to rediscover known paths, contracts, and checks.
 
 A shared derived code graph provides bounded symbol, signature, caller, test, parity,
 and precedent queries across repository namespaces. It supports Python, C#,
-TypeScript/JavaScript, Go, and Rust without building the repository, with optional
+TypeScript/JavaScript, Go, Rust, and Software AG Natural without building the repository, with optional
 external extractors and imported graphs. `hx code fresh PATH --expect fresh` and the
 planning gate enforce current scope; `--owners` reads the existing ledger leases.
 See [search and retrieval](docs/search-and-retrieval.md) for commands, provenance,

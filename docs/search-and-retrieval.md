@@ -33,6 +33,10 @@ stored body; `--porter-only` and SQLite without trigram remain supported.
 
 Python AST and structural brace extraction for C#, TypeScript/JavaScript, Go,
 and Rust capture qualified declarations, attributes, spans and source headers.
+Software AG Natural has a separate stdlib extractor for object/routine declarations,
+parameter/data fields, literal calls and dependencies, with dynamic targets kept
+as unresolved references. [Natural source support](#natural-source-support)
+describes the exported formats and query examples.
 Other text languages remain searchable. Optional syntax precedence is tree-sitter
 **0.25.10** tags (CLI, C compiler and operator grammar checkouts with parser and
 `queries/tags.scm` required), then Universal Ctags JSON, then stdlib extraction.
@@ -125,6 +129,58 @@ only when measured modularity beats it. Candidates include bounded member and
 boundary sets plus application-map `put` operations and expected versions.
 The companion supplies the active run, snapshot and evidence envelope; normal
 map validation applies. No query validates a relation or acquires ownership.
+
+## Natural source support
+
+Natural source indexing requires UTF-8 text exports and uses `stdlib-natural`
+provenance. Extension matching and symbol lookup are case insensitive. It supports
+these source formats without a Natural compiler or additional packages:
+
+| Extensions | Source objects |
+| --- | --- |
+| `.nat` | Generic Natural text export |
+| `.nsp`, `.nsn`, `.nsh` | Programs, subprograms, helproutines |
+| `.nss`, `.ns7` | Subroutines, functions |
+| `.nsc` | Copycode |
+| `.nsg`, `.nsl`, `.nsa` | Global, local, parameter data areas |
+| `.nsm`, `.nsd` | Maps, DDMs |
+
+Functions and external subroutines retain their public declaration names even when
+their filenames differ. Inline and nested routines gain their containing object's
+or routine's prefix. Routine signatures include return layouts and data declarations;
+fields retain their level-qualified names, formats and parameter modes. Maps and
+DDMs expose object anchors and searchable text without interpreting their layouts.
+
+Literal `CALLNAT` and `FETCH` targets, named `PERFORM` targets, and symbolic
+`NAME(<...>)` function calls produce candidate call sites. Dynamic operands and
+variable prototype calls remain `dynamic_calls` references without static call
+edges. Prototypes expose declared interfaces without suppressing real caller sites.
+Copycode, data-area, DDM and literal map dependencies produce import candidates.
+File matching prefers one same-directory object, then one unique repository object;
+ambiguous targets do not choose a file. Library/steplib resolution and parameter
+parity remain outside this syntax lane.
+
+Listing numbers and comments are removed from signatures while anchors hash the
+original physical lines, including their line endings. Structured terminators and
+reporting-mode `DEFINE name`/`RETURN` bound routine spans. Application-map symbol
+anchors support these spans and refuse stale indexed declarations. Raw server
+serialization and non-UTF-8 source must be converted before indexing.
+
+```sh
+hx code index --repo /path/to/natural-source
+hx code signature 'F#TOTAL' --expect one
+hx code signature 'PAY-ONE' --expect exists
+hx code symbols 'RUN.CHECK-INPUT'
+hx code type ARGS --expect exists
+hx code callers 'F#TOTAL' --count
+hx code edges RUN.NSP
+hx code precedent 'CALLNAT' --language natural
+hx code fresh RUN.NSP --expect fresh
+```
+
+Use `--namespace REPO_ID` when shared namespaces contain duplicate names. Quote
+names containing `#` in shell commands. `type` accepts data areas and DDMs;
+callable objects use `symbols` or `signature`.
 
 ## Graph search
 

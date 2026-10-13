@@ -320,7 +320,7 @@ def run(conn, command, name, *, repo=None, limit=100, language=None):
     results = []
     # FTS nominates a bounded candidate set; returned snippets remain verbatim source.
     for hit in query.search(conn, name, repo=repo, limit=100):
-        if language and LANGUAGES.get(Path(hit["path"]).suffix) != language:
+        if language and LANGUAGES.get(Path(hit["path"]).suffix.lower()) != language:
             continue
         file = conn.execute(
             "SELECT body FROM files WHERE repo=? AND path=?", (hit["repo"], hit["path"])

@@ -137,7 +137,11 @@ def search(conn, query, *, repo=None, limit=10, fuzzy=True):
 
 
 def callers(conn, name, *, repo=None, limit=CAP, count=False):
-    definitions = symbols(conn, name, repo=repo)
+    # A Natural prototype declares an interface in the caller, not an executable
+    # definition. Its file must still be eligible as a real call site.
+    definitions = [
+        r for r in symbols(conn, name, repo=repo) if r["kind"] != "prototype"
+    ]
     defining = {(r["repo"], r["path"]) for r in definitions}
     rows = conn.execute(
         """SELECT * FROM refs WHERE (lower(name)=? OR lower(qualified)=?)
@@ -195,6 +199,21 @@ def resolve_path(conn, repo, src, dst, indexed=None):
     )
     if dst in paths:
         return dst
+    from .code_natural import OBJECT_KINDS
+
+    if Path(src).suffix.lower() in OBJECT_KINDS:
+        # Natural library/steplib resolution is a runtime contract. Prefer a
+        # unique local-library file, then a unique repository candidate.
+        natural = [
+            p
+            for p in paths
+            if Path(p).suffix.lower() in OBJECT_KINDS
+            and Path(p).stem.casefold() == dst.casefold()
+        ]
+        local = [p for p in natural if Path(p).parent == Path(src).parent]
+        if len(local) == 1:
+            return local[0]
+        return natural[0] if len(natural) == 1 else None
     if dst.startswith("./") or dst.startswith("../"):
         dst = posixpath.normpath(posixpath.join(str(Path(src).parent), dst))
     candidates = [dst, dst.replace(".", "/")]
@@ -268,6 +287,15 @@ def edges(conn, *, repo=None, path=None, limit=CAP):
                 repo=ref["repo"],
             )
             for target in targets:
+                if ref["extractor"] == "stdlib-natural" and target["kind"] not in {
+                    "natural_object",
+                    "program",
+                    "subprogram",
+                    "subroutine",
+                    "function",
+                    "helproutine",
+                }:
+                    continue
                 if (
                     ref["path"] == target["path"]
                     or path
