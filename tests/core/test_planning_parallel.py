@@ -50,3 +50,18 @@ def test_no_interface_warning_for_receipt_dependency(active):
     b = unit(repo, "b", prerequisites=[{"task_id": "a", "output_id": "proof", "version": 1}])
     result = planning.validate(store, plan(active, [a, b]))
     assert result["interface_warnings"] == []
+
+
+def test_size_warning_for_wide_unit(active):
+    store, repo, *_ = active
+    wide = unit(repo, "wide")
+    wide["write_paths"] = [f"src/mod{i}.py" for i in range(12)]
+    wide["outputs"] = [{"id": "proof", "version": 1, "kind": "receipt",
+                        "paths": [f"src/mod{i}.py" for i in range(12)]}]
+    from hx.errors import HxError
+    try:
+        result = planning.validate(store, plan(active, [wide]))
+        warnings = result["size_warnings"]
+    except HxError:
+        warnings = ["refused"]  # a hard refusal is also acceptable enforcement
+    assert warnings, "a 12-module unit must warn or be refused at plan time"

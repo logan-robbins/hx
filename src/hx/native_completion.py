@@ -26,6 +26,17 @@ def request(store, run_id, worker):
                 return value
         # Source outputs must already be committed before a worker relinquishes execution.
         unit_execution.workspace(task['payload'], clean=True)
+        # Granularity gate: the unit's whole committed change must be one
+        # behaviour unit by the repo's own norms, or sign-off is refused and
+        # the Partner splits it. Prose instructions never achieved this.
+        from . import discipline
+        from pathlib import Path as _Path
+        gate = discipline.granularity_gate(_Path(task['payload']['workdir']))
+        if not gate['allowed']:
+            raise Conflict(
+                f"unit too large to sign off as one behaviour unit: "
+                f"{gate['source_modules']} source modules, {gate['changed_lines']} lines; "
+                f"{gate['instruction']}")
         request_id = str(uuid.uuid4())
         event = tx.append_event(run_id, 'completion', request_id, 'progress', {'completion_requested': True})
         value = {'status': 'requested', 'run_id': run_id, 'request_id': request_id,

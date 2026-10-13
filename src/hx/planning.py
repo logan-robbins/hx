@@ -167,6 +167,10 @@ def _definition(body):
     # stub) until the producer finishes, unless the producer is split so an
     # interface/contract unit lands first. Warn, never refuse: the Partner
     # decides whether the coupling is worth an explicit split.
+    size_warnings = [
+        f"unit {unit['id']} spans {len(unit['write_paths'])} write paths; "
+        "plan at module level, one behaviour per unit, so sign-off stays small"
+        for unit in body["tasks"] if len(unit["write_paths"]) > 8]
     interface_warnings = []
     for unit in body["tasks"]:
         for dependency in unit["prerequisites"]:
@@ -182,6 +186,7 @@ def _definition(body):
                    "level_widths": [len(level) for level in levels],
                    "max_parallelism": max((len(group) for group in groups), default=0),
                    "interface_warnings": interface_warnings,
+                   "size_warnings": size_warnings,
                    "initial_units": levels[0], "note": "Dependency levels describe ordering; dispatch still requires current inputs, output materialization, and free leases. Max parallelism is bounded by worktree-disjoint groups, free leases, and host capacity at dispatch time."}
 
 

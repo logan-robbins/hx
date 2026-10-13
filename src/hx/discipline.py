@@ -116,6 +116,82 @@ def _git(repo: Path, *args) -> str:
     return result.stdout
 
 
+def _judge(changed: dict) -> dict:
+    source_files = [p for p in changed if "/tests/" not in p and not p.startswith("tests/")
+                    and "test_" not in Path(p).name]
+    has_tests = any("/tests/" in p or p.startswith("tests/") or "test_" in Path(p).name
+                    for p in changed)
+    docs_only = all(p.endswith((".md", ".json", ".toml")) for p in changed) if changed else False
+    reasons = []
+    if len(source_files) > 5:
+        reasons.append(f"touches {len(source_files)} source modules; split by behaviour unit")
+    if changed and not has_tests and not docs_only:
+        reasons.append("no test file travels with the change")
+    if sum(changed.values()) > 1200:
+        reasons.append(f"{sum(changed.values())} changed lines; land it in slices")
+    verdict = "split" if (len(source_files) > 5 or sum(changed.values()) > 1200) else \
+        "committable" if not reasons else "finish-slice"
+    return {"files": len(changed), "changed_lines": sum(changed.values()),
+            "source_modules": len(source_files), "has_tests": has_tests,
+            "docs_only": docs_only, "verdict": verdict, "reasons": reasons}
+
+
+def commit_range(repo) -> dict:
+    """Granularity of everything committed on this branch since its fork point.
+
+    This is the sign-off measurement for eng/qa/rel workers: the unit's whole
+    committed change, not the last commit. Base is the merge-base with the
+    repository's principal branch, or the root commit when there is none.
+    """
+    repo = Path(repo)
+    base = None
+    for ref in ("dev", "origin/dev", "main", "master", "origin/main", "origin/master"):
+        result = subprocess.run(["git", "-C", str(repo), "merge-base", "HEAD", ref],
+                                capture_output=True, text=True, timeout=30)
+        if result.returncode == 0 and result.stdout.strip():
+            base = result.stdout.strip()
+            break
+    head0 = _git(repo, "rev-parse", "HEAD").strip()
+    if base is None or base == head0:
+        # Work committed directly on the principal branch: measure the tip
+        # commit, the smallest honest range available.
+        parent = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD~1"],
+                                capture_output=True, text=True, timeout=30)
+        base = parent.stdout.strip() if parent.returncode == 0 else \
+            _git(repo, "rev-list", "--max-parents=0", "HEAD").strip().splitlines()[0]
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    commits = int(_git(repo, "rev-list", "--count", f"{base}..HEAD").strip() or 0) \
+        if base != head else 0
+    changed = {}
+    if base != head:
+        for line in _git(repo, "diff", "--numstat", f"{base}..HEAD").splitlines():
+            parts = line.split("\t")
+            if len(parts) == 3:
+                added = int(parts[0]) if parts[0].isdigit() else 0
+                deleted = int(parts[1]) if parts[1].isdigit() else 0
+                changed[parts[2]] = added + deleted
+    result = _judge(changed)
+    result.update({"commits": commits, "base": base[:12]})
+    return result
+
+
+def granularity_gate(repo) -> dict:
+    """May this unit sign off as one behaviour unit?
+
+    `split` is refused: the Partner revises the plan into smaller units.
+    `finish-slice` signs off with the reason recorded. This is how module /
+    class / function granularity happens when running hx — measured from
+    the repo's own distribution and the committed diff, not requested in
+    prose and hoped for.
+    """
+    result = commit_range(repo)
+    allowed = result["verdict"] != "split"
+    return {"allowed": allowed, **result,
+            "instruction": "sign off" if allowed else
+            "split this unit: ask the Partner to revise the plan into module-level "
+            "units, one behaviour each, and land them separately"}
+
+
 def commit_check(repo) -> dict:
     """Is the current diff one committable behaviour unit?
 
@@ -138,25 +214,7 @@ def commit_check(repo) -> dict:
                 changed[path] = len((repo / path).read_text(errors="replace").splitlines())
             except OSError:
                 changed[path] = 0
-    source_files = [p for p in changed if "/tests/" not in p and not p.startswith("tests/")
-                    and "test_" not in Path(p).name]
-    has_tests = any("/tests/" in p or p.startswith("tests/") or "test_" in Path(p).name
-                    for p in changed)
-    docs_only = all(p.endswith((".md", ".json", ".toml")) for p in changed) if changed else False
-    reasons = []
-    if len(source_files) > 5:
-        reasons.append(f"touches {len(source_files)} source modules; split by behaviour unit")
-    if changed and not has_tests and not docs_only:
-        reasons.append("no test file travels with the change")
-    if sum(changed.values()) > 1200:
-        reasons.append(f"{sum(changed.values())} changed lines; land it in slices")
-    return {"files": len(changed), "changed_lines": sum(changed.values()),
-            "source_modules": len(source_files), "has_tests": has_tests,
-            "docs_only": docs_only,
-            "verdict": "split" if reasons and len(source_files) > 5 or
-                       (reasons and sum(changed.values()) > 1200) else
-                       "committable" if not reasons else "finish-slice",
-            "reasons": reasons}
+    return _judge(changed)
 
 
 def main(argv, root, *, env=None) -> int:

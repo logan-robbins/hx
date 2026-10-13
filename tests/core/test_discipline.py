@@ -74,3 +74,28 @@ def test_commit_check_many_modules_needs_split(tmp_path):
     result = discipline.commit_check(repo)
     assert result["verdict"] == "split"
     assert any("module" in r for r in result["reasons"])
+
+
+def test_commit_range_small_unit_is_committable(tmp_path):
+    repo = _git_repo(tmp_path)
+    (repo / "src" / "a.py").write_text("x = 2\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "one behaviour"], check=True)
+    result = discipline.commit_range(repo)
+    assert result["commits"] == 1
+    assert result["verdict"] in {"committable", "finish-slice"}
+
+
+def test_commit_range_many_modules_is_split(tmp_path):
+    repo = _git_repo(tmp_path)
+    for i in range(8):
+        (repo / "src" / f"big{i}.py").write_text("\n".join("y = 1" for _ in range(50)) + "\n")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "everything at once"], check=True)
+    result = discipline.commit_range(repo)
+    assert result["verdict"] == "split"
+    gate = discipline.granularity_gate(repo)
+    assert gate["allowed"] is False
+    assert "split" in gate["instruction"]
