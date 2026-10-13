@@ -19,27 +19,112 @@ into the conversation is its stdout.
 
 ## Code search — `hx code`
 
-`hx code index --repo PATH` builds a standalone SQLite index at
-`state/code-index/index.db`: per-file hashes for incremental reindexing,
-symbol definitions (Python qualified names from the AST; best-effort
-definitions for TypeScript, JavaScript, Rust, and Go), import edges, and two
-FTS5 tables over source text — a Porter table and a trigram table.
+`hx code index --repo PATH` builds one instance SQLite graph at
+`state/code-index/index.db`, outside every product checkout. Each repository gets
+a namespace: `.hx/map/manifest.json`'s `repo_id`, else a git remote, else its
+resolved path. Indexing another repository preserves previous namespaces. Git
+file discovery includes tracked and nonignored untracked files; nongit trees use
+a directory walk. There is no file-count cap. `--max-file-bytes` or
+`HX_CODE_MAX_FILE_BYTES` sets the default 512 KiB body budget. Binary/oversize
+bodies are counted as skipped; their streamed content fingerprints still support
+scope freshness and asset assignments. Excluded oversize bodies cannot certify
+an absence lint. Porter and optional trigram FTS reference one
+stored body; `--porter-only` and SQLite without trigram remain supported.
+
+Python AST and structural brace extraction for C#, TypeScript/JavaScript, Go,
+and Rust capture qualified declarations, attributes, spans and source headers.
+Other text languages remain searchable. Optional syntax precedence is tree-sitter
+**0.25.10** tags (CLI, C compiler and operator grammar checkouts with parser and
+`queries/tags.scm` required), then Universal Ctags JSON, then stdlib extraction.
+Set `HX_TREE_SITTER_GRAMMARS` to colon-separated grammar directories. Unknown
+versions/formats degrade to stdlib; BSD ctags is refused. Every answer preserves
+`repo`, `lane`, `extractor`, `anchor_sha` and `stale`. Signatures preserve source
+header tokens with whitespace normalized; compiler/parser-supplied signatures
+are labelled by their extractor. Syntax references remain candidates.
 
 ```sh
 hx code index --repo /path/to/repo
-hx code search "useEffect cleanup"
-hx code symbols login
-hx code impact src/auth.py
-hx code edges
+hx code type IOrderRepository --expect exists
+hx code signature Namespace.OrderRepository.Add
+hx code callers Add --count
+hx code register IOrderRepository
+hx code tests-for src/OrderRepository.cs --expect exists
+hx code conform IOrderRepository --expect clean
+hx code precedent AddScoped --language csharp
+hx code search "integration event" --sift "Does this publish integration events?"
+hx code contract IOrderRepository --expect absent
+hx code fresh src/OrderRepository.cs --namespace REPO_ID --expect fresh
+hx code projects Ordering
+hx code map --budget 5000 --focus src/OrderRepository.cs
+hx code edges src/OrderRepository.cs
+hx code submaps --focus src
+hx code stats
 ```
 
-Search merges exact symbol matches with both FTS rankings via reciprocal
-rank fusion (k=60), reranks multi-term queries by term proximity, and falls
-back to Levenshtein correction over symbol names when a query finds nothing.
-`impact` reports the symbols a changed file defines, the files that mention
-them, and candidate test files. `edges` emits candidate import edges
-(`status: candidate`) for the application map; only the existing map
-validation path can promote an edge to validated.
+Named queries search all namespaces unless `--namespace` is given. Queries cap
+results at 100 (`--limit`, default 20); maps additionally cap their JSON bytes.
+Exact symbol search is case folded and lane ranked (resolved, syntax, text,
+imported). FTS rankings use reciprocal rank fusion and term proximity; a typo
+can fall back to edit-distance correction. `precedent` returns verbatim windows.
+Callers include syntactic reference sites and provenance, excluding defining
+files; `--count` reports distinct-file fan-in. Test lookup uses names,
+attributes, references and implementation contracts. `conform` compares members
+after whitespace and parameter-name normalization, reports missing or mismatched
+members, and refuses clean parity for uncertainty (including overloads, generic
+constraints and defaults). `--owners` reads current ledger leases on every call.
+
+Every query accepts `--expect exists|absent|one|clean|fresh`: success is 0,
+a failed expectation 3, usage errors 2. `clean` is the conform audit. A bounded
+query's fresh rows cannot prove an entire scope fresh: use `fresh PATH...` for
+that gate. Stale facts remain visible. Plan validation and admission compare the
+indexed head's ancestry, committed scope diff and current file hashes. Missing
+caches bootstrap; admission from another checkout rebinds the single namespace
+cache there. A stale scope in the indexed checkout refuses with its rebuild
+command. Completion refreshes durable `changed_paths` and retries that refresh
+on publication replay; scoped refresh invalidates dependents. The installed
+`bin/code-index-post-merge` is the operator's one full rebuild trigger:
+
+```sh
+HARNESS_ROOT=/path/to/instance HX_BIN=/path/to/hx \
+  /path/to/instance/bin/code-index-post-merge
+```
+
+Run it from the post-merge job/hook in the repository, or set `HX_CODE_REPO`.
+It does not install hooks or write index files into the repository.
+
+Resolved indexing is optional and explicit:
+`index --resolved --indexer-checkout /isolated/checkout`. The checkout must be
+separate, clean, and at the product's committed HEAD. Available SCIP indexers run
+there; `scip print --json` supplies definitions, references, signatures,
+enclosing symbols and implementation candidates. Missing tools skip; indexer
+failures degrade. C# restore/build artifacts remain in the disposable checkout;
+new `index.scip` output is removed after ingestion. `HX_SCIP_COMMANDS` can supply
+operator argv lists keyed by indexer name. No server or per-worker index is used.
+
+External analyzers can import JSONL without a compiler:
+
+```sh
+hx code import --namespace legacy --repo /path/to/legacy --extractor legacy-tool \
+  --symbols symbols.jsonl --edges edges.jsonl
+hx code contracts --register published-contracts.json
+hx code contract Customer --owners
+```
+
+A symbol row is `{name,qualified,kind,path,line,end_line,signature}` with optional
+attributes; an edge is `{from,to,kind,evidence}`. Paths are repository relative.
+Imports are atomic and idempotent per namespace/tool, preserve custom edge kinds,
+and mark missing source spans unanchored. A published contract record is
+`{name,path,version,producer,repo,sha}`, where `sha` is its Git commit and `repo`
+is an indexed namespace. The same name can appear in source and target namespaces
+with separate producers and versions; a Partner queries one shared registry.
+
+PageRank uses fixed file order and personalized focus. Louvain local movement,
+multilevel aggregation and connected-component refinement are deterministic.
+`submaps` reports the directory-layout modularity baseline and proposes components
+only when measured modularity beats it. Candidates include bounded member and
+boundary sets plus application-map `put` operations and expected versions.
+The companion supplies the active run, snapshot and evidence envelope; normal
+map validation applies. No query validates a relation or acquires ownership.
 
 ## Graph search
 
@@ -151,3 +236,78 @@ learnings taxonomy as a second opinion (deterministic ranking on provider
 failure), and `hx code search QUERY --sift "question"` reranks the index's
 deterministic candidates with Jev scores merged in — every index hit is
 still returned, so the model ranks facts, it never filters them out.
+
+## Local graph benchmark — 2026-10-12
+
+`tools/code-graph-benchmark.py` measured this branch of hx and the real
+[dotnet/eShop repository](https://github.com/dotnet/eShop/tree/dc7ea499cd356924fb6689b3702964a5869dbae9).
+The complete commands, commits, coverage, timing and token counts are in
+[the benchmark receipt](code-graph-benchmark.json). All index databases and
+compiler/provider cache state stayed in an external temporary instance.
+
+| Repository | Index time | Added SQLite bytes | Text files | Extracted symbols | Source-file coverage | Signature coverage | Resolved references |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| hx | 14.859 s | 50,208,768 | 452 | 3446 | 100% | 100% | 0% |
+| eShop | 1.860 s | 40,235,008 | 913 | 3098 | 100% | 100% | 0% |
+
+Source-file coverage counts Python, C#, TypeScript/JavaScript, Go and Rust files.
+Signature coverage is the fraction of **extracted** symbols with a signature;
+it does not measure recall against every declaration in the repository. Binary
+and oversize bodies stay outside FTS, with fingerprints retained for freshness.
+The second database measurement is added bytes in the same shared store, not a
+second per-repository database. The hx tree includes the preserved local spec
+deletions and current documentation changes, so its receipt records `dirty: true`.
+
+| Fixed question | hx graph latency | hx graph / grep tokens | eShop graph latency | eShop graph / grep tokens |
+|---|---:|---:|---:|---:|
+| existing type, case folded | 4.210 ms | 180 / 3919 | 4.384 ms | 206 / 897 |
+| exact signature | 3.550 ms | 183 / 57 | 4.068 ms | 201 / 44 |
+| callers | 21.767 ms | 2509 / 1015 | 19.941 ms | 2724 / 897 |
+| tests | 525.667 ms | 4169 / 4967 | 73.031 ms | 1740 / 897 |
+| parity diagnostic | 31.700 ms | 237 / 170 | 36.519 ms | 2199 / 897 |
+| existing precedent | 16.693 ms | 630 / 134 | 5.294 ms | 946 / 235 |
+| current owner | 4.586 ms | 185 / 3919 | 5.320 ms | 211 / 897 |
+| fuzzy service intent with Jev | 35.226 ms | 2015 / 37 | 43.685 ms | 2068 / 1422 |
+
+All eight fixed questions were answered in each repository without a follow-up
+grep. A separate shared registry query returned the published records from both
+namespaces. Fixture tests additionally prove same-name source/target contracts
+and live ownership changes; the benchmark instance itself has no active leases.
+The hx parity question correctly reports no known implementation; the eShop
+question finds `OrderRepository`, matches its members and reports its inherited
+generic contract as uncertain. These are diagnostic answers, not compiler proofs.
+
+Latencies are warm in-process medians of three calls, including SQLite opening
+and closing; they exclude Python CLI startup. The fuzzy questions were actually
+Jev-sifted, with ten scored candidates per repository. Their warm timings include
+cached sifting rather than an uncached provider round trip. Token counts use
+`tiktoken` `o200k_base`, installed only for the benchmark, and are comparison
+counts rather than provider billing. The baseline is literal `rg -n -i -F`
+output; it cannot itself prove signature parity or ownership.
+
+The graph saves substantial answer tokens for the case-folded type lookup.
+Full provenance JSON costs more than short literal grep output for several
+other questions, including exact signatures and precedent. No general token
+savings or published performance figure is claimed as an hx result. Lexical
+candidates plus Jev found both fuzzy targets in this question set, so this
+measurement does not justify a required embedding dependency.
+
+One manual review of hx submaps found that modularity improves over directory
+layout but the large communities mix responsibilities (runtime/map/planning,
+CLI/work-items, and indexing/configuration utilities). They are too broad to
+become one assignment without further decomposition. No proposal was promoted
+or asserted as a semantic boundary.
+
+- hx: Louvain modularity 0.226193, directory baseline 0.015424; returned community sizes 97, 71, 102, 3.
+- eShop: Louvain modularity 0.510429, directory baseline 0.022889; returned community sizes 21, 52, 41, 16, 44, 80, 50, 53.
+
+Promotion remains unmeasured: no live fleet wave has run. The receipt stores
+`live_waves: 0` and `promoted: null`; derived tables remain the useful product
+and the promotion path is not expanded. Actual tree-sitter, Universal Ctags and
+SCIP prerequisites are absent here, so their live checks skip with named reasons;
+protocol/format fixtures and the stdlib extractors always run.
+
+Full core/fake-harness, UI, packaging and scenario results are recorded in the
+[validation handoff](../handoff/to-orchestrator.md). The default milestone script
+still refuses its September user-home baseline, whose eight differing files
+predate this goal. That preserved environmental guard is not reported as passed.

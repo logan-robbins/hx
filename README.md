@@ -52,6 +52,14 @@ anchors, and checks. Stable IDs survive stack changes when responsibilities rema
 same. Planning uses a bounded slice of that map to define assignments and avoid asking
 workers to rediscover known paths, contracts, and checks.
 
+A shared derived code graph provides bounded symbol, signature, caller, test, parity,
+and precedent queries across repository namespaces. It supports Python, C#,
+TypeScript/JavaScript, Go, and Rust without building the repository, with optional
+external extractors and imported graphs. `hx code fresh PATH --expect fresh` and the
+planning gate enforce current scope; `--owners` reads the existing ledger leases.
+See [search and retrieval](docs/search-and-retrieval.md) for commands, provenance,
+external formats, and measured coverage.
+
 The companion is a Claude Code session of its own with Read and Write — two tools and nothing else;
 it processes new captured events and submits structured changes to current
 task state and the application map. Jev is required for its bounded judgments about

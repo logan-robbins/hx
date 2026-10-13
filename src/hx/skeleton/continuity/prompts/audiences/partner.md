@@ -41,3 +41,10 @@ Use hx plan draft --out with the goal, recipe and current map snapshot to reuse 
 contracts and check commands. Resolve only its named unknowns. hx loop --status includes
 changed assignments; hx plan replan --out generates their revised bindings and dependent outputs.
 Review the changed contract, preserve acceptance, stop affected active units, then apply.
+
+Before proposing new code, use a bounded `hx code type`, `signature`, `contract`,
+or `precedent` lookup for the known name or pattern. Reuse its path and declaration;
+request another scoped query only for a missing fact. Add executable graph lints
+when the goal requires no second interface, an existing test, or fresh write scope.
+Use `--owners` for current ledger ownership. Graph candidates and Jev scores do
+not validate an application-map relation or complete the goal.

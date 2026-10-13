@@ -291,12 +291,78 @@ chars, 2000 with `--full`). Output lines start with `HX-RECALL`, or a single `HX
 
 ## `hx code`, `hx content`, `hx exec`, `hx sift` (search and retrieval)
 
-All four print JSON to stdout and exit 0 on success (docs/search-and-retrieval.md).
-`hx code index` returns `{"files": N, "symbols": N}`; `code search` returns a list of
-`{"path", "title", "snippet", "score", "layer"}` where `layer` is `symbol`, `fts`, or
-`fuzzy`; `code symbols` returns `{"name", "qualified", "kind", "path", "line", "end_line"}`
-entries; `code impact` returns defined symbols, referencing files, and candidate tests;
-`code edges` returns `{"from_path", "to_path", "kind": "imports", "status": "candidate"}`.
+All four print JSON to stdout (docs/search-and-retrieval.md). `hx code` query
+success exits 0; a failed `--expect exists|absent|one|clean|fresh` exits 3; invalid
+arguments/usage exit 2. Limits are 1–100 rows (20 by default); `map` also enforces
+its JSON byte budget. `clean` certifies a complete, current conform result with no
+diffs or uncertainty. `fresh` requires anchored, current results; use `code fresh
+PATH...` for the complete write scope instead of inferring scope coverage from a
+capped symbol result. `--namespace` selects a repository; omission searches shared
+namespaces for named queries. `fresh` requires one unambiguous namespace.
+
+`hx code index --repo PATH [--paths PATH...]` returns
+`{repo, files, symbols, changed, skipped, head, resolved}`. The repository identity
+is the portable map's `repo_id`, then a git remote, then the resolved path.
+The store is `state/code-index/index.db` outside product checkouts. Bodies occur
+once in `files`; Porter and optional trigram FTS use external content. Oversize
+and binary bodies are excluded and counted in `skipped`; streamed fingerprints
+remain in `exclusions` for scope freshness. Oversize exclusions cannot certify
+absence. No file-count cap applies.
+A derived legacy index without namespaces is rebuilt. Extractor-generation changes
+invalidate old candidates before the next refresh.
+
+`symbols`, `type`, `signature`, `tests-for` return declaration rows:
+`{repo, name, qualified, kind, path, line, end_line, signature, lane, extractor,
+anchor_sha, attributes, stale, unanchored}`. `lane` is
+`resolved|syntax|text|imported`; declaration signatures come from source headers
+or an external parser's supplied signature. `callers` returns reference sites with
+`reference: resolved|syntactic|imported`; `--count` returns
+`{count, fan_in: "files", stale}`. `register` returns registration references.
+`search` retains `{path,title,snippet,score,layer}` with provenance added; `layer`
+is `symbol|fts|fuzzy`. `precedent` preserves source whitespace in its bounded
+snippet. Optional sifting adds `jev_score` and `sift_status`; all deterministic
+hits remain, including unsifted hits beyond Jev's candidate cap.
+
+`impact` returns defined symbols, referencing file paths and candidate test paths.
+`edges [PATH]` returns `{repo, from_path, to_path, kind, status: "candidate", lane,
+extractor, anchor_sha, stale, ...}` for imports, calls, implements, tests and
+custom imported kinds. These never validate map relations. `conform` returns
+`{interface, interfaces, implementations, tests, diffs, uncertain, truncated,
+stale, clean}`; overloads, generic constraints and default values cannot certify
+clean parity. `projects [NAME]` returns manifests and project dependencies;
+`map --budget BYTES [--focus PATH...]` returns ranked files with scope headers,
+definitions and fan-in. `stats` reports namespaces, heads, coverage, tools,
+tokenizers and database bytes. `submaps` returns modularity, directory baseline
+and candidate components with bounded member/boundary lists, `read_versions`
+and `put` operations; the caller supplies its current run/snapshot patch envelope.
+
+`hx code import --namespace NS [--repo PATH] [--extractor TOOL] --symbols FILE
+--edges FILE` accepts JSONL symbols
+`{name,qualified,kind,path,line,end_line,signature}` (optional `attributes`) and
+edges `{from,to,kind,evidence}`. `from` names a symbol or relative source path;
+`to` names a symbol or path. Imports replace the same namespace/tool batch
+atomically; free-form kinds and evidence survive. Missing source spans remain
+`unanchored: true` and cannot satisfy freshness.
+
+`hx code contracts --register FILE` accepts a JSON object or array of
+`{name,path,version,producer,repo,sha}` records; `repo` must already be indexed,
+`sha` is the published Git commit. `contract NAME` returns matching published
+records across namespaces. `--owners` adds `{worker,task,run}` entries from the
+continuity ledger's current leases; the graph has no ownership columns.
+
+Resolved indexing is explicit: `index --resolved --indexer-checkout PATH` requires
+a separate clean checkout at the same committed HEAD. The SCIP CLI and applicable
+indexer must be installed; failures report degraded syntax coverage. Optional
+`HX_SCIP_COMMANDS` overrides each detected indexer's argv; no tool is vendored.
+The disposable indexer's `index.scip` is removed after ingestion.
+
+Completion results include `changed_paths`; publication replay uses the original
+assignment revision when retrying its derived graph refresh. Planning/admission
+bootstraps missing caches and rebinds a cache from another checkout; stale scope
+in the indexed checkout refuses admission with `hx code index --repo PATH`.
+The installed `bin/code-index-post-merge`, run with `HARNESS_ROOT`, performs the
+post-merge rebuild; `HX_CODE_INDEXER_CHECKOUT` opts into the resolved lane.
+
 `hx content index` returns `{"label", "chunks", "code_chunks"}`; `content search` returns a
 map of query to `{"title", "content", "source", "content_type", "rank", "layer", "stale"}`
 lists. `hx exec` returns `{"exit_code", "stdout_returned", "bytes_produced", "indexed", ...}`;

@@ -69,3 +69,10 @@ Use validated completion status; omit successful check detail and obsolete compl
 ## Notes
 
 Anything that does not fit above and is worth keeping.
+
+Before proposing new code, use a bounded `hx code type`, `signature`, `contract`,
+or `precedent` lookup for the known name or pattern. Reuse its path and declaration;
+request another scoped query only for a missing fact. Add executable graph lints
+when the goal requires no second interface, an existing test, or fresh write scope.
+Use `--owners` for current ledger ownership. Graph candidates and Jev scores do
+not validate an application-map relation or complete the goal.

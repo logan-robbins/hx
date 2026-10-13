@@ -14,8 +14,18 @@ Add a `--json` flag to `hx doctor` so the UI can render the same checks the CLI 
 
 ### Checks
 
+The Partner binds REPO_ID to this product's indexed namespace before dispatch.
+
 ```bash
-.venv/bin/python -m pytest tests/test_doctor.py -q
+hx code type DoctorReport --namespace REPO_ID --expect absent
+hx code tests-for src/hx/doctor.py --namespace REPO_ID --expect exists
+hx code fresh src/hx/doctor.py --namespace REPO_ID --expect fresh
+.venv/bin/python -m pytest tests/core/test_doctor.py -q
 .venv/bin/python -m hx doctor --json | .venv/bin/python -c 'import json,sys; d=json.load(sys.stdin); assert set(d)=={"ts","checks","errors"}, sorted(d); assert d["checks"], "no checks emitted"'
 git diff --quiet HEAD -- docs src/hx/ui
 ```
+
+Bind the concrete interface name, test path, write scope and repository namespace
+for the assignment. Refresh changed source before completion checks. The three
+graph lines mechanically check no second interface, an existing test boundary,
+and fresh scope; they are executable checks in the same `### Checks` block.
