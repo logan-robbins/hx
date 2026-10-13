@@ -57,6 +57,7 @@ from . import seam as seam_cmd
 from . import show as show_cmd
 from . import task as task_cmd
 from . import ui_cmd
+from . import models_cmd
 from . import wake as wake_cmd
 from .errors import HxError, ValidationError
 
@@ -115,6 +116,8 @@ IMPLEMENTED = {
     "ui": ui_cmd.main,
     "up": lifecycle.main_up,
     "wake": wake_cmd.main,
+    # Provider model lists diffed against the registry (TOOL_SKILL_PLAN step 3).
+    "models": models_cmd.main,
 }
 
 COMMANDS = sorted(set(IMPLEMENTED) | set(NOT_IMPLEMENTED))
@@ -182,6 +185,8 @@ read-only views:
   ui [--port N]                           the read-only web view on 127.0.0.1
   doctor [--json]                         what is here, what is missing, what is broken
   help [--all | --audience A] [--json]    the commands your audience sees (HARNESS_ID)
+  models [--provider P] [--expect current] [--json]
+                                        provider model lists vs config/models.json; writes nothing
   install --root PATH [--env-file PATH] [--ignore-claude-version]
                                         create the instance (spec 17.2)
 
@@ -217,6 +222,7 @@ AUDIENCES: dict[str, set[str]] = {
         "install", "up", "doctor", "ui", "heartbeat", "archive",
         "learn check", "learn path", "learn categories", "learn invariant",
         "cache assess", "cache budget", "memory index",
+        "models",
     },
     "partner": {
         "launch", "dispatch", "goal", "resume", "amend", "bench", "distill", "restart", "read",
@@ -233,6 +239,7 @@ AUDIENCES: dict[str, set[str]] = {
         "content index", "content stats",
         # GRAPH_PLAN steps 2-8 (the graph lane builds them; the gate covers them already).
         "code contracts", "code submaps", "code stats", "code import",
+        "models",
     },
     "worker": {
         "task", "complete", "progress",

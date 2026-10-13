@@ -222,3 +222,15 @@ and asks the Partner through `hx complete blocked|decision` instead. Which skill
 gets is `src/hx/skills/manifest.json`; an optional skill is turned on for an instance by
 naming it in `config/hx.json` `skills`; it reaches each home at that agent's next
 `hx launch`, which runs the adapter's `install.sh` (`hx restart` does not), and `hx doctor`'s `skills` row says which are on and whether every skill is well-formed.
+
+## Keeping model IDs current
+
+`hx models` asks Anthropic, OpenAI, xAI and Meta which models they serve now and prints, per
+provider, what is new, gone or deprecated against `config/models.json` and `docs/models.md`,
+with each model's input window; TypeSafe's decision model is printed as `pinned`. It reads
+keys from your environment, the instance's env file or its `seed/` files and never prints
+one; a provider without a key is `unverified`, which is expected for Anthropic when the
+instance runs on a Claude subscription token. It changes nothing: `hx models --expect current`
+exits 3 when a configured model is no longer active or its window is larger than the provider
+allows, which is the cue to edit the registry yourself (the Partner's `hx-fleet` skill §7 says
+the same to the Partner).

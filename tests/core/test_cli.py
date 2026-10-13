@@ -37,6 +37,8 @@ SPEC_08_COMMANDS = {
     # Context economy: code index, content store, isolated execution, Jev sift
     # (docs/search-and-retrieval.md), likewise post-spec-08.
     "code", "content", "exec", "sift", "discipline", "cache",
+    # Provider model lists against the registry (TOOL_SKILL_PLAN step 3).
+    "models",
 }
 
 

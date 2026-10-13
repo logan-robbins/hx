@@ -616,3 +616,44 @@ KiB) and lints that no skill a worker or subagent carries names an `hx` command 
 refused. One `ok` line: `<n> skill(s) valid (frontmatter, size, worker lint); <k> over the 8
 KiB facade bound; optional on: <names|none>`; otherwise one `fail` line per problem.
 hx's skills carry `metadata: {hx-audience, hx-roles, hx-loads-when}`.
+
+## `hx models [--provider P] [--expect current] [--json]`
+
+Operator and Partner only (`hx help`). One GET per provider, in order `anthropic`, `openai`,
+`xai`, `meta`, then `typesafe` (no request), 5 s each, no retry, no fallback; writes nothing.
+Credential order per provider: the process environment, the env file of `config/auth.json`,
+then the adapter's `seed/` file (`seed/token` only when it starts with `sk-ant-api`; the OAuth
+token is never sent). `--json`:
+
+```json
+{"ts": "2026-10-12T09:00:00Z", "docs": "/abs/docs/models.md", "env_file": null,
+ "expect": "current",
+ "providers": {
+   "anthropic": {"status": "ok", "source": "https://api.anthropic.com/v1/models?lifecycle=active&limit=1000",
+                 "credential": "env-file:ANTHROPIC_API_KEY",
+                 "ids": ["claude-opus-5-5", "…"], "added": ["claude-haiku-5-5"], "removed": [],
+                 "deprecated": ["claude-opus-4-1"], "window": {"claude-opus-5-5": 1000000},
+                 "effort": {"claude-opus-5-5": ["low", "medium", "high"]},
+                 "configured": ["claude-opus-5-5"], "documented": ["claude-opus-5-5"],
+                 "missing": [], "window_over": {}},
+   "openai": {"status": "unverified", "credential": null, "reason": "no credential (…)", "…": "…"},
+   "xai": {"status": "error", "http": 401, "reason": "HTTP 401 Unauthorized", "…": "…"},
+   "typesafe": {"status": "pinned", "source": "hx.jev.MODEL", "ids": ["jev-1.13.0"], "…": "…"}},
+ "stale": ["anthropic: claude-opus-4-1 is configured but not in the active list"]}
+```
+
+`status` is `ok`, `unverified` (no credential; no request made), `error` (`http` status or
+`null`, and `reason`; the response body is never kept) or `pinned`. `ids` are the active IDs
+returned, `deprecated` the returned IDs the provider flags (`lifecycle`/`status` deprecated or
+legacy, `deprecated: true`, or a deprecation/retirement date); `added` are active IDs of the
+provider's family (`claude-`, `gpt-`/`o1`/`o3`/`o4`/`codex-`, `grok-`, `muse-`/`llama`) not
+in `docs/models.md`; `removed` are documented or configured IDs the provider no longer returns;
+`missing` are configured IDs not active; `window_over` maps a configured ID to its configured
+`window` and the provider's `max_input_tokens` when the first is larger. `window` and `effort`
+are read from the record or its `capabilities`/`limits` (`max_input_tokens`, `context_window`,
+`context_length`, `max_prompt_length`, …; effort lists or `{level: {supported: true}}` maps).
+`documented` is `null` when `docs/models.md` is not beside the package (an installed wheel);
+configured IDs are attributed to a provider by that same family prefix. Text output is one
+block per provider and a last line `HX-MODELS ok=<n> unverified=<n> error=<n> pinned=<n>
+stale=<n>`. `--expect current` exits 3 when `stale` is non-empty (only `ok` providers can be
+stale); usage errors exit 2; a worker caller is refused (exit 1).

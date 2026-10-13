@@ -159,3 +159,32 @@ and cannot be undone. An idle worker costs nothing.
   agent never did.
 - **Hand-edit anything under `run/`, `state/`, `logs/` or `pods/`.** hx and the Companion own
   those. If a worker's state looks wrong, that is worth reporting, not patching.
+
+## 7. Model refresh
+
+Model IDs go stale: a provider ships a new one, deprecates an old one, or caps a window
+below what `config/models.json` says. `hx models` asks each provider what it serves now and
+diffs that against the registry and `docs/models.md`. It writes nothing; you decide.
+
+```bash
+hx models                                   # every provider, in order, one block each
+hx models --provider anthropic --json       # one provider, machine-readable
+hx models --expect current                  # exit 3 if a configured ID is stale
+```
+
+Read each block by its status:
+
+- `ok` — the provider answered. `added` are IDs of its family that `docs/models.md` does not
+  list; `removed` are listed or configured IDs it no longer returns; `deprecated` are IDs it
+  still returns but flags; `window` is its `max_input_tokens` per ID.
+- `unverified` — no credential for it (`reason` says which variable or `seed/` file). That is
+  the honest answer, not a failure: the Claude OAuth seed cannot call the Anthropic Models
+  API, so an instance without `ANTHROPIC_API_KEY` always sees Anthropic `unverified`.
+- `error` — the request failed (`http` and `reason`). No retry: run it again later.
+- `pinned` — TypeSafe's decision model, fixed in hx itself.
+
+When a configured ID is in `removed` or `deprecated`, or a `stale:` line says a configured
+`window` exceeds the provider's `max_input_tokens`, move the agents that use it to a current
+ID (`config/<id>/harness.json` `model`, then `hx restart <id>`), and tell the human the
+registry needs the same change. Never edit `config/models.json` to make the check pass, and
+never paste a key into a goal, a chat message or a file: credentials stay in the env file.
