@@ -191,10 +191,12 @@ ever told arrives as a `/goal` pointer pasted into its pane or as a file path fr
 ## Version
 
 Yours auto-updates. Harness sessions run with `DISABLE_AUTOUPDATER=1` and the exact binary path
-recorded in `config/claude.json` at install. The pin changes only through `hx upgrade`, which
-refuses a version the live test suite has not passed on. So an upstream release cannot change
-the behaviour of a running fleet underneath you — and it cannot hold your own Claude back
-either, because the pin is a path and an env var in one process, not a system-wide setting.
+recorded in `config/claude.json`, so an upstream release cannot change the behaviour of a
+*running* fleet underneath you. The version beside that path is a record, not a pin: every
+`hx launch`, `hx restart` and `hx up` re-records what the binary reports now, so the fleet
+runs the latest release from its next launch, and `hx doctor` says whether that version is one
+the live suite has passed on. None of it holds your own Claude back, because the path and the
+env var live in one process, not in a system-wide setting.
 
 ## Visibility
 

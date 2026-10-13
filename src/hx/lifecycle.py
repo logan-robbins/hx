@@ -126,9 +126,12 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     """
     require_partner_caller("launch", env)
     _guard_planned(root, item_id)
-    from . import envfile
+    from . import claude_bin, envfile
 
     envfile.sync_seed(root)
+    # Every launch boundary re-records the version the pinned binary reports now, so the
+    # fleet runs the latest release from here and `hx doctor` has the current record.
+    claude_bin.refresh_pin(root, env)
     path = ensure_work_item(root, item_id)
     ensure_workdir(root, item_id)
 

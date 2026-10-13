@@ -638,18 +638,23 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                     [binary, "--version"], capture_output=True, text=True, check=False
                 )
                 installed_version = bare_claude_version(installed.stdout or "")
+                from . import claude_bin
                 if pinned_version and installed_version and installed_version != pinned_version:
+                    # A record, not a gate: the binary moved on and the next launch boundary
+                    # re-records it (`hx.claude_bin.refresh_pin`). Worth knowing, never fatal.
                     checks.append((
-                        FAIL,
+                        WARN,
                         "claude",
-                        f"{binary} reports {installed_version} but config/claude.json pins "
-                        f"{pinned_version}; install the pinned version or re-run "
-                        f"`hx install --claude <bin>` (spec 17.1)",
+                        f"{binary} now reports {installed_version}; config/claude.json recorded "
+                        f"{pinned_version}. The next `hx launch`, `hx restart` or `hx up` "
+                        f"re-records it ({claude_bin.describe(installed_version)})",
                     ))
                 else:
-                    checks.append(
-                        (OK, "claude", f"{binary} pinned at {pinned_version or 'an unrecorded version'}")
-                    )
+                    shown = installed_version or pinned_version
+                    checks.append((
+                        OK, "claude",
+                        f"{binary} at {claude_bin.describe(shown) if shown else 'an unrecorded version'}",
+                    ))
     else:
         checks.append(
             (WARN, "claude", "config/claude.json absent; `hx install` records {bin, version} (spec 17.1)")

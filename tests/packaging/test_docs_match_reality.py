@@ -88,8 +88,8 @@ def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
 
     `HX_CLAUDE_BIN` is the fake `claude`, so `hx install` step 6 launches a fake Partner rather
     than a real agent, and `HX_TMUX` keeps that session on a private server this test kills.
-    The version check in step 1 needs a *real* binary, so the real one is pinned with `--claude`
-    and never launched.
+    Step 1 records the real `claude` on PATH (any version; nothing is refused) and never
+    launches it.
     """
     fake = scratch / "bin" / "claude"
     fake.parent.mkdir(parents=True, exist_ok=True)
@@ -333,13 +333,13 @@ def test_getting_started_matches_what_install_really_prints():
     )
 
 
-def test_getting_started_pins_the_versions_the_package_really_carries():
+def test_getting_started_names_the_live_verified_versions():
     text = GETTING_STARTED_MD.read_text()
     tested = json.loads(
         (REPO / "src" / "hx" / "packaging" / "tested-claude-versions.json").read_text()
     )["versions"]
     for version in tested:
-        assert version in text, f"getting-started does not name the tested claude {version}"
+        assert version in text, f"getting-started does not name the live-verified claude {version}"
     pyproject = (REPO / "pyproject.toml").read_text()
     wheel_version = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
     assert f"hx_harness-{wheel_version}-py3-none-any.whl" in text, (

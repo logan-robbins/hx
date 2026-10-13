@@ -7,8 +7,11 @@ procedure, and it leaves the token step (§2) to you.
 ## What you need
 
 - macOS or Linux, `tmux`, `git`, Python 3.14, and `uv`.
-- Claude Code installed and on your `PATH` at a version hx has been tested with (`claude
-  --version`; the list is `src/hx/packaging/tested-claude-versions.json`, currently `2.1.296`, `2.1.289`, `2.1.280`, and `2.1.278`).
+- Claude Code installed and on your `PATH`, at any current version. hx records the version it
+  finds and re-records it at every launch, so the fleet runs the latest release; `hx doctor`
+  says `tested` when it is one the live suite has passed on (the list is
+  `src/hx/packaging/tested-claude-versions.json`, currently `2.1.296`, `2.1.289`, `2.1.280`,
+  and `2.1.278`) and `untested` otherwise, and never refuses.
 - A Claude subscription (Max or Pro), or an Anthropic API key supplied below.
 
 Alternatively, supply an Anthropic API key in a dotenv file. `hx` uses an existing
@@ -38,8 +41,7 @@ Pick a directory for the instance. It must not be inside `~/.claude` (hx refuses
 hx install --root ~/hx
 ```
 
-To use a local dotenv fallback, pass `--env-file /absolute/path/to/.env`. If your Claude
-Code version is newer than hx's tested list, add `--ignore-claude-version`. The env file
+To use a local dotenv fallback, pass `--env-file /absolute/path/to/.env`. The env file
 path is saved in the instance, so later `hx up` runs use it automatically. Existing
 credentials under `seed/` always take precedence over the env file.
 

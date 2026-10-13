@@ -94,8 +94,8 @@ paths are what get baked into every agent home's `settings.json`.
    section. Any change to the `hx` command set, the instance layout, or `CONTRACTS.md` gets a
    **Changed** entry saying what an existing instance must do.
 3. Bump `[project] version` in `pyproject.toml`.
-4. Confirm `packaging/tested-claude-versions.json` lists every Claude Code version the M6 live
-   suite has passed on, newest first (§4).
+4. Confirm `packaging/tested-claude-versions.json` lists every Claude Code version the live
+   suite has passed on, newest first (§4); it is a record, not a gate.
 5. Tag `vX.Y.Z` and push the tag. A `release.yml` workflow — to be added alongside the tag
    protection, it does not exist yet — runs `uv build`, re-runs the wheel content check from
    `ci.yml`, publishes to PyPI via a PyPI Trusted Publisher (OIDC, no long-lived token in the
@@ -174,34 +174,34 @@ Branch protection on `main`: both `test` jobs and `package` required, linear his
 push. CI needs no secrets — it only reads, builds, and uploads an artifact; publishing is a
 separate workflow that does not exist yet (§2).
 
-## 4. Pinning Claude Code
+## 4. Recording Claude Code, not pinning it
 
-hx runs the same `claude` binary the user already has, but it runs it at a version the suite
-has actually passed on.
+hx runs the same `claude` binary the user already has, at whatever version it is. The version
+is recorded as evidence; it is never a gate. (Until 2026-10-13 `hx install` refused a version
+missing from a hand-maintained tested list; that gate made every fleet stale by default and
+is gone.)
 
-- `hx install` records `{bin, version}` in `config/claude.json` and refuses to install if that
-  version is not in the package's tested list.
-- The tested list ships inside the wheel as `hx/packaging/tested-claude-versions.json`
-  (`src/hx/packaging/` in the repo), so `hx install` can consult it with no checkout present:
-  `{"versions": ["2.1.278"]}`. Entries are the bare version number as `claude --version`
-  reports it before the ` (Claude Code)` suffix, newest first; the first entry is what a fresh
-  install expects. **2.1.278** is the version this plan was written against, and it is there
-  because 2.1.274 fixed the one documented gap in `/goal` survival (goal loss on `--resume`
-  after compaction) that the seam mechanism depends on.
-- Sessions launch with `DISABLE_AUTOUPDATER=1` and the recorded absolute binary path, so an
-  upstream release cannot change a running fleet underneath its operator.
-- The pin moves when a human runs `hx install` again against the instance: it re-runs the
-  version check against the tested list, rewrites `config/claude.json`, and re-renders every
-  agent home's settings and skills at the next `hx launch`. Nothing moves a pin on its own,
-  and an untested version is refused rather than warned about.
+- `hx install` records `{bin, version}` in `config/claude.json` for the `claude` it finds (or
+  `--claude <path>`), and prints the version with `(tested)` or `(untested; the live suite
+  last passed on X)` beside it. `--ignore-claude-version` is accepted and does nothing.
+- Every launch boundary — `hx launch`, `hx restart`, `hx up` — re-records the version the
+  binary reports now (`hx.claude_bin.refresh_pin`). A fleet therefore runs the latest release
+  from its next launch, automatically, and `hx doctor` always has the current record.
+- Sessions still launch with `DISABLE_AUTOUPDATER=1` and the recorded absolute binary path,
+  so an upstream release cannot change a *running* agent underneath its operator: "latest"
+  arrives at a launch boundary, never mid-turn. Grok (`auto_update = false`) and Pi
+  (`PI_SKIP_VERSION_CHECK=1`) hold the same line.
+- The package still ships `hx/packaging/tested-claude-versions.json`
+  (`{"versions": ["2.1.296", …]}`, bare versions as `claude --version` reports them before
+  the ` (Claude Code)` suffix, newest first). It is the record of what the live suite
+  (`HX_LIVE=1 pytest tests/live`) last passed on, which `hx doctor` and `hx install` report
+  as `tested` / `untested`. Nothing refuses on it.
+- `hx doctor` warns, and never fails, when the binary now reports a different version than
+  `config/claude.json` recorded; the warning says the next launch re-records it.
 
-**Adding a version to the list is a human act with evidence behind it.** The pull request that
-adds an entry states which live suite run passed on it, on which OS. A version is never added
-because it exists.
-
-The list is append-only in practice. Removing an entry breaks `hx install` for anyone holding
-that version, so a version known to be broken gets a **Changed** changelog entry and a minor
-bump, not a silent deletion.
+**Adding a version to the list is still a human act with evidence behind it.** The pull
+request that adds an entry states which live suite run passed on it, on which OS. A version is
+never added because it exists — but a fleet never waits for the entry either.
 
 ## 5. Issues, contribution, and support posture
 

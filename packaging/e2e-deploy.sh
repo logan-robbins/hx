@@ -166,19 +166,21 @@ diff -u "$FAKE_BEFORE" "$SCRATCH/fake-user.after" > "$SCRATCH/fake-user.diff" \
   || { sed 's/^/   | /' "$SCRATCH/fake-user.diff" >&2; die "hx wrote to the user's Claude home"; }
 ok "$FAKE_USER is byte-identical before and after"
 
-step "9. config/claude.json records a bare version from the tested list"
+step "9. config/claude.json records the bare version the binary reports"
 CLAUDE_JSON="$ROOT/config/claude.json"
 [ -f "$CLAUDE_JSON" ] || die "no $CLAUDE_JSON (spec 17.2 step 1)"
 python3 - "$CLAUDE_JSON" "$REPO/src/hx/packaging/tested-claude-versions.json" <<'PY' || die "config/claude.json is wrong"
-import json, re, sys
+import json, re, subprocess, sys
 claude = json.load(open(sys.argv[1]))
 tested = json.load(open(sys.argv[2]))["versions"]
 assert set(claude) >= {"bin", "version"}, sorted(claude)
 version = claude["version"]
 assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"{version!r} is not a bare version"
-assert version in tested, f"{version} is not in the tested list {tested}"
+probe = subprocess.run([claude["bin"], "--version"], capture_output=True, text=True)
+reported = (probe.stdout or probe.stderr).strip().splitlines()[0].removesuffix(" (Claude Code)").strip()
+assert reported == version, f"{claude['bin']} reports {reported!r}; config/claude.json recorded {version!r}"
 print(f"   ok  bin={claude['bin']}")
-print(f"   ok  version={version}, bare and in the tested list")
+print(f"   ok  version={version}, bare, what the binary reports, {'tested' if version in tested else 'untested'}")
 PY
 
 # --------------------------------------------------------------------------- the mirror

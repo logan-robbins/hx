@@ -48,12 +48,13 @@ tmux -V                       # any recent tmux
 git --version
 uv --version                  # uv installs the package and provides Python 3.14
 uv python find 3.14           # or: python3.14 --version
-claude --version              # must be a version hx has been tested with
+claude --version              # any current release; hx records it and says tested/untested
 ```
 
-The tested Claude Code versions are in the repository at
-`src/hx/packaging/tested-claude-versions.json` (also inside the installed package). A
-newer version can be used when the human requests it with `--ignore-claude-version`.
+hx records whatever `claude` it finds and re-records the version at every launch, so the
+fleet runs the latest release; nothing refuses a version. The versions the live suite has
+passed on are listed in `src/hx/packaging/tested-claude-versions.json` (also inside the
+installed package), and `hx install` and `hx doctor` print `tested` or `untested` against it.
 The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
 missing credentials fall back to that file: `ANTHROPIC_API_KEY` (also the legacy typo
 `ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
@@ -95,8 +96,7 @@ For a supplied dotenv fallback:
 hx install --root ~/hx --env-file /absolute/path/to/.env
 ```
 
-Add `--ignore-claude-version` only when the human explicitly asks to bypass the tested
-version list. The env path is stored in the instance; later launches read it again.
+The env path is stored in the instance; later launches read it again.
 
 Without an existing OAuth token or a usable `--env-file`, the first run stops with exit
 code 4 and prints:

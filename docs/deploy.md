@@ -32,9 +32,10 @@ what re-copies the skeleton.
   `--dangerously-skip-permissions` under root or sudo. Every agent here runs with that flag.
 - **`tmux`** and **`git`** on `PATH`.
 - **Python 3.14 or newer.**
-- **The `claude` binary**, at a version in the package's tested list, which ships inside the
-  wheel as `hx/packaging/tested-claude-versions.json`. `hx install` checks this and stops with
-  the version to install if yours is not listed.
+- **The `claude` binary**, at any current version. `hx install` records the one it finds and
+  every launch re-records what the binary reports, so the fleet runs the latest release;
+  the wheel's `hx/packaging/tested-claude-versions.json` is the list the live suite last
+  passed on, which the install and `hx doctor` report as `tested` or `untested`.
 - **A Claude account.** The harness authenticates with a long-lived token of its own that you
   generate in one command — see step 3. Your own login is never read.
 
@@ -60,10 +61,10 @@ idempotent, so the run below is what happens the first time and re-running it pi
 stopped. Everything that follows on this page is output from a real run of
 `packaging/e2e-deploy.sh`, not an illustration.
 
-It refuses to run as root, checks `tmux`, `git` and Python, and pins the `claude` binary:
+It refuses to run as root, checks `tmux`, `git` and Python, and records the `claude` binary:
 
 ```
-1. claude 2.1.278 at /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe
+1. claude 2.1.278 at /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe (tested)
 2. instance at ~/hx
    created  PARTNER.md
    created  adapters/claude/install.sh
@@ -93,8 +94,8 @@ It refuses to run as root, checks `tmux`, `git` and Python, and pins the `claude
    created  config/claude.json
 ```
 
-If your `claude` is not a version this package has been tested against, it stops here and says
-which one to install. `partner` is the only agent a fresh instance has; `templates/worker/` is
+A `claude` newer than the live suite has passed on installs the same way and is marked
+`untested` beside the newest tested version. `partner` is the only agent a fresh instance has; `templates/worker/` is
 what the Partner copies to create another, and `personas/<role>/AGENTS.md` are the four
 personas it copies over `config/<id>/AGENTS.md` when it does. You never do either yourself —
 the Partner has a skill for it.
@@ -189,8 +190,8 @@ hx install --root "$HARNESS_ROOT"
 ```
 
 `hx install` is idempotent: re-running it re-copies the package skeleton over the instance
-without touching anything you or the Partner have written under `config/<id>/`, and re-checks
-that your `claude` is a version this package has been tested against.
+without touching anything you or the Partner have written under `config/<id>/`, and re-records
+the version your `claude` reports.
 
 **It does not restart anything.** Running sessions keep the binary and the skills they launched
 with until they are restarted, which is deliberate: a restart mid-turn throws that turn away.
@@ -204,7 +205,7 @@ line-by-line version.
 ## If something is wrong
 
 ```bash
-hx doctor        # tmux, git, the pinned binary and its version, the seed token and its mode,
+hx doctor        # tmux, git, the recorded binary and its version, the seed token and its mode,
                  # every agent home's settings, mirror reachability
 hx board         # status rows plus scope lines; exits 0 always
 ```
@@ -220,7 +221,7 @@ ok    python           3.14.7 (~/.local/share/uv/tools/hx-harness/bin/python)
 ok    tmux             tmux 3.7c
 ok    git              git version 2.50.1 (Apple Git-155)
 ok    root             ~/hx
-ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe pinned at 2.1.278
+ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe at 2.1.278 (tested)
 ok    skeleton         PARTNER.md
 ok    skeleton         LEARNINGS/orientation.md
 ok    skeleton         LEARNINGS/ownership.md

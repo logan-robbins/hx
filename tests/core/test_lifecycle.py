@@ -169,6 +169,16 @@ def test_restart_of_an_idle_item_sends_no_goal(instance, hx, launched):
     assert "goal=none" in result.stdout
 
 
+def test_launch_re_records_the_binary_version(instance, hx, tmux_server):
+    """A launch boundary records what the pinned binary reports now (the fake answers
+    `HX_FAKE_CLAUDE_VERSION`), so the fleet runs the latest release from its next launch."""
+    before = json.loads((instance / "config" / "claude.json").read_text())
+    result = hx("launch", "partner", "--no-companion", HX_FAKE_CLAUDE_VERSION="9.9.9")
+    assert result.returncode == 0, result.stdout + result.stderr
+    after = json.loads((instance / "config" / "claude.json").read_text())
+    assert after == {"bin": before["bin"], "version": "9.9.9"}, after
+
+
 def test_up_launches_every_config_id_partner_first(instance, hx, agent):
     agent("eng-002")
     result = hx("up")

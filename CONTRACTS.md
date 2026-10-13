@@ -261,7 +261,11 @@ Python). Exactly these tokens, no others:
 
 `config/claude.json` is `{"bin": "<abs path>", "version": "2.1.278"}` and
 `packaging/tested-claude-versions.json` is `{"versions": ["2.1.278", …]}`. Both hold the bare
-version: the output of `claude --version` with the ` (Claude Code)` suffix stripped.
+version: the output of `claude --version` with the ` (Claude Code)` suffix stripped. The
+recorded version is evidence, not a gate: `hx install` records any version, every `hx launch`,
+`hx restart` and `hx up` re-records what the binary reports (`hx.claude_bin.refresh_pin`), and
+`hx doctor` prints `<bin> at <version> (tested)` or `(untested; the live suite last passed on
+<newest>)` and warns, never fails, when the binary has moved past the record.
 
 ## Fresh instance contents
 

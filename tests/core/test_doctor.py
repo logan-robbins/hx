@@ -39,6 +39,8 @@ def test_reports_root_python_tmux_and_git(instance):
 def test_reports_the_pinned_binary(instance):
     checks = run_checks(instance)
     assert ("claude", OK) in statuses(checks), [c for c in checks if c[1] == "claude"]
+    detail = next(c[2] for c in checks if c[1] == "claude")
+    assert "(tested)" in detail, detail  # the fake's version is in the live-verified list
 
 
 def _no_live_server(monkeypatch):

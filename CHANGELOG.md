@@ -141,6 +141,16 @@ as milestones are accepted.
 
 ### Changed
 
+- **Claude Code versions are recorded, not gated.** `hx install` no longer refuses a
+  `claude` missing from `packaging/tested-claude-versions.json`; it records `{bin, version}`
+  for whatever it finds and prints `tested` or `untested` beside it. Every launch boundary
+  (`hx launch`, `hx restart`, `hx up`) re-records the version the binary reports now
+  (`hx.claude_bin.refresh_pin`), so a fleet runs the latest release from its next launch;
+  `DISABLE_AUTOUPDATER=1` still keeps a running session on one binary. `hx doctor` warns,
+  never fails, when the binary has moved past the record. `--ignore-claude-version` is a
+  no-op kept for scripts. The tested list is the record of what the live suite last passed
+  on (docs/github-plan.md §4, docs/two-worlds.md, docs/deploy.md, docs/getting-started.md,
+  the `hx-setup` skill, CONTRACTS.md).
 - **`hx dispatch` refuses a goal whose `### Checks` already exit 0 in the workdir.** An
   existing goal whose gate is `true`, or passes on the untouched tree, must be rewritten to fail
   before the work exists. The 120 s budget is the one timeout in hx.

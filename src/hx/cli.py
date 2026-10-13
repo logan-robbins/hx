@@ -195,7 +195,7 @@ read-only views:
   help [--all | --audience A] [--json]    the commands your audience sees (HARNESS_ID)
   models [--provider P] [--expect current] [--json]
                                         provider model lists vs config/models.json; writes nothing
-  install --root PATH [--env-file PATH] [--ignore-claude-version]
+  install --root PATH [--env-file PATH]
                                         create the instance (spec 17.2)
 
 every command of spec 08:
