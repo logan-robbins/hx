@@ -79,6 +79,17 @@ project already uses to reason about itself:
   (its behaviours, interfaces, and checks) sized so one assignment can own
   it and one commit can change it.
 
+## Stay current with dev
+
+Workers pull from `dev` (or the repo's principal branch) frequently —
+at assignment start, before each new behaviour unit, and before sign-off.
+A long-lived branch that drifts from dev converts small reviews into
+archaeology and makes the granularity gate measure other people's work.
+The gate's base is the merge-base with `dev` first, then `main`: pulling
+often keeps that base close, so what sign-off measures is the unit's own
+change. Conflicts are resolved in small pulls by the worker, never in one
+large merge at the end.
+
 ## Push, test, sign-off — more frequently
 
 The loop per behaviour unit is: implement slice → focused tests → commit →

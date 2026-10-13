@@ -51,3 +51,10 @@ context window: say what is done and what remains). The line `HX-COMPLETE {{id}}
 the only proof that counts; do not declare done in chat.
 
 ## UPDATES BELOW ONLY
+
+- Work at module granularity: one behaviour unit per commit, tests travelling with the
+  change. `hx complete` measures your whole committed range against the repo's own size
+  norms and refuses sign-off of an oversized unit; if that fires, ask the Partner to split
+  the plan rather than landing it whole.
+- Pull from `dev` (or the principal branch) at assignment start, before each new unit,
+  and before sign-off. Resolve drift in small pulls, never in one large final merge.
