@@ -18,6 +18,9 @@ dispatched: {{dispatched}}
 ## Tasks
 - [ ] …
 
+## Status
+<rewritten by hx at every boundary: step state, memory episodes, open subagent handles>
+
 ## Deliverables
 
 ## Commands

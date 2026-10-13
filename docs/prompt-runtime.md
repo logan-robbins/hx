@@ -17,7 +17,7 @@ Every agent's prompt is four layers, and each layer has exactly one source:
 | Invariants | `config/CLAUDE.md` | one channel per flavor (below) |
 | Persona | the role persona (`personas/<role>/AGENTS.md`) plus `harness.json` `purpose` | the system prompt (`run/<id>/persona.md`), or the context file on Codex/Meta |
 | Learnings | `LEARNINGS/rules.md` | the persona's `hx:learnings` region |
-| Session memory | the work item's `## Tasks`, step state, episodes | the context file (`hx compose`) |
+| Session memory | the work item: `## Tasks` (the agent's) and `## Status` (hx's: step state, memory episodes, open subagent handles); `PARTNER.md` for the Partner | the context file (`hx compose`) |
 
 The invariants reach each agent once. `config_harness.INVARIANTS_CHANNEL` names the channel:
 
@@ -43,6 +43,15 @@ The persona is rendered, never copied. Every `start.sh --exec` runs `python -m h
    `"purpose": "{{purpose}}"`; until the Partner replaces it the persona has no purpose and
    `hx doctor` warns `purpose:<id>`;
 4. the learnings region (`hx.learn.persona_region`), last.
+
+Session memory is the work item. The agent keeps `## Tasks`; hx keeps `## Status`, rewritten at
+every main-stream `hx compose` (launch, restart, resume, seam, and each `SessionStart`: the
+boundaries, where the agent is not writing the file) in the `-working` item, and in `PARTNER.md`
+for the Partner (`hx.compose.write_status`). It holds the step state, the memory episodes (not
+the Partner's) and the open subagent handles, as `###` subsections, from the one render that
+also fills the context file's sections of the same names; an unchanged status leaves the file
+untouched, and an idle or completed item is never written. The context file still carries those
+sections, and `PARTNER.md`'s `## Status` is left out of its copy there so it rides once.
 
 Nothing per id is written by hand except `purpose` and the work item's `## Tasks`. An instance
 from before this keeps a `config/<id>/AGENTS.md` per worker; `hx install`, `hx up`, `hx launch`

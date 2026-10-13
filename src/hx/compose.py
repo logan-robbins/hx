@@ -34,6 +34,12 @@ Sections, in the order spec 07.3 fixes them:
                      omitted when `companion.memory_inject_k` is 0
   5. Open handles  — `run/<id>/subagents.json` and every `-open` stream
 
+Session memory is the work item: the agent keeps `## Tasks`, and hx keeps `## Status` (4, 4b
+and 5 as `###` subsections), rewritten in the `-working` item at every main-stream compose —
+a boundary, so the agent is not writing the file — and in `PARTNER.md` for the Partner
+(`write_status`). One render feeds both the work item and sections 4, 4b and 5 here; the
+context file still carries them until a boundary hands the agent the work item itself.
+
 Everywhere else the persona is never here: it is in the system prompt, via
 `--append-system-prompt-file` (spec 02 Identity, 11). For `partner` the file also
 carries current `PARTNER.md`, `hx board`, and companion scheduling state. It excludes
@@ -53,8 +59,10 @@ from .errors import NotFound, Refused, ValidationError
 from .ids import PARTNER
 from .workitems import (
     SECTION_GOAL,
+    SECTION_STATUS,
     SECTION_TASKS,
     find_work_item,
+    section_bounds,
     section_text,
     split_frontmatter_text,
 )
@@ -383,6 +391,84 @@ def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
     return _relative(root, mapping_path), "\n".join(lines)
 
 
+def status_parts(
+    root: Path, item_id: str, stream: str, *, fallback: str = ""
+) -> list[tuple[str, str | None, str]]:
+    """`(title, source, body)` for each part of a stream's status: its step state (4), the
+    closest memory episodes (4b; never the Partner's, none with `memory_inject_k: 0`), and its
+    open subagent handles (5). Computed once per compose: the episode lookup opens chroma."""
+    parts = [("Step state", *step_state(root, item_id, stream))]
+    if not (item_id == PARTNER and is_main_stream(item_id, stream)):
+        injected = memory_episodes(root, item_id, stream, fallback=fallback)
+        if injected is not None:
+            parts.append(("Memory episodes", *injected))
+    parts.append(("Open subagent handles", *open_handles(root, item_id)))
+    return parts
+
+
+STATUS_NOTE = "_hx rewrites this section at every boundary (`hx compose`); do not edit it._"
+
+
+def status_text(parts: list[tuple[str, str | None, str]]) -> str:
+    """The body of `## Status`: the parts as `###` subsections, sources left out (the context
+    file names them)."""
+    blocks = [STATUS_NOTE]
+    for title, _source, body in parts:
+        blocks.append(f"### {title}\n\n{body.rstrip() or NONE_YET}")
+    return "\n\n".join(blocks)
+
+
+def status_file(root: Path, item_id: str) -> Path | None:
+    """Where the agent's session memory lives: `PARTNER.md` for the Partner, else the
+    `-working` work item. None when there is none (no task in progress, or a completed item,
+    which is a record and stays as the agent left it)."""
+    if item_id == PARTNER:
+        path = root / "PARTNER.md"
+        return path if path.is_file() else None
+    path = find_work_item(root, item_id)
+    if path is None or not path.name.endswith("-working.md"):
+        return None
+    return path
+
+
+def _trimmed(lines: list[str]) -> list[str]:
+    while lines and not lines[-1].strip():
+        lines = lines[:-1]
+    return lines
+
+
+def with_status(text: str, body: str) -> str:
+    """`text` with its `## Status` section's content replaced by `body`; without one, the
+    section goes right after `## Tasks`, or at the end when there is no `## Tasks`."""
+    # A work item opens with frontmatter; PARTNER.md does not.
+    front, rest = split_frontmatter_text(text) if text.startswith("---") else ("", text)
+    lines = rest.split("\n")
+    block = [SECTION_STATUS, "", *body.strip("\n").split("\n")]
+    bounds = section_bounds(rest, SECTION_STATUS) or section_bounds(rest, SECTION_TASKS)
+    if bounds is None:
+        head, tail = lines, []
+    elif lines[bounds[0]].rstrip() == SECTION_STATUS:
+        head, tail = lines[: bounds[0]], lines[bounds[1]:]
+    else:
+        head, tail = lines[: bounds[1]], lines[bounds[1]:]
+    head = _trimmed(head)
+    updated = (head + [""] if head else []) + block + ([""] + tail if tail else [""])
+    return front + "\n".join(updated)
+
+
+def write_status(root: Path, item_id: str, parts: list[tuple[str, str | None, str]]) -> Path | None:
+    """Rewrite `## Status` in the agent's session-memory file (`status_file`); the file is
+    left untouched when nothing changed. Returns the file, or None when there is none."""
+    path = status_file(root, item_id)
+    if path is None:
+        return None
+    text = path.read_text()
+    updated = with_status(text, status_text(parts))
+    if updated != text:
+        store.atomic_write_text(path, updated)
+    return path
+
+
 #: The handover is a resume pointer, not an archive: PARTNER.md grows all day, so its
 #: append-only sections ride bounded while identity, rules, digest, fleet, pods and open
 #: questions ride whole. Tails win (newest last) except Notes, whose curated constants sit
@@ -430,6 +516,9 @@ def _bound_partner_md(text: str) -> str:
     chunks.append((header, body))
     out = head
     for name, section in chunks:
+        if name == SECTION_STATUS:
+            # hx wrote it from the parts the context file renders as its own sections.
+            continue
         if name in _PARTNER_TAIL_ROWS:
             section = _tail_table(section, _PARTNER_TAIL_ROWS[name])
         elif name in _PARTNER_HEAD_LINES:
@@ -440,9 +529,11 @@ def _bound_partner_md(text: str) -> str:
 
 
 def compose_text(
-    root: Path, item_id: str, stream: str, *, subagent_prompt: str | None = None, env=None
+    root: Path, item_id: str, stream: str, *, subagent_prompt: str | None = None, env=None,
+    status: list[tuple[str, str | None, str]] | None = None,
 ) -> str:
-    """The whole context file, sections in the order spec 07.3 fixes."""
+    """The whole context file, sections in the order spec 07.3 fixes. `status` is the parts
+    `compose` already computed (`status_parts`) for the work item."""
     main = is_main_stream(item_id, stream)
     persona_source, persona_text = persona(root, item_id)
     if main and persona_source is not None:
@@ -470,7 +561,6 @@ def compose_text(
     if main and persona_source is not None:
         parts.append(_section("Persona", persona_source, persona_text))
 
-    partner = item_id == PARTNER and main
     if not main:
         source, text = subagents(root, item_id)
         parts.append(_section("Who your subagents are", source, text))
@@ -484,15 +574,9 @@ def compose_text(
         source, text = tasks_section(root, item_id)
         parts.append(_section("Tasks", source, text))
 
-    source, text = step_state(root, item_id, stream)
-    parts.append(_section("Step state", source, text))
-
-    injected = None if partner else memory_episodes(root, item_id, stream, fallback=goal_text)
-    if injected is not None:
-        parts.append(_section("Memory episodes", injected[0], injected[1]))
-
-    source, text = open_handles(root, item_id)
-    parts.append(_section("Open subagent handles", source, text))
+    for title, source, text in status if status is not None else status_parts(
+            root, item_id, stream, fallback=goal_text):
+        parts.append(_section(title, source, text))
 
     if item_id == PARTNER and main:
         partner_md = root / "PARTNER.md"
@@ -511,14 +595,20 @@ def compose_text(
 def compose(
     root: Path, item_id: str, stream: str | None = None, *, subagent_prompt: str | None = None, env=None
 ) -> Path:
-    """Write the context file and return its path (spec 08 `hx compose`)."""
+    """Write `## Status` into the work item (main stream), then the context file, and return
+    the context file's path (spec 08 `hx compose`)."""
     root = Path(root)
     stream = stream or main_stream_name(item_id)
     if not (root / "config" / item_id).is_dir() and find_work_item(root, item_id) is None:
         raise NotFound(f"{item_id}: no work item and no config/{item_id}/; unknown id")
+    status = None
+    if is_main_stream(item_id, stream):
+        status = status_parts(root, item_id, stream, fallback=task(root, item_id)[1])
+        write_status(root, item_id, status)
     path = context_path(root, item_id, stream)
     store.atomic_write_text(
-        path, compose_text(root, item_id, stream, subagent_prompt=subagent_prompt, env=env)
+        path, compose_text(root, item_id, stream, subagent_prompt=subagent_prompt, env=env,
+                           status=status)
     )
     return path
 

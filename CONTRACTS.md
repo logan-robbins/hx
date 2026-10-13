@@ -220,7 +220,9 @@ names a skill that is not `optional` in `src/hx/skills/manifest.json`, fails the
 
 An agent's prompt is four layers with one source each: the invariants (`config/CLAUDE.md`),
 the role persona, the learnings (`hx.learn.persona_region`), and session memory (the work
-item's `## Tasks`, step state, episodes). The invariants reach each agent through exactly one
+item: the agent's `## Tasks` and hx's `## Status` — step state, memory episodes, open subagent
+handles — which `hx compose` rewrites in a `-working` item, and in `PARTNER.md` for the
+Partner, at every main-stream boundary). The invariants reach each agent through exactly one
 channel, `hx.config_harness.INVARIANTS_CHANNEL[flavor]`:
 
 | Flavor | Channel | Carrier |

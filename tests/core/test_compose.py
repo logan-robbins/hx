@@ -617,3 +617,83 @@ def test_the_memory_episodes_section_is_there_before_a_single_episode_exists(
     assert not (instance / "state" / "memory" / "chroma").exists(), (
         "an empty store costs no chroma open at all"
     )
+
+
+def test_status_is_written_into_the_working_item_after_tasks(instance, hx, launched, goals):
+    """Session memory is the work item: the agent keeps `## Tasks`, hx rewrites `## Status`
+    at every boundary from the same render the context file's sections come from."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    work_item = instance / "pods" / "engineers" / "eng-001-working.md"
+    work_item.write_text(work_item.read_text().replace("- [ ] …", "- [x] read it\n- [ ] rewrite it"))
+    state = instance / "state" / "eng-001"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "eng-001-main.json").write_text(json.dumps({"seq": 7, "goal": "stream the importer"}))
+    logs = instance / "logs" / "eng-001"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "eng-001-s001-open.jsonl").write_text("")
+
+    assert hx("compose", "eng-001").returncode == 0
+    body = work_item.read_text()
+    assert body.count("\n## Status\n") == 1
+    assert body.index("## Tasks") < body.index("## Status") < body.index("## Deliverables")
+    status = body[body.index("## Status"):body.index("## Deliverables")]
+    assert "<rewritten by hx" not in status, "the template's placeholder is replaced"
+    assert "### Step state\n\ngoal: stream the importer" in status
+    assert "### Memory episodes" in status and "`eng-001-s001`" in status
+    assert "- [x] read it\n- [ ] rewrite it" in body, "the agent's half is untouched"
+    context = context_file(instance, "eng-001").read_text()
+    assert "goal: stream the importer" in context and "`eng-001-s001`" in context
+
+    before = work_item.stat().st_mtime_ns
+    assert hx("compose", "eng-001").returncode == 0
+    assert work_item.read_text() == body and work_item.stat().st_mtime_ns == before, \
+        "an unchanged status is not rewritten"
+    (state / "eng-001-main.json").write_text(json.dumps({"seq": 8, "goal": "stream it in chunks"}))
+    assert hx("compose", "eng-001").returncode == 0
+    body = work_item.read_text()
+    assert body.count("\n## Status\n") == 1 and "stream it in chunks" in body
+    assert "stream the importer" not in body.split("## Status", 1)[1]
+
+
+def test_status_is_only_written_into_a_working_item(instance, hx, launched, goals):
+    """An idle item has no task to remember, and a completed item is a record."""
+    launched("eng-001")
+    idle = instance / "pods" / "engineers" / "eng-001-idle.md"
+    before = idle.read_text() if idle.exists() else None
+    assert hx("compose", "eng-001").returncode == 0
+    assert (idle.read_text() if idle.exists() else None) == before
+
+
+def test_the_partner_status_goes_into_partner_md_and_rides_once(instance, hx, launched):
+    launched("partner")
+    partner_md = instance / "PARTNER.md"
+    partner_md.write_text("# Partner state\n\n## Notes\n\n- two workers idle\n")
+    state = instance / "state" / "partner"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "partner-main.json").write_text(json.dumps({"seq": 3, "goal": "ship the importer"}))
+    assert hx("compose", "partner").returncode == 0
+    body = partner_md.read_text()
+    assert body.index("## Notes") < body.index("## Status")
+    assert "### Step state\n\ngoal: ship the importer" in body
+    assert "### Memory episodes" not in body, "the Partner gets no episodes"
+    text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
+    assert text.count("goal: ship the importer") == 1, "PARTNER.md's status is the section above"
+    assert "- two workers idle" in text
+
+
+def test_with_status_places_replaces_and_keeps_everything_else():
+    from hx.compose import with_status
+
+    item = "---\nid: eng-001\n---\nGoal.\n\n## Tasks\n- [ ] a\n```\n## Status\n```\n\n## Commands\n"
+    once = with_status(item, "first")
+    assert once.startswith("---\nid: eng-001\n---\n")
+    assert once.index("- [ ] a") < once.index("\n## Status\n\nfirst\n") < once.index("## Commands")
+    assert "```\n## Status\n```" in once, "a heading inside a fence is not the section"
+    assert with_status(once, "first") == once
+    twice = with_status(once, "second")
+    assert "first" not in twice and twice.count("\n## Status\n\n") == 1
+    assert with_status("No sections.\n", "s") == "No sections.\n\n## Status\n\ns\n"
+

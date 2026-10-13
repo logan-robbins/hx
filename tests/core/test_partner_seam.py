@@ -95,7 +95,6 @@ def test_partner_restores_decisions_while_workers_keep_debugging_state(instance,
     assert 'pytest tests/parser' not in partner and 'INTERMEDIATE EXCHANGE' not in partner
     assert 'pytest tests/parser' in worker and 'Avoid regex parsing' in worker and 'parser.py' in worker
     monkeypatch.setattr(compose, 'memory_episodes', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no episode lookup')))
-    monkeypatch.setattr(compose, 'memory', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no personal memory read')))
     text = compose.compose_text(instance, 'partner', 'partner-main', env={})
     assert '## PARTNER.md' in text and '## Board' in text
     assert '## Memory' not in text and 'INTERMEDIATE EXCHANGE' not in text

@@ -139,6 +139,7 @@ def test_work_item_template_has_every_section_spec_06_names():
     expected = [
         "Standing instructions",
         "Tasks",
+        "Status",  # hx's half of session memory, rewritten at every boundary
         "Deliverables",
         "Commands",
         "Open decision",

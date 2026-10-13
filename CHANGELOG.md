@@ -135,6 +135,17 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     live. `config/CLAUDE.md` and per-id `AGENTS.md` text are no longer compiled in, so a
     bundle has no `migration_review` and `hx.compile.strip_known_blocks` is gone; a rule for
     planned runs belongs in `continuity/policy.md`.
+  - Session memory is the work item (docs/prompt-runtime.md § Prompt layers): the agent keeps
+    `## Tasks`, and every main-stream `hx compose` (each boundary) rewrites a `## Status`
+    section in the `-working` item, right after `## Tasks` — the step state, memory episodes
+    and open subagent handles as `###` subsections, from the render that fills the context
+    file's sections of the same names (`hx.compose.write_status`). The Partner's goes at the
+    end of `PARTNER.md`, and is left out of `PARTNER.md`'s copy in the context file. An idle
+    or completed item is never written, an unchanged status leaves the file untouched, and
+    `templates/work-item.md` ships the section's placeholder. The context file keeps its
+    sections and the `SessionStart` line still names it: what a boundary hands the agent is
+    part of the delivery decision, so the context file shrinks to the delivery parts only once
+    that lands.
 
 ### Fixed
 

@@ -105,7 +105,8 @@ Exact output shapes are in `CONTRACTS.md`.
 ## In the context file
 
 `hx compose` adds a **Memory episodes** section directly after **Step state**, on main and
-subagent streams (subagents get half the `k`). The query is built from this stream's own step
+subagent streams (subagents get half the `k`); on a main stream the same text is a
+`### Memory episodes` subsection of the work item's `## Status`. The query is built from this stream's own step
 state — goal, every open step's intent and next, the hypothesis — falling back to the goal text
 before the Companion has written anything. The agent's own id is excluded: its own state is the
 section above, and seeing it again as a "memory" is noise at best. With fewer than two hits under

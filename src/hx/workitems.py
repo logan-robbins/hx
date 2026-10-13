@@ -170,6 +170,8 @@ def find_work_items(root: Path) -> dict[str, list[Path]]:
 SECTION_GOAL = "## Goal"
 SECTION_TASKS = "## Tasks"
 SECTION_DIGEST = "## Digest"
+#: hx's half of session memory in the work item, rewritten at every boundary (`hx.compose`).
+SECTION_STATUS = "## Status"
 SECTION_OPEN_DECISION = "## Open decision"
 
 #: `templates/work-item.md` placeholders, rendered by literal replacement, never `str.format`
