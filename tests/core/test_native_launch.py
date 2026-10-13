@@ -101,7 +101,7 @@ def test_altered_prepared_inputs_refuse(configured, target):
     launch = prepare(configured)
     capsule = Path(launch["payload"]["capsule"])
     path = {"configuration": capsule / "config" / "eng-001" / "harness.json",
-            "system": capsule / "config" / "eng-001" / "AGENTS.md",
+            "system": capsule / "run" / "eng-001" / "persona.md",
             "packet": Path(launch["payload"]["packet_path"])}[target]
     path.write_text("Changed after preparation.")
     with pytest.raises(Conflict, match="changed"):

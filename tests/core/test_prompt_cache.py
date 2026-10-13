@@ -123,11 +123,15 @@ def test_report_ages_the_last_seam_against_the_harness_cache_ttl(cached):
     assert seam["prefix_tokens"] == row["invariant"]["prefix_bytes"]
 
 
-def test_report_falls_back_to_agents_md_and_the_manifest_before_launch(instance):
+def test_report_renders_the_persona_and_reads_the_manifest_before_launch(instance):
+    from hx import persona
+
     (row,) = prompt_cache.report(instance, "eng-001")["agents"]
     invariant = row["invariant"]
-    assert invariant["persona_source"] == "config/eng-001/AGENTS.md above the header"
-    assert invariant["persona_bytes"] == len("You are eng-001, an engineer.\nYou commit as you go.\n\n".encode())
+    assert invariant["persona_source"] == "rendered (hx persona)"
+    assert invariant["persona_bytes"] == len(persona.render(instance, "eng-001").encode())
+    assert invariant["learnings_in_persona"] is True and invariant["claude_md_in_persona"] is False
+    assert not (instance / "run" / "eng-001" / "persona.md").exists(), "the report never writes"
     assert invariant["skills_source"] == "manifest"
     assert "hx-worker" in invariant["skills"]
     assert invariant["claude_md_bytes"] is None or isinstance(invariant["claude_md_bytes"], int)

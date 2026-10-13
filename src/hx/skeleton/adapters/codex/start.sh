@@ -12,8 +12,6 @@ set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
-HEADER='## UPDATES BELOW ONLY'
-
 mode=session
 while :; do
   case "${1:-}" in
@@ -44,14 +42,10 @@ fi
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 home=$root/run/$id/home
-agents=$root/config/$id/AGENTS.md
 harness=$root/config/$id/harness.json
 persona=$root/run/$id/persona.md
 
 [ -f "$harness" ] || die "refuse: no $harness"
-[ -f "$agents" ] || die "refuse: no $agents"
-grep -qxF "$HEADER" "$agents" || die \
-  "refuse: $agents has no \`$HEADER\` line; the persona is the part above it"
 [ -f "$home/config.toml" ] || die "refuse: no $home/config.toml; run adapters/codex/install.sh $id first"
 [ -f "$home/auth.json" ] || die "refuse: no $home/auth.json; run adapters/codex/install.sh $id first"
 
@@ -90,7 +84,18 @@ effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effor
 if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/sessions"
-  awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
+  if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
+    # A planned launch's persona is the compiled planned system prompt, prepared in its
+    # private root and verified by the controller (`native_launch`); rendering it again from
+    # the instance sources would replace what was verified.
+    [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
+  else
+    # Rendered from its sources immediately before exec (`hx.persona`): the role persona,
+    # harness.json `purpose`, and the learnings. An edit to any of them lands at the next
+    # launch or restart; nothing is copied per id.
+    "$python" -m hx.persona --root "$root" "$id" >/dev/null \
+      || die "refuse: could not render $persona (\`hx persona $id\` says why)"
+  fi
 
   cd "$cwd"
   export HARNESS_ID="$id"

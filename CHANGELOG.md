@@ -62,6 +62,29 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   the same reason: the native installer's `~/.local/bin/claude` points into
   `~/.local/share/claude/versions/<v>`, which its auto-update deletes.
 
+### Changed
+
+- Prompt layers (docs/prompt-runtime.md § Prompt layers): every agent's prompt is four layers,
+  each from one source — the invariants (`config/CLAUDE.md`), the persona, the learnings and
+  session memory — and nothing per id is copied from a shared source.
+  - The invariants reach each agent through exactly one channel
+    (`config_harness.INVARIANTS_CHANNEL`): Claude's home `CLAUDE.md`, refreshed by
+    `start.sh --exec` at every launch; the persona's `hx:global` region on Pi and Grok; the
+    context file's `## Invariants` on Codex and Meta.
+  - The persona is rendered, not compiled into a per-id file: every `start.sh --exec` runs
+    `python -m hx.persona` (`hx persona ID [--print]`) immediately before it execs, from
+    `personas/<role>/AGENTS.md`, the new `harness.json` `purpose` (the one per-id paragraph;
+    the templates ship `"{{purpose}}"` and `hx doctor` warns `purpose:<id>` until it is
+    written) and the learnings. `config/<id>/AGENTS.md` is no longer read, written or
+    required for a worker. **Existing instances:** `hx install`, `hx up`, `hx launch` and
+    `hx restart` migrate each worker's file — its per-id paragraph becomes `purpose`, anything
+    else no shared source already says becomes one pending learnings text proposal
+    (`hx learn pending`), and the file is removed. Plain `hx compile ID` is gone (exit 2,
+    pointing at `hx persona`); `hx compile ID --planned` stays. `hx distill` turns promoted
+    directives into a text proposal instead of writing them into the agent's file, and its
+    `--memory` option is gone. `hx learn accept --keep` turns a text proposal holding several
+    lessons into several rules.
+
 ### Fixed
 
 - `tests/ui/test_binding.py` bound `metrics` as "not shipped yet" after `hx metrics` had landed

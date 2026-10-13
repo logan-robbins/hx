@@ -20,7 +20,12 @@ from .ids import ID_RE, PARTNER
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
-_OPTIONAL = ("workdir", "harness", "companion", "flavor")
+_OPTIONAL = ("workdir", "harness", "companion", "flavor", "purpose")
+
+#: What `templates/worker/harness.json` ships in `purpose`. The Partner replaces it with the one
+#: paragraph that makes this agent different from the next one of its role; until then the
+#: rendered persona has no purpose and `hx doctor` warns (docs/prompt-runtime.md).
+PURPOSE_PLACEHOLDER = "{{purpose}}"
 
 #: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
 FLAVORS = ("claude", "pi", "grok", "meta", "codex")
@@ -101,10 +106,18 @@ class HarnessConfig:
     flavor: str = "claude"
     harness: dict = field(default_factory=dict)
     companion: dict = field(default_factory=dict)
+    purpose: str | None = None
 
     @property
     def is_partner(self) -> bool:
         return self.id == PARTNER
+
+
+def purpose_text(value: object) -> str | None:
+    """The purpose as written, or None while it is absent, empty, or still the placeholder."""
+    if not isinstance(value, str) or not value.strip() or PURPOSE_PLACEHOLDER in value:
+        return None
+    return value.strip("\n")
 
 
 def _require_str(data: dict, key: str, path: str) -> str:
@@ -183,6 +196,10 @@ def validate_harness(
             f"{path}: the Partner runs on claude or codex (spec 12), "
             f"got `flavor` `{flavor}`"
         )
+
+    purpose = data.get("purpose")
+    if purpose is not None and not isinstance(purpose, str):
+        raise ValidationError(f"{path}: `purpose` must be a string, got {type(purpose).__name__}")
 
     harness = data.get("harness") or {}
     if not isinstance(harness, dict):
@@ -274,6 +291,7 @@ def validate_harness(
         flavor=flavor,
         harness=harness,
         companion=companion,
+        purpose=purpose_text(purpose),
     )
 
 

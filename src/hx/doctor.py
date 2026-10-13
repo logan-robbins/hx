@@ -592,6 +592,37 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
     return rows
 
 
+def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
+    """What `hx persona` renders a worker from (docs/prompt-runtime.md § Prompt layers): a
+    `purpose` the Partner actually wrote, a role persona, and no per-id file left over."""
+    from .config_harness import purpose_text
+
+    if item_id == "partner":
+        return []
+    try:
+        data = json.loads((root / "config" / item_id / "harness.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    rows = []
+    if purpose_text(data.get("purpose")) is None:
+        rows.append((WARN, f"purpose:{item_id}",
+                     "harness.json `purpose` is absent or still the template's placeholder, so the "
+                     "persona says nothing about what this agent is for; write one paragraph there"))
+    role = data.get("role")
+    if isinstance(role, str) and not (root / "personas" / role / "AGENTS.md").is_file():
+        rows.append((WARN, f"persona:{item_id}",
+                     f"personas/{role}/AGENTS.md is missing; the persona is one identity line "
+                     "plus the purpose and the learnings"))
+    if (root / "config" / item_id / "AGENTS.md").is_file():
+        rows.append((WARN, f"persona:{item_id}",
+                     f"config/{item_id}/AGENTS.md is a per-id persona from before the persona was "
+                     f"rendered from its sources; `hx launch {item_id}` (or `hx up`, `hx install`) "
+                     "moves it into harness.json `purpose` and a learnings proposal"))
+    return rows
+
+
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
 
@@ -816,6 +847,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     if not ids:
         checks.append((WARN, "agents", "no config/<id>/ yet"))
     for item_id in ids:
+        checks.extend(_persona_sources(root, item_id))
         home = root / "run" / item_id / "home"
         flavor = flavor_of(root, item_id)
         if item_id == "partner" and flavor not in PARTNER_FLAVORS:

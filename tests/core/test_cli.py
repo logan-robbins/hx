@@ -17,9 +17,9 @@ SPEC_08_COMMANDS = {
     "memory",
     # File memory (CONTRACTS.md `hx read` and `hx recall`), likewise post-spec-08.
     "recall",
-    # Template compiler: distributes config/CLAUDE.md + role persona into
-    # config/<id>/AGENTS.md on launch/restart; likewise post-spec-08.
-    "compile",
+    # Planned prompt compiler (`compile --planned`), and the persona every start.sh renders
+    # from the role persona, `purpose` and the learnings; likewise post-spec-08.
+    "compile", "persona",
     # Addenda distillation: shrinks the Work Item and tasks.json record back
     # down after resumes and amends accumulate; likewise post-spec-08.
     "distill",

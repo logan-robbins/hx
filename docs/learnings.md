@@ -96,17 +96,29 @@ until someone merges them.
 
 ## How agents carry them
 
-`hx compile` (which runs on every `hx launch` and `hx restart`) writes a fenced `learnings`
-region into every agent's persona: the directory's path and rule count, the propose line, and
+`hx persona` (which every `start.sh` runs immediately before it execs) renders a fenced
+`learnings` region into every agent's persona: the directory's path and rule count, the propose line, and
 then **every rule, whole**, under a `### <category> — <definition>` heading per non-empty
 category, in taxonomy order. The adapters pass the persona as the system prompt
 (`--append-system-prompt-file`), so the rules are present at every start and after every
 compaction with no Read, and prompt-cached with the rest of the invariant prompt. No agent
 is told to read the files; the persona tells it not to.
 
-The Partner is exempt from the global and role regions — its shipped persona stays as it is —
-but gets the learnings region like everyone else, placed last above `## UPDATES BELOW ONLY`.
-A rule accepted today is in every agent's system prompt from its next launch.
+The Partner keeps its own persona file, `config/partner/AGENTS.md`, and gets the learnings
+region after it like everyone else. A rule accepted today is in every agent's system prompt
+from its next launch.
+
+### Text proposals
+
+Some lessons arrive as prose rather than as a Signal and a Check: what an agent wrote below
+the old `## UPDATES BELOW ONLY` header before the learnings were the channel (`hx.persona`
+migrates it), and the directives `hx distill` promotes out of goal addenda. Each becomes one
+pending **text proposal** (`"kind": "text"`, the prose in `text`), authored as the agent it came
+from so that agent cannot accept it. hx does not guess rules out of prose: `hx learn pending`
+prints the text, and the reviewer accepts each lesson it holds as a rule with its own wording,
+`hx learn accept ID --signal … --check … [--category …] --keep` while more remain (the last
+accept drops `--keep`), or `--merge-into` an existing rule, or rejects it. `accept` refuses a
+text proposal without `--signal` and `--check`.
 
 The size is visible: `hx doctor` prints the rule count per category and warns
 (`learnings-size`) when the region passes `hx.learn.PERSONA_WARN_BYTES` (200 KiB, roughly

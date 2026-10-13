@@ -5,8 +5,8 @@
 #   start.sh <id>          ensure tmux session <id> with the session env of spec 11, and run
 #                          the launcher in window `main` (cwd harness.json.workdir,
 #                          HARNESS_ROOT for partner)
-#   start.sh --exec <id>   the launcher itself: derive run/<id>/persona.md from
-#                          config/<id>/AGENTS.md above `## UPDATES BELOW ONLY`, then exec
+#   start.sh --exec <id>   the launcher itself: render run/<id>/persona.md from its sources
+#                          (`python -m hx.persona`), refresh the home's CLAUDE.md, then exec
 #
 # The argv is exactly spec 17.4: no prompt argument, no --resume, no compaction variables.
 #
@@ -29,8 +29,6 @@
 set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
-
-HEADER='## UPDATES BELOW ONLY'
 
 # `--companion` launches the Companion's own Claude Code session in window `companion`
 # (spec 10). There is no headless path: every model call in hx is a tmux session.
@@ -71,7 +69,6 @@ else
   home=$root/run/$id/home
   window=main
 fi
-agents=$root/config/$id/AGENTS.md
 harness=$root/config/$id/harness.json
 persona=$root/run/$id/persona.md
 companion_system=$root/run/$id/companion-system.md
@@ -83,10 +80,6 @@ if [ "$role" = companion ]; then
     "refuse: no $companion_system; \`hx companion $id\` composes it from companion/BASE.md and
     the role file before launching (spec 10)"
 fi
-[ "$role" = companion ] || [ -f "$agents" ] || die "refuse: no $agents; the persona is derived from it at every launch (spec 11)"
-[ "$role" = companion ] || grep -qxF "$HEADER" "$agents" || die \
-  "refuse: $agents has no \`$HEADER\` line; the persona is the part above it and the agent's
-  own memory is the part below it (spec 03, 04). Without the header hx cannot tell them apart"
 [ -f "$home/settings.json" ] || die \
   "refuse: no $home/settings.json; run adapters/claude/install.sh $id first (spec 11)"
 
@@ -159,13 +152,22 @@ ACEOF
 
 if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
-  # Regenerated immediately before exec, so a persona edit takes effect at the next launch
-  # and never leaks the agent's own memory below the header into the system prompt.
   mkdir -p "$root/run/$id"
   if [ "$role" = companion ]; then
     system_prompt=$companion_system
   else
-    awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
+    if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
+      # A planned launch's persona is the compiled planned system prompt, prepared in its
+      # private root and verified by the controller (`native_launch`); rendering it again from
+      # the instance sources would replace what was verified.
+      [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
+    else
+      # Rendered from its sources immediately before exec (`hx.persona`): the role persona,
+      # harness.json `purpose`, and the learnings. An edit to any of them lands at the next
+      # launch or restart; nothing is copied per id.
+      "$python" -m hx.persona --root "$root" "$id" >/dev/null \
+        || die "refuse: could not render $persona (\`hx persona $id\` says why)"
+    fi
     system_prompt=$persona
     # The invariants' one channel on Claude is the home's native user CLAUDE.md
     # (`config_harness.INVARIANTS_CHANNEL`), refreshed here so an edit to config/CLAUDE.md

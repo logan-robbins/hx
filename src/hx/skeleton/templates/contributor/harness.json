@@ -5,6 +5,7 @@
   "model": "muse-wonder-1.0-contributor",
   "effort": "high",
   "workdir": "{{workdir}}",
+  "purpose": "{{purpose}}",
   "harness": {
     "args": []
   },

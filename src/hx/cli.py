@@ -40,6 +40,7 @@ from . import install as install_cmd
 from . import lifecycle
 from . import memory as memory_cmd
 from . import observer as observer_cmd
+from . import persona as persona_cmd
 from . import native_capture as capture_cmd
 from . import progress as progress_cmd
 from . import checks as checks_cmd
@@ -100,6 +101,7 @@ IMPLEMENTED = {
     "cache": cache_cmd.main,
     "memory": memory_cmd.main,
     "observe": observer_cmd.main,
+    "persona": persona_cmd.main,
     "progress": progress_cmd.main,
     "evidence": evidence_cmd.main,
     "metrics": metrics_cmd.main,
@@ -149,14 +151,15 @@ the control plane:
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
   amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate
-  distill ID FILE [--memory]   shrink goal addenda into distilled directives above the header
+  distill ID FILE              shrink goal addenda; the distilled directives become a learnings proposal
   bench ID                     archive the body and free the id
   seam ID                      flush, recompose, and cut the conversation
   read ID [--detail|--full]      status; prose only with --detail, body with --full
   recall [QUERY] [--id ID]       last-resort file-memory search over completed items
   companion ID [--once]        the Companion loop, one per agent
   companion ID --run RUN --request ID [--stream STREAM]  execute one frozen ledger pass
-  compile ID                   distribute base rules into config/ID/AGENTS.md
+  compile ID --planned         versioned prompts for the planned runtime
+  persona ID [--print]         render run/ID/persona.md from role persona, purpose and learnings
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
@@ -242,7 +245,7 @@ AUDIENCES: dict[str, set[str]] = {
         "map init", "map import", "map export", "map overlay", "map propose", "map refresh",
         "map publish", "map plan-context", "map get", "map check", "map anchor",
         "learn pending", "learn accept", "learn reject", "learn list",
-        "tools index", "compile",
+        "tools index", "compile", "persona",
         "handoff check", "handoff capture", "handoff pushed", "handoff sums",
         "discipline profile", "discipline orient",
         "memory search --all-roles", "memory stats", "memory list",
@@ -276,7 +279,7 @@ AUDIENCES: dict[str, set[str]] = {
     "companion": set(),
     "runtime": {
         "capture", "observe", "flush", "seam", "compose", "check", "companion", "loop", "wake",
-        "code index", "tools acknowledge",
+        "code index", "tools acknowledge", "persona",
     },
 }
 

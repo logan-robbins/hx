@@ -56,7 +56,10 @@ def _capsule(root, worker, capsule, configuration, system):
     capsule.chmod(0o700)
     for relative, data in configuration.items():
         files.atomic_write_text(capsule / relative, data.decode("utf-8"))
-    files.atomic_write_text(capsule / "config" / worker / "AGENTS.md", system + "## UPDATES BELOW ONLY\n")
+    # The persona `start.sh --exec` passes as the system prompt: the compiled planned prompt,
+    # whole. `start.sh` uses it as is inside a capsule (`HX_CONTINUITY_CAPSULE`) instead of
+    # rendering one from the instance sources, so what was verified is what is delivered.
+    files.atomic_write_text(capsule / "run" / worker / "persona.md", system)
     # The current package supplies adapter code; old installed scripts cannot
     # silently select legacy hook behavior for a newly prepared assignment.
     shutil.copytree(Path(__file__).parent / "skeleton" / "adapters", capsule / "adapters")
@@ -206,7 +209,7 @@ def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
     for relative, expected in payload["configuration"].items():
         if hashlib.sha256(_bytes(capsule / relative)).hexdigest() != expected:
             raise Conflict("native launch capsule configuration changed")
-    if _bytes(capsule / "config" / run["worker_id"] / "AGENTS.md", 262144) != (rendered["system"] + "## UPDATES BELOW ONLY\n").encode():
+    if _bytes(capsule / "run" / run["worker_id"] / "persona.md", 262144) != rendered["system"].encode():
         raise Conflict("native launch system instructions changed")
     from .native_restart import workspace as restart_workspace
     actual = restart_workspace(task['payload']) if payload.get('resume_from') else unit_execution.workspace(task["payload"], clean=True)

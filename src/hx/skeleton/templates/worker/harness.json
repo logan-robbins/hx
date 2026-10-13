@@ -5,6 +5,7 @@
   "model": "claude-opus-5-5",
   "effort": "xhigh",
   "workdir": "{{workdir}}",
+  "purpose": "{{purpose}}",
   "harness": {
     "args": []
   },

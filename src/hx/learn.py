@@ -556,6 +556,49 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
     return proposal
 
 
+def propose_text(root: Path, *, text: str, author: str, source: str, category: str = "orientation",
+                 env: dict[str, str] | None = None) -> dict:
+    """A proposal that is prose, not yet a rule: what an agent wrote down before the learnings
+    were the channel (`hx.persona.migrate`), or the directives `hx distill` promoted.
+
+    hx does not guess a Signal and a Check out of prose. The reviewer reads the text in
+    `hx learn pending` and turns each lesson it holds into a rule — `hx learn accept ID
+    --signal … --check …`, with `--keep` while more remain — or merges or rejects it.
+    `author` is the agent the text came from, so that agent can never accept it.
+    """
+    path = learnings_path(root, env)
+    body = (text or "").strip("\n")
+    if not body.strip():
+        raise ValidationError("a text proposal needs text")
+    _, instance = _identity(root, env)
+    stamp = timestamps.now()
+    proposal = {
+        "id": f"{re.sub(r'[^0-9T]', '', stamp)}-{author}-{uuid.uuid4().hex[:6]}",
+        "ts": stamp,
+        "author": author,
+        "instance": instance,
+        "role": None,
+        "kind": "text",
+        "source": _one_line(source),
+        "prefix": default_prefix(root, env),
+        "category": validate_category(category),
+        "text": body,
+        "signal": "",
+        "check": "",
+        "evidence": _one_line(source),
+        "evidence_for": None,
+        "learnings": str(path),
+    }
+    proposal["nearest"] = nearest(read_rules(path), {"signal": body[:2000], "check": ""})
+    store.atomic_write_json(_proposal_path(path, proposal["id"]), proposal)
+    return proposal
+
+
+def is_text(proposal: dict) -> bool:
+    """A prose proposal (`propose_text`): accepted only with the reviewer's own Signal and Check."""
+    return proposal.get("kind") == "text"
+
+
 def _record_decision(path: Path, record: dict) -> None:
     decisions = learnings_dir(path) / "decisions.jsonl"
     decisions.parent.mkdir(parents=True, exist_ok=True)
@@ -578,14 +621,21 @@ def _require_other_session(proposal: dict, reviewer: str) -> None:
 
 def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signal: str | None = None,
            check: str | None = None, evidence: str | None = None, prefix: str | None = None,
-           category: str | None = None, why: str | None = None,
+           category: str | None = None, why: str | None = None, keep: bool = False,
            env: dict[str, str] | None = None) -> dict:
     """A different session's decision: a new numbered rule in its category, or evidence merged
-    into the rule that already says it."""
+    into the rule that already says it. `keep` leaves the proposal pending after the rule is
+    written, for a text proposal that holds more than one lesson."""
     path = learnings_path(root, env)
     reviewer, instance = _identity(root, env)
     proposal = load_proposal(path, proposal_id)
     _require_other_session(proposal, reviewer)
+    if is_text(proposal) and not merge_into and not (_one_line(signal or "") and _one_line(check or "")):
+        raise ValidationError(
+            f"{proposal_id} is prose ({proposal.get('source')}), not a rule: accept each lesson it "
+            "holds with --signal and --check (and --keep while more remain), --merge-into an "
+            "existing rule, or reject it"
+        )
     stamp = timestamps.now()
     origin = f"(from {proposal['author']}@{proposal['instance']}, {proposal['ts'][:10]})"
     merge_into = (merge_into or proposal.get("evidence_for") or "").upper() or None
@@ -619,9 +669,13 @@ def accept(root: Path, proposal_id: str, *, merge_into: str | None = None, signa
             "rule": key, "category": use_category, "why": _one_line(why or ""),
         }
         _record_decision(path, record)
-        proposal.update({"decision": decision, "rule": key, "category": use_category,
-                         "reviewer": reviewer, "decided": stamp})
-        _move(path, proposal, "accepted")
+        if keep:
+            proposal.setdefault("rules", []).append(key)
+            store.atomic_write_json(_proposal_path(path, proposal["id"]), proposal)
+        else:
+            proposal.update({"decision": decision, "rule": key, "category": use_category,
+                             "reviewer": reviewer, "decided": stamp})
+            _move(path, proposal, "accepted")
     return record
 
 
@@ -757,6 +811,16 @@ def go_line(root: Path) -> str | None:
 
 
 def _print_proposal(proposal: dict, rules: list[dict]) -> None:
+    if is_text(proposal):
+        print(f"{proposal['id']}  by {proposal['author']}@{proposal['instance']}  {proposal['ts']}"
+              f"  prefix {proposal['prefix']}  category {proposal.get('category')}  text"
+              f"  ({proposal.get('source')})"
+              + (f"  rules so far {', '.join(proposal['rules'])}" if proposal.get("rules") else ""))
+        for line in proposal["text"].splitlines():
+            print(f"  | {line}" if line.strip() else "  |")
+        print("  accept each lesson with --signal and --check (--keep while more remain), "
+              "--merge-into a rule, or reject")
+        return
     near = nearest(rules, proposal) if rules else proposal.get("nearest", [])
     print(f"{proposal['id']}  by {proposal['author']}@{proposal['instance']}  {proposal['ts']}"
           f"  prefix {proposal['prefix']}  category {proposal.get('category')}"
@@ -803,6 +867,8 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     p.add_argument("--evidence", help="the reviewer's wording")
     p.add_argument("--prefix")
     p.add_argument("--why", help="one line for decisions.jsonl")
+    p.add_argument("--keep", action="store_true",
+                   help="leave the proposal pending after this rule (a text proposal with more lessons)")
 
     p = sub.add_parser("reject", help="a different session's decision: not a rule")
     p.add_argument("--root", help=argparse.SUPPRESS)
@@ -887,7 +953,8 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
         rules = read_rules(path)
         if args.json:
             for proposal in proposals:
-                proposal["nearest"] = nearest(rules, proposal)
+                proposal["nearest"] = nearest(
+                    rules, {"signal": proposal["text"][:2000], "check": ""} if is_text(proposal) else proposal)
             print(json.dumps(proposals, indent=2, sort_keys=True))
             return 0
         if not proposals:
@@ -901,8 +968,9 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
     if args.command == "accept":
         record = accept(root, args.proposal, merge_into=args.merge_into, signal=args.signal,
                         check=args.check, evidence=args.evidence, prefix=args.prefix,
-                        category=args.category, why=args.why, env=env)
-        print(f"HX-LEARN {record['decision']} {record['proposal']} rule={record['rule']} category={record['category']}")
+                        category=args.category, why=args.why, keep=args.keep, env=env)
+        print(f"HX-LEARN {record['decision']} {record['proposal']} rule={record['rule']} category={record['category']}"
+              + (" kept" if args.keep else ""))
         return 0
 
     if args.command == "reject":

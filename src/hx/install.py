@@ -340,6 +340,12 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
         print(f"   kept     {name}")
     for name in result["missing"]:
         print(f"   missing  {name}")
+    # An instance from before the persona was rendered from its sources: each worker's per-id
+    # AGENTS.md moves into harness.json `purpose` and a learnings proposal (`hx.persona`).
+    from . import persona
+
+    for migrated in persona.migrate_all(root, env=env):
+        print(f"   migrated {persona.describe_migration(migrated)}")
 
     from . import envfile
     if args.env_file:

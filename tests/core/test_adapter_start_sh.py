@@ -2,7 +2,7 @@
 
 M0 pass criteria: "`start.sh` argv is exactly `--dangerously-skip-permissions --effort …
 --model … --append-system-prompt-file run/<id>/persona.md` with no prompt argument;
-`persona.md` equals `AGENTS.md` above the header", plus `--setting-sources user` (build-8
+`persona.md` is rendered from its sources (`hx persona`) at exec", plus `--setting-sources user` (build-8
 item 0: the workdir is a checkout hx does not own, and its `.claude/settings.json` must
 never load).
 
@@ -18,7 +18,7 @@ import subprocess
 
 import pytest
 
-from .conftest import AGENTS_MD, FAKE_CLAUDE, PERSONA, clean_env, wait_for
+from .conftest import FAKE_CLAUDE, PERSONA, clean_env, wait_for
 
 EXPECTED_FLAGS = [
     "--dangerously-skip-permissions",
@@ -92,18 +92,25 @@ def test_refuses_a_token_readable_by_anyone_else(ready):
     assert "refuse" in result.stderr and "0600" in result.stderr
 
 
-def test_refuses_an_agents_md_without_the_mutable_header(ready):
-    """Without the header hx cannot tell the persona from the agent's own memory (spec 03)."""
-    (ready / "config" / "eng-001" / "AGENTS.md").write_text("no header here\n")
-    result = start(ready, "eng-001")
+def test_exec_refuses_a_persona_it_cannot_render(ready):
+    """A role persona naming an identity variable hx does not have never reaches a session."""
+    role = ready / "personas" / "engineer" / "AGENTS.md"
+    role.parent.mkdir(parents=True, exist_ok=True)
+    role.write_text("You are {{id}}, owner of {{nothing}}.\n")
+    result = start(ready, "eng-001", "--exec")
     assert result.returncode != 0
-    assert "refuse" in result.stderr and "UPDATES BELOW ONLY" in result.stderr
+    assert "refuse" in result.stderr and "could not render" in result.stderr
+    assert "nothing" in result.stderr
 
 
-def test_refuses_a_missing_agents_md(ready):
-    (ready / "config" / "eng-001" / "AGENTS.md").unlink()
-    result = start(ready, "eng-001")
-    assert result.returncode != 0 and "refuse" in result.stderr
+def test_the_planned_capsule_persona_is_used_as_prepared(ready, tmp_path):
+    """Inside a planned launch's capsule the verified planned prompt is the persona; start.sh
+    must not render a different one from the instance sources."""
+    persona = ready / "run" / "eng-001" / "persona.md"
+    persona.unlink(missing_ok=True)
+    result = start(ready, "eng-001", "--exec", HX_CONTINUITY_CAPSULE=str(tmp_path))
+    assert result.returncode != 0 and "a planned launch prepares it" in result.stderr
+    assert not persona.exists()
 
 
 def test_refuses_a_missing_workdir(ready):
@@ -226,23 +233,26 @@ def test_the_session_is_named_by_the_id_with_a_main_window(ready, tmux_server):
     assert "main" in windows
 
 
-def test_persona_equals_agents_md_above_the_header(ready, tmux_server):
+def test_persona_is_rendered_from_its_sources(ready, tmux_server):
+    from hx import persona as persona_mod
+
     launch_and_record(ready, "eng-001", tmux_server)
     persona = (ready / "run" / "eng-001" / "persona.md").read_text()
-    assert persona == AGENTS_MD.split("## UPDATES BELOW ONLY")[0]
-    assert persona == PERSONA + "\n"
+    assert persona == persona_mod.render(ready, "eng-001")
+    assert PERSONA.strip("\n") in persona
     assert "UPDATES BELOW ONLY" not in persona
-    assert "Things I learned" not in persona, "the agent's own memory is not system prompt"
 
 
 def test_persona_is_regenerated_at_every_launch(ready, tmux_server):
     launch_and_record(ready, "eng-001", tmux_server)
-    (ready / "config" / "eng-001" / "AGENTS.md").write_text(
-        "You are eng-001, now a reviewer.\n\n## UPDATES BELOW ONLY\n\nold memory\n"
-    )
+    harness = ready / "config" / "eng-001" / "harness.json"
+    body = json.loads(harness.read_text())
+    body["purpose"] = "You are eng-001, now a reviewer."
+    harness.write_text(json.dumps(body))
     (ready / "run" / "eng-001" / "fake-argv.json").unlink()
     launch_and_record(ready, "eng-001", tmux_server)
-    assert (ready / "run" / "eng-001" / "persona.md").read_text() == "You are eng-001, now a reviewer.\n\n"
+    persona = (ready / "run" / "eng-001" / "persona.md").read_text()
+    assert "You are eng-001, now a reviewer." in persona and PERSONA.strip("\n") not in persona
 
 
 def test_relaunching_respawns_the_main_window(ready, tmux_server):

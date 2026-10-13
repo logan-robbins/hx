@@ -33,8 +33,8 @@ MODELS = {
     "claude-sonnet-5": {"window": 1000000, "autocompact_window": 250000, "threshold": 200000},
 }
 
+#: eng-001's `purpose`: the one per-id paragraph its persona is rendered with (`hx.persona`).
 PERSONA = "You are eng-001, an engineer.\nYou commit as you go.\n"
-AGENTS_MD = PERSONA + "\n## UPDATES BELOW ONLY\n\nThings I learned: nothing yet.\n"
 
 
 def manifest_skills(root: Path, item_id: str, *, companion: bool = False, **env: str) -> set[str]:
@@ -110,11 +110,11 @@ def instance(tmp_path):
         }
         if item_id != "partner":
             harness["workdir"] = str(root / "wt" / item_id)
+            harness["purpose"] = PERSONA.strip("\n")
             (root / "wt" / item_id).mkdir(parents=True, exist_ok=True)
         (config / "harness.json").write_text(json.dumps(harness, indent=2) + "\n")
-        (config / "AGENTS.md").write_text(
-            AGENTS_MD if item_id == "eng-001" else f"You are the Partner.\n\n## UPDATES BELOW ONLY\n"
-        )
+        if item_id == "partner":
+            (config / "AGENTS.md").write_text("You are the Partner.\n\n## UPDATES BELOW ONLY\n")
         (root / "pods" / pod).mkdir(parents=True, exist_ok=True)
         roles = root / "companion" / "roles"
         roles.mkdir(parents=True, exist_ok=True)
@@ -228,7 +228,7 @@ def manifest(root: Path, *, skip=()) -> dict[str, str]:
 
 @pytest.fixture
 def agent(instance):
-    """Add another worker id to the scratch instance: config, persona, worktree."""
+    """Add another worker id to the scratch instance: config (with its purpose), worktree."""
 
     def _add(item_id: str, *, pod: str = "engineers", role: str = "engineer", git: bool = False):
         config = instance / "config" / item_id
@@ -242,13 +242,11 @@ def agent(instance):
                     "model": "claude-opus-5",
                     "effort": "high",
                     "workdir": f"wt/{item_id}",
+                    "purpose": f"You are {item_id}.",
                 },
                 indent=2,
             )
             + "\n"
-        )
-        (config / "AGENTS.md").write_text(
-            f"You are {item_id}.\n\n## UPDATES BELOW ONLY\n\nnothing yet.\n"
         )
         workdir = instance / "wt" / item_id
         workdir.mkdir(parents=True, exist_ok=True)

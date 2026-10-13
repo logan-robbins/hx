@@ -95,10 +95,10 @@ It refuses to run as root, checks `tmux`, `git` and Python, and records the `cla
 ```
 
 A `claude` newer than the live suite has passed on installs the same way and is marked
-`untested` beside the newest tested version. `partner` is the only agent a fresh instance has; `templates/worker/` is
-what the Partner copies to create another, and `personas/<role>/AGENTS.md` are the four
-personas it copies over `config/<id>/AGENTS.md` when it does. You never do either yourself —
-the Partner has a skill for it.
+`untested` beside the newest tested version. `partner` is the only agent a fresh instance has; `templates/worker/harness.json` is
+what the Partner fills in to create another (its role, its one-paragraph `purpose`, its
+workdir), and `personas/<role>/AGENTS.md` are the four role personas every launch renders the
+agent's persona from. You never do either yourself — the Partner has a skill for it.
 
 ## 3. Seed the token
 

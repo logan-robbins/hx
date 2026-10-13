@@ -87,20 +87,21 @@ def _file_bytes(path) -> int | None:
         return None
 
 
-def _persona(root, item_id: str) -> tuple[int | None, str | None, str]:
+def _persona(root, item_id: str, env=None) -> tuple[int | None, str | None, str]:
     """(bytes, source, text) of the persona in the agent's system prompt: `run/<id>/persona.md`
-    once a launch derived it, else what `start.sh` would derive (AGENTS.md above the header)."""
-    from .compile import HEADER
+    once a launch rendered it, else what `start.sh` would render now (`hx.persona.render`)."""
+    from . import persona as persona_mod
+    from .errors import HxError
 
     derived = root / "run" / item_id / "persona.md"
     if derived.is_file():
         text = derived.read_text(errors="replace")
         return len(text.encode()), f"run/{item_id}/persona.md", text
-    agents = root / "config" / item_id / "AGENTS.md"
-    if agents.is_file():
-        text = agents.read_text(errors="replace").partition(HEADER)[0]
-        return len(text.encode()), f"config/{item_id}/AGENTS.md above the header", text
-    return None, None, ""
+    try:
+        text = persona_mod.render(root, item_id, env=env)
+    except (HxError, OSError, ValueError):
+        return None, None, ""
+    return len(text.encode()), "rendered (hx persona)", text
 
 
 def _skill_description_bytes(path) -> int:
@@ -162,7 +163,7 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     from .config_models import load_models
 
     root = Path(root)
-    persona_bytes, persona_source, persona_text = _persona(root, item_id)
+    persona_bytes, persona_source, persona_text = _persona(root, item_id, env)
     claude_md = _file_bytes(root / "config" / "CLAUDE.md")
     try:
         learnings = len(learn.persona_region(root, env).encode())

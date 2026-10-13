@@ -111,41 +111,10 @@ def test_unfamiliar_legacy_policy_is_preserved_and_cannot_silently_activate(inst
         prompts.context_instructions(instance, "eng-001", Path(result["manifest_path"]), workdir=result["identity"]["workdir"])
 
 
-def test_native_compiler_expands_identity_deduplicates_copied_role_and_keeps_custom_policy(instance):
-    configure(instance)
-    agent = instance / "config" / "eng-001" / "AGENTS.md"
-    role = (instance / "personas" / "backend-engineer" / "AGENTS.md").read_text().split(compiler.HEADER)[0].strip("\n")
-    expanded = compiler.expand_identity(role, compiler.identity_values(instance, "eng-001"))
-    policy = "Only the Partner can authorize changes to the production schema."
-    agent.write_text(expanded + "\n\n" + policy + "\n\n" + compiler.HEADER + "\nCurrent legacy memory.\n")
-    compiler.compile_agent(instance, "eng-001")
-    compiled = agent.read_text()
-    assert "{{" not in compiled and compiled.count("# eng-001: Backend Engineer") == 1
-    assert compiled.count(policy) == 1
-    assert "Current legacy memory." in compiled  # Active legacy state migrates with P12.
-    assert compiler.compile_agent(instance, "eng-001")["compiled"] is False
-
-
 def test_exact_block_deduplication_does_not_edit_policy_sentences():
     copied = "Canonical role instruction."
     custom = "Do not replace the phrase Canonical role instruction. inside this policy."
     assert compiler.strip_known_blocks(copied + "\n\n" + custom, [copied]) == custom
-
-
-def test_copied_previous_role_is_removed_when_canonical_role_changes(instance):
-    role_dir = instance / "personas" / "engineer"
-    role_dir.mkdir(exist_ok=True)
-    before = "Follow the original generated role instructions."
-    after = "Follow the current generated role instructions."
-    role_file = role_dir / "AGENTS.md"
-    role_file.write_text(after + "\n\n" + compiler.HEADER + "\n")
-    agent = instance / "config" / "eng-001" / "AGENTS.md"
-    old = compiler.render("Old globals.", "engineer", before, before + "\n\nKeep the operator's deployment target.")
-    agent.write_text(old + compiler.HEADER + "\nLegacy current state.\n")
-    compiler.compile_agent(instance, "eng-001")
-    assert before not in agent.read_text()
-    assert agent.read_text().count(after) == 1
-    assert "Keep the operator's deployment target." in agent.read_text()
 
 
 def test_unknown_identity_variable_fails_before_a_prompt_is_delivered(instance):

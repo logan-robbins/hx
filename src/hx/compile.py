@@ -1,31 +1,19 @@
-"""`hx compile <id>` — the template compiler (spec 11 Identity).
+"""`hx compile <id> --planned` — versioned prompts for the planned runtime, and the shared
+prompt-text helpers.
 
-Base rules live in exactly two Partner-managed sources and nowhere else:
+The persona a session launches with is not compiled into a per-id file any more: every
+`start.sh` renders `run/<id>/persona.md` from its sources at exec time (`hx.persona`,
+`hx persona <id>`), so the only `compile` left is the planned one (`hx.prompt_compiler`,
+docs/prompt-runtime.md). This module keeps what both read:
 
-  `config/CLAUDE.md`         the global invariants, for every agent
-  `personas/<role>/AGENTS.md` the role persona, above `## UPDATES BELOW ONLY`
-
-plus one region hx writes itself: every rule under the central `LEARNINGS/` directory,
-whole, category by category (`hx.learn.persona_region`), so every agent carries the fleet's
-learnings in its system prompt — at every start, after every compaction, cached with the rest
-of the invariant prompt — without a persona having to say so.
-
-`compile` distributes them into the worker's final `config/<id>/AGENTS.md` as
-fenced regions, preserving the per-id text the Partner wrote there and the
-agent's own memory below the header. It runs on every `hx launch` and
-`hx restart`, so a base edit lands at the next (re)start — the Partner never
-hand-copies a persona to push a change out. The Partner is exempt from the global and
-role regions — `config/partner/AGENTS.md` stays the shipped persona — but receives the
-learnings region like everyone else, just above `## UPDATES BELOW ONLY`.
-
-The invariants reach every agent through exactly one channel
-(`config_harness.INVARIANTS_CHANNEL`): Claude loads them as its home's native CLAUDE.md, Codex
-and Meta read them in the context file, and only Pi and Grok — system-prompt flavors with no
-CLAUDE.md — carry them here, as the `hx:global` region. Everywhere else the region is not
-written, and a recompile removes one an earlier compile left.
-
-A role with no `personas/<role>/AGENTS.md` still compiles: the role region is
-left out, so test and bespoke roles keep working.
+  - the fenced-region markers a rendered persona carries — `hx:global` (the invariants, only
+    where the persona is their channel: `config_harness.INVARIANTS_CHANNEL`) and
+    `hx:learnings` (`hx.learn.persona_region`) — which `hx cache report` uses to tell what the
+    persona already holds, and `REGION_RE`, which strips regions an earlier hx stamped into a
+    source file;
+  - `expand_identity` and `identity_values`: the `{{id}}`, `{{pod}}`, `{{role}}`, `{{flavor}}`
+    and `{{workdir}}` a persona may name, resolved once, never invented;
+  - `strip_known_blocks`, which removes exact copies of a shared source from operator text.
 """
 
 from __future__ import annotations
@@ -34,22 +22,20 @@ import argparse
 import re
 from pathlib import Path
 
-from .errors import HxError, NotFound, ValidationError
-from .ids import PARTNER
+from .errors import ValidationError
 
+#: The old persona/memory split. Nothing writes it; readers of files written before the
+#: learnings became the memory channel stop at it (`hx.persona.migrate`, `prompt_compiler`).
 HEADER = "## UPDATES BELOW ONLY"
 
 GLOBAL_BEGIN = "<!-- hx:global begin (from config/CLAUDE.md — edit the source, not this copy) -->"
 GLOBAL_END = "<!-- hx:global end -->"
 ROLE_BEGIN_TMPL = "<!-- hx:role begin (from personas/{role}/AGENTS.md — edit the source, not this copy) -->"
 ROLE_END = "<!-- hx:role end -->"
-LEARNINGS_BEGIN = "<!-- hx:learnings begin (written by hx compile from the LEARNINGS directory — not by hand) -->"
+LEARNINGS_BEGIN = "<!-- hx:learnings begin (written by hx from the LEARNINGS directory — not by hand) -->"
 LEARNINGS_END = "<!-- hx:learnings end -->"
 
-#: The regions in the order they are rendered.
-KINDS = ("global", "role", "learnings")
-
-#: A fenced region, replaced whole on every compile.
+#: A fenced region. `role` is only ever read: earlier versions stamped it into per-id files.
 REGION_RE = re.compile(
     r"<!-- hx:(?P<kind>global|role|learnings) begin .*?-->\n"
     r"(?P<body>.*?)"
@@ -82,134 +68,6 @@ def strip_known_blocks(text: str, known: list[str]) -> str:
     return result.strip("\n")
 
 
-def role_of(root: Path, item_id: str) -> str:
-    """This worker's role from its `harness.json`."""
-    from .config_harness import load_harness
-
-    harness = root / "config" / item_id / "harness.json"
-    if not harness.is_file():
-        raise NotFound(f"{harness}: no config for {item_id}")
-    return load_harness(harness, check_cross_file=False).role
-
-
-def base_texts(root: Path, role: str) -> tuple[str, str | None]:
-    """The (global, role-or-None) source texts a compile distributes."""
-    Clauses = root / "config" / "CLAUDE.md"
-    if not Clauses.is_file():
-        raise NotFound(f"{Clauses}: no global invariants to compile")
-    role_path = root / "personas" / role / "AGENTS.md"
-    role_text = None
-    if role_path.is_file():
-        role_text = role_path.read_text().split(HEADER, 1)[0].strip("\n")
-    return Clauses.read_text().strip("\n"), role_text
-
-
-def _region(begin: str, end: str, body: str) -> str:
-    return f"{begin}\n{body.strip(chr(10))}\n{end}"
-
-
-def render(global_text: str | None, role: str | None, role_text: str | None,
-           upper: str, learnings_text: str | None = None) -> str:
-    """Rebuild the above-header text: fresh fenced regions, per-id text kept.
-
-    Existing fenced regions are replaced; a region the file never had (the
-    `learnings` region on an instance compiled before it existed) is added
-    after the last one it does have; on a file that has none (created by hand
-    before the compiler existed) the regions are prepended and no other line
-    is touched. A region the sources no longer call for (`global_text` None:
-    the invariants reach this agent another way) is removed. The below-header
-    memory never reaches this function.
-    """
-    regions: dict[str, str] = {}
-    if global_text is not None:
-        regions["global"] = _region(GLOBAL_BEGIN, GLOBAL_END, global_text)
-    if role is not None and role_text is not None:
-        regions["role"] = _region(ROLE_BEGIN_TMPL.format(role=role), ROLE_END, role_text)
-    if learnings_text:
-        regions["learnings"] = _region(LEARNINGS_BEGIN, LEARNINGS_END, learnings_text)
-    ordered = [regions[kind] for kind in KINDS if kind in regions]
-    compiled = "\n\n".join(ordered) + "\n"
-
-    def replace(match: re.Match) -> str:
-        # A region the sources no longer call for is removed, not kept stale.
-        return regions.get(match.group("kind"), "")
-
-    if REGION_RE.search(upper):
-        present = {match.group("kind") for match in REGION_RE.finditer(upper)}
-        out = REGION_RE.sub(replace, upper)
-        missing = [regions[kind] for kind in KINDS if kind in regions and kind not in present]
-        if missing:
-            last = max(REGION_RE.finditer(out), key=lambda match: match.end())
-            out = out[:last.end()] + "\n\n" + "\n\n".join(missing) + out[last.end():]
-        out = re.sub(r"\n{3,}", "\n\n", out)
-        return out.strip("\n") + "\n"
-    if not upper.strip():
-        return compiled
-    return compiled + "\n" + upper.strip("\n") + "\n"
-
-
-def compile_agent(root: Path, item_id: str) -> dict:
-    """Compile base rules into `config/<id>/AGENTS.md`. Returns a small report."""
-    agents = root / "config" / item_id / "AGENTS.md"
-    if item_id == PARTNER:
-        return compile_partner_learnings(root, agents)
-    if not agents.is_file():
-        raise NotFound(f"{agents}: no AGENTS.md to compile into")
-    role = role_of(root, item_id)
-    global_text, role_text = base_texts(root, role)
-    text = agents.read_text()
-    if HEADER not in text:
-        raise HxError(
-            f"{agents}: no `{HEADER}` line; the compiler cannot tell base from memory"
-        )
-    upper, _, lower = text.partition(HEADER)
-    values = identity_values(root, item_id)
-    # A copied canonical persona is generated boilerplate, not per-id policy.
-    # Remove only an exact known copy outside the generated regions. Preserve
-    # every other operator-authored byte; never fuzzy-match policy away.
-    previous_roles = [match["body"].strip("\n") for match in REGION_RE.finditer(upper) if match["kind"] == "role"]
-    custom = REGION_RE.sub("", upper)
-    if role_text:
-        custom = strip_known_blocks(custom, [role_text, expand_identity(role_text, values), *previous_roles])
-    from .config_harness import invariants_channel
-    from .learn import persona_region
-    # The invariants ride the persona only where no other channel reaches the agent.
-    carried = invariants_channel(values["flavor"]) == "persona"
-    new_upper = render(expand_identity(global_text, values) if carried else None, role,
-                       expand_identity(role_text, values) if role_text else None,
-                       expand_identity(custom, values), persona_region(root))
-    new_text = new_upper + HEADER + lower if lower else new_upper + HEADER + "\n"
-    if new_text != text:
-        agents.write_text(new_text)
-        return {"id": item_id, "compiled": True, "role": role,
-                "role_region": role_text is not None}
-    return {"id": item_id, "compiled": False, "reason": "up-to-date",
-            "role": role, "role_region": role_text is not None}
-
-
-def compile_partner_learnings(root: Path, agents: Path) -> dict:
-    """The Partner keeps its shipped persona, plus the one region every agent gets: the
-    learnings, placed last above the header (replaced whole when already there)."""
-    from .learn import persona_region
-    if not agents.is_file():
-        raise NotFound(f"{agents}: no AGENTS.md to compile into")
-    text = agents.read_text()
-    if HEADER not in text:
-        raise HxError(f"{agents}: no `{HEADER}` line; the compiler cannot tell base from memory")
-    upper, _, lower = text.partition(HEADER)
-    region = _region(LEARNINGS_BEGIN, LEARNINGS_END, persona_region(root))
-    if REGION_RE.search(upper):
-        new_upper = REGION_RE.sub(lambda m: region if m.group("kind") == "learnings" else m.group(0), upper)
-    else:
-        new_upper = upper.rstrip("\n") + "\n\n" + region + "\n\n"
-    new_text = new_upper + HEADER + lower if lower else new_upper + HEADER + "\n"
-    if new_text != text:
-        agents.write_text(new_text)
-        return {"id": PARTNER, "compiled": True, "role": PARTNER, "role_region": False,
-                "reason": "partner-learnings-only"}
-    return {"id": PARTNER, "compiled": False, "reason": "up-to-date", "role": PARTNER, "role_region": False}
-
-
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx compile", add_help=True)
     parser.add_argument("id")
@@ -218,17 +76,12 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
-    if args.planned:
-        from .prompt_compiler import build
-        from .continuity_store import canonical
-        print(canonical(build(root, args.id, audience=args.audience)))
-        return 0
-    if args.audience:
-        raise ValidationError("--audience requires --planned")
-
-    report = compile_agent(root, args.id)
-    if report["compiled"]:
-        print(f"HX-COMPILE {args.id} compiled role={report['role']}")
-    else:
-        print(f"HX-COMPILE {args.id} kept {report['reason']}")
+    if not args.planned:
+        raise ValidationError(
+            "hx compile without --planned is gone: the persona is rendered from its sources at "
+            f"every launch (`hx persona {args.id}` renders it now, `--print` shows it)"
+        )
+    from .prompt_compiler import build
+    from .continuity_store import canonical
+    print(canonical(build(root, args.id, audience=args.audience)))
     return 0

@@ -203,7 +203,7 @@ Written by `hx install` (also with `--skeleton-only`), read by `adapters/claude/
 
 When absent, `install.sh` falls back to `$HARNESS_ROOT/bin/hx` and `$HARNESS_ROOT/bin/hx-hook`.
 
-Two optional keys, read by `hx learn`, `hx compile`, `hx heartbeat` and `hx doctor`
+Two optional keys, read by `hx learn`, `hx persona`, `hx heartbeat` and `hx doctor`
 (docs/learnings.md): `"learnings"` — the absolute path of the learnings directory this
 instance writes to (default `$HARNESS_ROOT/LEARNINGS`; a fleet names one shared directory; a
 value ending in `.md` is the pre-directory layout and is refused), and `"learnings_prefix"`
@@ -226,11 +226,39 @@ channel, `hx.config_harness.INVARIANTS_CHANNEL[flavor]`:
 | Flavor | Channel | Carrier |
 |---|---|---|
 | `claude` | `home` | `run/<id>/home/CLAUDE.md`, copied from `config/CLAUDE.md` by `install.sh` and refreshed by `start.sh --exec` |
-| `pi`, `grok` | `persona` | the persona's `hx:global` region (`hx compile`) |
+| `pi`, `grok` | `persona` | the persona's `hx:global` region (`hx persona`) |
 | `codex`, `meta` | `context` | the context file's `## Invariants` section (`hx compose`, `compose.carries_invariants`) |
 
-No other carrier holds them: `hx compile` removes an `hx:global` region from a flavor whose
-channel is not `persona`, and `hx compose` emits `## Invariants` only for `context`.
+No other carrier holds them: `hx persona` renders an `hx:global` region only for a flavor
+whose channel is `persona`, and `hx compose` emits `## Invariants` only for `context`.
+
+## `hx persona <id> [--print]` and `harness.json` `purpose`
+
+`run/<id>/persona.md` is rendered from its sources by `hx.persona.render`, run as
+`python -m hx.persona --root ROOT ID` by every adapter's `start.sh --exec` immediately before it
+execs (outside a planned capsule, where `native_launch` prepares it), and by `hx launch` and
+`hx restart`. In order: the `hx:global` region (flavors whose invariants channel is `persona`),
+the role persona `personas/<role>/AGENTS.md` with identity variables filled in (or one line,
+`You are \`<id>\`, a \`<role>\` agent in pod \`<pod>\` of this hx instance.`, when the role has
+none; the Partner's is `config/partner/AGENTS.md`), `harness.json` `purpose` inserted before the
+persona's first `## ` heading, and the `hx:learnings` region. It is rewritten only when it
+changed. Output: `HX-PERSONA <id> run/<id>/persona.md bytes=<n>[ unchanged]`; `--print` prints
+the persona instead. `hx compile ID` without `--planned` refuses (exit 2) and names this command.
+
+`purpose` is an optional string in `harness.json`. Absent, empty, or containing the template's
+`{{purpose}}` placeholder (`config_harness.PURPOSE_PLACEHOLDER`) it is left out of the persona,
+and `hx doctor` warns `purpose:<id>`. `hx doctor` also warns `persona:<id>` for a worker whose
+role has no `personas/<role>/AGENTS.md`, and for a leftover `config/<id>/AGENTS.md`.
+
+Migration (`hx.persona.migrate`, run by `hx install`, `hx up`, `hx launch`, `hx restart`): a
+worker's `config/<id>/AGENTS.md` loses every paragraph a shared source already says (the role
+persona and the worker templates, shipped and installed, raw and identity-filled; template
+comments; stamped regions); what is left above the old header becomes `purpose` while that is
+the placeholder; promoted `hx:distilled` directives, memory below the old header, and a per-id
+paragraph `purpose` already replaced become one text proposal; then the file is removed.
+`hx install` prints `migrated config/<id>/AGENTS.md removed; …` per worker, `hx launch` the same
+on stderr.
+
 
 ## `hx learn` (central learnings)
 
@@ -257,7 +285,17 @@ added. Output lines: `HX-LEARN-PROPOSED <id> category=<c> nearest=<rule:score,�
 `HX-LEARN-PENDING <n>`, `HX-LEARN new|merged <id> rule=<key> category=<c>`,
 `HX-LEARN rejected <id>`, `HX-LEARN-CHECK rules=<n> pending=<p> fails=<f>`.
 
-The persona region (`hx compile`, `hx.learn.persona_region`) carries every rule line whole
+A text proposal (`hx.learn.propose_text`: a migrated `config/<id>/AGENTS.md`, `hx distill`) has
+`"kind": "text"`, the prose in `"text"`, `"source"` saying where it came from, empty `signal`
+and `check`, and `author` the agent the prose came from. `hx learn accept` refuses it without
+both `--signal` and `--check` (or `--merge-into`). `--keep` writes the rule and leaves the
+proposal pending with the rule key appended to `"rules"`; the output line ends ` kept`.
+`hx learn pending` prints its text as `  | `-prefixed lines.
+
+`hx distill <id> <file>` prints `HX-DISTILL <id> proposal=<proposal id> goal_addenda=<n>
+recorded=<n>`: the file's text becomes one text proposal, and the addenda are removed.
+
+The persona region (`hx persona`, `hx.learn.persona_region`) carries every rule line whole
 under `### <category> — <definition>` headings in taxonomy order; `hx doctor` warns
 `learnings-size` above `hx.learn.PERSONA_WARN_BYTES` (200 KiB).
 
@@ -902,14 +940,14 @@ Operator and Partner only. It covers every `config/<id>/` directory, or one; an 
             "recommendation": "keep-prefix", "note": "..."}}]}
 ```
 
-- `persona_source` is `run/<id>/persona.md` once a launch derived it. Before that it is
-  `config/<id>/AGENTS.md above the header`, which is what `start.sh` would derive. `null`
-  means neither exists.
+- `persona_source` is `run/<id>/persona.md` once a launch rendered it. Before that it is
+  `rendered (hx persona)`: the persona `start.sh` would render now, which the report renders
+  without writing. `null` means it cannot be rendered.
 - `claude_md_bytes` is `config/CLAUDE.md`. It counts toward `prefix_bytes` only when the
   persona does not already contain the `hx:global` marker (`claude_md_in_persona: false`): the
   invariants reach each agent through one channel (`config_harness.INVARIANTS_CHANNEL`), and
   only Pi and Grok carry them inside the persona.
-- `learnings_bytes` is `learn.persona_region` (what `hx compile` splices). It counts toward
+- `learnings_bytes` is `learn.persona_region` (what `hx persona` renders). It counts toward
   `prefix_bytes` only when the persona does not already contain the learnings marker
   (`learnings_in_persona: false`).
 - `skills` lists the installed copies in `run/<id>/home/skills` (or `home/muse/skills` for

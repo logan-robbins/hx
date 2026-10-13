@@ -14,7 +14,7 @@ Every agent's prompt is four layers, and each layer has exactly one source:
 | Layer | Source | Reaches the agent through |
 |---|---|---|
 | Invariants | `config/CLAUDE.md` | one channel per flavor (below) |
-| Persona | the role persona | the system prompt (`run/<id>/persona.md`), or the context file on Codex/Meta |
+| Persona | the role persona (`personas/<role>/AGENTS.md`) plus `harness.json` `purpose` | the system prompt (`run/<id>/persona.md`), or the context file on Codex/Meta |
 | Learnings | `LEARNINGS/rules.md` | the persona's `hx:learnings` region |
 | Session memory | the work item's `## Tasks`, step state, episodes | the context file (`hx compose`) |
 
@@ -26,8 +26,30 @@ The invariants reach each agent once. `config_harness.INVARIANTS_CHANNEL` names 
 | `pi`, `grok` | `persona` | a system prompt, but no native `CLAUDE.md`: the compiled persona carries the `hx:global` region |
 | `codex`, `meta` | `context` | no system prompt: the context file opens with `## Invariants` |
 
-A second copy is a second place to drift, and it costs prefix bytes on every turn. A recompile
-removes an `hx:global` region from an agent whose flavor no longer carries it.
+A second copy is a second place to drift, and it costs prefix bytes on every turn.
+
+The persona is rendered, never copied. Every `start.sh --exec` runs `python -m hx.persona`
+(`hx persona ID` by hand, `--print` to see it) immediately before it execs, and `hx launch` and
+`hx restart` render it once more so a broken source fails the launch rather than the pane:
+
+1. the invariants as an `hx:global` region, only where the persona is their channel (Pi, Grok);
+2. the role persona `personas/<role>/AGENTS.md`, identity variables filled in (`{{id}}`,
+   `{{pod}}`, `{{role}}`, `{{flavor}}`, `{{workdir}}`; an unknown one refuses the launch). A
+   role without one gets a single identity line. The Partner's persona is
+   `config/partner/AGENTS.md`;
+3. `harness.json` `purpose`, the one paragraph that makes this agent different from the next of
+   its role, placed after the persona's opening paragraph. `templates/worker/harness.json` ships
+   `"purpose": "{{purpose}}"`; until the Partner replaces it the persona has no purpose and
+   `hx doctor` warns `purpose:<id>`;
+4. the learnings region (`hx.learn.persona_region`), last.
+
+Nothing per id is written by hand except `purpose` and the work item's `## Tasks`. An instance
+from before this keeps a `config/<id>/AGENTS.md` per worker; `hx install`, `hx up`, `hx launch`
+and `hx restart` migrate it (`hx.persona.migrate`): its per-id paragraph becomes `purpose` while
+that is still the placeholder, whatever else it held that no shared source already says (the
+memory below `## UPDATES BELOW ONLY`, promoted directives) becomes one pending text proposal the
+Partner reviews with `hx learn pending`, and the file is removed. `hx doctor` warns
+`persona:<id>` while one is left.
 
 ## Roles and responsibilities
 
@@ -170,7 +192,7 @@ restrict tools that the host preloads outside the adapter's supported interfaces
 
 `hx cache report [ID]` measures the invariant part of each agent's prompt prefix, the part a
 seam should not have to rewrite (operator and Partner only). It adds up the persona as launched
-(`run/<id>/persona.md`, or `AGENTS.md` above the header before the first launch),
+(`run/<id>/persona.md`, or the persona `hx persona` would render before the first launch),
 `config/CLAUDE.md` when the persona does not already carry it (`claude_md_in_persona`, Pi and
 Grok), the learnings region when the persona does not already carry it, and the
 frontmatter descriptions of the installed skills. Skill bodies are excluded because they load on
