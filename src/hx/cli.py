@@ -166,6 +166,11 @@ the control plane:
   evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
   code index --repo PATH       index symbols, imports, and source text for code search
   code search QUERY            exact-symbol and FTS code search (porter + trigram, RRF)
+  code type/signature NAME     case-folded structural definitions and exact source signatures
+  code callers/tests-for/conform NAME  bounded reuse, tests and signature parity
+  code fresh PATH... --expect fresh  complete scope freshness lint (failed expectation: exit 3)
+  code register/precedent/contract NAME  registrations, exact snippets and shared interfaces
+  code map --budget BYTES      ranked orientation; code submaps proposes candidate boundaries
   code symbols NAME            symbol definitions; code impact PATH... for change impact
   content index/search/fetch   persistent exact-text knowledge store for docs and web
   exec --language L --code C   isolated execution: program the analysis, only stdout returns

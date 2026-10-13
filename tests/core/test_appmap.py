@@ -328,3 +328,16 @@ def test_non_python_symbol_anchor(tmp_path, path, source, symbol):
     (repo / path).write_text(source.replace('return 1', 'return 2'))
     with pytest.raises(ValidationError, match='stale'):
         appmap.source_anchor(repo, path, symbol, index_root=root)
+
+
+def test_non_python_committed_anchor_survives_map_check_and_import(mapped,capsys):
+    from hx import code_index
+    store,repo=mapped[:2]
+    (repo/'widget.cs').write_text('namespace Acme;\nclass Widget { public int Run() { return 1; } }\n')
+    code_index.index_repo(store.root,repo)
+    anchor=appmap.source_anchor(repo,'widget.cs','Acme.Widget.Run',index_root=store.root)
+    write(repo,record('widget',claim='observed',anchors=[anchor]))
+    commit(repo)
+    assert appmap.main(['check','--repo',str(repo)],store.root)==0
+    assert json.loads(capsys.readouterr().out)['valid']
+    assert appmap.import_baseline(store,repo)['valid']

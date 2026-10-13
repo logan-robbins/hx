@@ -284,3 +284,62 @@ def test_ctags_wrapper_json_fixture_and_safe_degradation(tmp_path, monkeypatch):
         tmp_path, "a.cs", source, symbols, refs, detected
     )
     assert all(s["extractor"] == "stdlib-csharp" for s in degraded)
+
+
+def test_scip_enclosing_symbols_and_implementation_relationship(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    root = tmp_path / "root"
+    source = "namespace Acme;\ninterface IFoo { int Run(string value); }\nclass Foo : IFoo { public int Run(string value) { return 1; } }\n"
+    (repo / "a.cs").write_text(source)
+    code_index.index_repo(root, repo)
+    conn = connect(root)
+    ns = namespace(repo)
+    interface = "scip-dotnet pkg 1 Acme/IFoo#"
+    implementation = "scip-dotnet pkg 1 Acme/Foo#"
+    method = implementation + "Run()."
+    line = source.splitlines()[2]
+    column = line.index("Run")
+    data = {
+        "documents": [
+            {
+                "relative_path": "a.cs",
+                "symbols": [
+                    {"symbol": interface, "display_name": "IFoo", "kind": 21},
+                    {
+                        "symbol": implementation,
+                        "display_name": "Foo",
+                        "kind": 7,
+                        "relationships": [
+                            {"symbol": interface, "is_implementation": True}
+                        ],
+                    },
+                    {
+                        "symbol": method,
+                        "display_name": "Run",
+                        "kind": 26,
+                        "enclosing_symbol": implementation,
+                        "signature_documentation": {"text": "int Run(string value)"},
+                    },
+                ],
+                "occurrences": [
+                    {"symbol": interface, "symbol_roles": 1, "range": [1, 10, 14]},
+                    {"symbol": implementation, "symbol_roles": 1, "range": [2, 6, 9]},
+                    {
+                        "symbol": method,
+                        "symbol_roles": 1,
+                        "range": [2, column, column + 3],
+                    },
+                ],
+            }
+        ]
+    }
+    ingest(conn, ns, data)
+    conn.commit()
+    conn.close()
+    row = code_index.symbols_for(root, "Acme.Foo.Run")[0]
+    assert row["lane"] == "resolved" and row["signature"] == "int Run(string value)"
+    assert any(
+        e["kind"] == "implements" and e["lane"] == "resolved"
+        for e in code_index.graph_edges(root)
+    )
