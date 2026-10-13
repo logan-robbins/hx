@@ -39,8 +39,14 @@ remains unmeasured, and clustering proposals remain hypotheses.
 - Other guard checks: four passed; default saved-home guard has the pre-existing
   mismatch described above. Optional live suite: 11 skipped by its environment gates.
 
-A complete milestone run is also executed with `HX_CLAUDE_HOME_BASELINE` pointing
-to a separate temporary manifest captured immediately before that run. This uses
-the guard's supported per-run checkpoint and includes every test; the repository's
-September baseline and the user's home remain untouched. Its result is recorded
-after completion rather than treating the default dated-baseline failure as green.
+The complete `tools/milestone-check.sh` run passes with
+`HX_CLAUDE_HOME_BASELINE` pointing to a separate temporary manifest captured
+immediately before the run: **2,103 passed, 26 skipped**, plus its initial guard
+pass. This uses the guard's supported per-run checkpoint and includes every test;
+the repository's September baseline and the user's home remain untouched.
+The default dated-baseline failure remains explicitly reported above.
+
+The full run also covers the final additions after the earlier core chunk:
+SCIP relationship/enclosing-symbol ingestion, committed C# map anchors, and
+completion refresh replay after interrupted derived publication. The one warning
+is chromadb's existing Python 3.16 deprecation notice, not a graph failure.

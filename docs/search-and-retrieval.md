@@ -307,7 +307,11 @@ and the promotion path is not expanded. Actual tree-sitter, Universal Ctags and
 SCIP prerequisites are absent here, so their live checks skip with named reasons;
 protocol/format fixtures and the stdlib extractors always run.
 
-Full core/fake-harness, UI, packaging and scenario results are recorded in the
-[validation handoff](../handoff/to-orchestrator.md). The default milestone script
-still refuses its September user-home baseline, whose eight differing files
-predate this goal. That preserved environmental guard is not reported as passed.
+The complete milestone suite passes **2,103 tests**, with **26 skips**, using
+the guard's supported `HX_CLAUDE_HOME_BASELINE` override and a separate temporary
+manifest captured immediately before testing. Full core/fake-harness, UI,
+packaging, scenario and guard results are in the
+[validation handoff](../handoff/to-orchestrator.md). The default persisted
+September user-home baseline still differs at eight files whose modification
+times predate this goal; it was preserved, and that default environmental check
+is not reported as green.
