@@ -1,6 +1,10 @@
 ---
 name: hx-fleet
 description: The Partner's manual for the fleet itself — creating a worker from a shipped persona, what hx launch wires up and how to verify it, writing a new role, updating a persona, and retiring a worker. Use when asked for a new agent, a new kind of agent, a persona change, or when an id needs to be freed.
+metadata:
+  hx-audience: partner
+  hx-roles: partner
+  hx-loads-when: creating or retiring a worker, choosing a model, refreshing the model registry
 ---
 
 # hx-fleet

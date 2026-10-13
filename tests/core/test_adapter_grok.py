@@ -125,6 +125,8 @@ def test_grok_install_writes_a_minimal_home_and_the_companion(instance):
         assert config["hooks"][event], event
     assert "--id eng-001" in (home / "config.toml").read_text()
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
     assert companion.is_file()
     assert "companion-stop" in companion.read_text()

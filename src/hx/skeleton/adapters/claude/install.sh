@@ -77,6 +77,13 @@ copy_skills() {
     cp -R "$skills_src/$want" "$target/$want"
   done
 }
+# Which skills a home gets is the manifest's decision (src/hx/skills/manifest.json,
+# CONTRACTS.md): audience, role, optional skills from config/hx.json `skills`.
+manifest_skills() {
+  [ -n "$skills_src" ] && [ -d "$skills_src" ] || return 0
+  "$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id" "$@" ||
+    die "skill manifest: cannot select the skills for $id from $skills_src"
+}
 
 home=$root/run/$id/home
 if [ "$companion_only" != 1 ]; then
@@ -227,14 +234,11 @@ if [ -f "$root/config/CLAUDE.md" ]; then
   cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
 fi
 
-# The Partner gets hx-partner and hx-fleet, a worker gets hx-worker, a Companion gets
-# hx-companion. Both kinds of HarnessAgent also get hx-memory. The Companion does not.
-if [ "$id" = partner ]; then
-  copy_skills "$home/skills" hx-partner hx-fleet hx-memory
-else
-  copy_skills "$home/skills" hx-worker
-  if [ -z "${HX_CONTINUITY_RUN:-}" ]; then copy_skills "$home/skills" hx-memory; fi
-fi
+# The Partner gets hx-partner and hx-fleet, a worker gets hx-worker plus its role's skills, a
+# Companion gets hx-companion. Both kinds of HarnessAgent also get hx-memory, except in a
+# planned run. The Companion does not. The manifest says so; this file names no skill.
+wants=$(manifest_skills) || exit 1
+copy_skills "$home/skills" $wants
 fi
 
 # The Companion's own config dir (spec 10). It gets one hook, the `hx-companion` skill, and no
@@ -248,7 +252,8 @@ fi
 
 companion_home=$root/run/$id/companion-home
 mkdir -p "$companion_home"
-copy_skills "$companion_home/skills" hx-companion
+wants=$(manifest_skills --companion) || exit 1
+copy_skills "$companion_home/skills" $wants
 HX_COMPANION_HOME=$companion_home HX_CWD=$root HX_HOOK_BIN=$hook_bin HX_ID=$id HX_ROOT=$root \
 "$python" - <<'COMPANIONEOF'
 import json

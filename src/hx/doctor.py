@@ -685,6 +685,15 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             )
             checks.append((OK, "models", f"{len(models)} model(s): {described}"))
 
+    # The skills the adapters install (TOOL_SKILL_PLAN step 1): the manifest, the Agent Skills
+    # frontmatter rules, the size bounds, and no worker skill naming a command a worker is
+    # refused. `HX_SKILLS_DIR` points it at another directory, as it does the adapters.
+    from . import skill_manifest
+
+    for status, detail in skill_manifest.check(skill_manifest.skills_dir(env),
+                                               root if root.is_dir() else None):
+        checks.append((status, "skills", detail))
+
     hx_json = root / "config" / "hx.json"
     if hx_json.is_file():
         try:

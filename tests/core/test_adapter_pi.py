@@ -69,6 +69,8 @@ def test_pi_install_writes_a_home_and_the_companion(instance):
     assert stat.S_IMODE((home / "auth.json").stat().st_mode) == 0o600
     assert (home / "extensions" / "hx" / "index.ts").is_file()
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
     assert companion.is_file()
     assert "companion-stop" in companion.read_text()

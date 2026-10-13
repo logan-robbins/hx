@@ -162,7 +162,7 @@ def validate_category(category: str | None) -> str:
     if value not in DEFINITIONS:
         raise ValidationError(
             f"category {category!r} is not one of: {', '.join(CATEGORY_NAMES)} "
-            "(`hx learn categories` prints what each one holds)"
+            "(`hx learn classify --signal … --check …` ranks them for your signal)"
         )
     return value
 
@@ -462,7 +462,7 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
     if not category:
         raise ValidationError(
             "a proposal needs --category, the kind of mistake the rule prevents: "
-            + ", ".join(CATEGORY_NAMES) + " (`hx learn categories`)"
+            + ", ".join(CATEGORY_NAMES) + " (`hx learn classify --signal … --check …` ranks them)"
         )
     category = validate_category(category)
     prefix = (prefix or default_prefix(root, env)).upper()

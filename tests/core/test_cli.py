@@ -98,6 +98,130 @@ def test_hook_entrypoint_knows_the_spec_09_events():
     }
 
 
+# --- exposure (TOOL_SKILL_PLAN step 1) -------------------------------------------------------------
+
+from hx import cli as cli_mod  # noqa: E402
+
+WORKER_SIDE = cli_mod.AUDIENCES["worker"] | cli_mod.AUDIENCES["subagent"] | cli_mod.AUDIENCES["runtime"]
+#: Every Partner and operator entry a worker must be refused at the CLI. `plan audit|finish|
+#: materialize` are the Partner's, but planning grants a worker its own assignment and refuses
+#: the rest itself (tests/core/test_unit_execution.py), so the CLI defers to it.
+REFUSED = sorted((cli_mod.AUDIENCES["partner"] | cli_mod.AUDIENCES["operator"]) - WORKER_SIDE
+                 - cli_mod.OWN_ASSIGNMENT)
+ACCEPTED = sorted(cli_mod.AUDIENCES["worker"])
+
+
+def _dispatch_recorded(monkeypatch, instance, env: dict[str, str]):
+    """`cli.main` with every module stubbed: what reaches dispatch is recorded, nothing runs."""
+    for key in [k for k in list(__import__("os").environ) if k.startswith(("HARNESS_", "HX_"))]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("HARNESS_ROOT", str(instance))
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    reached = []
+    for name in list(cli_mod.IMPLEMENTED):
+        monkeypatch.setitem(cli_mod.IMPLEMENTED, name,
+                            lambda rest, root, env=None, _name=name: reached.append((_name, rest)) or 0)
+    return reached
+
+
+def test_audiences_cover_every_command_and_nothing_else():
+    families = {entry.split()[0] for entries in cli_mod.AUDIENCES.values() for entry in entries}
+    assert families <= set(cli_mod.COMMANDS), families - set(cli_mod.COMMANDS)
+    assert set(cli_mod.COMMANDS) <= families, set(cli_mod.COMMANDS) - families
+    # The subagent is a worker's child sharing its HARNESS_ID: its column is inside the worker's.
+    assert cli_mod.AUDIENCES["subagent"] <= cli_mod.AUDIENCES["worker"]
+    assert cli_mod.AUDIENCES["companion"] == set()
+
+
+def test_a_worker_is_refused_every_partner_and_operator_command(monkeypatch, instance, capsys):
+    reached = _dispatch_recorded(monkeypatch, instance, {"HARNESS_ID": "eng-001", "HX_ROLE": "engineer"})
+    for entry in REFUSED:
+        code = cli_mod.main(entry.split())
+        err = capsys.readouterr().err
+        assert code == 1 and "refuse" in err and f"`hx {entry}`" in err, (entry, code, err)
+    assert reached == [], f"refused commands reached their modules: {reached}"
+
+
+def test_a_worker_may_run_every_worker_command(monkeypatch, instance, capsys):
+    reached = _dispatch_recorded(monkeypatch, instance, {"HARNESS_ID": "eng-001", "HX_ROLE": "engineer"})
+    for entry in ACCEPTED:
+        code = cli_mod.main(entry.split())
+        assert code == 0, (entry, capsys.readouterr().err)
+    assert len(reached) == len(ACCEPTED)
+
+
+def test_the_partner_and_the_operator_are_not_gated(monkeypatch, instance):
+    for env in ({"HARNESS_ID": "partner"}, {}):
+        reached = _dispatch_recorded(monkeypatch, instance, env)
+        for entry in REFUSED:
+            assert cli_mod.main(entry.split()) == 0, (env, entry)
+        assert len(reached) == len(REFUSED)
+
+
+def test_the_capability_resolver_reads_subcommands_and_flags():
+    resolve = cli_mod.resolve_capability
+    assert resolve("memory", ["search", "q", "--all-roles"]) == "memory search --all-roles"
+    assert resolve("memory", ["search", "q"]) == "memory search"
+    assert resolve("map", ["--root", "/tmp/x", "publish", "--file", "f"]) == "map publish"
+    assert resolve("plan", ["frobnicate"]) is None
+    assert cli_mod.worker_may_run("plan", None) is False, "every plan entry is the Partner's"
+    assert cli_mod.worker_may_run("code", None) is True, "code has worker entries; argparse decides"
+
+
+def test_operator_refusals_name_the_operator(run_hx, instance):
+    result = run_hx("doctor", env_extra={"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001"})
+    assert result.returncode == 1
+    assert "refuse: `hx doctor` is the operator's" in result.stderr and "eng-001" in result.stderr
+    result = run_hx("map", "publish", "--root", str(instance),
+                    env_extra={"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001"})
+    assert result.returncode == 1 and "`hx map publish` is the Partner's" in result.stderr
+
+
+@pytest.mark.parametrize("identity, audience", [
+    ({}, "operator"),
+    ({"HARNESS_ID": "partner", "HX_ROLE": "partner"}, "partner"),
+    ({"HARNESS_ID": "eng-001", "HX_ROLE": "engineer"}, "worker"),
+    ({"HARNESS_ID": "eng-001", "HX_ROLE": "companion"}, "companion"),
+])
+def test_hx_help_prints_the_callers_column(run_hx, instance, identity, audience):
+    import json
+
+    result = run_hx("help", "--json", env_extra={"HARNESS_ROOT": str(instance), **identity})
+    assert result.returncode == 0, result.stderr
+    shown = json.loads(result.stdout)
+    assert shown["audience"] == audience
+    assert shown["commands"] == sorted(cli_mod.AUDIENCES[audience])
+    assert shown["caller"] == identity.get("HARNESS_ID")
+
+
+def test_a_workers_help_names_no_partner_or_operator_command(run_hx, instance):
+    result = run_hx("help", env_extra={"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001"})
+    assert result.returncode == 0 and "the worker view" in result.stdout
+    listed = {line.split()[0] for line in result.stdout.splitlines()[1:] if line.strip()}
+    assert listed == {entry.split()[0] for entry in cli_mod.AUDIENCES["worker"]}
+    for word in ("dispatch", "bench", "doctor", "compile", "handoff", "publish", "accept"):
+        assert word not in result.stdout, word
+    # `hx --help` under a worker is the same filtered view, never the whole list.
+    dashed = run_hx("--help", env_extra={"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001"})
+    assert dashed.returncode == 0 and dashed.stdout == result.stdout
+
+
+def test_hx_help_all_prints_every_column(run_hx, instance):
+    import json
+
+    result = run_hx("help", "--all", "--json", env_extra={"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001"})
+    assert result.returncode == 0
+    columns = json.loads(result.stdout)["audiences"]
+    assert set(columns) == set(cli_mod.HELP_AUDIENCES)
+    assert columns["partner"] == sorted(cli_mod.AUDIENCES["partner"])
+    text = run_hx("help", "--all", env_extra={"HARNESS_ROOT": str(instance)})
+    assert text.returncode == 0 and "operator:" in text.stdout and "companion:" in text.stdout
+    # The operator's `hx --help` is still the whole usage text.
+    usage = run_hx("--help", env_extra={"HARNESS_ROOT": str(instance)})
+    assert usage.returncode == 0 and "usage: hx <command>" in usage.stdout
+
+
 @pytest.mark.parametrize('command', ['memory', 'recall'])
 def test_planned_workers_cannot_import_or_create_episodic_memory(run_hx, tmp_path, command):
     result = run_hx(command, env_extra={'HARNESS_ROOT': str(tmp_path / 'planned'), 'HX_CONTINUITY_RUN': 'current-run'})

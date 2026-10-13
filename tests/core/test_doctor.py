@@ -300,3 +300,58 @@ def test_warns_on_the_single_file_layout_and_an_oversized_region(instance, monke
     assert ("learnings-legacy", WARN) in statuses(checks)
     assert ("learnings-size", WARN) in statuses(checks), detail_for(checks, "learnings-size")
     assert ("learnings", OK) in statuses(checks)
+
+
+# --- skills (TOOL_SKILL_PLAN step 1) -----------------------------------------------------------
+
+
+def _skill(directory, name, *, description="Use when testing.", body="Body.\n", extra=""):
+    (directory / name).mkdir(parents=True, exist_ok=True)
+    text = f"---\nname: {name}\ndescription: {description}\n{extra}---\n\n{body}"
+    (directory / name / "SKILL.md").write_text(text)
+
+
+def test_the_shipped_skills_pass_the_skills_row(instance, monkeypatch):
+    monkeypatch.delenv("HX_SKILLS_DIR", raising=False)
+    checks = run_checks(instance)
+    assert [s for s, c, _ in checks if c == "skills"] == [OK], detail_for(checks, "skills")
+    assert "valid" in detail_for(checks, "skills")[0]
+
+
+def test_a_malformed_skill_fails_the_skills_row(instance, monkeypatch, tmp_path):
+    skills = tmp_path / "skills"
+    _skill(skills, "hx-good", extra="metadata:\n  hx-audience: worker\n  hx-roles: \"*\"\n")
+    _skill(skills, "Bad--Name")                               # uppercase and a double hyphen
+    _skill(skills, "hx-mismatch")
+    (skills / "hx-mismatch" / "SKILL.md").write_text("---\nname: hx-other\ndescription: d\n---\nb\n")
+    _skill(skills, "hx-long", description="x" * 1025)          # description over 1,024
+    _skill(skills, "hx-big", body="y" * (32 * 1024 + 1))       # file over 32 KiB
+    _skill(skills, "hx-ext", extra="model: opus\n")            # not a portable field
+    _skill(skills, "hx-leaky", body="Then run `hx dispatch eng-002 goal.md` yourself.\n")
+    names = ["hx-good", "Bad--Name", "hx-mismatch", "hx-long", "hx-big", "hx-ext", "hx-leaky"]
+    (skills / "manifest.json").write_text(json.dumps({
+        name: {"audiences": ["worker"], "roles": ["*"], "optional": False}
+        for name in names if name != "Bad--Name"
+    }))
+    monkeypatch.setenv("HX_SKILLS_DIR", str(skills))
+    checks = run_checks(instance)
+    rows = [(s, d) for s, c, d in checks if c == "skills"]
+    assert rows and all(status == FAIL for status, _ in rows), rows
+    text = "\n".join(d for _, d in rows)
+    assert "Bad--Name: not in manifest.json" in text
+    assert "Bad--Name: name 'Bad--Name' must be 1-64 lowercase" in text
+    assert "hx-mismatch: name 'hx-other' does not match its directory" in text
+    assert "hx-long: description is 1025 characters" in text
+    assert "hx-big: SKILL.md is" in text and "32 KiB" in text
+    assert "hx-ext: non-portable field(s) model" in text
+    assert "hx-leaky: a worker carries it, and it names `hx dispatch`" in text
+    assert "hx-good" not in text
+
+
+def test_config_hx_json_skills_must_name_optional_shipped_skills(instance, monkeypatch):
+    monkeypatch.delenv("HX_SKILLS_DIR", raising=False)
+    hx_json = instance / "config" / "hx.json"
+    hx_json.write_text(json.dumps({**json.loads(hx_json.read_text()), "skills": ["hx-nope", "hx-worker"]}))
+    text = "\n".join(detail_for(run_checks(instance), "skills"))
+    assert "names `hx-nope`, which does not ship" in text
+    assert "names `hx-worker`, which is not optional" in text

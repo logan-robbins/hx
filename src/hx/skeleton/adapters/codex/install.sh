@@ -186,11 +186,10 @@ fi
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   # The Partner gets hx-partner and hx-fleet, a worker gets hx-worker, like the
-  # Claude adapter (spec 11, 12).
-  wants="hx-worker hx-memory"
-  [ "$id" = partner ] && wants="hx-partner hx-fleet hx-memory"
+  # Claude adapter (spec 11, 12): the manifest decides (src/hx/skills/manifest.json).
+  wants=$("$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id") ||
+    die "skill manifest: cannot select the skills for $id from $skills_src"
   for want in $wants; do
-    [ "$want" != hx-memory ] || [ -z "${HX_CONTINUITY_RUN:-}" ] || continue
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"

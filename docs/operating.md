@@ -210,3 +210,15 @@ The Partner's instructions live in two files you can read, and edit if you mean 
   world is.
 
 A persona edit takes effect at the next launch of that agent, not immediately.
+
+## Who can run what
+
+`hx help` prints the commands the caller's audience sees, and `hx help --all` prints every
+audience's list: from your shell (no `HARNESS_ID`) that is the operator view, inside the
+Partner's session the Partner's, inside a worker's session the worker's short list. The same
+table backs a refusal: a worker that runs a Partner or operator command (`hx dispatch`,
+`hx map publish`, `hx learn accept`, `hx compile`, `hx doctor`, …) gets `refuse:` and exit 1,
+and asks the Partner through `hx complete blocked|decision` instead. Which skills each home
+gets is `src/hx/skills/manifest.json`; an optional skill is turned on for an instance by
+naming it in `config/hx.json` `skills`; it reaches each home at that agent's next
+`hx launch`, which runs the adapter's `install.sh` (`hx restart` does not), and `hx doctor`'s `skills` row says which are on and whether every skill is well-formed.

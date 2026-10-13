@@ -697,7 +697,9 @@ def section_text(root: Path, item_id: str, stream: str, state: dict, *, fallback
 
     if not hits:
         return ""
-    lines = [f'Search more: `hx memory search "{query[:120]}" --all-roles`', ""]
+    # `--all-roles` is the Partner's (hx.cli.AUDIENCES); a worker's hint names only what it may run.
+    widen = " --all-roles" if item_id == "partner" else ""
+    lines = [f'Search more: `hx memory search "{query[:120]}"{widen}`', ""]
     for hit in hits:
         lines.append(
             f"- {hit['ts']} {hit['item']}/{hit['kind']} s={hit['score']:.2f}: "

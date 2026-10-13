@@ -35,9 +35,9 @@ again. `blocked`, `decision`, and `exhausted` run no checks and are the honest a
 (one file per category of mistake) is already in your system prompt, whole, at every start
 and after every compaction — never read those files. When a wrong assumption, a correction
 you had to make or a wasted cycle teaches you a rule, run `hx learn propose --category <c>
---signal … --check … --evidence …` the moment you understand it (`hx learn categories` lists
-the categories). Never edit the files: a different session reviews every proposal, which is
-what keeps each lesson one rule.
+--signal … --check … --evidence …` the moment you understand it (`hx learn classify --signal …
+--check …` ranks the categories for it). Never edit the files: a different session reviews
+every proposal, which is what keeps each lesson one rule.
 
 **What is not yours.** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
 `pods/` other than your own `-working` item, and `tasks.json` are managed by hx or belong to

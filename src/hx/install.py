@@ -18,6 +18,7 @@ what the test suites use.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -129,7 +130,15 @@ def entry_points() -> dict[str, str]:
 def write_hx_json(root: Path) -> dict[str, str]:
     """Record the entry points the adapters and hooks read (CONTRACTS.md, spec 17.1)."""
     recorded = entry_points()
-    store.atomic_write_json(root / "config" / "hx.json", recorded)
+    # The entry points are rewritten; anything else the instance records there (`skills`,
+    # `learnings`, `learnings_prefix`; CONTRACTS.md) survives a re-install.
+    path = root / "config" / "hx.json"
+    try:
+        kept = json.loads(path.read_text()) if path.is_file() else {}
+    except json.JSONDecodeError:
+        kept = {}
+    merged = {**kept, **recorded} if isinstance(kept, dict) else dict(recorded)
+    store.atomic_write_json(path, merged)
     link_bin(root, recorded)
     return recorded
 

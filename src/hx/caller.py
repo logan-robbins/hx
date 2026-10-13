@@ -19,13 +19,15 @@ def caller(env=None) -> str | None:
     return value or None
 
 
-def require_partner_caller(command: str, env=None) -> None:
-    """`hx dispatch`, `resume`, `bench`, `launch`, `restart` and `read` are the Partner's."""
+def require_partner_caller(command: str, env=None, *, owner: str | None = None) -> None:
+    """The whole Partner column of `hx.cli.AUDIENCES` is the Partner's (and the operator's,
+    who runs with no `HARNESS_ID`); `owner` words the refusal for an operator-only command."""
     who = caller(env)
     if who is not None and who != PARTNER:
         raise Refused(
-            f"refuse: `hx {command}` is the Partner's, and HARNESS_ID is `{who}`. "
-            f"A worker asks the Partner instead of dispatching for itself (spec 08)"
+            f"refuse: `hx {command}` is {owner or 'the Partner' + chr(39) + 's'}, and HARNESS_ID "
+            f"is `{who}`. A worker asks the Partner through `hx complete blocked|decision` "
+            f"instead of acting for itself (spec 08; `hx help` lists your commands)"
         )
 
 

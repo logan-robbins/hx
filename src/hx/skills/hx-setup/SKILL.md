@@ -1,6 +1,10 @@
 ---
 name: hx-setup
 description: How a coding agent or another harness installs hx on a machine and brings up an instance — prerequisites, the wheel install, `hx install` and its stop for the seed token (the human's own step), verification, the UI, handing over to the Partner, keeping it running, upgrading, and what never to do. Use when asked to set up, install, deploy, verify, upgrade or explain how to set up hx.
+metadata:
+  hx-audience: operator
+  hx-roles: none
+  hx-loads-when: installing hx on a machine and bringing up the Partner; never installed into a home
 ---
 
 # hx-setup

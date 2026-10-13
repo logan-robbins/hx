@@ -1,6 +1,10 @@
 ---
 name: hx-worker
 description: Operating manual for an hx HarnessAgent — read the context file once at every boundary, keep the work item's Tasks section current, commit as you go, use subagents, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, when spawning subagents, or when completing or failing a completion.
+metadata:
+  hx-audience: worker
+  hx-roles: "*"
+  hx-loads-when: starting or resuming under a /goal pointer, after a seam, completing or failing a check
 ---
 
 # hx-worker
@@ -64,7 +68,7 @@ skill for how to search further.
 
 ### 2. The goal
 
-`hx goal` pastes a fixed pointer into your pane:
+hx pastes a fixed pointer into your pane:
 
 ```
 /goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
@@ -212,7 +216,7 @@ move on and before you finish:
 ```bash
 hx learn propose --category <c> --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
 hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an existing rule already says it
-hx learn categories                                                         # the eleven kinds of mistake
+hx learn classify --signal "<what you saw>" --check "<the test>"            # which of the eleven kinds it is
 ```
 
 Every rule already in force is in your system prompt — the `hx:learnings` region of your

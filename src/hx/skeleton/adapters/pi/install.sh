@@ -118,8 +118,10 @@ PYEOF
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   mkdir -p "$home/skills"
-  for want in hx-worker hx-memory; do
-    [ "$want" != hx-memory ] || [ -z "${HX_CONTINUITY_RUN:-}" ] || continue
+  # The manifest decides (src/hx/skills/manifest.json, CONTRACTS.md).
+  wants=$("$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id") ||
+    die "skill manifest: cannot select the skills for $id from $skills_src"
+  for want in $wants; do
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"

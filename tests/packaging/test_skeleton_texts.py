@@ -358,7 +358,8 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
 
 
 def test_the_skills_that_ship_are_the_ones_the_spec_names():
-    assert sorted(p.name for p in SKILLS.iterdir()) == [
+    # `manifest.json` beside them says who gets each one (TOOL_SKILL_PLAN step 1).
+    assert sorted(p.name for p in SKILLS.iterdir() if p.is_dir() and p.name != "__pycache__") == [
         "hx-companion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup", "hx-worker",
     ], (
         "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
@@ -368,6 +369,7 @@ def test_the_skills_that_ship_are_the_ones_the_spec_names():
         "hx-setup is for the coding agent or harness that installs hx, and is never copied "
         "into an agent home"
     )
+    assert sorted(p.name for p in SKILLS.iterdir() if p.is_file()) == ["manifest.json"]
 
 
 def test_the_setup_skill_is_not_installed_into_any_home():

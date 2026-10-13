@@ -210,6 +210,12 @@ value ending in `.md` is the pre-directory layout and is refused), and `"learnin
 — the rule prefix letter(s) a proposal gets by default (default `L`).
 `HX_LEARNINGS` and `HX_LEARNINGS_PREFIX` in the environment override both.
 
+One optional key read by every adapter's `install.sh` (through `python -m hx.skill_manifest
+select`) and by `hx doctor`: `"skills"` — a list of the optional skill names this instance
+turns on, e.g. `"skills": ["hx-conversion"]`. Absent means none. A name that does not ship, or
+names a skill that is not `optional` in `src/hx/skills/manifest.json`, fails the doctor
+`skills` row. `hx install` rewrites only the three entry points and keeps every other key.
+
 ## `hx learn` (central learnings)
 
 The directory holds one file per fixed category — `orientation`, `ownership`, `planning`,
@@ -556,9 +562,57 @@ lines. `list` prints `<ts> <id> <role> <kind> seq=<n> <stream>[ <outcome>]`, new
 chromadb missing or unopenable: one `hx: memory: <reason>` line on stderr, exit 2.
 
 `hx compose` adds section **Memory episodes** after **Step state**, source
-`state/memory/chroma`, body `Search more: \`hx memory search "<query>" --all-roles\`` then one
+`state/memory/chroma`, body `Search more: \`hx memory search "<query>"\`` (with ` --all-roles` in
+the Partner's file only: the flag is the Partner's, `hx help`) then one
 `- <ts> <id>/<kind> s=<0.xx>: <document>` line per hit, truncated to
 `companion.memory_episode_chars`. Any failure is the single line
 `_memory unavailable: <reason>_`. `companion.memory_inject_k: 0` removes the section entirely;
 the other two fields are `memory_episode_chars` (default 700) and `memory_half_life_h`
 (default 24).
+
+## `hx help [--all | --audience A] [--json]` (exposure)
+
+`hx.cli.AUDIENCES` is the one table of who sees what (TOOL_SKILL_PLAN §Inventory): columns
+`operator`, `partner`, `worker`, `subagent`, `companion` (empty) and `runtime` (never listed or
+gated), each a set of `command`, `command sub` or `command sub --flag` entries. The audience
+is `operator` with no `HARNESS_ID`, `partner` for `HARNESS_ID=partner`, `companion` when
+`HX_ROLE=companion`, else `worker`. `hx help --json`:
+
+```json
+{"audience": "worker", "caller": "eng-001", "role": "backend-engineer",
+ "commands": ["code search", "complete", "learn propose", "memory search", "task", "…"]}
+```
+
+`hx help --all --json` is `{"audiences": {"operator": [...], "partner": [...], "worker": [...],
+"subagent": [...], "companion": []}}`, each list sorted. Text output is one header line, then
+one `  <command>  <sub> | <sub>` line per command family. `hx --help` prints the usage text
+for the operator and the Partner, and the worker view for any other `HARNESS_ID`.
+
+Authority backs it: before dispatch, a caller whose `HARNESS_ID` is set and is not `partner`
+is refused (exit 1, `refuse: \`hx <entry>\` is the Partner's|the operator's, and HARNESS_ID is
+\`<id>\`…`) every entry outside `worker ∪ subagent ∪ runtime`. `plan audit|finish|materialize`
+defer to planning's own-assignment check; an unknown subcommand of a family with a worker
+entry is left to that command's argparse.
+
+## `src/hx/skills/manifest.json` (skill manifest)
+
+```json
+{"hx-worker": {"audiences": ["worker"], "roles": ["*"], "optional": false},
+ "hx-memory": {"audiences": ["partner", "worker"], "roles": ["*"], "optional": false, "planned": false}}
+```
+
+One row per shipped skill directory, keyed by its name: `audiences` (non-empty, from
+`operator|partner|worker|subagent|companion`), `roles` (`"*"` or `harness.json` role names; `[]`
+installs nowhere), `optional` (installed only when `config/hx.json` `skills` names it), and
+optional `planned` (default `true`; `false` keeps it out of a planned `HX_CONTINUITY_RUN`
+home). `python -m hx.skill_manifest select --skills DIR --root ROOT --id ID [--companion]`
+prints the names one home receives, one per line, in manifest order; every adapter's
+`install.sh` copies exactly those (exit 2 and no install on an invalid manifest). The
+`skills` row of `hx doctor` checks the manifest against the directories, each `SKILL.md`
+against the Agent Skills rules (name 1–64 lowercase letters, digits and single hyphens,
+equal to the directory; description 1–1,024 characters; only `name`, `description`,
+`license`, `compatibility`, `metadata`, `allowed-tools`; values plain YAML scalars; file ≤32
+KiB) and lints that no skill a worker or subagent carries names an `hx` command a worker is
+refused. One `ok` line: `<n> skill(s) valid (frontmatter, size, worker lint); <k> over the 8
+KiB facade bound; optional on: <names|none>`; otherwise one `fail` line per problem.
+hx's skills carry `metadata: {hx-audience, hx-roles, hx-loads-when}`.
