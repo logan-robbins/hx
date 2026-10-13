@@ -1,10 +1,10 @@
 ---
 name: hx-partner
-description: Operating manual for the hx Partner — write a goal file, create and launch a worker, dispatch, act on completion states, resume or bench by outcome, and report to the human in chat. Use when writing a goal, creating or dispatching a worker, acting on a completion, or answering the human about the fleet.
+description: Operating manual for the hx Partner — search the code graph and fleet memory before writing a goal, write the goal file with its graph lint lines, create and launch a worker, dispatch, run a programme of units through the assignment ledger (hx plan), act on completion states, review proposed learnings, resume or bench by outcome, and report to the human in chat. Use when writing a goal, creating or dispatching a worker, planning several dependent units, acting on a completion, or answering the human about the fleet.
 metadata:
   hx-audience: partner
   hx-roles: partner
-  hx-loads-when: writing a goal, dispatching, acting on a completion, answering the human
+  hx-loads-when: writing a goal, dispatching, planning dependent units, acting on a completion, answering the human
 ---
 
 # hx-partner
@@ -42,6 +42,41 @@ you, and running it again is the Partner's version of re-reading a file the work
 already covers.
 
 Your persona is in your system prompt, so never read a file to find out who you are.
+
+## Before you write a goal
+
+Three lookups, in this order, before the paragraph. Each is one bounded call; none is a
+browse.
+
+1. **What the fleet already knows.** `hx memory search "<the area>" --all-roles`: half-done
+   work, a blocker someone already hit, a fact worth putting in the goal so the next worker does
+   not rediscover it. The `hx-memory` skill has the flags.
+2. **What the code already has.** The instance keeps one code graph for every repository it
+   works on, rebuilt by the operator's post-merge hook and refreshed with each completion's
+   changed paths. Ask it before you name a deliverable, so the goal reuses an existing type
+   instead of minting a second one:
+
+   ```bash
+   hx code stats                                    # namespaces, indexed heads, coverage, extractors
+   hx code type OrderRepository --expect exists     # the declaration: path, line, signature
+   hx code contract IOrderRepository                # published interfaces, in every namespace
+   hx code precedent AddScoped --language csharp    # a verbatim usage to point the worker at
+   hx code callers Add --count                      # fan-in: how risky a signature change is
+   hx code tests-for src/OrderRepository.cs         # the test boundary the goal should extend
+   ```
+
+   Every answer is capped JSON that names its `lane`, `extractor`, `anchor_sha` and `stale`. A
+   stale row means the index is behind the tree; `hx code index --repo <workdir>` is the
+   rebuild, and the command a freshness refusal names. `--owners` adds the worker holding a
+   lease on the path. When you are deciding how to cut a large area, `hx code submaps --focus
+   src` proposes candidate feature boundaries (member files, boundary edges, modularity against
+   the directory layout); they are proposals to read, never scope on their own. `hx code
+   contracts --register FILE` and `hx code import` are yours alone: publishing interface
+   records and loading an external analyser's graph are planning acts.
+3. **How hard it will be to start.** `hx discipline orient --goal /tmp/goal-be-001.md`
+   estimates the orientation load from the files the goal names, the candidates the graph
+   finds for its terms, and the goal's size. A broad reading is your decomposition failure,
+   not the worker's slowness: split the goal, or name the starting files and symbols in it.
 
 ## The goal file
 
@@ -95,14 +130,31 @@ Write checks that fail on work that looks finished but is not. When nothing is e
 check the deliverable exists and is not empty: `test -s report.md`. An empty block is refused
 at dispatch.
 
+Three graph lines belong in most blocks, with `REPO_ID` bound to the product's indexed
+namespace (`hx code stats` lists them); `templates/goal.md` shows the shape:
+
+```bash
+hx code type OrderCache --namespace REPO_ID --expect absent              # no second interface
+hx code tests-for src/Orders/Repository.cs --namespace REPO_ID --expect exists   # a test boundary exists
+hx code fresh src/Orders/Repository.cs --namespace REPO_ID --expect fresh        # the write scope is indexed at HEAD
+```
+
+Each exits 3 when its expectation fails, so a duplicate interface, a missing test or a stale
+scope fails `hx complete done` mechanically instead of surfacing at review. Name the concrete
+interface, test path and write scope: a lint on a name the worker never touches checks
+nothing. `hx code contract NAME --expect absent` is the same lint for a published interface,
+and `hx discipline pull --repo . --expect fresh` the same shape for "pulled the principal
+branch". The worker is told never to weaken one of these lines; if one fails, the plan was
+wrong, and that is yours.
+
 ## Creating a worker
 
 A fresh instance has one agent: you. Every other id is one you make.
 
 1. Copy `templates/worker/` to `config/<id>/`, where `<id>` is `<pod>-NNN` — `be-001`,
    `fe-001`, `rel-001`.
-2. Replace `{{id}}` and `{{pod}}`. Set `role` to `backend-engineer`, `frontend-engineer` or
-   `release-engineer` — each has a `companion/roles/<role>.md`, and a role without one is
+2. Replace `{{id}}` and `{{pod}}`. Set `role` to `backend-engineer`, `frontend-engineer`,
+   `release-engineer` or `qa-engineer` — each has a `companion/roles/<role>.md`, and a role without one is
    refused. Set `workdir` to the **absolute path of a directory that already exists**: a
    checkout the human named, or one you create. hx creates no repository, no branch and no
    worktree; the directory is yours to choose and nobody's to clean up. Set `flavor` to
@@ -166,6 +218,12 @@ hx read <id> --full    # the whole body
 hx recall QUERY        # LAST RESORT file-memory search over completed Work Items
 hx doctor             # what is here, what is missing, what is broken
 hx memory stats       # the episode store: how many episodes, by role and kind, and the queue
+hx metrics --commands # which hx commands each agent actually ran since its dispatch: the evidence
+                      #   for giving a worker a command, and for taking one away
+hx cache report [ID]  # the invariant prefix (persona, CLAUDE.md, learnings, skill descriptions)
+                      #   against the model's budget, and whether the provider cache is warm
+hx code stats         # the code graph: namespaces, indexed heads, coverage, detected extractors
+hx help               # your column; `hx help --all` every audience's; `hx <command> --help` one
 ```
 
 Two questions `hx show <id> --json` answers that nothing else does. **Is the Companion doing
@@ -236,6 +294,11 @@ is in every agent's system prompt (yours too) from its next launch, so a rule yo
 is in force fleet-wide tomorrow without anyone being told. Wakes of the form
 `learnings pending: <n>` come from `hx heartbeat` for the same reason.
 
+`hx complete` also asks the never-twice question on the worker's behalf: when a check fails,
+the failure is matched against the rules already in force (`hx learn repeat`) and the match
+is recorded (`learn_repeats` in `hx metrics`). A repeat of an accepted rule means its Check
+belongs in the next goals' `### Checks` as a lint line, not in another sentence of prompt.
+
 | Outcome | What it means | What you do |
 |---|---|---|
 | `done` | Checks passed, workdir clean, no open subagent stream | Dispatch whatever it unblocks. `hx bench <id>` when you want the id for something else |
@@ -273,6 +336,51 @@ everything the agent learned.
 A dead session, or a `working` item whose pane is gone: `hx restart <id>`. It flushes the
 Companion, recomposes the context file, relaunches the pane bare, and re-sends the goal.
 
+## Planned runs: the assignment ledger
+
+Goal files are the simple path: one worker, one goal, and your judgement sequences the rest.
+For a programme of units with real dependencies — several workers in worktrees of one
+repository, interfaces others must build against, integration steps — hx has a second path:
+a plan the ledger enforces. The plan is a JSON task graph (`docs/planning-runtime.md` has the
+schema and bounds). Each unit names its `behavior`, `acceptance`, `workdir`, frozen
+`write_paths`, `map_inputs` from the application map, `checks` as exact recipes, versioned
+`outputs`, and `prerequisites` on other units' outputs.
+
+```bash
+hx map plan-context --repo WT --snapshot SNAP --goal goal.md     # the brief: responsibilities, anchors, contracts, owners
+hx plan draft --file goal.md --repo WT --snapshot SNAP --out plan.json   # reuse known paths, contracts, check commands
+hx plan validate --file plan.json     # waves, level_widths, max_parallelism, interface_warnings; refuses a stale scope
+hx plan apply --file plan.json        # records the revision
+hx plan ready PLAN                    # which units can be admitted now, and why the others cannot
+hx plan assign TASK --revision R --worker be-001    # takes the leases; the root service launches the worker
+hx loop --status                      # owners, progress, blockers, changed inputs, without reading logs
+hx plan finish RUN --file receipts.json             # or: hx plan stop RUN
+hx plan replan PLAN --out plan.json   # after a changed contract: revised bindings, then validate and apply
+```
+
+What the ledger does for you, and what it will not:
+
+- **Admission is a gate.** A unit is assigned only with current map inputs, a clean committed
+  worktree, proven prerequisites, free write leases and a fresh graph scope. A refusal names
+  the fix, including the `hx code index --repo` rebuild.
+- **Leases are the ownership.** One active assignment per worktree; overlapping `write_paths`
+  conflict across branches and plans; a write outside scope pauses the run until you stop or
+  reconcile it. `--owners` on any graph query shows who holds what.
+- **Parallelism is read, not guessed.** Dispatch no more units than `max_parallelism`, free
+  leases and the host allow. Heed `interface_warnings`: when a consumer builds on another
+  unit's source, split an interface or stub unit ahead of it so the contract is committed and
+  searchable (`hx code contract`, and `hx code contracts --register FILE` once published)
+  before the implementation lands.
+- **Completion is receipts.** The worker commits its declared outputs and runs `hx complete
+  done`; the runtime runs the assigned checks, publishes the outputs, refreshes the graph for
+  the changed paths and releases the leases, atomically. A producer's output reaches a consumer
+  only through an explicit integration unit (`hx plan materialize`). Under a run a worker
+  cannot complete `blocked` or `decision`: those arrive as `hx progress` blockers, and you
+  stop or replan the unit.
+- **Planned workers have no episode memory.** `hx memory` and `hx recall` are refused under a
+  run; what a unit needs travels in its packet. A worker that had to search for a fact the
+  packet should have carried found a packet defect: record it, do not call it diligence.
+
 ## What never to do
 
 - Tell the human to run an hx command.
@@ -289,3 +397,5 @@ Companion, recomposes the context file, relaunches the pane bare, and re-sends t
   Above the header, edit freely to improve efficiency; `hx compile` distributes the base
   at the next `hx restart` or launch and preserves the worker's memory.
 - Report a dispatch as a result. A dispatched item is not a delivered one.
+- Weaken, drop or move a graph lint line (`--expect`) so a check passes. A duplicate interface
+  or a stale scope is a planning fact to act on, and the worker is told the same.

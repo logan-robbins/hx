@@ -101,3 +101,16 @@ then verify against the tree before you act on it.
 
 It is also not your own memory. What you want to carry into your *next* task goes below
 `## UPDATES BELOW ONLY` in your `AGENTS.md`, as always.
+
+## Two places it does not reach
+
+**The code itself.** Whether a type exists, what its signature is, who calls it, which tests
+cover a path: those are facts about the tree, and the code graph answers them exactly —
+`hx code type|signature|callers|tests-for|precedent` (the `hx-worker` skill, "Search before
+you build"). Memory holds what agents *did*; the graph holds what the repository *is*. Ask the
+graph first for code, memory first for history.
+
+**A planned run.** Under `HX_CONTINUITY_RUN`, a unit assigned through the ledger rather than a
+goal file, `hx memory` and `hx recall` are refused: the unit's packet carries what it needs, and
+a fact it had to search for is a packet defect to report. This skill is not installed into a
+planned home for the same reason.

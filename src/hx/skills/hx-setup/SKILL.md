@@ -60,6 +60,12 @@ missing credentials fall back to that file: `ANTHROPIC_API_KEY` (also the legacy
 `ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
 credentials under `seed/` take precedence.
 
+Optional, for the code graph: `universal-ctags` (the `ctags` that ships with macOS is BSD
+ctags and is refused), the `tree-sitter` CLI with grammar checkouts named in
+`HX_TREE_SITTER_GRAMMARS`, and SCIP indexers with the `scip` CLI. None is required: hx's own
+extractors cover Python, C#, TypeScript/JavaScript, Go, Rust and Software AG Natural, and
+`hx code stats` reports which optional tools were detected. Nothing is vendored.
+
 ## 2. Install the package
 
 From a checkout of the repository:
@@ -123,7 +129,8 @@ Then run the install again:
 hx install --root ~/hx
 ```
 
-This time it pins the `claude` binary and version it found, lays out the instance (`config/`,
+This time it records the `claude` binary and version it found (`config/claude.json`,
+re-recorded at every launch), lays out the instance (`config/`,
 `templates/`, `personas/`, `companion/`, `pods/`, `run/`, `state/`, `logs/`, `seed/`), launches
 the Partner in tmux session `partner`, and starts the UI in tmux session `ui`. It is
 idempotent: running it again adds missing skeleton files and keeps existing files, including
@@ -150,6 +157,9 @@ Every line should be `ok`. The ones that matter most:
   the launcher not yet having exec'd `claude`; wait a few seconds and look again. One that
   persists is real.
 - A `models` row saying the shipped `config/models.json` validates.
+- A `skills` row: every packaged skill is well-formed, and which optional ones (`config/hx.json`
+  `"skills"`) are on. A `skills-isolation` warning names a checkout or a `~/.agents/skills`
+  whose skills could load into a worker; report it, delete nothing.
 
 Then:
 
@@ -213,6 +223,18 @@ HARNESS_ROOT=~/hx hx up        # hx launch for every config/<id>/, Partner first
 If the human wants unattended recovery, they put `hx heartbeat` in their own cron; it restarts
 dead sessions and wakes the Partner when the board moved. Offer it; do not install it for them.
 
+The code graph is derived state under `<root>/state/code-index/`, never in a checkout. Each
+worker completion refreshes the paths it changed; the one full rebuild is the installed hook,
+which the human wires into their repository's post-merge hook or job:
+
+```bash
+HARNESS_ROOT=~/hx HX_BIN="$(command -v hx)" HX_CODE_REPO=/path/to/repo ~/hx/bin/code-index-post-merge
+```
+
+`HX_CODE_REPO` defaults to the repository the hook runs in; `HX_CODE_INDEXER_CHECKOUT` names a
+separate clean checkout to opt into the resolved (SCIP) lane when an indexer is installed.
+Offer the hook and the line above; do not edit their repository's hooks yourself.
+
 ## 8. Upgrading
 
 ```bash
@@ -220,9 +242,12 @@ uv tool upgrade hx-harness          # or reinstall the new wheel
 HARNESS_ROOT=~/hx hx install --root ~/hx
 ```
 
-Running sessions keep the code and skills they launched with until restarted, deliberately:
-a restart mid-turn throws that turn away. The Partner restarts its workers (`hx restart <id>`)
-when it is ready; the UI is restarted by ending tmux session `ui` and running `hx up`.
+Running sessions keep the code and skills they launched with, deliberately: a restart mid-turn
+throws that turn away. `hx restart <id>` relaunches the pane on the upgraded package but does
+not rewrite the home; hooks and skills are written by the adapter's `install.sh`, which runs
+at `hx launch` (and so at `hx up`) and not at restart. The Partner restarts its workers when
+it is ready, and ends and re-launches an idle worker's session when a skill or hook changed;
+the UI is restarted by ending tmux session `ui` and running `hx up`.
 
 ## 9. tmux, precisely
 
@@ -247,6 +272,27 @@ Install and verify all of them before approval, and give every Partner persona a
 key per instance: several Partners on a few OAuth seats hit usage limits within the hour, and a
 pane frozen by a limit hangs `hx restart`. The procedure, the recovery and the product-repository
 rules are in `docs/multi-instance.md`.
+
+## 11. What only the operator runs
+
+`hx help` from your shell (no `HARNESS_ID`) prints the operator column; `hx help --all` prints
+every audience's. Besides install, up, doctor, ui, heartbeat and archive:
+
+- `hx models [--provider P] [--expect current]`: each provider's live model list, diffed against
+  `config/models.json` and `docs/models.md`; `unverified` for a provider with no key (Anthropic,
+  on an OAuth seed); exit 3 with `--expect current` when a configured id is stale or its window
+  is too large. It writes nothing; the human edits the registry.
+- `hx metrics --commands`: which `hx` commands each agent actually ran since its dispatch, the
+  evidence for adding a worker command or removing one. `hx cache report [ID]`: each agent's
+  invariant prompt prefix against its model's budget.
+- `hx learn check|path|categories|invariant`: lint the `LEARNINGS/` files and say where they
+  live. The Partner reviews proposals; the operator only checks the files.
+- `hx cache assess|budget` and `hx memory index`: cache arithmetic and a forced episode reindex.
+- `config/capabilities.json`: the MCP servers (`"servers": {NAME: {"command": [...]}}`) and
+  operator skills (`"skills": {NAME: "/abs/SKILL.md"}`) workers may reach through `hx tools`;
+  the Partner's `hx tools index` records each server's protocol version. `config/hx.json`
+  `"skills": ["hx-conversion"]` turns an optional packaged skill on for the instance; it reaches
+  each home at that agent's next `hx launch`.
 
 ## Never
 

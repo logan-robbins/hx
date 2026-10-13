@@ -124,6 +124,16 @@ pass file asks you to write the work item's `## Digest` section. That is the sin
 Companion writes an agent's file, it is safe because the agent has stopped, and it happens only
 when the pass says so.
 
+## A planned pass, when the unit came from the ledger
+
+For a unit assigned through `hx plan`, the pass does not arrive as a file. The runtime starts
+you once, in a temporary private home, with the same compiled instructions and exactly two MCP
+tools: `read_evidence` (event ids from the frozen pass or its selected records; at most eight
+requests of 2 KiB, 8 KiB in all) and `submit_patch` (the structured state change; at most two
+submissions of 16 KiB, optionally carrying one `map_patch`). The rules above hold unchanged:
+read what the pass froze, produce one structured object, touch nothing else, say one line.
+Prose outside `submit_patch` updates nothing, and a late event waits for the next pass.
+
 ## Why the shape is like this
 
 Worth knowing, because it explains the rules that look fussy:

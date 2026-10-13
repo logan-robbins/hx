@@ -1,10 +1,10 @@
 ---
 name: hx-worker
-description: Operating manual for an hx HarnessAgent — read the context file once at every boundary, keep the work item's Tasks section current, commit as you go, use subagents, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, when spawning subagents, or when completing or failing a completion.
+description: Operating manual for an hx HarnessAgent — read the context file once at every boundary, search the code graph and memory before building, keep the work item's Tasks section current, commit as you go, keep large outputs out of context (hx exec, content, sift, tool-exec, tools), use subagents, report typed progress in a planned run, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, before writing new code, when a command's output is large, when spawning subagents, or when completing or failing a completion.
 metadata:
   hx-audience: worker
   hx-roles: "*"
-  hx-loads-when: starting or resuming under a /goal pointer, after a seam, completing or failing a check
+  hx-loads-when: starting or resuming under a /goal pointer, after a seam, before new code, completing or failing a check
 ---
 
 # hx-worker
@@ -85,7 +85,51 @@ A `/goal` keeps you working past the end of a turn: after each turn an evaluator
 not yet met / impossible. It reads tool results, so the proof of completion is a line hx
 prints, not anything you claim.
 
-### 3. `## Tasks` is yours, and it is what survives
+### 3. Search before you build
+
+The instance keeps a code graph of every repository it works on (`hx code`), an exact-text
+store of docs and large outputs (`hx content`), and the fleet's episode memory (`hx memory`,
+§6). Reading a file to edit it is fine; reading to explore goes through them. A recursive grep
+or find over the tree, or a whole-file read of a large file, is a rule violation here, not a
+style choice.
+
+Before you write a type, function, service or interface, ask whether it already exists:
+
+```bash
+hx code type OrderRepository --expect exists        # the declaration: path, line, signature
+hx code signature Namespace.OrderRepository.Add     # the exact header, whitespace-normalised
+hx code callers Add --count                         # fan-in before you change a signature
+hx code tests-for src/OrderRepository.cs            # the tests that already cover a path
+hx code conform IOrderRepository                    # implementations, their tests, member diffs
+hx code precedent AddScoped --language csharp       # a verbatim snippet of an existing usage
+hx code contract IOrderRepository                   # a published interface, in every namespace
+hx code search "integration event" --sift "Does this publish integration events?"
+hx code map --budget 5000 --focus src/Orders/       # one ranked orientation map before the first edit
+```
+
+Every answer is JSON, capped (`--limit`, default 20), and names its provenance: `lane`
+(`resolved`, `syntax`, `text` or `imported`), `extractor`, `anchor_sha` and `stale`. A stale
+row is shown, not hidden — read the path at its current head before you trust it.
+`--namespace REPO_ID` picks one repository when a name exists in several; `--owners` adds the
+worker currently holding a lease on the path. Reuse the path and declaration the graph gives
+you, and ask another scoped question only for a fact you still lack. A graph hit is a
+candidate fact and a Jev score is a ranking: neither validates an application-map relation
+or completes your goal, and nothing here replaces running the code.
+
+`--expect exists|absent|one|clean|fresh` turns any query into a lint: exit 0 when the
+expectation holds, 3 when it does not, 2 on a usage error. The Partner puts such lines in
+your `### Checks` — no second interface (`hx code type NAME --expect absent`), a test boundary
+(`hx code tests-for PATH --expect exists`), fresh write scope (`hx code fresh PATH --expect
+fresh`). They run at `hx complete done`, and you never remove or weaken one; if a duplicate
+name is the problem, rename onto the existing declaration. You never index: the graph is
+rebuilt after each merge by the operator's hook and refreshed with your changed paths when
+you complete.
+
+For words rather than code — a spec, a vendor page, a design note — `hx content search
+"cleanup pattern"` finds indexed text, and `hx content fetch URL --source NAME` indexes a page
+and returns a preview, never the page.
+
+### 4. `## Tasks` is yours, and it is what survives
 
 The Work Item body is your running task list. You own `## Tasks`, `## Deliverables`,
 `## Commands`, and `## Open decision`; hx owns the filename state and the `## Goal` section.
@@ -99,7 +143,7 @@ The Work Item body is your running task list. You own `## Tasks`, `## Deliverabl
 `## Tasks` is what your context file carries back to you after a seam. A stale `## Tasks` is
 the single most expensive mistake available to you here.
 
-### 4. Commit as you go
+### 5. Commit as you go
 
 Commit each finished sub-task immediately, with a message that says what it does. `git log
 --oneline` is your memory of what is done, and your Companion records the commit sha on the
@@ -115,7 +159,7 @@ checkout somebody already had. If it is a git repository, `hx complete done` req
 and that is the only git hx ever runs. Branching, pushing and merging are yours and the
 human's, not the harness's.
 
-### 5. Read a file once
+### 6. Read a file once
 
 If you are opening a file a second time, the note you should have written the first time is
 missing. Write it now, in `## Tasks` next to the task that needed it. Your Companion keeps
@@ -134,7 +178,7 @@ to spend ten Reads learning, or found out why the obvious approach does not work
 `hx-memory` skill has the flags, `--all-roles` among them; load it when you need more than the
 one-line form above.
 
-### 6. Subagents
+### 7. Subagents
 
 Use them freely, for bounded separable pieces: a survey, an independent module, a test pass.
 
@@ -163,7 +207,7 @@ The boundary line names the read tool this session actually has: `Read` on Claud
 
 `hx complete` refuses while any subagent stream is still open, so let them finish.
 
-### 7. What happens at the end of every turn
+### 8. What happens at the end of every turn
 
 You will not see any of this, but it explains the shape of the rest.
 
@@ -176,7 +220,7 @@ never ends is a seam never taken and a goal never delivered. And **background wo
 seam**, not forever, but a seam is only taken when nothing is running, so leaving background
 tasks alive across many turns keeps pushing it out.
 
-### 8. Seams, and the Companion that makes them cheap
+### 9. Seams, and the Companion that makes them cheap
 
 Your conversation will be cut and rebuilt. That is a **seam**: `/clear`, then the same boundary
 you started at — the hook line, one Read, and your `/goal` again. It happens at a turn boundary
@@ -205,9 +249,9 @@ the waste, that is the system working.
 
 You do not trigger a seam, you do not prevent one, and you will not notice it happening — you
 will simply find yourself at step 1 again. It costs nothing if `## Tasks` is current and your
-work is committed. Everything in sections 3, 4 and 5 exists for this moment.
+work is committed. Everything in sections 4, 5 and 6 exists for this moment.
 
-### 9. When something trips you up
+### 10. When something trips you up
 
 A wrong assumption, a correction a reviewer had to make, a wasted build cycle, a gate that
 passed on a subset — the moment you understand what happened, propose the rule, before you
@@ -228,7 +272,7 @@ lesson one rule. Signal is what the next agent will *see*; Check is something a 
 reviewer can decide; the one-off detail goes in Evidence and nowhere else. A proposal that is
 a story rather than a rule gets rejected with a reason you will be shown.
 
-### 10. Finishing
+### 11. Finishing
 
 ```bash
 hx complete done        # checks run, workdir must be clean, no open subagent stream
@@ -252,7 +296,7 @@ not prose — the Digest your Companion writes is file memory for last-resort re
 report you must compose. Put remaining how-to-reproduce facts in `## Open decision` only
 when blocked or deciding; otherwise finish.
 
-### 11. `HX-CHECK-FAILED`
+### 12. `HX-CHECK-FAILED`
 
 `hx complete done` is machine-checked. If a check exits non-zero, the workdir is dirty, or a
 subagent stream is open, it prints:
@@ -271,7 +315,7 @@ many times as it takes.
 Do not edit the `### Checks` block to make it pass — it is in `## Goal`, it is the Partner's,
 and `hx complete` runs the copy in `tasks.json`, not the one in your file.
 
-### 12. When `done` is not available
+### 13. When `done` is not available
 
 `blocked`, `decision`, and `exhausted` run no checks. They are honest answers and using one is
 better than forcing a `done` that is not true.
@@ -286,6 +330,67 @@ better than forcing a `done` that is not true.
 All three keep everything: your `## Tasks`, your step state, your memory, your workdir, your
 logs. The Partner resumes you with an addendum appended to your goal, and you pick up exactly
 where you stopped. You are not restarted.
+
+## The tools that keep your context small
+
+No raw payload over about 5 KB belongs in your context; what you need from it is retrieved
+exactly, on demand. Two of these work anywhere. The rest exist only inside a planned run
+(`HX_CONTINUITY_RUN`, next section), because the ledger holds the events they refer to.
+
+Anywhere:
+
+- **`hx exec`** programs the analysis instead of reading the data: `hx exec --language python
+  --code "..."` runs in a disposable directory and returns stdout only; `hx exec file big.log
+  --language python --code "print(FILE_CONTENT.count('ERROR'))"` hands the file's bytes to the
+  program without putting them in front of you; `hx exec batch --file commands.json --queries
+  "failing tests,HTTP 500"` runs labelled shell commands, indexes every output and answers the
+  queries in one call. Output over 100 KB always comes back as an index pointer.
+- **`hx sift triage --file failed-output.txt`** asks the decision model (Jev) for a tentative
+  failure category and which candidate checks to run first; `hx sift candidates --question
+  "..." --file candidates.json` ranks a bounded set you nominated. Advisory only: a score never
+  establishes absence, validates an edge or completes a task, and a provider failure hands
+  your candidates back unsifted rather than guessing.
+
+In a planned run:
+
+- **`hx tool-exec --request ID -- CMD`** runs a command whose output may be large — a test
+  suite, a build — inside your assignment and captures it (1 MiB per run, 16 MiB per task).
+  You get a bounded verdict and event ids; `hx evidence EVENT_ID --offset 8000 --limit 8000`
+  pages the captured text when one part matters. The same `--request` id with the same command
+  returns the earlier result instead of running twice; the same id with a different command is
+  refused, so use a fresh id per distinct run.
+- **`hx tools`** is the facade over the MCP servers and operator skills registered in the
+  instance's `config/capabilities.json`: `hx tools discover --query lint` lists matches,
+  `hx tools load ID` brings one tool's schema (or a skill's body, up to 8 KiB) into reach,
+  `hx tools call mcp:project:NAME --request lint-1 --input input.json` runs it with bounded
+  arguments and a bounded response, and `hx tools status` shows what is loaded. Nothing is
+  loaded until you ask, so the facade costs no prompt tokens until you use it.
+
+## When your assignment came from the ledger
+
+Some work reaches you not as a goal file but as a planned unit: the Partner validated a plan
+with `hx plan`, the ledger assigned you one behaviour unit and took leases on its paths, and
+the runtime launched you with `HX_CONTINUITY_RUN` set. The packet you read at the boundary
+then carries the unit's `behavior` and `acceptance`, your `workdir`, the exact `write_paths`
+you hold, the `checks` the runtime will run and the `outputs` you must commit. Three things
+differ from a goal-file dispatch:
+
+- **Progress is typed.** `hx progress --file /tmp/progress.json` submits a sparse update: the
+  step you closed and the one now active (one active at a time), the exact `next` action, a
+  `blocker` or `null`, the deliverable paths you declare, cited evidence ids — with the
+  `expected_revision` the previous call returned (`hx progress --run RUN` reads it). These are
+  claims; receipts come from the runtime's checks, not from you.
+- **Scope is enforced.** A write outside `write_paths` pauses the run and keeps your leases;
+  reporting progress does not clear it. Put what you needed to change, and why, in the
+  `blocker`, and the Partner revises the plan. `hx complete blocked|decision` is refused under
+  a run for the same reason: blockers and decisions are progress, and the Partner stops the
+  unit.
+- **Memory is off.** `hx memory` and `hx recall` are refused in a planned run; the packet, its
+  map inputs and `hx evidence` are your sources, and a fact the packet should have carried is
+  a packet defect to report, not something to go searching for. `hx complete done` is still
+  your last action: it requests completion, you end the turn, and the runtime runs the
+  assigned checks, drains the Companion and publishes the unit. `hx plan audit|finish|
+  materialize` accept only your own run.
 
 ## What is not yours
 
@@ -302,20 +407,35 @@ item corrupts a running agent's memory, silently, and nothing will tell either o
 Your own files are your `workdir`, your `-working` work item, and your `AGENTS.md` below the
 header. That is the whole list.
 
-You run, for yourself: `hx task`, `hx complete`. That is also the whole list.
+You run, for yourself: `hx task`, `hx complete`, and `hx progress` in a planned run. That is
+also the whole list.
 
 ## One example per command
 
-Those two act on your own record. The rest of your `hx help` column reads, searches and records,
-and each one's `--help` ends with the same example as here:
+Those act on your own record. The rest of your `hx help` column reads, searches and records, and
+each one's `--help` ends with the same example as here (the `hx code` family prints plain
+argparse usage instead; its flags are the same on every query):
 
 ```
 hx task                                          # your own Work Item
 hx complete done                                 # runs your checks
 hx progress --file /tmp/progress.json            # planned runs: a sparse update
-hx tool-exec --request tests-1 -- python3 -m pytest -q
-hx evidence EVENT_ID --offset 8000 --limit 8000  # the next page of a captured output
-hx tools discover --query lint                   # then: hx tools load ID
+hx code type OrderRepository --expect exists      # the declaration: path, line, signature
+hx code signature Namespace.OrderRepository.Add
+hx code callers Add --count
+hx code register IOrderRepository
+hx code tests-for src/OrderRepository.cs --expect exists
+hx code conform IOrderRepository --expect clean
+hx code precedent AddScoped --language csharp
+hx code contract IOrderRepository --expect absent
+hx code search "integration event" --sift "Does this publish integration events?"
+hx code symbols 'RUN.CHECK-INPUT'                 # Natural and other case-folded names
+hx code impact src/OrderRepository.cs             # symbols, referencing files, candidate tests
+hx code edges src/OrderRepository.cs              # candidate import, call, implements and tests edges
+hx code map --budget 5000 --focus src/OrderRepository.cs
+hx tool-exec --request tests-1 -- python3 -m pytest -q   # planned run
+hx evidence EVENT_ID --offset 8000 --limit 8000  # planned run: the next page of a captured output
+hx tools discover --query lint                   # planned run; then: hx tools load ID
 hx tools call mcp:project:NAME --request lint-1 --input input.json
 hx tools status
 hx exec --language python --code "print(1)"

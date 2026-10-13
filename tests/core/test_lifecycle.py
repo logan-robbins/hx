@@ -179,6 +179,16 @@ def test_launch_re_records_the_binary_version(instance, hx, tmux_server):
     assert after == {"bin": before["bin"], "version": "9.9.9"}, after
 
 
+def test_restart_re_records_the_binary_version(instance, hx, launched):
+    """`hx restart` is a launch boundary as well: the record follows the binary there too."""
+    launched("eng-001")
+    before = json.loads((instance / "config" / "claude.json").read_text())
+    result = hx("restart", "eng-001", HX_FAKE_CLAUDE_VERSION="9.9.9")
+    assert result.returncode == 0, result.stdout + result.stderr
+    after = json.loads((instance / "config" / "claude.json").read_text())
+    assert after == {"bin": before["bin"], "version": "9.9.9"}, after
+
+
 def test_up_launches_every_config_id_partner_first(instance, hx, agent):
     agent("eng-002")
     result = hx("up")

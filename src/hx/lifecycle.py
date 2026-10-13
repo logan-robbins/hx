@@ -237,6 +237,10 @@ def restart(root: Path, item_id: str, *, env=None) -> dict:
     """The fallback seam (spec 08, 02): flush, compose, relaunch bare, then the pointer."""
     require_partner_caller("restart", env)
     _guard_planned(root, item_id)
+    from . import claude_bin
+
+    # A restart is a launch boundary too: re-record the version the binary reports now.
+    claude_bin.refresh_pin(root, env)
     path = find_work_item(root, item_id)
 
     from . import compile as compile_mod

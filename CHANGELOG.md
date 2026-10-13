@@ -141,6 +141,14 @@ as milestones are accepted.
 
 ### Changed
 
+- **The packaged skills match the surface.** `hx-worker` gains "Search before you build"
+  (the graph queries, `--expect` lints, provenance), the context-economy tools by mode, and the
+  planned-run rules (`hx progress`, leases, no memory); `hx-partner` gains the lookups before a
+  goal, the three graph lint lines for `### Checks`, the assignment ledger (`hx plan`) and the
+  never-twice record; `hx-fleet`, `hx-setup`, `hx-memory` and `hx-companion` describe the
+  manifest-driven skill install, the recorded binary, the post-merge graph hook, the operator
+  column and the planned Companion pass. `hx restart` re-records the Claude version as
+  `hx launch` does.
 - **Claude Code versions are recorded, not gated.** `hx install` no longer refuses a
   `claude` missing from `packaging/tested-claude-versions.json`; it records `{bin, version}`
   for whatever it finds and prints `tested` or `untested` beside it. Every launch boundary

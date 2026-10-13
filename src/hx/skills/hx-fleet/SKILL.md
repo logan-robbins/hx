@@ -52,6 +52,13 @@ That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
    in one `hx dispatch` call, and integrate afterwards — a release engineer in the main checkout
    merging the branches is the shape that has worked. Pin in each goal what the others are
    touching, so nobody reorganizes a shared file.
+   **Flavor.** `flavor` in `harness.json` picks the native harness: `claude` (the default, and
+   the Partner's own), `codex`, `pi`, `grok` or `meta`. Each non-Claude flavor authenticates
+   from its own `seed/<flavor>-token` file and runs the same dispatch, goal, board and complete
+   flow; its Companion is still a Claude session. `templates/contributor/` is the Meta recipe
+   (Muse contributor model with a Haiku Companion); a Meta worker with no Companion sets
+   `"disabled": true` in its `companion` block, and its completion digest then falls back to
+   the agent's own `## Deliverables`.
 4. **Copy the persona over the template's `AGENTS.md`:**
 
    ```bash
@@ -78,17 +85,25 @@ One command does all of this. None of it is optional and none of it is yours to 
 - **`adapters/claude/install.sh`** writes `run/<id>/home/settings.json`: every hx hook with
   `--id <id>` baked into its command, the bypass-permissions acceptance, instruction-files mode
   `claude-md` with `claudeMdExcludes`, and — for the Partner alone — `crossSessionInbound`. It
-  copies `config/CLAUDE.md` in as the home's CLAUDE.md, installs the `hx-worker` skill (you get
-  `hx-partner` and `hx-fleet`; a worker gets neither) and `hx-memory` for both, and pre-seeds the home's `.claude.json`
-  so no first-run wizard or trust dialog can stop a launch.
+  copies `config/CLAUDE.md` in as the home's CLAUDE.md, copies the skills
+  `src/hx/skills/manifest.json` selects for this home — `hx-partner`, `hx-fleet` and
+  `hx-memory` for you; `hx-worker` and `hx-memory` for every worker; `hx-signoff` for release
+  and QA engineers; `hx-conversion` only where `config/hx.json` names it in `skills` — and
+  pre-seeds the home's `.claude.json` so no first-run wizard or trust dialog can stop a launch.
 - **`adapters/claude/start.sh`** derives `run/<id>/persona.md` from the part of
   `config/<id>/AGENTS.md` **above** the header, reads `seed/token` in its own process and
-  exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and execs the pinned binary with
+  exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and execs the recorded binary (`config/claude.json`,
+  re-recorded at every launch so the fleet runs the current release; `DISABLE_AUTOUPDATER=1`
+  keeps a running session on one version) with
   `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model`, `--effort` and
   `--append-system-prompt-file`. No prompt argument, ever.
 - **The Companion** is launched in the same session's `companion` window, with its own home and
   its own system prompt composed from `companion/BASE.md`, the role file, and this agent's
   facts.
+
+Hooks and skills are written by `install.sh`, which runs at `hx launch` and not at `hx
+restart`: an optional skill you turn on, or a package upgrade that changes a skill, reaches a
+worker's home the next time that id is launched, not when it is restarted.
 
 **Verify, do not assume:**
 
@@ -98,7 +113,12 @@ hx show be-001            # the work item, the home's hook list, the pane
 ```
 
 If `hx doctor` shows a `sandbox:<id>` failure a moment after launching, wait and look again:
-the pane is the launcher until it execs the binary. A failure that persists is real.
+the pane is the launcher until it execs the binary. A failure that persists is real. The
+`skills` row says every packaged skill is well-formed and which optional ones are on; a
+`skills-isolation` warning names a worker whose workdir carries `.claude/skills`,
+`.agents/skills` or `.pi/skills`, or a host `~/.agents/skills` beside a Codex or Pi worker. A
+checkout's skills must never load into a worker, so report it to the human rather than
+deleting anything.
 
 ## 3. Creating a new role
 
