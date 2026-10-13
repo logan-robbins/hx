@@ -1,0 +1,114 @@
+"""Registration, test, parity and exact precedent questions."""
+from __future__ import annotations
+import re
+from pathlib import Path
+from . import code_queries as query, code_store as store
+from .code_extract import LANGUAGES
+
+
+def _members(conn,row):
+    prefix=row['qualified']+'.'
+    rows=conn.execute('SELECT * FROM symbols WHERE repo=? AND path=? AND qualified LIKE ? ORDER BY qualified,line LIMIT 101',
+                      (row['repo'],row['path'],prefix+'%'))
+    return [store.decorate(conn,r) for r in rows if r['qualified'][len(prefix):].count('.')==0 and r['kind'] in {'method','function','property'}]
+
+
+def _parameters(value):
+    out=[]; start=depth=0
+    for i,c in enumerate(value):
+        if c in '<([{': depth+=1
+        elif c in '>)]}': depth-=1
+        elif c==',' and depth==0: out.append(value[start:i]); start=i+1
+    return [p.strip() for p in [*out,value[start:]] if p.strip()]
+
+
+def normalize(signature):
+    value=re.sub(r'\b(public|private|protected|internal|abstract|virtual|override|async|static|sealed|readonly|unsafe|partial|export|default|pub|fn|function|def)\b','',signature)
+    m=re.search(r'([\w$]+)(<[^()]*>)?\s*\((.*)\)(.*)$',value)
+    if not m: return re.sub(r'\s+','',value),True
+    before=value[:m.start()].strip()
+    params=[]
+    uncertain=bool(m[2] or '=' in m[3] or re.search(r'\bwhere\b',m[4]))
+    for p in _parameters(m[3]):
+        if p in {'self','cls','&self','&mut self'}: continue
+        if ':' in p:
+            p=p.split(':',1)[1].strip()
+        else:
+            p=re.sub(r'\s+[A-Za-z_]\w*(?:\s*=.*)?$','',p)
+        params.append(re.sub(r'\s+','',p))
+    return (re.sub(r'\s+','',before)+m[1]+(m[2] or '')+'('+','.join(params)+')'+re.sub(r'\s+','',m[4])),uncertain
+
+
+def conform(conn,name,*,repo=None,limit=100):
+    interfaces=[s for s in query.symbols(conn,name,repo=repo) if s['kind'] in {'interface','trait','class'}]
+    implementations=[]; diffs=[]; uncertain=[]
+    for interface in interfaces:
+        members=_members(conn,interface)
+        possible=conn.execute("SELECT * FROM symbols WHERE repo=? AND kind IN ('class','struct','impl') ORDER BY path,line",(interface['repo'],))
+        candidates=[]
+        for row in possible:
+            if row['qualified']==interface['qualified']: continue
+            related=bool(re.search(r'\b'+re.escape(interface['name'])+r'\b',row['signature']))
+            if not related:
+                related=bool(conn.execute("SELECT 1 FROM edges WHERE repo=? AND src_path=? AND kind='implements' AND dst_text IN (?,?) AND lane='resolved'",(interface['repo'],row['path'],interface['name'],interface['qualified'])).fetchone())
+            if related: candidates.append(store.decorate(conn,row))
+        for implementation in candidates[:limit]:
+            implementations.append(implementation)
+            actual=_members(conn,implementation)
+            for member in members:
+                peers=[p for p in actual if p['name']==member['name']]
+                expected,unknown=normalize(member['signature'])
+                overloads=sum(m['name']==member['name'] for m in members)>1 or len(peers)>1
+                if unknown or overloads: uncertain.append(dict(interface=interface['qualified'],implementation=implementation['qualified'],member=member['name'],reason='overload, generic constraint, or default value'))
+                if not peers:
+                    diffs.append(dict(implementation=implementation['qualified'],member=member['name'],kind='missing',expected=member['signature']))
+                elif not any(normalize(p['signature'])[0]==expected for p in peers):
+                    diffs.append(dict(implementation=implementation['qualified'],member=member['name'],kind='signature',expected=member['signature'],actual=[p['signature'] for p in peers]))
+                if any(normalize(p['signature'])[1] for p in peers): uncertain.append(dict(member=member['name'],reason='implementation signature requires resolution'))
+        if not members: uncertain.append(dict(interface=interface['qualified'],reason='no members indexed'))
+        if not candidates: uncertain.append(dict(interface=interface['qualified'],reason='no implementation indexed'))
+    tests=tests_for(conn,name,repo=repo,limit=limit)
+    truncated=len(implementations)>limit or len(diffs)>limit or len(uncertain)>limit
+    stale=any(r['stale'] for r in [*interfaces,*implementations,*tests])
+    return dict(interface=name,interfaces=interfaces[:limit],implementations=implementations[:limit],tests=tests,
+                diffs=diffs[:limit],uncertain=uncertain[:limit],truncated=truncated,stale=stale,
+                clean=bool(interfaces and implementations) and not (diffs or uncertain or stale or truncated))
+
+
+def tests_for(conn,name,*,repo=None,limit=100):
+    target=query.symbols(conn,name,repo=repo)
+    if not target:
+        target=[dict(r) for r in conn.execute('SELECT name,repo,path FROM symbols WHERE path=? AND (? IS NULL OR repo=?) LIMIT 100',(name,repo,repo))]
+    references={(r['repo'],r['path']) for s in target for r in query.callers(conn,s['name'],repo=s['repo'])}
+    names={r['name'].casefold() for r in target} or {Path(name).stem.casefold()}
+    result=[]
+    rows=conn.execute('SELECT * FROM symbols WHERE (? IS NULL OR repo=?) ORDER BY repo,path,line',(repo,repo))
+    for row in rows:
+        value=store.decorate(conn,row)
+        labels=' '.join(value['attributes']).casefold()
+        is_test='test' in row['path'].casefold() or 'spec' in row['path'].casefold() or 'test' in row['name'].casefold() or any(t in labels for t in ('test','fact','theory'))
+        relevant=(row['repo'],row['path']) in references or any(n in row['name'].casefold() for n in names)
+        if is_test and relevant:
+            result.append(value)
+            if len(result)>=limit: break
+    return result
+
+
+def run(conn,command,name,*,repo=None,limit=100,language=None):
+    if command=='conform': return conform(conn,name,repo=repo,limit=limit)
+    if command=='tests-for': return tests_for(conn,name,repo=repo,limit=limit)
+    if command=='register':
+        rows=conn.execute("SELECT * FROM refs WHERE kind='registers' AND (lower(name) LIKE ? OR lower(qualified) LIKE ?) AND (? IS NULL OR repo=?) ORDER BY repo,path,line LIMIT ?",
+                          ('%'+name.casefold()+'%','%'+name.casefold()+'%',repo,repo,limit))
+        return [store.decorate(conn,row) for row in rows]
+    results=[]
+    # FTS nominates a bounded candidate set; returned snippets remain verbatim source.
+    for hit in query.search(conn,name,repo=repo,limit=100):
+        if language and LANGUAGES.get(Path(hit['path']).suffix)!=language: continue
+        file=conn.execute('SELECT body FROM files WHERE repo=? AND path=?',(hit['repo'],hit['path'])).fetchone()
+        if not file or name.casefold() not in file[0].casefold(): continue
+        text=file[0]; position=text.casefold().find(name.casefold())
+        hit.update(snippet=query.snippet(text,name,exact=True),line=text.count('\n',0,position)+1)
+        results.append(hit)
+        if len(results)>=limit: break
+    return results

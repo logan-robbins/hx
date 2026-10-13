@@ -78,7 +78,7 @@ def python(text,path):
 _TYPES = re.compile(r'\b(namespace|class|interface|struct|enum|trait|mod|type|impl)\s+([A-Za-z_$][\w$]*)')
 _FUNCTIONS = re.compile(r'\b(?:function\s*\*?\s*|fn\s+|func\s+(?:\([^)]*\)\s*)?)([A-Za-z_$][\w$]*)\s*(?:<[^{};]*?>)?\s*\(')
 _ARROWS = re.compile(r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?:\:[^=;]+)?=\s*(?:async\s*)?(?:\([^;]*?\)|[\w$]+)\s*(?:\:[^=;]+)?=>')
-_METHODS = re.compile(r'(?:^|[;{}\n])\s*((?:(?:public|private|protected|internal|static|virtual|override|abstract|async|sealed|readonly|unsafe|partial|export|default)\s+)*(?:[\w$<>\[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*(?:<[^{};]*?>)?\s*\([^;{}]*\))', re.M)
+_METHODS = re.compile(r'(?:^|[;{}\n])\s*(?:(?:#?\[[^\]]*\]|@[\w.]+(?:\([^)]*\))?)\s*)*((?:(?:public|private|protected|internal|static|virtual|override|abstract|async|sealed|readonly|unsafe|partial|export|default)\s+)*(?:[\w$<>\[\],.?]+\s+)?([A-Za-z_$][\w$]*)\s*(?:<[^{};]*?>)?\s*\([^;{}]*\))', re.M)
 
 
 def braces(text,path):
@@ -96,6 +96,8 @@ def braces(text,path):
             start=m.start()
             # Include modifiers from the same declaration line.
             beginning=max(code.rfind('\n',0,start),code.rfind('{',0,start),code.rfind('}',0,start),code.rfind(';',0,start))+1
+            attribute_end=code.rfind(']',beginning,start)+1
+            if attribute_end>beginning: beginning=attribute_end
             prefix=code[beginning:start].strip()
             if not prefix or re.fullmatch(r'(?:[\w()]+\s*)+',prefix): start=beginning+len(code[beginning:start])-len(code[beginning:start].lstrip())
             h=header_end(code,m.end() if is_type else start)
@@ -131,9 +133,12 @@ def braces(text,path):
             match=re.search(r'func\s*\(\s*\w+\s+\*?(\w+)',code[start:h])
             if match: scope.append(match[1])
         q='.'.join([*scope,name])
-        before=text[max(0,text.rfind('\n',0,start-1)-300):start]
-        attrs=re.findall(r'\[([^\]\n]+)\]|@([\w.]+(?:\([^\n]*\))?)|#\[([^\]\n]+)\]',before)
-        row=_symbol(text,path,name,q,kind,start,end,h,[next(x for x in a if x) for a in attrs])
+        before=text[max(0,start-2048):start]
+        attrs=[]
+        while match:=re.search(r'(?:#?\[([^\]]+)\]|@([\w.]+(?:\([^)]*\))?))\s*$',before):
+            attrs.insert(0,match[1] or match[2])
+            before=before[:match.start()]
+        row=_symbol(text,path,name,q,kind,start,end,h,attrs)
         symbols.append(row)
     refs=[]
     for m in re.finditer(r'\b([\w$]+(?:\.[\w$]+)*)\s*(?:<[^;{}()]*>)?\s*\(',code):

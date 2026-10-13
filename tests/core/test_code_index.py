@@ -82,7 +82,7 @@ def test_search_finds_symbol_and_body(indexed):
     body_hits = code_index.search(root, "Calc helpers")
     assert any(h["path"].endswith("calc.py") for h in body_hits)
     for hit in hits:
-        assert set(hit) == {"path", "title", "snippet", "score", "layer"}
+        assert {"path", "title", "snippet", "score", "layer", "repo", "lane", "anchor_sha", "stale"} <= set(hit)
         assert len(hit["snippet"]) <= 320
 
 
