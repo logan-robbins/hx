@@ -188,8 +188,9 @@ The boundary line names the read tool this session actually has: `Read` on Claud
 `read` on Pi. Delegation is the `Agent` tool on Claude Code and the `subagent` tool on Pi
 (`prompt`, and an optional `agent_type`). The rest of this section is the same for both.
 
-- Each one gets its own context file automatically, built from `config/<id>/SUBAGENTS.md`, its
-  own step state, and a pointer to its task. A hook hands it the path with the same line you
+- Each one gets its own context file automatically, built from the shared
+  `templates/worker/SUBAGENTS.md` with your id filled in, its own step state, and a pointer to
+  its task. A hook hands it the path with the same line you
   get at a boundary, so it reads one file with the Read tool and starts. You do not have to
   brief it on the harness.
 - **Its task is the message you spawned it with**, which is already in its conversation — the

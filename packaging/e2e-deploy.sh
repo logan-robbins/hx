@@ -207,15 +207,15 @@ export HARNESS_ROOT="$ROOT"
 WORKDIR="$SCRATCH/work/eng-001"
 mkdir -p "$WORKDIR"
 mkdir -p "$ROOT/config/eng-001"
-for f in AGENTS.md SUBAGENTS.md harness.json; do
-  sed -e 's/{{id}}/eng-001/g' -e 's/{{pod}}/engineers/g' \
-    "$ROOT/templates/worker/$f" > "$ROOT/config/eng-001/$f"
-done
+# A worker is its harness.json (role, workdir, purpose); nothing else is copied per id.
+sed -e 's/{{id}}/eng-001/g' -e 's/{{pod}}/engineers/g' \
+  "$ROOT/templates/worker/harness.json" > "$ROOT/config/eng-001/harness.json"
 python3 - "$ROOT/config/eng-001/harness.json" "$WORKDIR" <<'PY'
 import json, sys
 path, workdir = sys.argv[1], sys.argv[2]
 cfg = json.load(open(path))
 cfg["workdir"] = workdir
+cfg["purpose"] = "Proves that a fresh deploy launches a worker from its harness.json alone."
 cfg.pop("branch", None)
 with open(path, "w") as handle:
     json.dump(cfg, handle, indent=2)

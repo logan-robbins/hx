@@ -220,7 +220,7 @@ def test_migration_drops_what_a_shared_source_already_says(instance):
     _set(instance, purpose="{{purpose}}")
     _legacy(instance, TEMPLATE_UPPER + role_copy + "\n", "\nEverything below this line is yours.\n\n- (nothing yet)\n")
     result = persona.migrate(instance, "eng-001")
-    assert result == {"id": "eng-001", "purpose_moved": False, "proposal": None}
+    assert result == {"id": "eng-001", "agents_removed": True, "purpose_moved": False, "proposal": None}
     assert _harness(instance)["purpose"] == "{{purpose}}"
     assert learn.list_proposals(instance / "LEARNINGS") == []
 
@@ -261,6 +261,27 @@ def test_the_partner_keeps_its_file_and_loses_only_the_old_header(instance):
     assert persona.migrate(instance, "partner") is None, "idempotent"
     path.write_text("You are the Partner.\n\n## UPDATES BELOW ONLY\n")
     assert persona.migrate(instance, "partner")["proposal"] is None, "an empty memory is no proposal"
+
+
+def test_a_copied_subagents_md_is_removed_and_a_written_one_stays(instance):
+    from hx import doctor
+
+    path = instance / "config" / "eng-001" / "SUBAGENTS.md"
+    template = (instance / "templates" / "worker" / "SUBAGENTS.md").read_text()
+    old_comment = ("<!--\n  Template. Copied to config/<id>/SUBAGENTS.md with {{id}} and {{pod}} replaced.\n-->")
+    copied = template.split("-->", 1)[1].replace("{{id}}", "eng-001").replace("{{pod}}", "engineers")
+    path.write_text("# Subagents of eng-001\n\n" + old_comment + copied)
+    result = persona.migrate(instance, "eng-001")
+    assert result["subagents_removed"] is True and not path.exists(), "a copy, whatever its comment said"
+    assert "SUBAGENTS.md removed" in persona.describe_migration(result)
+    assert "AGENTS.md removed" not in persona.describe_migration(result).replace("SUBAGENTS.md removed", "")
+    path.write_text("You are a subagent of eng-001. Only ever touch src/importer/**.\n")
+    assert persona.migrate(instance, "eng-001") is None
+    assert path.is_file(), "written for this id on purpose: kept and used"
+    assert persona.render_subagents(instance, "eng-001") == (
+        "config/eng-001/SUBAGENTS.md", "You are a subagent of eng-001. Only ever touch src/importer/**.")
+    rows = [row for row in doctor.run_checks(instance) if row[1] == "subagents:eng-001"]
+    assert rows and rows[0][0] == "warn"
 
 
 def test_a_text_proposal_is_accepted_only_with_the_reviewers_signal_and_check(instance):

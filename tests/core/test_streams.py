@@ -189,7 +189,9 @@ def test_three_parallel_subagents_get_three_isolated_streams(working):
     # Each carries its own task, and none carries another's.
     first = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
     assert "look at thing 1" in first and "look at thing 2" not in first
-    assert "subagent" in first.lower(), "SUBAGENTS.md is the memory section (spec 07.3)"
+    assert "You are a subagent of `eng-001`" in first, \
+        "the shared SUBAGENTS.md, rendered with the parent's id (spec 07.3)"
+    assert "_source: `templates/worker/SUBAGENTS.md`_" in first
     assert "\n## Tasks\n" not in first, "`## Tasks` is main-stream only"
 
 

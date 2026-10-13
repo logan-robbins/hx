@@ -235,18 +235,21 @@ def test_every_config_id_dir_has_agents_subagents_and_harness_json():
             assert (d / name).is_file(), f"{d.relative_to(REPO)}: missing {name}"
 
 
-def test_worker_template_ships_all_three_identity_files():
-    worker = SKELETON / "templates" / "worker"
-    assert sorted(p.name for p in worker.iterdir()) == [
-        "AGENTS.md", "SUBAGENTS.md", "harness.json",
-    ], sorted(p.name for p in worker.iterdir())
+@pytest.mark.parametrize("kind", ["worker", "contributor"])
+def test_worker_template_is_a_config_and_the_shared_subagents_text(kind):
+    """A worker is its `harness.json`; its persona is rendered from the role's and its
+    `purpose`, and SUBAGENTS.md is shared and rendered at delivery. No per-id AGENTS.md."""
+    template = SKELETON / "templates" / kind
+    assert sorted(p.name for p in template.iterdir()) == [
+        "SUBAGENTS.md", "harness.json",
+    ], sorted(p.name for p in template.iterdir())
 
 
 def test_worker_template_is_templated_on_id_and_pod():
     """The Partner copies this to config/<id>/ and substitutes. A leftover placeholder must
     fail validation loudly rather than install a worker named `{{id}}`."""
     worker = SKELETON / "templates" / "worker"
-    for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
+    for name in ("SUBAGENTS.md", "harness.json"):
         text = (worker / name).read_text()
         assert "{{id}}" in text, f"templates/worker/{name}: nothing templated on the id"
     cfg = json.loads((worker / "harness.json").read_text())

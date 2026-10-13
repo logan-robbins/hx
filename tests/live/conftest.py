@@ -147,7 +147,6 @@ def worker(live_root, live_env):
                           "state_budget_tokens": 4000, "seam_min_context_tokens": 1,
                           "seam_min_interval_s": 0},
         }, indent=2) + "\n")
-        (config / "SUBAGENTS.md").write_text(f"You are a subagent of {item_id}.\n")
         (live_root / "pods" / pod).mkdir(parents=True, exist_ok=True)
         return item_id, workdir
 

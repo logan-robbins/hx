@@ -19,7 +19,9 @@ Sections, in the order spec 07.3 fixes them:
                      persona is injected at launch and carrying it here too would spend
                      context for nothing. Rendered live from the sources, so it is the
                      same text `start.sh` would pass as a system prompt
-  1. Who your subagents are — `config/<id>/SUBAGENTS.md` whole, subagent streams only.
+  1. Who your subagents are — subagent streams only: the shared `templates/worker/SUBAGENTS.md`
+                     rendered with this agent's identity (`hx.persona.render_subagents`;
+                     `templates/contributor/` for Meta), or its own `config/<id>/SUBAGENTS.md`.
                      There is no per-agent memory section: what one agent learned
                      reaches every agent of its role as a learnings rule (the persona's
                      `hx:learnings` region, `hx learn propose --role`), and what it did is
@@ -110,11 +112,12 @@ def invariants(root: Path) -> tuple[str | None, str]:
 
 
 def subagents(root: Path, item_id: str) -> tuple[str, str]:
-    """Section 1, subagent streams only: what this agent's subagents are told."""
-    path = root / "config" / item_id / "SUBAGENTS.md"
-    if not path.is_file():
-        return _relative(root, path), ""
-    return _relative(root, path), path.read_text().strip("\n")
+    """Section 1, subagent streams only: what this agent's subagents are told, rendered at
+    delivery from the one shared template, so nothing is copied per id."""
+    from . import persona as persona_mod
+
+    source, text = persona_mod.render_subagents(root, item_id)
+    return source or f"templates/worker/SUBAGENTS.md", text
 
 
 def persona(root: Path, item_id: str) -> tuple[str | None, str]:
@@ -123,7 +126,7 @@ def persona(root: Path, item_id: str) -> tuple[str | None, str]:
     Only for flavors whose CLI takes no system prompt (`NO_SYSTEM_PROMPT_FLAVORS`):
     everywhere else the persona is injected at launch, and carrying it here too would
     spend context on every boundary for nothing. Main stream only — subagent streams
-    already carry `SUBAGENTS.md` whole as their identity. The invariants are not in it on
+    carry the rendered `SUBAGENTS.md` as their identity. The invariants are not in it on
     these flavors: the Invariants section carries them (`INVARIANTS_CHANNEL`).
 
     Returns `(None, "")` when the section must be omitted.

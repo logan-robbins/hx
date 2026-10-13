@@ -102,6 +102,16 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     human decides it). An installed role persona that still ends at the header is read up to
     it (`hx.persona.LEGACY_HEADER`). The scenario packs ship each worker as a `harness.json`
     with its `purpose` instead of a per-id `AGENTS.md`.
+  - A worker is its `config/<id>/harness.json`. `templates/worker/` and
+    `templates/contributor/` ship `harness.json` and `SUBAGENTS.md` only; the template
+    `AGENTS.md` is gone. `SUBAGENTS.md` is no longer copied per id: the `SubagentStart` hook
+    renders the shared `templates/worker/SUBAGENTS.md` (`templates/contributor/` for a Meta
+    worker) with the worker's identity into each subagent's context file
+    (`hx.persona.render_subagents`), and the Pi extension renders the same text. A
+    `config/<id>/SUBAGENTS.md` still replaces it for that one id, and `hx doctor` warns
+    `subagents:<id>` while one exists. **Existing instances:** the launch migration removes a
+    `config/<id>/SUBAGENTS.md` that is a copy of a template (identity filled in or not,
+    comments ignored) and keeps one that says something else.
 
 ### Fixed
 

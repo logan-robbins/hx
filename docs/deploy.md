@@ -86,7 +86,6 @@ It refuses to run as root, checks `tmux`, `git` and Python, and records the `cla
    created  templates/addendum.md
    created  templates/goal.md
    created  templates/work-item.md
-   created  templates/worker/AGENTS.md
    created  templates/worker/SUBAGENTS.md
    created  templates/worker/harness.json
    created  .gitignore

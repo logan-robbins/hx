@@ -151,8 +151,9 @@ wrong, and that is yours.
 
 A fresh instance has one agent: you. Every other id is one you make.
 
-1. Copy `templates/worker/` to `config/<id>/`, where `<id>` is `<pod>-NNN` — `be-001`,
-   `fe-001`, `rel-001`.
+1. Copy `templates/worker/harness.json` to `config/<id>/harness.json`, where `<id>` is
+   `<pod>-NNN` — `be-001`, `fe-001`, `rel-001`. That file is the whole worker: nothing else is
+   copied per id.
 2. Replace `{{id}}` and `{{pod}}`. Set `role` to `backend-engineer`, `frontend-engineer`,
    `release-engineer` or `qa-engineer` — each has a `companion/roles/<role>.md`, and a role without one is
    refused. Set `workdir` to the **absolute path of a directory that already exists**: a

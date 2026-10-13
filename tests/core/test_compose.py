@@ -351,6 +351,29 @@ def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched
     assert "## Who your subagents are" in text
 
 
+def test_a_subagent_gets_the_shared_template_rendered_with_its_parents_id(instance, hx, launched, goals):
+    """Nothing is copied per id: the template is rendered at delivery, comments dropped; Meta
+    workers get the contributor template; an id's own SUBAGENTS.md replaces it."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    assert not (instance / "config" / "eng-001" / "SUBAGENTS.md").exists()
+    assert hx("compose", "eng-001", "eng-001-s001").returncode == 0
+    text = (instance / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
+    assert "You are a subagent of `eng-001`, an engineer in the `engineers` pod." in text
+    assert "{{" not in text and "<!--" not in text
+    assert "_source: `templates/worker/SUBAGENTS.md`_" in text
+    template = instance / "templates" / "worker" / "SUBAGENTS.md"
+    template.write_text(template.read_text() + "\nSHARED EDIT for {{id}}.\n")
+    assert hx("compose", "eng-001", "eng-001-s002").returncode == 0
+    assert "SHARED EDIT for eng-001." in (instance / "run" / "eng-001" / "eng-001-s002.context.md").read_text()
+    _set_flavor(instance, "eng-001", "meta")
+    assert hx("compose", "eng-001", "eng-001-s003").returncode == 0
+    assert "_source: `templates/contributor/SUBAGENTS.md`_" in (
+        instance / "run" / "eng-001" / "eng-001-s003.context.md").read_text()
+
+
 def test_the_partner_file_uses_its_checkpoint_and_live_board_pointer(instance, hx, launched, goals):
     launched("partner")
     (instance / "PARTNER.md").write_text("# Partner state\n\nTwo workers idle.\n")

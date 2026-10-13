@@ -19,6 +19,11 @@ the next launch or restart, and nothing is copied per id:
 A role without `personas/<role>/AGENTS.md` (a test or bespoke role) gets one identity line in
 its place.
 
+What a worker's subagents are told is shared too: `templates/worker/SUBAGENTS.md`
+(`templates/contributor/SUBAGENTS.md` for a Meta worker), rendered with the worker's identity
+by `render_subagents` when the `SubagentStart` hook composes the subagent's context file. A
+`config/<id>/SUBAGENTS.md` (the Partner's, or one written for one id on purpose) is used as is.
+
 `migrate` moves an instance off the per-id `config/<id>/AGENTS.md` it used before: the per-id
 paragraph becomes `purpose` while that is still the placeholder, anything else the file held
 that no source already says (the agent's memory below `## UPDATES BELOW ONLY`, promoted
@@ -99,6 +104,35 @@ def partner_text(root: Path) -> str:
         raise NotFound(f"{path}: the Partner's persona is missing; `hx install` ships it")
     kept = REGION_RE.sub("", _above_header(path.read_text()))
     return re.sub(r"\n{3,}", "\n\n", kept).strip("\n")
+
+
+def subagents_template(root: Path, flavor: str) -> Path | None:
+    """The shared SUBAGENTS.md for a flavor: the instance's, else the one hx ships."""
+    from .install import skeleton_dir
+
+    kind = "contributor" if flavor == "meta" else "worker"
+    for base in (root / "templates", skeleton_dir() / "templates"):
+        path = base / kind / "SUBAGENTS.md"
+        if path.is_file():
+            return path
+    return None
+
+
+def render_subagents(root: Path, item_id: str) -> tuple[str, str]:
+    """`(source, text)`: what `item_id`'s subagents are told. Its own `config/<id>/SUBAGENTS.md`
+    when it has one, else the shared template with its identity filled in and the template's
+    comments dropped. `("", "")` when there is neither."""
+    root = Path(root)
+    own = root / "config" / item_id / "SUBAGENTS.md"
+    if own.is_file():
+        return f"config/{item_id}/SUBAGENTS.md", own.read_text().strip("\n")
+    values = identity_values(root, item_id)
+    template = subagents_template(root, values["flavor"])
+    if template is None:
+        return "", ""
+    text = expand_identity(COMMENT_RE.sub("", template.read_text()), values)
+    label = f"templates/{template.parent.name}/SUBAGENTS.md"
+    return label, re.sub(r"\n{3,}", "\n\n", text).strip("\n")
 
 
 def with_purpose(persona: str, purpose: str | None) -> str:
@@ -202,17 +236,54 @@ def _unsaid(text: str, known: set[str]) -> str:
 
 
 def migrate(root: Path, item_id: str, *, env=None) -> dict | None:
-    """Move a worker's `config/<id>/AGENTS.md` into the sources that replace it, then remove it.
+    """Move a worker off what an older hx copied per id: `config/<id>/AGENTS.md` into the
+    sources that replace it (then removed), and a `config/<id>/SUBAGENTS.md` that is a copy of
+    the shared template (removed).
 
     Returns None when there is nothing to migrate. The Partner keeps its persona file and loses
     only the old header (`_migrate_partner`).
     """
-    from . import learn
-    from .config_harness import purpose_text
-
     root = Path(root)
     if item_id == PARTNER:
         return _migrate_partner(root, env=env)
+    result = _migrate_agents(root, item_id, env=env)
+    if _migrate_subagents(root, item_id):
+        result = result or {"id": item_id, "purpose_moved": False, "proposal": None}
+        result["subagents_removed"] = True
+    return result
+
+
+def _migrate_subagents(root: Path, item_id: str) -> bool:
+    """Remove a `config/<id>/SUBAGENTS.md` that is a copy of a shared template (shipped or
+    installed, worker or contributor, raw or identity-filled; comments ignored). One that says
+    something else was written for this id on purpose: it stays, and is used as is."""
+    from .install import skeleton_dir
+
+    path = root / "config" / item_id / "SUBAGENTS.md"
+    if not path.is_file():
+        return False
+    values = identity_values(root, item_id)
+    mine = _norm(COMMENT_RE.sub("", path.read_text()))
+    for base in (root / "templates", skeleton_dir() / "templates"):
+        for kind in ("worker", "contributor"):
+            template = base / kind / "SUBAGENTS.md"
+            if not template.is_file():
+                continue
+            text = COMMENT_RE.sub("", template.read_text())
+            filled = text
+            for key, value in values.items():
+                filled = filled.replace("{{" + key + "}}", value)
+            if mine in (_norm(text), _norm(filled)):
+                path.unlink()
+                return True
+    return False
+
+
+def _migrate_agents(root: Path, item_id: str, *, env=None) -> dict | None:
+    """The per-id `config/<id>/AGENTS.md` half of `migrate`."""
+    from . import learn
+    from .config_harness import purpose_text
+
     agents = root / "config" / item_id / "AGENTS.md"
     if not agents.is_file():
         return None
@@ -255,7 +326,7 @@ def migrate(root: Path, item_id: str, *, env=None) -> dict | None:
             source=f"migrated from config/{item_id}/AGENTS.md", env=env,
         )["id"]
     agents.unlink()
-    return {"id": item_id, "purpose_moved": moved, "proposal": proposal}
+    return {"id": item_id, "agents_removed": True, "purpose_moved": moved, "proposal": proposal}
 
 
 def _migrate_partner(root: Path, *, env=None) -> dict | None:
@@ -305,14 +376,18 @@ def migrate_all(root: Path, *, env=None) -> list[dict]:
 
 
 def describe_migration(result: dict) -> str:
+    parts = []
     if result.get("kept"):
-        parts = [f"config/{result['id']}/AGENTS.md lost its `{LEGACY_HEADER}` header"]
-    else:
-        parts = [f"config/{result['id']}/AGENTS.md removed"]
-    if result["purpose_moved"]:
+        parts.append(f"config/{result['id']}/AGENTS.md lost its `{LEGACY_HEADER}` header")
+    if result.get("agents_removed"):
+        parts.append(f"config/{result['id']}/AGENTS.md removed")
+    if result.get("purpose_moved"):
         parts.append("its per-id paragraph is now harness.json `purpose`")
-    if result["proposal"]:
+    if result.get("proposal"):
         parts.append(f"the rest is learnings proposal {result['proposal']} (hx learn pending)")
+    if result.get("subagents_removed"):
+        parts.append(f"config/{result['id']}/SUBAGENTS.md removed (a copy of the shared template, "
+                     "which is rendered at delivery)")
     return "; ".join(parts)
 
 

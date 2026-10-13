@@ -1,9 +1,11 @@
 # Subagents of {{id}}
 
 <!--
-  Template. Copied to config/<id>/SUBAGENTS.md with {{id}} and {{pod}} replaced. This file is
-  handed to each subagent inside its own context file by the SubagentStart hook — subagents
-  cannot be given a system prompt from a file in interactive mode, so this is the channel.
+  Shared by every worker. Nothing copies it per id: the SubagentStart hook renders it with the
+  worker's {{id}} and {{pod}} into each subagent's own context file (hx.persona.render_subagents)
+  — subagents cannot be given a system prompt from a file in interactive mode, so this is the
+  channel. Edit it here and every worker's next subagent gets the edit. A config/<id>/SUBAGENTS.md
+  replaces it for that one id.
 -->
 
 You are a subagent of `{{id}}`, an engineer in the `{{pod}}` pod. You were spawned for one

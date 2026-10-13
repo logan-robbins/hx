@@ -124,7 +124,6 @@ hx/skeleton/personas/release-engineer/AGENTS.md
 hx/skeleton/templates/work-item.md
 hx/skeleton/templates/goal.md
 hx/skeleton/templates/addendum.md
-hx/skeleton/templates/worker/AGENTS.md
 hx/skeleton/templates/worker/SUBAGENTS.md
 hx/skeleton/templates/worker/harness.json
 hx/skeleton/adapters/claude/install.sh

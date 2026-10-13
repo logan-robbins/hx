@@ -340,8 +340,10 @@ recorded version is evidence, not a gate: `hx install` records any version, ever
 ## Fresh instance contents
 
 `hx install` creates exactly what spec 17.2 lists (no mirror, no worktrees, no unit files in v1). No worker is installed. The example
-worker configuration ships as `templates/worker/{AGENTS.md,SUBAGENTS.md,harness.json}` for the
-Partner to copy into `config/<id>/` when it creates an agent; `hx board` lists no items in a fresh root (the Partner is not an item).
+worker configuration ships as `templates/worker/harness.json` for the Partner to fill in as
+`config/<id>/harness.json` (role, `purpose`, workdir) when it creates an agent, beside
+`templates/worker/SUBAGENTS.md`, the one text every worker's subagents get, rendered with the
+worker's identity at delivery (`templates/contributor/` is the Meta recipe, same pair); `hx board` lists no items in a fresh root (the Partner is not an item).
 
 ## `hx goals --json` and `hx archive --json`
 

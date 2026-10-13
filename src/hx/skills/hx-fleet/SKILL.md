@@ -29,12 +29,13 @@ Ids are `<pod>-NNN`. Four worker roles ship, each with a persona and a matching 
 All paths are relative to `$HARNESS_ROOT`. To create `be-001`:
 
 ```bash
-cp -R "$HARNESS_ROOT/templates/worker" "$HARNESS_ROOT/config/be-001"
+mkdir -p "$HARNESS_ROOT/config/be-001"
+cp "$HARNESS_ROOT/templates/worker/harness.json" "$HARNESS_ROOT/config/be-001/harness.json"
 ```
 
-That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
+That one file is the whole worker. Then:
 
-1. **Substitute `{{id}}` and `{{pod}}`** in all three files — `be-001` and `be`. The pod is
+1. **Substitute `{{id}}` and `{{pod}}`** — `be-001` and `be`. The pod is
    always the id's prefix, so `hx board` groups agents by it.
 2. **Set `role`** in `config/be-001/harness.json` to one of the four above. `hx launch`
    refuses a role with no `companion/roles/<role>.md`, so a typo fails at launch rather than
@@ -66,9 +67,10 @@ That gives you `config/be-001/{AGENTS.md,SUBAGENTS.md,harness.json}`. Then:
    `purpose` and the learnings, so an edit to the role persona reaches every worker of the role
    at its next launch. `hx doctor` warns `purpose:<id>` while the template's `{{purpose}}` is
    left.
-5. **Keep `SUBAGENTS.md`** from the template. It is what this worker's subagents are told, and
-   it is delivered by hook rather than as a system prompt, so there is no copy of it anywhere
-   else.
+5. **Copy nothing else.** What this worker's subagents are told is
+   `templates/worker/SUBAGENTS.md`, shared by every worker and rendered with its id when the
+   `SubagentStart` hook composes each subagent's context file; edit it there and every worker's
+   next subagent gets the edit.
 6. **Launch:**
 
    ```bash

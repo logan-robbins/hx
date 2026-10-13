@@ -232,7 +232,7 @@ def build_instance(root: Path) -> Path:
     for agent_id, pod in (("partner", "partner"), ("eng-001", "engineers")):
         config = root / "config" / agent_id
         config.mkdir(parents=True, exist_ok=True)
-        for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
+        for name in ("harness.json",):
             target = config / name
             if not target.exists():
                 # The skeleton ships templates; `hx launch` renders them. It is

@@ -633,6 +633,11 @@ def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
                      f"config/{item_id}/AGENTS.md is a per-id persona from before the persona was "
                      f"rendered from its sources; `hx launch {item_id}` (or `hx up`, `hx install`) "
                      "moves it into harness.json `purpose` and a learnings proposal"))
+    if (root / "config" / item_id / "SUBAGENTS.md").is_file():
+        rows.append((WARN, f"subagents:{item_id}",
+                     f"config/{item_id}/SUBAGENTS.md replaces the shared templates/worker/SUBAGENTS.md "
+                     "for this id (a copy of the template is removed at launch, so this one says "
+                     "something else); fold it into the template unless it is meant for this id alone"))
     return rows
 
 

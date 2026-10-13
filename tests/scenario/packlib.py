@@ -76,14 +76,15 @@ def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: 
         config_dir.mkdir(parents=True, exist_ok=True)
         workdir = root / "work" / item_id
         workdir.mkdir(parents=True, exist_ok=True)
-        for name in ("SUBAGENTS.md", "harness.json"):
-            source = worker_template / name
-            if pack_config is not None and (pack_config / item_id / name).is_file():
-                source = pack_config / item_id / name
-            text = source.read_text()
-            text = text.replace("{{id}}", item_id).replace("{{pod}}", worker_pod)
-            text = text.replace("{{workdir}}", str(workdir))
-            (config_dir / name).write_text(text)
+        # A worker is its harness.json; SUBAGENTS.md is the shared template, rendered at
+        # delivery, so nothing else is written per id.
+        source = worker_template / "harness.json"
+        if pack_config is not None and (pack_config / item_id / "harness.json").is_file():
+            source = pack_config / item_id / "harness.json"
+        text = source.read_text()
+        text = text.replace("{{id}}", item_id).replace("{{pod}}", worker_pod)
+        text = text.replace("{{workdir}}", str(workdir))
+        (config_dir / "harness.json").write_text(text)
 
         body = (root / "templates" / "work-item.md").read_text()
         body = (
