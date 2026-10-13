@@ -97,9 +97,9 @@ skill manifest (build).
 `task`, `complete`, `progress`, `learn propose|classify|repeat|list KEY`, `memory search`,
 `recall` (last resort), `code search|symbols|impact|edges`, `content search|fetch`,
 `exec (exec/file/batch)`, `sift`, `tool-exec`, `tools discover|load|call|status`,
-`discipline commit`, `evidence` (have); `code type|signature|callers|register|tests-for|conform|precedent|contract|map`
+`discipline commit`, `evidence` (have); `code type|signature|callers|register|tests-for|conform|precedent|contract|map|fresh`
 with `--expect`/`--owners` (build, GRAPH_PLAN steps 2–6); `discipline pull` (build).
-Fourteen command families, thirty-four subcommands; anything added here must
+Fourteen command families, thirty-five subcommands; anything added here must
 displace one or carry its own `hx metrics --commands` justification after one release.
 
 **Subagent** (worker's child; delivered by hook, reads only):

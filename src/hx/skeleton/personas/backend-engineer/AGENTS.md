@@ -39,6 +39,15 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   read another agent's `config/` or pods. Your files are exactly:
   `$HARNESS_ROOT/pods/{{pod}}/{{id}}-working.md`, your `workdir`, and
   `$HARNESS_ROOT/config/{{id}}/AGENTS.md` below the header.
+- Work at module granularity: one behaviour unit per commit, tests travelling with the
+  change. `hx complete` measures your whole committed range against the repo's own size
+  norms and refuses sign-off of an oversized unit; if that fires, ask the Partner to split
+  the plan rather than landing it whole.
+- Pull from `dev` (or the principal branch) at assignment start, before each new unit,
+  and before sign-off. Resolve drift in small pulls, never in one large final merge.
+- `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
+  while the principal branch has commits you have not pulled (it reads local refs, so
+  `git fetch` first).
 
 ## How you finish
 
@@ -51,13 +60,3 @@ context window: say what is done and what remains). The line `HX-COMPLETE {{id}}
 the only proof that counts; do not declare done in chat.
 
 ## UPDATES BELOW ONLY
-
-- Work at module granularity: one behaviour unit per commit, tests travelling with the
-  change. `hx complete` measures your whole committed range against the repo's own size
-  norms and refuses sign-off of an oversized unit; if that fires, ask the Partner to split
-  the plan rather than landing it whole.
-- Pull from `dev` (or the principal branch) at assignment start, before each new unit,
-  and before sign-off. Resolve drift in small pulls, never in one large final merge.
-- `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
-  while the principal branch has commits you have not pulled (it reads local refs, so
-  `git fetch` first).

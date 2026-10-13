@@ -264,7 +264,7 @@ AUDIENCES: dict[str, set[str]] = {
         "discipline commit", "evidence",
         # GRAPH_PLAN steps 2-6, with --expect/--owners.
         "code type", "code signature", "code callers", "code register", "code tests-for",
-        "code conform", "code precedent", "code contract", "code map",
+        "code conform", "code precedent", "code contract", "code map", "code fresh",
         # TOOL_SKILL_PLAN step 5.
         "discipline pull",
     },

@@ -428,6 +428,7 @@ hx code tests-for src/OrderRepository.cs --expect exists
 hx code conform IOrderRepository --expect clean
 hx code precedent AddScoped --language csharp
 hx code contract IOrderRepository --expect absent
+hx code fresh src/OrderRepository.cs --expect fresh   # the write scope is indexed at HEAD
 hx code search "integration event" --sift "Does this publish integration events?"
 hx code symbols 'RUN.CHECK-INPUT'                 # Natural and other case-folded names
 hx code impact src/OrderRepository.cs             # symbols, referencing files, candidate tests

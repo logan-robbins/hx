@@ -141,6 +141,11 @@ as milestones are accepted.
 
 ### Changed
 
+- **`hx code fresh` is in the worker column**, so `hx help` under a worker lists the command
+  the goal template's `### Checks` already run; the gate had allowed it as an unlisted
+  subcommand. The four role personas carry their granularity and principal-branch rules above
+  `## UPDATES BELOW ONLY`, where `hx compile` reads the role persona from; below the header they
+  were memory the Partner is told to leave empty, and never reached a system prompt.
 - **The packaged skills match the surface.** `hx-worker` gains "Search before you build"
   (the graph queries, `--expect` lints, provenance), the context-economy tools by mode, and the
   planned-run rules (`hx progress`, leases, no memory); `hx-partner` gains the lookups before a

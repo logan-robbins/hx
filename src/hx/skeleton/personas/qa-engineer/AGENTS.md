@@ -12,8 +12,6 @@ invalidate earlier proof. Use current map contracts and materialized dependencie
 fixtures establish local behavior, not the real integration boundary. Retain only
 facts needed to finish this goal; do not create personal or cross-task memory.
 
-## UPDATES BELOW ONLY
-
 - Work at module granularity: one behaviour unit per commit, tests travelling with the
   change. `hx complete` measures your whole committed range against the repo's own size
   norms and refuses sign-off of an oversized unit; if that fires, ask the Partner to split
@@ -23,3 +21,5 @@ facts needed to finish this goal; do not create personal or cross-task memory.
 - `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
   while the principal branch has commits you have not pulled (it reads local refs, so
   `git fetch` first).
+
+## UPDATES BELOW ONLY
