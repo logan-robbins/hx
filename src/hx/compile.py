@@ -12,8 +12,7 @@ docs/prompt-runtime.md). This module keeps what both read:
     persona already holds, and `REGION_RE`, which strips regions an earlier hx stamped into a
     source file;
   - `expand_identity` and `identity_values`: the `{{id}}`, `{{pod}}`, `{{role}}`, `{{flavor}}`
-    and `{{workdir}}` a persona may name, resolved once, never invented;
-  - `strip_known_blocks`, which removes exact copies of a shared source from operator text.
+    and `{{workdir}}` a persona may name, resolved once, never invented.
 """
 
 from __future__ import annotations
@@ -55,13 +54,6 @@ def identity_values(root: Path, item_id: str) -> dict[str, str]:
     config = load_harness(root / "config" / item_id / "harness.json", check_cross_file=False)
     return {"id": config.id, "pod": config.pod, "role": config.role, "flavor": config.flavor,
             "workdir": str(resolve_workdir(config.workdir, root) if config.workdir else root.resolve())}
-
-
-def strip_known_blocks(text: str, known: list[str]) -> str:
-    result = text.strip("\n")
-    for body in sorted(set(filter(None, known)), key=len, reverse=True):
-        result = re.sub(r"(?:\A|(?<=\n\n))" + re.escape(body.strip("\n")) + r"(?=\n\n|\Z)", "", result)
-    return result.strip("\n")
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:

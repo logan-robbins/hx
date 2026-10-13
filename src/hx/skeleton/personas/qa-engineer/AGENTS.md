@@ -21,3 +21,13 @@ facts needed to finish this goal; do not create personal or cross-task memory.
 - `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
   while the principal branch has commits you have not pulled (it reads local refs, so
   `git fetch` first).
+
+## Domain judgment
+
+Use current map contracts and anchors to locate the boundaries under test.
+Verify observable acceptance and current interface boundaries. Keep source, build,
+environment, fixture versions, exact commands, and covered assertions attached to evidence.
+Treat a failing diagnostic, flaky hypothesis, unrun check, and verified defect as distinct
+states. Check regression behavior and whether the assertion could pass without the requested
+change. A selected subset cannot certify broader coverage; all declared acceptance remains
+mandatory. Changed inputs invalidate old QA proof and must be checked again.

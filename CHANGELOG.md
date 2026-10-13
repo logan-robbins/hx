@@ -112,6 +112,29 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     `subagents:<id>` while one exists. **Existing instances:** the launch migration removes a
     `config/<id>/SUBAGENTS.md` that is a copy of a template (identity filled in or not,
     comments ignored) and keeps one that says something else.
+  - Planned runs read the live sources (docs/prompt-runtime.md § Planned prompt sources):
+    `hx compile ID --planned` reads `continuity/prompts/common.md`, the audience's
+    `continuity/prompts/audiences/<audience>.md`, the `## Domain judgment` section of the
+    persona (`personas/<role>/AGENTS.md`; the Partner's `config/partner/AGENTS.md`) for a
+    worker, the Partner and a subagent, a worker's `harness.json` `purpose`, the Companion's
+    `companion/roles/<role>.md`, and operator policy (`continuity/policy.md`,
+    `continuity/policy/<audience>.md`), nothing else. The rest of the persona is the live
+    session's mechanics (tmux, `/goal`, `## Tasks`), which the audience file replaces; compiling
+    it in would also have pushed a planned worker's system prompt past the native launch's
+    8000-byte initial budget (`hx.native_launch`), so a shipped role's planned prompt carries the
+    same role text it did, plus its `purpose`. `continuity/prompts/roles/` and
+    `continuity/prompts/companion-roles/` are gone: every sentence moved verbatim into a
+    `## Domain judgment` section of `personas/<role>/AGENTS.md` (and `config/partner/AGENTS.md`)
+    and a `## Retention judgment` section of `companion/roles/<role>.md`, so live workers and
+    Companions read them too. Two persona lines the moved text contradicts changed: the backend
+    persona's fixed migration, model, handler, client order is gone ("there is no universal
+    order"), and the release persona's `Never run \`git push\`` reads "Push or publish only
+    what the goal names in words". The `generic.md` fallbacks are gone: a role without a
+    persona gets no domain section (its identity section names the role; `common.md` already
+    keeps a missing capability explicit), and a Companion without a role file is refused, as
+    live. `config/CLAUDE.md` and per-id `AGENTS.md` text are no longer compiled in, so a
+    bundle has no `migration_review` and `hx.compile.strip_known_blocks` is gone; a rule for
+    planned runs belongs in `continuity/policy.md`.
 
 ### Fixed
 

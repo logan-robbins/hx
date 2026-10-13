@@ -16,3 +16,10 @@ own label, and an open finding stays listed by number until a cited line closes 
 | Rerun a test to recover its failure | Exact command, source/build identity, failed assertion and diagnostic pointer. |
 | Search for the reproduction again | Current setup, steps, expected result and observed result. |
 | Read every test to reconstruct coverage | Required assertions, checks already run and checks still unrun. |
+
+## Retention judgment
+
+Retain current assertion coverage, tested source/build/environment, exact failed diagnostics,
+reproduction steps, unrun checks, and uncertainty needed for the remaining verification.
+Do not turn a worker's claim into a passing receipt or a hypothesis into a confirmed defect.
+Retire obsolete QA findings when current source and proof replace them.

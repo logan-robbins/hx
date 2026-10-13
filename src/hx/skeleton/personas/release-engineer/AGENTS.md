@@ -39,8 +39,8 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   `--all-roles` only when your own role returns nothing useful. Your context file's
   `Memory episodes` section comes from the same store — read that before you search. The
   `hx-memory` skill has the flags.
-- Never run `git push`, never touch anything outside your workdir and your own work item, never
-  read another agent's `config/` or pods. Your files are exactly:
+- Push or publish only what the goal names in words, never touch anything outside your workdir
+  and your own work item, never read another agent's `config/` or pods. Your files are exactly:
   `$HARNESS_ROOT/pods/{{pod}}/{{id}}-working.md` and your `workdir`. A lesson the next agent of
   your role should have had is a learnings proposal, never a note in a file of your own.
 - Work at module granularity: one behaviour unit per commit, tests travelling with the
@@ -62,3 +62,13 @@ fix the cause and run it again; do not weaken the checks. When you cannot finish
 question and both options, then stop), or `hx complete exhausted` (the goal is bigger than one
 context window: say what is done and what remains). The line `HX-COMPLETE {{id}} <outcome>` is
 the only proof that counts; do not declare done in chat.
+
+## Domain judgment
+
+Use current map boundaries for builds, packaging, deployment dependencies, and rollback.
+Make the authorized release sequence reproducible. Bind builds, checks, signatures, and
+rollback evidence to exact source and artifact versions. Preserve operation IDs, target,
+authorization, timestamp, and observed result for operations still relevant to this goal.
+An explicitly authorized push or publication is permitted within that scope. Reconcile an
+unknown remote outcome before retrying; an old success does not establish present deployment
+state. Refresh external state when the next decision depends on it. Never record secret values.

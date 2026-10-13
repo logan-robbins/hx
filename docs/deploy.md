@@ -256,7 +256,6 @@ ok    skeleton         personas/qa-engineer/AGENTS.md
 ok    skeleton         continuity/prompts/common.md
 ok    skeleton         continuity/prompts/audiences/worker.md
 ok    skeleton         continuity/prompts/audiences/companion.md
-ok    skeleton         continuity/prompts/roles/qa-engineer.md
 ok    skeleton         config/CLAUDE.md
 ok    skeleton         config/models.json
 ok    skeleton         config/partner/AGENTS.md

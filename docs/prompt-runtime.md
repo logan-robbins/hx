@@ -1,11 +1,12 @@
 # Audience-aware prompts for planned work
 
 `hx compile ID --planned` builds versioned static instructions from common policy,
-audience mechanics, domain judgment, validated identity, and operator configuration.
+audience mechanics, the agent's persona, validated identity, and operator policy.
 `--audience companion` and `--audience subagent` build those audiences for the same
-executor. Partner uses its own audience and canonical role instead of an exemption.
-The new sources live under `continuity/prompts/`; task facts remain in the current
-checkpoint or frozen pass and never become static persona history.
+executor. Partner uses its own audience and its own persona instead of an exemption.
+A planned prompt reads the sources a live agent reads (§ Planned prompt sources); only
+the common policy and the audience mechanics live under `continuity/prompts/`. Task facts
+remain in the current checkpoint or frozen pass and never become static persona history.
 
 ## Prompt layers
 
@@ -51,6 +52,33 @@ memory below `## UPDATES BELOW ONLY`, promoted directives) becomes one pending t
 Partner reviews with `hx learn pending`, and the file is removed. `hx doctor` warns
 `persona:<id>` while one is left.
 
+## Planned prompt sources
+
+A planned run reads the same persona and Companion role file a live one does, so an edit to a
+role's judgment reaches both. `hx.prompt_compiler.build` reads these and nothing else:
+
+| Section | Source | Audiences |
+|---|---|---|
+| `common` | `continuity/prompts/common.md` | all |
+| `audience` | `continuity/prompts/audiences/<audience>.md` | all |
+| `domain` | the `## Domain judgment` section of `personas/<role>/AGENTS.md` (the Partner's: `config/partner/AGENTS.md`); none when the role has no persona | worker, partner, subagent |
+| `purpose` | `harness.json` `purpose`, as the live persona carries it | worker |
+| `role` | `companion/roles/<role>.md`, the file the Companion's live system prompt is composed from | companion |
+| `identity` | validated `harness.json` | all |
+| `operator-policy`, `operator-audience` | `continuity/policy.md` where it differs from the shipped one; `continuity/policy/<audience>.md` | all |
+
+Each role's domain judgment is its persona's `## Domain judgment` section and its Companion
+retention judgment is its role file's `## Retention judgment`; there is no second role text
+under `continuity/prompts/`, and no `generic.md` fallback (a Companion without a role file is
+refused, as it is live). The rest of a persona is the live session's mechanics (its tmux
+session, the `/goal` pointer, `## Tasks`, `hx complete`), which the planned audience file
+replaces; it is not compiled in, which also keeps a planned worker's system prompt (about
+5.4 to 5.6 KB for a shipped role) inside the native launch's 8000-byte initial budget
+(`hx.native_launch`), as before. `config/CLAUDE.md` is not compiled in: it is the live agents'
+invariants, a planned capsule's `config/CLAUDE.md` is the compaction instructions, and a
+planned run's shared rules are `common.md` and operator policy. The learnings stay in the live
+persona's region.
+
 ## Roles and responsibilities
 
 | Audience or role | Required behavior |
@@ -65,16 +93,15 @@ Partner reviews with `hx learn pending`, and the file is removed. `hx doctor` wa
 | Release | Use build/deployment/rollback map boundaries and exact artifact identity. Follow explicitly authorized operations. Reconcile unknown outcomes before retrying and refresh remote state when a decision requires it. |
 | QA | Use current map contracts and anchors; bind assertion coverage to source/build/environment. Keep unrun checks and hypotheses distinct from proof. A subset does not certify the required acceptance suite. |
 
-Each domain has companion-specific retention rules. QA and release both retain map
-access and a companion because their decisions depend on current contracts, proof
-inputs, and unresolved outcomes. The QA persona and companion also ship in the
-existing role locations so the normal configuration validator accepts `qa-engineer`.
+Each domain's Companion retention rules are its role file's `## Retention judgment`. QA and
+release both retain map access and a companion because their decisions depend on current
+contracts, proof inputs, and unresolved outcomes. QA ships a persona and a Companion role file
+like every role, so the configuration validator accepts `qa-engineer`.
 
-Identity variables resolve from validated configuration (`hx.compile.expand_identity`), and
-exact copies of a shared source are removed from operator text without removing custom policy
-sentences (`strip_known_blocks`). There is no memory below a header any more: a persona an
-older hx installed still ends at `## UPDATES BELOW ONLY`, and the readers stop there
-(`hx.persona.LEGACY_HEADER`), so nothing below it enters a prompt.
+Identity variables resolve from validated configuration (`hx.compile.expand_identity`). There
+is no memory below a header any more: a persona an older hx installed still ends at
+`## UPDATES BELOW ONLY`, and the readers stop there (`hx.persona.LEGACY_HEADER`), so nothing
+below it enters a prompt.
 
 ## Artifacts and delivery
 
@@ -113,19 +140,17 @@ compiled instructions and task context. Hooks, native autocompaction settings, a
 model output caps enforce token thresholds at their respective layers; host-injected
 context and native tool schemas remain adapter-specific.
 
-## Operator policy and migration
+## Operator policy
 
 `continuity/policy.md` holds shared operator policy; `continuity/policy/AUDIENCE.md`
-holds audience-specific policy. Existing custom global, role, and per-agent text is
-preserved. Only exact recognized generated blocks are removed. Personal-memory
-regions are excluded only in `AGENTS.md`; the same heading in an operator policy
-file does not silently discard the remainder of that file.
-
-Unfamiliar edits inside legacy global/role mechanics remain intact and produce a
-`migration_review` reason. Such a bundle can be inspected but cannot enter the
-compiled-context path until those mechanics are reconciled. Companion and subagent
-prompts do not inherit executor-specific custom role or per-agent mechanics; put
-their applicable policy in the shared or audience-specific source.
+holds audience-specific policy. The old memory heading ends only a persona an older hx
+installed (`AGENTS.md`); the same heading in an operator policy file does not silently
+discard the remainder of that file. Nothing else is reconciled: `config/CLAUDE.md` and a
+per-id `config/<id>/AGENTS.md` are not compiled in (the second no longer exists:
+`hx.persona.migrate`), so a bundle carries no `migration_review`. A rule for planned runs goes
+in `continuity/policy.md`; a rule for one role's agents, live and planned, goes in its persona
+or is a learnings rule scoped to that role. Companion and subagent prompts do not inherit
+executor mechanics; put their applicable policy in the shared or audience-specific source.
 
 Compilation does not rewrite installed configuration, restart sessions, or enforce
 tool permissions. Native controller installation/acknowledgement, companion tool

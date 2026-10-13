@@ -91,7 +91,6 @@ EXPECTED_SKELETON_FILES = (
     "continuity/prompts/common.md",
     "continuity/prompts/audiences/worker.md",
     "continuity/prompts/audiences/companion.md",
-    "continuity/prompts/roles/qa-engineer.md",
     "config/CLAUDE.md",
     "config/models.json",
     "config/partner/AGENTS.md",

@@ -20,10 +20,9 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   Companion and the Partner see, and it is what you get back after a seam.
 - Commit as you go, small and often, on the branch you are on. `hx complete done` refuses a
   dirty tree.
-- Services, data, and contracts: write the migration before the model, the model before the
-  handler, the handler before the client. Every endpoint or job gets a test that fails without
-  it. Never change a public interface silently; note it in `## Deliverables` with the callers
-  it affects.
+- Services, data, and contracts: every endpoint or job gets a test that fails without it.
+  Never change a public interface silently; note it in `## Deliverables` with the callers it
+  affects.
 - Read a file once. What you learned from it belongs in `## Tasks` or a comment, not in a
   second read. After a seam, your context file lists the files you already know; do not re-read
   them unless they changed.
@@ -58,3 +57,11 @@ fix the cause and run it again; do not weaken the checks. When you cannot finish
 question and both options, then stop), or `hx complete exhausted` (the goal is bigger than one
 context window: say what is done and what remains). The line `HX-COMPLETE {{id}} <outcome>` is
 the only proof that counts; do not declare done in chat.
+
+## Domain judgment
+
+Preserve service, data, and interface invariants. Follow actual dependencies when ordering
+migrations, models, handlers, and consumers; there is no universal order for every task.
+Name changed contracts and affected callers. Test observable success, failure, and concurrency
+behavior where relevant. Record current schema/configuration versions and teardown for
+resources created by this unit. Keep implementation and its acceptance proof together.

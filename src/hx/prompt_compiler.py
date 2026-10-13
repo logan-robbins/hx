@@ -2,24 +2,47 @@
 
 Builds the planned runtime's prompts without changing a running session. Launch
 acknowledgement and tool enforcement belong to the controller/adapter contract.
+
+A planned prompt reads the sources a live agent reads, one each, and nothing per id but
+its `harness.json`:
+
+  continuity/prompts/common.md          every audience
+  continuity/prompts/audiences/<a>.md   the audience's mechanics
+  personas/<role>/AGENTS.md             the `## Domain judgment` section of the persona a live
+                                        agent of the role reads (the Partner's:
+                                        config/partner/AGENTS.md); worker, Partner, subagent
+  harness.json `purpose`                a worker's purpose
+  companion/roles/<role>.md             a Companion's role file, as compose_system_prompt reads it
+  continuity/policy.md, policy/<a>.md   operator policy
+
+Only the persona's domain judgment: the rest of a persona is the live session's mechanics (its
+tmux session, `/goal`, `## Tasks`), which the audience file replaces for a planned run and which
+would not fit the native launch's 8000-byte initial budget beside it. Nothing else: not
+`config/CLAUDE.md` (the live invariants; a planned run's shared rules are common.md and operator
+policy, and its capsule's CLAUDE.md is the compaction instructions), not the learnings (the live
+persona's region), not a `config/<id>/AGENTS.md` (gone: `hx.persona.migrate`).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
-from . import compile as legacy, store
+from . import compile as legacy, persona as persona_mod, store
+from .ids import PARTNER
 from .persona import LEGACY_HEADER
-from .config_harness import load_harness, NO_SYSTEM_PROMPT_FLAVORS
+from .config_harness import load_harness, purpose_text, NO_SYSTEM_PROMPT_FLAVORS
 from .continuity_store import canonical, digest
 from .errors import ValidationError
 
 SOURCE_BYTES = 65536
 BUNDLE = Path(__file__).parent / "skeleton"
 AUDIENCES = {"worker", "partner", "companion", "subagent"}
+#: The persona section a planned prompt gets: the domain judgment, not the live mechanics.
+DOMAIN_RE = re.compile(r"^## Domain judgment\n(?P<body>.*?)(?=^## |\Z)", re.S | re.M)
 
 
 def _prefix(path, *, required=False):
@@ -49,46 +72,27 @@ def _source(root, relative):
     return local if local.is_file() else BUNDLE / relative
 
 
-def _known_remainder(text, known):
-    """Strip exact generated blocks only; unfamiliar policy is never guessed away."""
-    return legacy.strip_known_blocks(text, known)
+def _domain(root, item_id, config):
+    """`(path, text)`: the `## Domain judgment` section of the persona the live agent reads —
+    `config/partner/AGENTS.md` for the Partner, `personas/<role>/AGENTS.md` otherwise — or ""
+    when the role has no persona or the persona has no such section. A region an earlier hx
+    stamped into the Partner's file is not part of it."""
+    path = root / "config" / PARTNER / "AGENTS.md" if item_id == PARTNER else persona_mod.role_source(root, config.role)
+    match = DOMAIN_RE.search(legacy.REGION_RE.sub("", _prefix(path, required=item_id == PARTNER)))
+    return path, match["body"].strip("\n") if match else ""
 
 
-def _policies(root, item_id, config, values):
-    parts, review = [], []
+def _policies(root, audience):
+    """Operator policy: `continuity/policy.md` where it differs from the shipped default, then
+    `continuity/policy/<audience>.md`."""
+    parts = []
     path = root / "continuity" / "policy.md"
     policy = _prefix(path)
-    default_policy = _prefix(BUNDLE / "continuity" / "policy.md")
-    if policy and policy != default_policy:
+    if policy and policy != _prefix(BUNDLE / "continuity" / "policy.md"):
         parts.append(("operator-policy", path, policy))
-    old_global = root / "config" / "CLAUDE.md"
-    text = _prefix(old_global)
-    known = _prefix(BUNDLE / "config" / "CLAUDE.md")
-    if text:
-        remainder = _known_remainder(text, [known])
-        if remainder:
-            parts.append(("operator-global", old_global, remainder))
-            if known not in text:
-                review.append("Modified legacy global instructions need migration review; their complete text was preserved.")
-    old_role = root / "personas" / config.role / "AGENTS.md"
-    role_text = _prefix(old_role)
-    shipped_role = _prefix(BUNDLE / "personas" / config.role / "AGENTS.md")
-    if role_text and role_text != shipped_role:
-        remainder = _known_remainder(role_text, [shipped_role, legacy.expand_identity(shipped_role, values)])
-        if remainder:
-            parts.append(("operator-role", old_role, remainder))
-            if shipped_role and shipped_role not in role_text:
-                review.append("Modified legacy role instructions need migration review; unfamiliar policy was preserved.")
-    agent_path = root / "config" / item_id / "AGENTS.md"
-    agent_text = _prefix(agent_path)
-    previous_roles = [match["body"].strip("\n") for match in legacy.REGION_RE.finditer(agent_text) if match["kind"] == "role"]
-    upper = legacy.REGION_RE.sub("", agent_text)
-    templates = [shipped_role, role_text, *previous_roles, _prefix(BUNDLE / "templates" / "worker" / "AGENTS.md")]
-    known = [*templates, *(legacy.expand_identity(text, values) for text in templates)]
-    custom = _known_remainder(upper, known)
-    if custom:
-        parts.append(("operator-agent", agent_path, custom))
-    return parts, review
+    specific = root / "continuity" / "policy" / f"{audience}.md"
+    parts.append(("operator-audience", specific, _prefix(specific)))
+    return parts
 
 
 def _branch(workdir):
@@ -130,21 +134,17 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
     add("common", common, _prefix(common, required=True))
     audience_path = _source(root, f"continuity/prompts/audiences/{audience}.md")
     add("audience", audience_path, _prefix(audience_path, required=True))
-    folder = "companion-roles" if audience == "companion" else "roles"
-    role_path = _source(root, f"continuity/prompts/{folder}/{config.role}.md")
-    if not role_path.is_file():
-        role_path = _source(root, f"continuity/prompts/{folder}/generic.md")
-    add("role", role_path, _prefix(role_path, required=True))
+    if audience == "companion":
+        # The Companion's role file, exactly as its live system prompt reads it.
+        role_path = root / "companion" / "roles" / f"{config.role}.md"
+        add("role", role_path, _prefix(role_path, required=True))
+    else:
+        add("domain", *_domain(root, item_id, config))
+        if audience == "worker":
+            add("purpose", root / "config" / item_id / "harness.json", purpose_text(config.purpose) or "")
     add("identity", None, identity_text)
-    policies, review = _policies(root, item_id, config, values)
-    # Companion/subagent policy must be audience-scoped. Executor domain and
-    # per-agent mechanics never leak into a companion's restricted interface.
-    for name, path, body in policies:
-        if audience in {"companion", "subagent"} and name in {"operator-role", "operator-agent"}:
-            continue
+    for name, path, body in _policies(root, audience):
         add(name, path, body)
-    specific = root / "continuity" / "policy" / f"{audience}.md"
-    add("operator-audience", specific, _prefix(specific))
     rendered = {target: "\n\n".join(section["text"] for section in sections if section["channel"] == target) + "\n"
                 for target in ("system", "context")}
     rendered = {target: text if text.strip() else "" for target, text in rendered.items()}
@@ -155,7 +155,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
                 "delivery": {target: {"sha256": hashlib.sha256(text.encode()).hexdigest(), "bytes": len(text.encode()),
                                       "status": "prepared" if text else "absent"} for target, text in rendered.items()},
                 "tool_visibility": "unverified", "permissions_enforced": False,
-                "activation": "pending_controller_installation", "migration_review": review,
+                "activation": "pending_controller_installation",
                 "task_inputs": "current checkpoint or frozen pass; never embedded in the static prefix"}
     version = digest(manifest)
     destination = root / "run" / item_id / "prompts" / audience / version
@@ -187,8 +187,6 @@ def verified_bundle(root: Path, item_id: str, manifest_path: Path, *, workdir: s
     expected = {key: value for key, value in current.items() if key != "manifest_path"}
     if manifest != expected or Path(current["identity"]["workdir"]).resolve() != Path(workdir).resolve():
         raise ValidationError("prompt sources, identity, placement, or workdir changed; compile current instructions")
-    if current["migration_review"]:
-        raise ValidationError("operator policy migration review remains unresolved; preserved legacy policy cannot be silently activated")
     rendered = {}
     for target in ("system", "context"):
         with Path(current[target + "_path"]).open("rb") as handle:
