@@ -20,3 +20,6 @@ facts needed to finish this goal; do not create personal or cross-task memory.
   the plan rather than landing it whole.
 - Pull from `dev` (or the principal branch) at assignment start, before each new unit,
   and before sign-off. Resolve drift in small pulls, never in one large final merge.
+- `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
+  while the principal branch has commits you have not pulled (it reads local refs, so
+  `git fetch` first).

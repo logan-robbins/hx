@@ -176,6 +176,7 @@ the control plane:
   exec batch --file F.json     run many commands, auto-index output, search in one call
   sift candidates/triage       Jev semantic sifting over deterministic candidates (advisory)
   discipline profile/orient/commit  repo-derived size bounds, orientation load, committable check
+  discipline pull --repo DIR        commits the principal branch has that HEAD lacks (--expect fresh)
 
 read-only views:
   board [--json]                          a plain listing of what is on disk
@@ -223,6 +224,7 @@ AUDIENCES: dict[str, set[str]] = {
         "learn check", "learn path", "learn categories", "learn invariant",
         "cache assess", "cache budget", "memory index",
         "models",
+        "metrics --commands",
     },
     "partner": {
         "launch", "dispatch", "goal", "resume", "amend", "bench", "distill", "restart", "read",
@@ -240,6 +242,7 @@ AUDIENCES: dict[str, set[str]] = {
         # GRAPH_PLAN steps 2-8 (the graph lane builds them; the gate covers them already).
         "code contracts", "code submaps", "code stats", "code import",
         "models",
+        "metrics --commands",
     },
     "worker": {
         "task", "complete", "progress",
@@ -253,6 +256,8 @@ AUDIENCES: dict[str, set[str]] = {
         # GRAPH_PLAN steps 2-6, with --expect/--owners.
         "code type", "code signature", "code callers", "code register", "code tests-for",
         "code conform", "code precedent", "code contract", "code map",
+        # TOOL_SKILL_PLAN step 5.
+        "discipline pull",
     },
     "subagent": {
         "code search", "code type", "code signature", "code callers",

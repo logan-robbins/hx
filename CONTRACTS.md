@@ -676,3 +676,64 @@ written on `new`. Advisory: the exit code and verdict are the check's. The fleet
 `hx metrics [--json]` gains `summary.learn_repeats`: `{"L3": 2}` — records per rule whose `ts`
 is later than that rule's last `new` or `merged` decision in `decisions.jsonl` (`{}` when
 there are none); the text form adds a `learn_repeats(<total>): L3=2 …` line after `dead(…)`.
+
+## `hx discipline pull --repo DIR [--expect fresh]`
+
+Read-only git on local refs (it never fetches), 30 s timeout per call. The base is the first
+of `dev`, `origin/dev`, `main`, `master`, `origin/main`, `origin/master` that has a merge-base
+with `HEAD` (the order `commit_range` uses). Prints one object:
+
+```json
+{"base": "main", "base_sha": "4f1c2d3e5a6b", "merge_base": "9a8b7c6d5e4f",
+ "behind": 2, "ahead": 1, "diverged_files": ["src/a.py", "src/b.py"],
+ "base_age_s": 86400, "fresh": false,
+ "instruction": "pull main: 2 commit(s) behind, 2 file(s) changed there"}
+```
+
+`behind` is `git rev-list --count HEAD..BASE`, `ahead` is `BASE..HEAD`, `diverged_files` is
+`git diff --name-only HEAD...BASE` (what the base changed since the fork point), `base_age_s`
+is seconds since the merge-base commit's committer date, and `fresh` is `behind == 0`
+(`instruction` is then `"fresh"`). Exit 0; with `--expect fresh`, exit 3 and one
+`hx: discipline pull: --expect fresh: <instruction>` line on stderr when `behind > 0`. No
+principal branch, or a directory that is not a Git worktree, exits 2. A worker may run it.
+
+## `hx discipline orient --post-seam ID`
+
+The main stream of ID after its last `seam` record (exit 2 when there is none):
+
+```json
+{"id": "eng-001", "stream": "eng-001-main", "seam_seq": 812, "seam_ts": "2026-09-20T12:50:00Z",
+ "source": "clear", "tool_calls": 14, "first_edit_seq": 820,
+ "searches_before_first_edit": 1, "modules_read_before_first_write": 3, "task_reprints": 1}
+```
+
+Counted from `post_tool` records. A search is a Grep/Glob-type tool or a shell command running
+`grep`, `rg`, `ag`, `ack`, `fd`, `find`, `git grep`, `hx code search|symbols|impact|edges|callers|type|signature`,
+`hx memory search`, `hx content search` or `hx recall`; an edit is an Edit/Write-type tool or a
+shell `apply_patch`, `sed -i`, `perl -i`, `cat >`/`>>` or `tee`; a module read is a distinct path
+read by a Read-type tool or a shell `cat|head|tail|less|bat|nl`, never the `*.context.md` file.
+`searches_before_first_edit` and `modules_read_before_first_write` stop at the first edit
+(`first_edit_seq`, `null` when there is none, in which case the whole window counts);
+`task_reprints` counts every `hx task` after the seam. The same three fields are added to every
+entry of `seams` in `hx metrics <id>` (each seam's window ends at the next seam record) and
+appended, in that order, to its text line.
+
+## `hx metrics --commands [--since TS] [--json]`
+
+`hx <command> [<sub>]` invocations per command and per agent, from the shell-type tool inputs
+(`Bash`, `exec_command`, …) of every `logs/<id>/*.jsonl` stream, main and subagent:
+
+```json
+{
+  "task": {"calls": 2, "agents": {"eng-001": 1, "qa-002": 1}},
+  "code search": {"calls": 1, "agents": {"eng-001": 1}},
+  "discipline pull": {"calls": 1, "agents": {"qa-002": 1}}
+}
+```
+
+The key is `command sub` when that pair is an `hx help` (AUDIENCES) entry, else `command`;
+names that are not `hx` commands are not counted. Ordered by `calls` descending, then key.
+Records before `--since TS` are skipped; without it each id's floor is its `dispatched` in
+`tasks.json` (no floor when there is none). Text form: one `<calls>  <key>  <id>=<n> …` line
+per command, then `HX-METRICS-COMMANDS commands=<n> calls=<n>`. An ID or `--watch` with
+`--commands`, `--since` without it, or an unparseable `TS` exits 2. Operator and Partner only.
