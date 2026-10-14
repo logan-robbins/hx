@@ -62,43 +62,31 @@ def _ids(paths):
 # --------------------------------------------------------------------------- goals
 
 
-def _checks_bash_blocks(text: str) -> list[str]:
-    """Fenced ```bash blocks that appear under a `### Checks` heading."""
-    after = text.split("### Checks", 1)
-    if len(after) == 1:
-        return []
-    # Stop at the next heading of the same or higher level, so a later section's bash
-    # block cannot stand in for a missing one here.
-    tail = re.split(r"^#{1,3} ", after[1], maxsplit=1, flags=re.MULTILINE)[0]
-    return re.findall(r"^```bash\n(.*?)^```", tail, flags=re.MULTILINE | re.DOTALL)
-
-
 @pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_the_sections_dispatch_requires(path):
+def test_goal_example_is_what_dispatch_accepts(path):
+    """CONTRACTS.md "Goals": one `## Goal` section. The definition of done is the worker's
+    and `hx complete done` requires its `## Evidence`, so neither appears in a goal."""
+    from hx.goals import parse_goal
+
     text = path.read_text()
     assert re.search(r"^## Goal$", text, re.MULTILINE), f"{path}: no `## Goal` section"
-    assert re.search(r"^## Definition of done$", text, re.MULTILINE), (
-        f"{path}: no `## Definition of done` section"
-    )
-    assert re.search(r"^### Checks$", text, re.MULTILINE), f"{path}: no `### Checks` heading"
+    assert "## Definition of done" not in text, f"{path}: a goal carries no definition of done"
+    assert "### Checks" not in text, f"{path}: a goal carries no checks"
+    assert parse_goal(path).goal.strip()
 
 
 @pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_a_non_empty_checks_bash_block(path):
-    blocks = _checks_bash_blocks(path.read_text())
-    assert blocks, f"{path}: no fenced ```bash block under `### Checks`"
-    commands = [
-        line for b in blocks for line in b.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
-    assert commands, f"{path}: the `### Checks` bash block has no commands"
+def test_goal_example_is_one_paragraph(path):
+    from hx.goals import parse_goal
+
+    paragraphs = [p for p in re.split(r"\n\s*\n", parse_goal(path).goal.strip()) if p.strip()]
+    assert len(paragraphs) == 1, f"{path}: {len(paragraphs)} paragraphs; the example is one"
 
 
 @pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_only_the_two_top_level_sections(path):
-    # Spec 06: "contains exactly two sections, `## Goal` and `## Definition of done`".
-    headings = re.findall(r"^## (.+)$", path.read_text(), re.MULTILINE)
-    assert headings == ["Goal", "Definition of done"], f"{path}: {headings}"
+def test_goal_example_has_only_the_goal_section(path):
+    headings = re.findall(r"^#{1,6} (.+)$", path.read_text(), re.MULTILINE)
+    assert headings == ["Goal"], f"{path}: {headings}"
 
 
 def test_goal_example_has_no_frontmatter():
@@ -137,9 +125,12 @@ def test_work_item_template_frontmatter_keys():
 def test_work_item_template_has_every_section_spec_06_names():
     text = (SKELETON / "templates" / "work-item.md").read_text()
     expected = [
+        "Definition of done",  # the worker's, before its first edit
+        "Orientation",  # the explorer's cited starting points
         "Standing instructions",
         "Tasks",
         "Status",  # hx's half of session memory, rewritten at every boundary
+        "Evidence",  # what `hx complete done` requires
         "Deliverables",
         "Commands",
         "Open decision",
@@ -158,7 +149,8 @@ def test_work_item_template_standing_instructions_use_current_task_state():
         "Read only missing or changed source ranges",
         "dependencies, write ownership and available resources",
         "Do not write personal worker memory",
-        "`hx complete done` runs `### Checks`",
+        "Write `## Definition of done` before your first edit",
+        "`hx complete done` requires a clean workdir, no open subagent, and a `## Evidence` line",
         "Your last action is `hx complete <outcome>`",
     ):
         assert fragment in text, f"work-item.md standing instructions lost: {fragment!r}"

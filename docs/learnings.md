@@ -47,7 +47,8 @@ One line per rule, three cells, invariant wording:
 
 - **Signal** is what the next agent will actually see — a symptom, not a diagnosis.
 - **Check** is something a script or a reviewer can decide. A rule whose check is a grep
-  becomes a lint in the goal's `### Checks`; the rule stays as its explanation.
+  becomes a lint the worker's `## Definition of done` cites and its `## Evidence` proves; the
+  rule stays as its explanation.
 - **Evidence** is the only cell that may name a file, a run, a PR or a date. The rule itself
   must still hold for a program nobody has seen yet.
 
@@ -215,11 +216,11 @@ the prompt invariant budget (`hx cache budget`); past the ceiling the most
 valuable context starts evicting working room, so wording is compressed
 before rules are added.
 
-The repeat check also runs by itself at completion. When `hx complete done` fails its
-`### Checks`, or a planned run's acceptance check fails in `native_completion`, the first
-2,000 bytes of the failing output become the signal for `hx learn repeat`. A `repeat` or
-`related` verdict appends `learnings: repeat of <Rule> (score)` to the `HX-CHECK-FAILED`
-output (or to the pasted "Acceptance check … failed" line) and one record to
+The repeat check also runs by itself at completion of a planned run. When its acceptance
+check fails in `native_completion`, the first 2,000 bytes of the failing output become the
+signal for `hx learn repeat` (`hx complete done` runs no check, so it has none). A `repeat` or
+`related` verdict appends `learnings: repeat of <Rule> (score)` to the pasted
+"Acceptance check … failed" line and one record to
 `state/learn/repeats.jsonl`; a `new` verdict writes nothing. It is advisory: the check alone
 decides pass or fail, and a scoring error is silently ignored. `hx metrics` counts the records
 per rule since that rule was last accepted or merged into (`summary.learn_repeats`). Raw check

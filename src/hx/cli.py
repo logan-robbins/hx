@@ -148,7 +148,7 @@ the control plane:
   capture pending/retry        inspect delivery gaps and retry a bounded producer batch
   complete OUTCOME             the agent's last action; checks run here
   resume ID ADDENDUM           continue a blocked or decision item
-  amend ID ADDENDUM            append to a working goal; a `### Checks` in it replaces the gate
+  amend ID ADDENDUM            append an addendum to a working or completed goal
   distill ID FILE              shrink goal addenda; the distilled directives become a learnings proposal
   bench ID                     archive the body and free the id
   seam ID                      flush, recompose, and cut the conversation

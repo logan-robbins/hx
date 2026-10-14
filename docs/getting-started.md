@@ -96,7 +96,8 @@ instead.
 - The UI is already running: `hx install` started it in tmux session `ui`. Open
   `http://127.0.0.1:8765/`. It is read-only: the Board (every worker, its state and outcome,
   whether its session is alive, its context size and seams), an Agent drawer per worker (its
-  work item file: the goal, checks, live `## Tasks`, deliverables, open decision, digest; plus
+  work item file: the goal, the definition of done the worker wrote, live `## Tasks`, evidence,
+  deliverables, open decision, digest; plus
   whether its Companion is running a pass right now, and an **Open last compaction** link that
   opens the Companion's latest compaction in another window), an **Open session** link that opens the
   pane, step state, what the `context` hook hands it and stream tails in another window, Goals and Archive, and a

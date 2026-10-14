@@ -18,10 +18,8 @@ What one invocation does, in order, writing nothing until everything validates:
    (`hx learn pending`, `hx learn accept ID --signal … --check …`), and the next
    launch carries them in every persona.
 3. Every `### Goal addendum <ts>` subsection is removed from the Work Item's
-   `## Goal`, and the matching `tasks.json` entries are dropped. The goal and
-   its current `### Checks` are never touched: a checks replacement an addendum
-   once carried already lives in both, so removing the prose removes nothing
-   the gate runs.
+   `## Goal`, and the matching `tasks.json` entries are dropped. The goal
+   paragraph itself is never touched.
 
 Only the Partner calls this (spec 08): it rewrites what the agent carries.
 A refusal names the first thing wrong and writes nothing.

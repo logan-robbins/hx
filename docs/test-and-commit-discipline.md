@@ -132,8 +132,8 @@ waste metrics. A repeated violation is a learnings proposal
 Three of these signals are now commands. `hx discipline pull --repo . --expect fresh` is the
 check form of "stay current with dev": it reads local refs (fetch first), reports how many
 commits the principal branch has that `HEAD` lacks and which files they touched, and exits 3
-while that count is above zero, so a goal's `### Checks` or a worker before sign-off can
-carry the rule as a lint. `hx discipline orient --post-seam ID` reports, after the last seam,
+while that count is above zero, so a worker's definition of done (every engineer persona's
+standard set carries it) or a worker before sign-off can carry the rule as a lint. `hx discipline orient --post-seam ID` reports, after the last seam,
 the searches before the first edit, the distinct modules read before the first write and the
 `hx task` reprints; the same three numbers sit on every seam of `hx metrics <id>`, beside
 `reads_of_context_file` and `reads_of_working_set`. `hx metrics --commands` counts which `hx`

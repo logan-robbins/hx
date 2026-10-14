@@ -60,6 +60,13 @@ def malformed():
         "companion disabled not a boolean": {**WORKER, "companion": {"disabled": "yes"}},
         "companion bad effort": {**WORKER, "companion": {"effort": "ludicrous"}},
         "companion empty effort": {**WORKER, "companion": {"effort": ""}},
+        "explorer not an object": {**WORKER, "explorer": "claude-sonnet-5"},
+        "unknown explorer field": {**WORKER, "explorer": {"model": "claude-sonnet-5",
+                                                          "effort": "high", "budget": 1}},
+        "explorer missing effort": {**WORKER, "explorer": {"model": "claude-sonnet-5"}},
+        "explorer empty model": {**WORKER, "explorer": {"model": " ", "effort": "high"}},
+        "explorer bad effort": {**WORKER, "explorer": {"model": "claude-sonnet-5",
+                                                       "effort": "ludicrous"}},
     }
 
 
@@ -190,6 +197,28 @@ def test_model_must_exist_in_models_json(instance):
     with pytest.raises(ValidationError) as exc:
         load_harness(path, root=instance)
     assert "models.json" in str(exc.value)
+
+
+def test_an_explorer_block_is_accepted_and_kept():
+    """What the orientation subagent runs on: optional, and both keys when present."""
+    explorer = {"model": "claude-sonnet-5", "effort": "high"}
+    config = validate_harness({**WORKER, "explorer": explorer}, "config/eng-001/harness.json",
+                              dir_name="eng-001")
+    assert config.explorer == explorer
+    assert validate_harness(WORKER, "x", dir_name="eng-001").explorer == {}
+
+
+def test_the_explorer_model_must_exist_in_models_json(instance):
+    path = instance / "config" / "eng-001" / "harness.json"
+    body = json.loads(path.read_text())
+    body["explorer"] = {"model": "claude-sonnet-5", "effort": "high"}
+    path.write_text(json.dumps(body))
+    assert load_harness(path, root=instance).explorer["model"] == "claude-sonnet-5"
+    body["explorer"]["model"] = "claude-sonnet-4"
+    path.write_text(json.dumps(body))
+    with pytest.raises(ValidationError) as exc:
+        load_harness(path, root=instance)
+    assert "`explorer.model`" in str(exc.value) and "models.json" in str(exc.value)
 
 
 def test_role_must_have_a_companion_role_file(instance):

@@ -1,8 +1,8 @@
 """greet — a very small CLI, and the product repo for the M8 scenario.
 
 Starting state: English only, no --upper, no --lang. `eng-001` adds --upper and
-`eng-002` adds --lang on top of it. Standard library only, so the `### Checks`
-blocks of both orders run anywhere python3 does.
+`eng-002` adds --lang on top of it. Standard library only, so everything
+both goals ask for runs anywhere python3 does.
 """
 
 import argparse

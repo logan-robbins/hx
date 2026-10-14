@@ -67,6 +67,12 @@ That one file is the whole worker. Then:
    identity line (`You are <id> in pod <pod>. <purpose>`) and the learnings (`hx persona <id>`
    prints it), so an edit to the role persona reaches every worker of the role at its next
    boundary. `hx doctor` warns `purpose:<id>` while the template's `{{purpose}}` is left.
+   **Explorer.** `explorer` (`{"model": "claude-sonnet-5-5", "effort": "high"}` in the
+   template) is what the worker's orientation subagent runs on: every engineer persona's
+   first rule spawns it with the goal paragraph before the first edit, and the identity line
+   says `Your explorer runs on <model> at <effort>`. The model must be in
+   `config/models.json`, like `model`; `hx metrics <id>` reports
+   `edits_before_definition_of_done` for each dispatch.
 5. **Copy nothing else.** What this worker's subagents are told is
    `templates/worker/SUBAGENTS.md`, shared by every worker and rendered with its id when the
    `SubagentStart` hook composes each subagent's context file; edit it there and every worker's

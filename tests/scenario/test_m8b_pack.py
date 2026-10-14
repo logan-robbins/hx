@@ -1,13 +1,13 @@
 """The m8b scenario pack: a `decision` nobody scripted.
 
 m8 tells its worker to stop and ask, because a test pack needs one deterministic path through
-that outcome. m8b does not mention a decision anywhere. Its one goal contradicts itself in a
-single documented way, and its `### Checks` are deliberately neutral between the two readings,
-so there is no path that satisfies the checks while dodging the question.
+that outcome. m8b does not mention a decision anywhere. Its one goal paragraph contradicts
+itself in a single documented way and says nothing about which half wins, so a worker that
+writes its own definition of done has to either notice or quietly drop one half.
 
-What this module can assert is that the pack stays *set up* that way: that the contradiction is
-still present in both halves of the goal, that the checks still resolve neither side, that
-nothing in the pack names the `decision` outcome at the worker, and that the six expected
+What this module can assert is that the pack stays *set up* that way: that both halves of the
+contradiction are still in the goal paragraph, that nothing in it resolves either side, that
+nothing in the pack names the `decision` outcome at the worker, and that the four expected
 boards are what `hx board` really prints. Whether the ambiguity is actually noticed is M8's to
 find out with a live agent — that is the experiment, and it cannot be unit-tested.
 """
@@ -92,11 +92,8 @@ def test_it_is_smaller_than_m8():
 
 
 @pytest.mark.parametrize("path", ORDER_FILES, ids=_ids(ORDER_FILES))
-def test_order_parses_with_the_function_dispatch_uses(path):
-    from hx import goals
-
-    goal = goals.parse_goal(path)
-    assert packlib.checks_commands(goal.checks), f"{path}: no commands under `### Checks`"
+def test_goal_is_a_paragraph_dispatch_accepts(path):
+    packlib.assert_goal_is_a_paragraph(path)
 
 
 def test_addendum_is_prose():
@@ -107,32 +104,25 @@ def test_addendum_is_prose():
 
 
 def test_both_halves_of_the_contradiction_are_still_there():
-    """The whole scenario is this one pair of sentences. If a tidy-up removes either, m8b
-    silently becomes an ordinary goal that anyone can finish."""
-    text = (GOALS / f"{WORKER}.md").read_text()
-    order_half, _, done_half = text.partition("## Definition of done")
-    assert "and nothing else on stdout" in order_half, (
-        "`## Goal` no longer demands JSON and nothing else"
-    )
-    assert "still prints the human-readable greeting line first" in done_half, (
-        "`## Definition of done` no longer demands the greeting line first"
-    )
-
-
-def test_the_checks_do_not_resolve_the_ambiguity():
-    """Neutral checks are what make the question unavoidable. A check asserting either shape
-    would let a worker satisfy the block and finish without deciding anything."""
+    """The whole scenario is this one pair of sentences, in the one paragraph a goal is. If a
+    tidy-up removes either, m8b silently becomes an ordinary goal that anyone can finish."""
     from hx import goals
 
-    checks = goals.parse_goal(GOALS / f"{WORKER}.md").checks
-    # Would force JSON-only:
-    assert "json.load(sys.stdin)" not in checks, checks
-    assert "-qx" not in checks.split("--json")[-1], (
-        "an exact-line check on --json output would pick a reading"
+    goal = goals.parse_goal(GOALS / f"{WORKER}.md").goal
+    assert "and nothing else on stdout" in goal, "the goal no longer demands JSON and nothing else"
+    assert "still prints the human-readable greeting line first" in goal, (
+        "the goal no longer demands the greeting line first"
     )
-    # Would force the greeting-first reading:
-    for forcing in ("head -1", "head -n 1", "sed -n '1p'", "grep -c"):
-        assert forcing not in checks, f"{forcing!r} in the checks picks a reading"
+
+
+def test_the_goal_does_not_resolve_the_ambiguity():
+    """Nothing may mark one half as the one that wins: a goal that did would let the worker
+    write a definition of done that drops the other half and finish without deciding."""
+    from hx import goals
+
+    goal = goals.parse_goal(GOALS / f"{WORKER}.md").goal
+    for resolving in ("unless", "takes precedence", "instead", "stderr", "except", "but not"):
+        assert resolving not in goal, f"{resolving!r} in the goal picks a reading"
 
 
 def test_nothing_in_the_pack_tells_the_worker_to_reach_decision():
@@ -157,13 +147,13 @@ def test_the_persona_teaches_the_behaviour_without_naming_the_answer():
     assert "greeting" not in text
 
 
-def test_the_addendum_withdraws_the_losing_criterion():
-    """The `## Definition of done` is what the goal evaluator judges. An addendum that answers
-    the question without retracting the other half leaves the worker unable to satisfy its own
-    item."""
+def test_the_addendum_withdraws_the_losing_half():
+    """The worker's `## Definition of done` is what it proves in `## Evidence`. An addendum that
+    answers the question without retracting the other half of the goal leaves the worker unable
+    to satisfy its own item."""
     text = (GOALS / f"{WORKER}.addendum.md").read_text()
     assert "withdraw" in text.lower(), text
-    assert "criterion 3" in text.lower()
+    assert "greeting line first" in text and "## Definition of done" in text
     assert "JSON only" in text
 
 

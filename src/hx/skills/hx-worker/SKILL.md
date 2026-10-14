@@ -1,6 +1,6 @@
 ---
 name: hx-worker
-description: Operating manual for an hx HarnessAgent — read the work item once at every boundary, search the code graph and memory before building, keep the work item's Tasks section current, commit as you go, keep large outputs out of context (hx exec, content, sift, tool-exec, tools), use subagents, report typed progress in a planned run, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, before writing new code, when a command's output is large, when spawning subagents, or when completing or failing a completion.
+description: Operating manual for an hx HarnessAgent — read the work item once at every boundary, orient with an explorer and write your own definition of done before the first edit, search the code graph and memory before building, keep the work item's Tasks section current, commit as you go, keep large outputs out of context (hx exec, content, sift, tool-exec, tools), use subagents, report typed progress in a planned run, and finish with `## Evidence`, hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, before writing new code, when a command's output is large, when spawning subagents, or when completing or failing a completion.
 metadata:
   hx-audience: worker
   hx-roles: "*"
@@ -22,7 +22,8 @@ compaction. At every one of them the `context` hook hands you, already in your c
 
 - your role's persona (on Pi and Grok it is your system prompt instead, on Codex your
   `AGENTS.md`);
-- your identity line: `You are <id> in pod <pod>. <purpose>`;
+- your identity line: `You are <id> in pod <pod>. <purpose> Your explorer runs on <model> at
+  <effort>.`;
 - every learnings rule that applies to you — the global ones, then your role's — whole;
 - and last, one line (spec 09.1, verbatim):
 
@@ -38,12 +39,14 @@ not restated here. One mechanics note the invariants do not carry: use the Read 
 That path is your work item. It holds, in order:
 
 1. Your goal — the `## Goal` paragraph and every addendum
-2. Your `## Tasks` section, as you last left it
-3. `## Status`, which hx rewrites at every boundary and you never edit:
+2. `## Definition of done` and `## Orientation` — yours, written before your first edit (§2)
+3. Your `## Tasks` section, as you last left it
+4. `## Status`, which hx rewrites at every boundary and you never edit:
    - `### Step state` — what your Companion recorded: open steps with the next action, closed
      steps with their commits, decisions, dead ends, the working set, blockers
    - `### Memory episodes` — the closest step states other agents of your role left behind
    - `### Open subagent handles`
+5. `## Evidence` — what proves each line of your definition of done (§11)
 
 It is always current, its `## Status` is written fresh at each boundary, and it is the only
 file you need. Do not search for context. Do not re-read a file your `working_set` already
@@ -80,11 +83,21 @@ hx pastes a fixed pointer into your pane:
 ```
 
 The Work Item is the goal. Read it. `## Goal` and every `## Goal addendum` are the whole of
-what you were asked for, `## Definition of done` is what you will be judged on, and
-`### Checks` is what will actually be run against you. `hx task` reprints the goal and its
-addenda at any time. The how is yours: decompose into `## Tasks`, fan out to subagents along
-micro bounds with a clear task list each, and construct the deliverables yourself — the
-Partner named the functional deliverables, never the procedure.
+what you were asked for: one paragraph on what the result is and why, and, when it depends on
+other work, what on. There is no definition of done and no checks in it — those are yours.
+`hx task` reprints the goal and its addenda at any time. The how is yours: decompose into
+`## Tasks`, fan out to subagents along micro bounds with a clear task list each, and construct
+the deliverables yourself — the Partner named the result, never the procedure.
+
+**Before your first edit, orient and define done.** Your persona's standard set opens with it:
+spawn one explorer subagent with the goal paragraph, on the model and effort your identity line
+names. It works from the graph and memory, never the editor, and writes into your work item
+`## Orientation` (starting files and symbols at path:line, the test boundary, precedents, known
+dependencies — every line citing a graph result) and drafts of `## Definition of done` and
+`## Tasks`. Check the lines that matter with `--expect` lints, then make `## Definition of done`
+yours: what makes this goal done, on top of your role's standard set, one checkable line each.
+The Partner's metrics count the workdir edits you made before writing it
+(`edits_before_definition_of_done`). It should be 0.
 
 A `/goal` keeps you working past the end of a turn: after each turn an evaluator decides met /
 not yet met / impossible. It reads tool results, so the proof of completion is a line hx
@@ -122,13 +135,13 @@ candidate fact and a Jev score is a ranking: neither validates an application-ma
 or completes your goal, and nothing here replaces running the code.
 
 `--expect exists|absent|one|clean|fresh` turns any query into a lint: exit 0 when the
-expectation holds, 3 when it does not, 2 on a usage error. The Partner puts such lines in
-your `### Checks` — no second interface (`hx code type NAME --expect absent`), a test boundary
-(`hx code tests-for PATH --expect exists`), fresh write scope (`hx code fresh PATH --expect
-fresh`). They run at `hx complete done`, and you never remove or weaken one; if a duplicate
-name is the problem, rename onto the existing declaration. You never index: the graph is
-rebuilt after each merge by the operator's hook and refreshed with your changed paths when
-you complete.
+expectation holds, 3 when it does not, 2 on a usage error. Put such lines in your
+`## Definition of done` — no second interface (`hx code type NAME --expect absent`), a test
+boundary (`hx code tests-for PATH --expect exists`), fresh write scope (`hx code fresh PATH
+--expect fresh`) — run them before you finish, and name each run in `## Evidence`. If a
+duplicate name is the problem, rename onto the existing declaration rather than weakening the
+line. You never index: the graph is rebuilt after each merge by the operator's hook and
+refreshed with your changed paths when you complete.
 
 For words rather than code — a spec, a vendor page, a design note — `hx content search
 "cleanup pattern"` finds indexed text, and `hx content fetch URL --source NAME` indexes a page
@@ -136,8 +149,9 @@ and returns a preview, never the page.
 
 ### 4. `## Tasks` is yours, and it is what survives
 
-The Work Item body is your running task list. You own `## Tasks`, `## Deliverables`,
-`## Commands`, and `## Open decision`; hx owns the filename state and the `## Goal` section.
+The Work Item body is your running task list. You own `## Definition of done`,
+`## Orientation`, `## Tasks`, `## Evidence`, `## Deliverables`, `## Commands`, and
+`## Open decision`; hx owns the filename state, the `## Goal` section and `## Status`.
 
 - Mark a task done **the moment** it is done. Not at the end of the turn, not at the end of
   the task.
@@ -210,6 +224,9 @@ The boundary line names the read tool this session actually has: `Read` on Claud
   `Agent` tool result. **That digest is all that crosses back** — not its transcript, not its
   stream, not its step state. Anything you need that the digest omits is gone.
 - Subagents share your workdir. Give them non-overlapping scopes.
+- **The explorer** (§2) is the one you spawn before your first edit. It is read-only on the
+  workdir and writes only the sections you name — `## Orientation` and drafts of
+  `## Definition of done` and `## Tasks` — into your work item; `SUBAGENTS.md` tells it so.
 
 `hx complete` refuses while any subagent stream is still open, so let them finish.
 
@@ -283,11 +300,15 @@ a story rather than a rule gets rejected with a reason you will be shown.
 ### 11. Finishing
 
 ```bash
-hx complete done        # checks run, workdir must be clean, no open subagent stream
+hx complete done        # workdir clean, no open subagent stream, `## Evidence` written
 hx complete blocked     # something outside your task is in the way
 hx complete decision    # someone else has to choose
 hx complete exhausted   # the task was larger than one agent
 ```
+
+**Before `done`, write `## Evidence`**: one line per line of your `## Definition of done`,
+naming the `hx tool-exec` receipt, `hx evidence` event, test command and its result, or commit
+that proves it. `done` refuses an empty section (or one still holding the template's note).
 
 **Before you run it**, propose what should outlive this task and is not already a rule: what
 tripped you up, which command actually works here, what surprised you. `hx learn propose
@@ -308,12 +329,12 @@ when blocked or deciding; otherwise finish.
 
 ### 12. `HX-CHECK-FAILED`
 
-`hx complete done` is machine-checked. If a check exits non-zero, the workdir is dirty, or a
-subagent stream is open, it prints:
+`hx complete done` is machine-checked. If the workdir is dirty, a subagent stream is open, or
+`## Evidence` is empty, it prints:
 
 ```
 HX-CHECK-FAILED <id>
-<the failing output>
+<what is wrong>
 ```
 
 and **changes nothing**. The item stays `working` and your goal stays active.
@@ -322,13 +343,15 @@ This is yours to fix. Not the Partner's, not a reason to complete with a differe
 Read the output, fix the actual problem, commit, and run `hx complete done` again. Retry as
 many times as it takes.
 
-Do not edit the `### Checks` block to make it pass — it is in `## Goal`, it is the Partner's,
-and `hx complete` runs the copy in `tasks.json`, not the one in your file.
+Do not write `## Evidence` just to get past it: each line names something that ran — a
+receipt, an event, a command and its result, a commit — and the Partner reads it. A line of your
+definition of done you cannot prove is not done; finish it, or complete with an honest outcome.
 
 ### 13. When `done` is not available
 
-`blocked`, `decision`, and `exhausted` run no checks. They are honest answers and using one is
-better than forcing a `done` that is not true.
+`blocked`, `decision`, and `exhausted` ask for no `## Evidence` and no clean workdir — only that
+no subagent stream is open. They are honest answers and using one is better than forcing a
+`done` that is not true.
 
 - `blocked` — something outside your task stops you: a missing dependency, an access you do not
   have, a broken thing you were told not to touch. Put what would unblock you in
@@ -428,7 +451,7 @@ argparse usage instead; its flags are the same on every query):
 
 ```
 hx task                                          # your own Work Item
-hx complete done                                 # runs your checks
+hx complete done                                 # clean workdir, no open subagent, ## Evidence
 hx progress --file /tmp/progress.json            # planned runs: a sparse update
 hx code type OrderRepository --expect exists      # the declaration: path, line, signature
 hx code signature Namespace.OrderRepository.Add

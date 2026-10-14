@@ -175,36 +175,33 @@ def work_item(instance):
     return _write
 
 
+#: A goal is one `## Goal` paragraph and nothing else (spec 06, CONTRACTS.md "Goals").
 GOAL = """## Goal
 
 {goal}
-
-## Definition of done
-
-- [ ] it is done
-
-### Checks
-
-```bash
-{checks}
-```
 """
 
-
-#: A gate that fails before the dispatch and passes after it: `hx dispatch` refuses a block
-#: that already exits 0 on the untouched tree (`HX-GATE-EMPTY`, spec 08), and `hx complete
-#: done` runs the same block once the item is `working`. Both set `HARNESS_ID` to the id.
-DISPATCHED_CHECKS = (
-    'test -f "$HARNESS_ROOT"/pods/*/"$HARNESS_ID"-working.md '
-    '|| { echo "FAIL: $HARNESS_ID is not working yet"; exit 1; }'
-)
+#: What a worker leaves in `## Evidence` before `hx complete done`, which refuses it empty.
+EVIDENCE = "- the change is committed: `git log --oneline -1` in the workdir (fixture)"
 
 
-def write_goal(root: Path, item_id: str, *, goal="Do the thing.", checks=DISPATCHED_CHECKS) -> Path:
+def write_goal(root: Path, item_id: str, *, goal="Do the thing.") -> Path:
     """A goal file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
     path = root / "run" / f"goal-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(GOAL.format(goal=goal, checks=checks))
+    path.write_text(GOAL.format(goal=goal))
+    return path
+
+
+def write_evidence(root: Path, item_id: str, text: str = EVIDENCE) -> Path:
+    """The worker's half of `hx complete done`: a written `## Evidence` in its work item."""
+    from hx.workitems import SECTION_EVIDENCE, find_work_item, replace_section, section_bounds
+
+    path = find_work_item(root, item_id)
+    if section_bounds(path.read_text(), SECTION_EVIDENCE) is None:
+        path.write_text(path.read_text().rstrip("\n") + f"\n\n{SECTION_EVIDENCE}\n{text}\n")
+    else:
+        replace_section(path, SECTION_EVIDENCE, text)
     return path
 
 

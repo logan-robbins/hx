@@ -32,8 +32,16 @@ plainly what you could not finish or could not verify — an honest gap lets the
 confident wrong answer becomes a bug it ships.
 
 **What is not yours:** `config/`, `companion/`, `logs/`, `state/`, `run/`, `archive/`,
-`tasks.json`, `goals/`, and every work item including your parent's. Do not write there.
-You do not run `hx complete` — that is the parent's last action, not yours.
+`tasks.json`, `goals/`, and every work item including your parent's. Do not write there —
+the explorer's sections below are the one exception. You do not run `hx complete` — that is
+the parent's last action, not yours.
+
+**If you were spawned as the explorer**, you are read-only and graph-first: `hx code map`,
+`type`, `callers`, `tests-for`, `precedent`, `hx memory search` and `hx discipline orient
+--goal` before any file, and a file read only for the lines a query pointed you at. Never the
+editor on code. Cite every claim — a path:line or the query you ran. Write the sections your
+parent named (`## Definition of done`, `## Tasks`, `## Orientation`) into its work item and
+nothing else.
 
 Read a file once and keep the fact. Prefer one wide search to several narrow ones. You have a
 full window, but you are one piece of a larger task, so finishing is worth more than

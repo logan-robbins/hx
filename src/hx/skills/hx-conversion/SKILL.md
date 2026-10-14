@@ -1,6 +1,6 @@
 ---
 name: hx-conversion
-description: How to run a code conversion (porting, migrating or rewriting an existing codebase into a new one) on the shared hx code graph. Index the source repo in its own namespace, register contracts before anyone builds, trace each source capability to its target counterpart with hx code contract, and keep the no-second-interface lint (--expect absent) in every Checks block. Use when a goal converts, ports, migrates or rewrites an existing system, or asks whether a capability has been converted yet.
+description: How to run a code conversion (porting, migrating or rewriting an existing codebase into a new one) on the shared hx code graph. Index the source repo in its own namespace, register contracts before anyone builds, trace each source capability to its target counterpart with hx code contract, and put the no-second-interface lint (--expect absent) in every unit's definition of done and evidence. Use when a goal converts, ports, migrates or rewrites an existing system, or asks whether a capability has been converted yet.
 metadata:
   hx-audience: partner worker
   hx-roles: "*"
@@ -39,9 +39,10 @@ get built.
 3. **Trace, then build, one capability at a time.** Look the capability up by name, read the
    source implementation at the path the record gives, build the target counterpart, and
    commit it as one behaviour unit with its tests.
-4. **Lint every unit for a second interface.** Every goal's `### Checks` asserts that the
-   names a unit must not mint are still absent, so a duplicate fails completion
-   mechanically instead of turning up at review.
+4. **Lint every unit for a second interface.** Every goal names what its unit must not
+   mint, and the worker puts an `--expect absent` line for each in its `## Definition of
+   done` and the run in its `## Evidence`, so a duplicate is caught before completion
+   instead of turning up at review.
 
 ## Index a repository
 
@@ -79,11 +80,11 @@ hx code contract LegacyInvoiceAdapter --expect absent
 ```
 
 `--expect absent` exits 0 when no record of that name exists and 3 when one does. Exit 2 is
-a usage error. Inside a goal's `### Checks` it refuses a duplicate mechanically. The goal
-names the interface the unit must not create, because a counterpart already exists or
-belongs to another unit, and `hx complete done` fails if that name appears. Workers never
-remove or weaken this line. If it fails, either you minted the duplicate (rename onto the
-existing contract and re-run the checks) or someone else did (report it).
+a usage error. The goal names the interface the unit must not create, because a
+counterpart already exists or belongs to another unit. The worker makes this line part of
+its `## Definition of done`, runs it before `hx complete done`, and names the run in
+`## Evidence`; it never drops or weakens it. If it fails, either you minted the duplicate
+(rename onto the existing contract and run it again) or someone else did (report it).
 
 ## Workers: per-behaviour commits
 
@@ -113,11 +114,12 @@ repository namespace and git SHA. Register the source-side records when the sour
 indexed, and register each target record as its producing unit lands. Then:
 
 - Plan one unit per capability. Each goal names the contract it implements, the source path
-  it converts, and the names it must not mint. Each of those names gets a
-  `hx code contract NAME --expect absent` line in `### Checks`.
+  it converts, and the names it must not mint, in its one paragraph. The worker turns each
+  of those names into a `hx code contract NAME --expect absent` line of its definition of
+  done.
 - A worker's "second interface already exists" report is a planning defect, not a worker
   failure. Choose the surviving interface, and plan the migration of the other one's callers
   as its own unit.
 - Track progress with `hx code contract NAME` per capability, not with worker prose. A
-  capability is converted when its target record exists at a SHA whose unit completed through
-  its checks.
+  capability is converted when its target record exists at a SHA whose unit completed `done`
+  with its lints in `## Evidence`.

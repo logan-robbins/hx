@@ -6,6 +6,10 @@
   "effort": "xhigh",
   "workdir": "{{workdir}}",
   "purpose": "{{purpose}}",
+  "explorer": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high"
+  },
   "harness": {
     "args": []
   },

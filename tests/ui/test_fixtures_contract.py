@@ -139,10 +139,13 @@ def test_each_show_fixture_has_the_contract_shape(name):
     assert set(show["work_item"]) == {"frontmatter", "body"}
     assert show["work_item"]["frontmatter"]["id"] == show["id"]
     assert set(show["task"]) == {"goal", "addenda", "outcome", "dispatched", "completed"}
-    assert "## Goal" in show["task"]["goal"]
-    assert "## Definition of done" in show["task"]["goal"]
-    assert "### Checks" in show["task"]["goal"]
-    assert "```bash" in show["task"]["goal"]
+    # A goal is one `## Goal` paragraph; the definition of done and the evidence are the
+    # worker's, in its work item (CONTRACTS.md "Goals").
+    assert show["task"]["goal"].startswith("## Goal\n")
+    assert "## Definition of done" not in show["task"]["goal"]
+    assert "### Checks" not in show["task"]["goal"]
+    for section in ("## Definition of done", "## Evidence"):
+        assert section in show["work_item"]["body"], section
     assert set(show["context_file"]) == {"path", "text", "seam_ts"}
     # The file the `context` hook's pointer names: the `-working` item, or none.
     path = show["context_file"]["path"]
@@ -313,8 +316,8 @@ def test_the_orders_fixture_matches_the_v1_contract(board):
         assert ID_RE.match(entry["id"])
         assert entry["state"] in STATES
         assert entry["outcome"] in OUTCOMES
-        assert "## Goal" in entry["goal"]
-        assert "### Checks" in entry["goal"]
+        assert entry["goal"].startswith("## Goal\n")
+        assert "### Checks" not in entry["goal"] and "## Definition of done" not in entry["goal"]
         for addendum in entry["addenda"]:
             assert set(addendum) == {"ts", "text"}
             assert TS_RE.match(addendum["ts"])

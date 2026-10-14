@@ -20,7 +20,12 @@ from .ids import ID_RE, PARTNER
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
-_OPTIONAL = ("workdir", "harness", "companion", "flavor", "purpose")
+_OPTIONAL = ("workdir", "harness", "companion", "flavor", "purpose", "explorer")
+
+#: `explorer`: what the worker's orientation subagent runs on. Every engineer persona's first
+#: rule spawns it with the goal paragraph before the first edit (Agent tool, this model and
+#: effort), and the identity line names both. Both keys are required when the block is there.
+_EXPLORER_FIELDS = ("model", "effort")
 
 #: What `templates/worker/harness.json` ships in `purpose`. The Partner replaces it with the one
 #: paragraph that makes this agent different from the next one of its role; until then the
@@ -114,6 +119,7 @@ class HarnessConfig:
     harness: dict = field(default_factory=dict)
     companion: dict = field(default_factory=dict)
     purpose: str | None = None
+    explorer: dict = field(default_factory=dict)
 
     @property
     def is_partner(self) -> bool:
@@ -208,6 +214,28 @@ def validate_harness(
     if purpose is not None and not isinstance(purpose, str):
         raise ValidationError(f"{path}: `purpose` must be a string, got {type(purpose).__name__}")
 
+    explorer = data.get("explorer") or {}
+    if not isinstance(explorer, dict):
+        raise ValidationError(f"{path}: `explorer` must be an object, got {type(explorer).__name__}")
+    if explorer:
+        unknown_explorer = sorted(set(explorer) - set(_EXPLORER_FIELDS))
+        if unknown_explorer:
+            raise ValidationError(
+                f"{path}: unknown `explorer` field(s) {', '.join(unknown_explorer)}; allowed: "
+                f"{', '.join(_EXPLORER_FIELDS)}"
+            )
+        for key in _EXPLORER_FIELDS:
+            value = explorer.get(key)
+            if not isinstance(value, str) or value.strip() == "":
+                raise ValidationError(
+                    f"{path}: `explorer.{key}` must be a non-empty string, got `{value!r}`"
+                )
+        if explorer["effort"] not in EFFORT_LEVELS:
+            raise ValidationError(
+                f"{path}: `explorer.effort` must be one of {', '.join(EFFORT_LEVELS)} "
+                f"(spec 11), got `{explorer['effort']}`"
+            )
+
     harness = data.get("harness") or {}
     if not isinstance(harness, dict):
         raise ValidationError(f"{path}: `harness` must be an object, got {type(harness).__name__}")
@@ -275,6 +303,11 @@ def validate_harness(
             f"(known: {', '.join(sorted(models)) or 'none'}); spec 05 requires it to be listed, "
             f"and models are always full ids, never aliases (spec 08)"
         )
+    if models is not None and explorer and explorer["model"] not in models:
+        raise ValidationError(
+            f"{path}: `explorer.model` `{explorer['model']}` is not in config/models.json "
+            f"(known: {', '.join(sorted(models)) or 'none'}); like `model`, it must be listed"
+        )
 
     if root is not None:
         role_file = root / "companion" / "roles" / f"{role}.md"
@@ -299,6 +332,7 @@ def validate_harness(
         harness=harness,
         companion=companion,
         purpose=purpose_text(purpose),
+        explorer=explorer,
     )
 
 

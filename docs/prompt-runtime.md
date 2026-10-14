@@ -16,9 +16,9 @@ Every agent's prompt is four layers, and each layer has exactly one source:
 |---|---|---|
 | Invariants | `config/CLAUDE.md` | one channel per flavor (below) |
 | Persona | `personas/<role>.md`, one file per role, no per-id text | one channel per flavor (below) |
-| Identity | `harness.json` id, pod and `purpose` | the `context` hook's identity line |
+| Identity | `harness.json` id, pod, `purpose` and `explorer` | the `context` hook's identity line |
 | Learnings | `LEARNINGS/<category>.md` (global) and `personas/<role>/<category>.md` (the role's) | the `context` hook, each non-empty file whole |
-| Session memory | the work item: `## Tasks` (the agent's) and `## Status` (hx's: step state, memory episodes, open subagent handles); `PARTNER.md` for the Partner | the one Read the `context` hook points at |
+| Session memory | the work item: `## Definition of done`, `## Orientation`, `## Tasks` and `## Evidence` (the agent's) and `## Status` (hx's: step state, memory episodes, open subagent handles); `PARTNER.md` for the Partner | the one Read the `context` hook points at |
 
 The invariants and the persona each reach an agent once (`config_harness.INVARIANTS_CHANNEL`,
 `config_harness.PERSONA_CHANNEL`):
@@ -43,7 +43,10 @@ at the next boundary:
 3. the identity line, `You are <id> in pod <pod>. <purpose>`. `purpose` is the one paragraph
    that makes this agent different from the next of its role; `templates/worker/harness.json`
    ships `"purpose": "{{purpose}}"`, and until the Partner replaces it the line stops after the
-   pod and `hx doctor` warns `purpose:<id>`;
+   pod and `hx doctor` warns `purpose:<id>`. With an `explorer` block (`{"model", "effort"}`,
+   the model from `config/models.json`; the worker template ships `claude-sonnet-5-5` at
+   `high`) the line ends `Your explorer runs on <model> at <effort>.`: what the orientation
+   subagent each engineer persona spawns before its first edit runs on;
 4. every `LEARNINGS/<category>.md` that holds a rule, then every `personas/<role>/<category>.md`
    that does, whole;
 5. `Use the Read tool once on <abs path> before anything else; do not cat it and do not read it
@@ -63,9 +66,11 @@ for the Partner (`hx.compose.write_status`). It holds the step state, the memory
 the Partner's) and the open subagent handles, as `###` subsections; an unchanged status leaves
 the file untouched, and an idle or completed item is never written. There is no main-stream
 context file: the boundary's one Read is the work item, which already holds the goal, the
-tasks and the status. Subagent streams keep theirs (`run/<id>/<stream>.context.md`).
+agent's definition of done, orientation, tasks and evidence, and the status. Subagent streams keep theirs (`run/<id>/<stream>.context.md`).
 
-Nothing per id is written by hand except `purpose` and the work item's `## Tasks`. An instance
+Nothing per id is written by hand except `purpose` and the agent's own sections of its work
+item (`## Definition of done`, `## Orientation`, `## Tasks`, `## Evidence`). The goal is the
+Partner's one paragraph; nothing else is copied into it from a shared source. An instance
 from before this is moved by `hx install`, `hx up`, `hx launch` and `hx restart`:
 `hx.persona.migrate_layout` turns `personas/<role>/AGENTS.md` and `config/partner/AGENTS.md`
 into `personas/<role>.md` and moves rules scoped in place with `Role:` into

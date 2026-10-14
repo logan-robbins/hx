@@ -88,6 +88,18 @@ def test_the_identity_line_carries_the_purpose_on_one_line(instance):
     assert persona.identity_line(instance, "partner") == "You are partner in pod partner."
 
 
+def test_the_identity_line_names_the_explorer_when_harness_json_has_one(instance):
+    _set(instance, explorer={"model": "claude-sonnet-5", "effort": "high"})
+    assert persona.identity_line(instance, "eng-001") == (
+        IDENTITY + " Your explorer runs on claude-sonnet-5 at high.")
+    assert "Your explorer runs on claude-sonnet-5 at high." in _text(instance)
+    body = _harness(instance)
+    body.pop("purpose")
+    (instance / "config" / "eng-001" / "harness.json").write_text(json.dumps(body))
+    assert persona.identity_line(instance, "eng-001") == (
+        "You are eng-001 in pod engineers. Your explorer runs on claude-sonnet-5 at high.")
+
+
 @pytest.mark.parametrize("value", [None, "", "{{purpose}}"])
 def test_no_purpose_until_the_partner_writes_one(instance, value):
     body = _harness(instance)

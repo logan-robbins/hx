@@ -63,9 +63,10 @@ sign-off.
 
 ### 5. Push and open the PR, only when the goal says so
 
-If the goal does not say "push", "open a PR" or "release" in words, skip to step 7. The checks
-in `### Checks` are your receipt. When it does say so, push the branch you are on and open or
-update the PR the goal names. Record the PR number and the head SHA in `## Deliverables`.
+If the goal does not say "push", "open a PR" or "release" in words, skip to step 7. The focused
+and full test runs you name in `## Evidence` are your receipt. When it does say so, push the
+branch you are on and open or update the PR the goal names. Record the PR number and the head
+SHA in `## Deliverables`.
 
 ### 6. Read the required checks
 
@@ -85,7 +86,7 @@ gh pr checks 42 --required --json bucket,name,link
   to step 1. Do not re-run a failed check in the hope that it flips. A flaky check is a finding:
   write it in `## Deliverables`.
 - `gh` missing or not authenticated: CI status is **unverified**, never a pass. Say so in
-  `## Deliverables`. If the goal's definition of done needs green CI, you are blocked (see
+  `## Deliverables`. If your `## Definition of done` needs green CI, you are blocked (see
   below).
 
 Before you finish, check that the PR's head is your last commit:
@@ -96,14 +97,16 @@ test "$(gh pr view 42 --json headRefOid --jq .headRefOid)" = "$(git rev-parse HE
 
 ### 7. Finish
 
-Run the goal's `### Checks` yourself first, then complete:
+Write `## Evidence` first: one line per line of your `## Definition of done`, each naming the
+receipt that proves it — the test run and its result, the `hx tool-exec` receipt, the PR's
+required checks at its head SHA, the commit. Then complete:
 
 ```bash
 hx complete done
 ```
 
-`HX-COMPLETE <id> done` is the only proof that counts. On `HX-CHECK-FAILED`, fix the cause and
-run it again. The Partner captures the receipt (PR numbers, head SHA and required checks) after
+`HX-COMPLETE <id> done` is the only proof that counts. It refuses a dirty tree, an open subagent
+and an empty `## Evidence`; on `HX-CHECK-FAILED`, fix the cause and run it again. The Partner captures the receipt (PR numbers, head SHA and required checks) after
 you complete. Your part is that the PR exists, its head is your last commit, its required checks
 are green, and `## Deliverables` names all three.
 
@@ -131,12 +134,12 @@ The Partner revises the plan and the units land separately.
 
 ## When you are blocked
 
-Required checks failing for a reason outside your workdir, `gh` unavailable when the definition
-of done needs CI, or a release step the goal did not authorise: say exactly which one in the
+Required checks failing for a reason outside your workdir, `gh` unavailable when your
+definition of done needs CI, or a release step the goal did not authorise: say exactly which one in the
 first line of `## Open decision`, then
 
 ```bash
 hx complete blocked
 ```
 
-Never declare a release done in chat. The checks and the receipt are the record.
+Never declare a release done in chat. The receipts in `## Evidence` are the record.

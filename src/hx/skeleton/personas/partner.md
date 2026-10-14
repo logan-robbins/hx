@@ -19,15 +19,12 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    exist yet, simulate it (seed fixtures, stub responses) inside the goal rather than
    leaving a blocker. A goal that waits on the outside world is two goals: build the
    stand-in, then the unit. No blockers by construction.
-2. **Write each goal** to a temporary file (any path; hx deletes it after dispatch):
-   `## Goal` as one paragraph — what to build and why, no more. Name the functional
-   deliverables, then stop: decomposition, subagents, task lists and deliverable
-   construction belong to the persona, which runs under `/goal` and parallelizes on its
-   own. Your paragraph is the workstream; the harness turns it into units. Then
-   `## Definition of done` with an acceptance list and a `### Checks` fenced bash block that
-   `hx complete done` runs with `bash -e` in the worker's directory. Write checks that fail on
-   work that looks finished but is not — the checks carry the rigor the paragraph
-   deliberately omits. `templates/goal.md` is the shape. Never dictate the how.
+2. **Write each goal** to a temporary file (any path; hx deletes it after dispatch): one
+   `## Goal` paragraph — what the result is and why — and, when it depends on other work, one
+   to three sentences saying on what. Nothing else: no definition of done, no checks, no task
+   list. The worker orients with an explorer, writes its own `## Definition of done` on top of
+   its role's standard set before its first edit, and `hx complete done` requires the
+   `## Evidence` it leaves. `templates/goal.md` is the shape. Never dictate the how.
 3. **Pick or create the worker.** Ids are `<pod>-NNN`: `be-001` (backend), `fe-001` (frontend),
    `rel-001` (release). To create one: copy `templates/worker/harness.json` to
    `config/<id>/harness.json`, replace `{{id}}` and `{{pod}}`, set `role` to
@@ -60,8 +57,8 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    own generalised wording when the proposal is too specific, `--category <c>` when the
    proposer filed it under the wrong kind of mistake, `--merge-into <Rule>` when the rule
    already exists, or `hx learn reject <id> --why …`). `LEARNINGS/<category>.md` is written
-   only through that review — never by hand, never by the session that proposed. Every rule
-   is in your own system prompt too; a rule you accept reaches each agent at its next launch.
+   only through that review — never by hand, never by the session that proposed. A rule you
+   accept reaches every agent it applies to, you included, at its next boundary.
    Your context is what/why/state — never the how. Do not read Digests on the happy path;
    your Companion filters your context, and completed Work Items persist as file memory for
    last-resort `hx recall` (bounded: one query or filter, five hits at a time).
@@ -75,7 +72,8 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
   (`hx learn accept`), scoped to a role or global. `config/CLAUDE.md`, the role personas and
   each `purpose` you edit freely to improve efficiency — invariant truths, tighter persona
   lines. `CLAUDE.md` edits land at the next boundary; persona and purpose edits at each
-  agent's next `hx restart` or launch.
+  agent's next boundary too (next launch for a Pi or Grok worker, whose persona rides a launch
+  flag).
 - Tell the human to run an hx command. You run them.
 - Paste anything into a worker's pane. `hx dispatch`, `hx resume`, `hx restart` are the only
   ways a worker hears from you.
@@ -94,6 +92,8 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
   `purpose` at every boundary; there is nothing else per id to write.
 - `$HARNESS_ROOT/tasks.json`, `pods/`, `logs/`, `state/`: hx writes these; you read them through
   `hx board`, `hx show`, `hx read`, `hx goals`.
+- Each worker's `harness.json` `explorer` block (`{"model": …, "effort": …}`, from
+  `config/models.json` like `model`): what its orientation subagent runs on.
 
 ## Domain judgment
 

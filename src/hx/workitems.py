@@ -173,6 +173,14 @@ SECTION_DIGEST = "## Digest"
 #: hx's half of session memory in the work item, rewritten at every boundary (`hx.compose`).
 SECTION_STATUS = "## Status"
 SECTION_OPEN_DECISION = "## Open decision"
+#: The worker's own, written before its first edit on top of its role's standard set.
+SECTION_DEFINITION_OF_DONE = "## Definition of done"
+#: What proves each line of the definition of done; `hx complete done` requires it.
+SECTION_EVIDENCE = "## Evidence"
+
+#: `templates/work-item.md` ships some sections with one angle-bracketed note saying who
+#: fills them in. That note is not content.
+TEMPLATE_NOTE = re.compile(r"^<[^>]*>$")
 
 #: `templates/work-item.md` placeholders, rendered by literal replacement, never `str.format`
 #: (CONTRACTS.md "`templates/work-item.md` placeholders", handoff/gtm-to-build.md).
@@ -293,6 +301,12 @@ def section_text(body: str, heading: str) -> str | None:
         return None
     start, end = bounds
     return "\n".join(body.split("\n")[start + 1 : end]).strip("\n")
+
+
+def section_written(body: str, heading: str) -> bool:
+    """True when `heading` exists and holds something besides the template's `<...>` note."""
+    text = (section_text(body, heading) or "").strip()
+    return bool(text) and not TEMPLATE_NOTE.match(text)
 
 
 def goal_text(body: str) -> str | None:

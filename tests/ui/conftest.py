@@ -176,14 +176,6 @@ HX = Path(sys.executable).parent / "hx"
 
 GOAL = """## Goal
 Stand in for a dispatched goal while the ui lane runs against a real instance.
-
-## Definition of done
-- The board renders this item.
-
-### Checks
-```bash
-true
-```
 """
 
 WORK_ITEM = """---
@@ -198,14 +190,11 @@ Stand in for a dispatched goal while the ui lane runs against a real instance.
 ## Definition of done
 - The board renders this item.
 
-### Checks
-```bash
-true
-```
-
 ## Tasks
 - [x] Exist on the board.
 - [ ] Be opened in the Agent view.
+
+## Evidence
 
 ## Deliverables
 

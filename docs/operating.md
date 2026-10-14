@@ -43,9 +43,9 @@ Two things worth knowing about that exchange:
 - **The Partner should not have a recommendation it has already acted on.** If it tells you
   what it chose rather than asking, say so — the whole point of `decision` is that the choice
   was not the agent's to make.
-- **Your answer should retract whatever it replaces.** "JSON only; drop criterion 3" is a
-  better answer than "JSON only", because the definition of done is what the goal evaluator
-  judges and two contradictory criteria make the item unsatisfiable.
+- **Your answer should retract whatever it replaces.** "JSON only; drop the text form" is a
+  better answer than "JSON only", because the worker rewrites its own definition of done from
+  the goal and every addendum, and two contradictory instructions make it unsatisfiable.
 
 ## What a seam looks like in a pane
 
@@ -144,9 +144,10 @@ serves a read-only view on `127.0.0.1` (port from `config/ui.json`, default 8765
 graph is the home page: the Partner at the root, every worker as a card with its Companion
 beside it, the Companion pulsing while a pass runs, and the memory store's episode count in the
 header. Click a worker and its drawer opens: the work item file as the agent keeps it (goal,
-definition of done, live `## Tasks`, deliverables, open decision, digest) and its Companion's
-status. Two links open in their own window — **Open session** (the pane, step state, context
-file, stream tails, subagents, metrics) and **Open last compaction** (what the Companion last
+the definition of done it wrote, live `## Tasks`, evidence, deliverables, open decision,
+digest) and its Companion's
+status. Two links open in their own window — **Open session** (the pane, step state, what
+the `context` hook hands the agent, stream tails, subagents, metrics) and **Open last compaction** (what the Companion last
 wrote for a stream, rendered and then verbatim as the master reads it; the Companion node in
 the graph opens the same page). Across pods: Task board, Harness Agents, Activity, Goals (every
 dispatched goal and its addenda, from `tasks.json`), Archive, and the Partner chat, whose box
@@ -193,7 +194,7 @@ the Partner does with `hx restart <id>`.
 |---|---|
 | A worker `working` with a dead session | Nothing restarted it yet. The Partner runs `hx restart <id>`; so does `hx heartbeat` |
 | A worker that has been `working` a long time | Look at `hx show <id>` — its `## Tasks` and open steps say what it thinks it is doing. Long is not the same as stuck |
-| `HX-CHECK-FAILED` in a pane | Working as intended. The agent's checks did not pass; it fixes and retries. Nothing to do |
+| `HX-CHECK-FAILED` in a pane | Working as intended. Its workdir was dirty, a subagent was still open, or its `## Evidence` was empty; it fixes and retries. Nothing to do |
 | The Partner idle with work outstanding | It is waiting for a wake, which arrives when a worker completes. If a worker has completed and nothing happened, `hx show <id>` and tell the Partner |
 | A compaction summary in a worker's pane | Should not happen: hx seams first. Worth reporting |
 | `hx restart partner` does not return | The pane is frozen by a provider usage limit, so the restart's wait never ends. `tmux kill-session -t '=partner'` (with the instance's `HX_TMUX`), then `hx launch partner`; prefer an API key for that instance (`docs/multi-instance.md` §2) |

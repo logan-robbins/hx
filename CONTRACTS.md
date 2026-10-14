@@ -150,30 +150,39 @@ there was no pane to paste into or the paste failed.
 
 `hx dispatch <id> <goal-file>` reads a goal file from any path and deletes it after a
 successful dispatch; the text then lives in exactly two places, `tasks.json` and the work item.
-Required `## Goal`; required `## Definition of done` containing a fenced ```bash block under
-`### Checks`. No frontmatter. Spec 06.
+A goal is one `## Goal` section and nothing else: a paragraph saying what the result is and
+why, optionally followed by one to three sentences on what it depends on. No frontmatter, no
+text above the heading, no other heading outside a fence (`## Definition of done` and
+`### Checks` are refused by name, saying where each went). Spec 06. `hx dispatch` runs nothing
+in the workdir: there is no gate preflight and no `HX-GATE-EMPTY`.
 
-Before the goal is sent, `hx dispatch` runs that block with `bash -e` in the id's workdir
-(`HARNESS_ID` set to the id, 120 s budget) and prints one line per id ahead of `HX-DISPATCH`:
+The worker writes the rest into its work item (`templates/work-item.md`): `## Definition of
+done` before its first edit, on top of its role's standard set in `personas/<role>.md` (an
+engineer's first rule spawns the explorer, below); `## Orientation`, the explorer's cited
+starting points; `## Tasks`; and `## Evidence`, one line per line of the definition of done
+naming the `hx tool-exec` receipt, `hx evidence` event, test command or commit that proves it.
 
-| Result | stdout | Dispatch |
-|---|---|---|
-| exit 0 | `HX-GATE-EMPTY <id>` and why, exit 1 | refused for every id; nothing written, goal files kept |
-| non-zero exit `n` | `gate preflight: exit <n> [<id>], first FAIL line: <line>` (`no FAIL line in the output` when there is none) | proceeds |
-| budget spent | `gate preflight: not judged after 120s [<id>]`; the block's process group is killed | proceeds |
+`hx complete done` checks three things and runs no acceptance block: a clean `git status` in
+the workdir (when it is a repository), no open subagent stream, and a `## Evidence` section that
+holds something besides the template's `<…>` note. Any failure prints `HX-CHECK-FAILED <id>`
+and the reason, exits 1 and changes nothing. `blocked`, `decision` and `exhausted` check only
+for open subagent streams.
+
+`harness.json` may carry `explorer`: `{"model": "<full id in config/models.json>", "effort":
+"low|medium|high|xhigh|max"}`, both keys required, nothing else (`templates/worker/harness.json`
+ships `claude-sonnet-5-5` at `high`). It is what the orientation subagent runs on, and the
+identity line names it (below).
 
 ## Addenda (input files)
 
 `hx resume <id> <file>` and `hx amend <id> <file>` take an addendum file and delete it after a
 successful run. Its text is appended as `### Goal addendum <ts>` under the work item's
-`## Goal` and as `{"ts", "text"}` to `tasks.json[<id>].addenda`. An addendum that carries its own
-`### Checks` heading (outside a fence) with a fenced ```bash block replaces the Checks fence, fence
-markers included, in `tasks.json[<id>].goal` and in the work item's `## Definition of done`,
-once the amended goal passes the goal parser; a heading with no usable block, a comment-only
-block, or two such headings is refused with nothing written. `hx amend` works on a `working` or
-`complete` item, changes no state and pastes nothing, and prints
-`HX-AMEND <id> checks=replaced|kept addenda=<n>` (`n` = addenda recorded after it). `hx resume`
-prints the same line ahead of its `HX-RESUME` line.
+`## Goal` and as `{"ts", "text"}` to `tasks.json[<id>].addenda`; the goal paragraph itself is
+never rewritten. An addendum is prose: one carrying a `Checks` heading at any level (outside a
+fence) is refused, naming the rule, with nothing written. `hx amend` works on a `working` or
+`complete` item, changes no state and pastes nothing, and prints `HX-AMEND <id> addenda=<n>`
+(`n` = addenda recorded after it). `hx resume` prints the same line ahead of its `HX-RESUME`
+line.
 
 ## `config/partner/guard.json`
 
@@ -248,8 +257,9 @@ sends the goal on `clear` with a `-working` item, and prints, as plain stdout, i
 
 1. `config/CLAUDE.md`, whole, where the invariants channel is `hook`;
 2. `personas/<role>.md`, whole, where the persona channel is `hook`;
-3. the identity line `You are <id> in pod <pod>. <purpose>` (`purpose` collapsed to one line;
-   without one the line ends after the pod);
+3. the identity line `You are <id> in pod <pod>. <purpose> Your explorer runs on <model> at
+   <effort>.` (`purpose` collapsed to one line and left out without one; the explorer sentence
+   only when `harness.json` has an `explorer` block);
 4. every `LEARNINGS/<category>.md` that holds a rule, then every
    `personas/<role>/<category>.md` that does, whole, in taxonomy order;
 5. the pointer `Use the Read tool once on <abs path> before anything else; do not cat it and
@@ -275,7 +285,8 @@ every agent whose output went to files. Subagent streams keep their own context 
 (`personas/partner.md`) fails there, and remove a `run/<id>/persona.md` an older hx rendered.
 `hx compile` is gone; the planned runtime calls `hx.prompt_compiler` directly.
 
-`purpose` is an optional string in `harness.json`. Absent, empty, or containing the template's
+`purpose` and `explorer` are optional in `harness.json` (`explorer` under "Goals" above).
+`purpose` is a string. Absent, empty, or containing the template's
 `{{purpose}}` placeholder (`config_harness.PURPOSE_PLACEHOLDER`) it is left out of the identity
 line, and `hx doctor` warns `purpose:<id>`. `hx doctor` also warns `persona:<id>` for a worker
 whose role has no `personas/<role>.md`, for a `personas/<role>/AGENTS.md` of the layout before,
@@ -364,7 +375,7 @@ Python). Exactly these tokens, no others:
 | `{{id}}` | the id |
 | `{{pod}}` | the pod |
 | `{{dispatched}}` | the dispatch timestamp |
-| `{{goal}}` | the goal file verbatim (`## Goal`, then `## Definition of done` with its `### Checks` block), on its own line directly under the frontmatter |
+| `{{goal}}` | the goal file verbatim (its one `## Goal` section), on its own line directly under the frontmatter; the template's own `## Definition of done`, `## Orientation`, `## Tasks` and `## Evidence` follow, empty until the worker writes them |
 
 ## Claude Code version strings
 
@@ -542,9 +553,18 @@ Spec 07.4 and 08. One entry per seam record in the main stream since `dispatched
       }
     }
   ],
-  "totals": {"seams": 1, "tool_calls": 14, "reads_of_context_file": 1, "reads_of_working_set": 2, "other": 11}
+  "totals": {"seams": 1, "tool_calls": 14, "reads_of_context_file": 1, "reads_of_working_set": 2, "other": 11},
+  "edits_before_definition_of_done": 0
 }
 ```
+
+`edits_before_definition_of_done` (a metric, never a block) counts the `post_tool` records of
+an edit tool (`discipline.EDIT_TOOLS`) whose file is inside the workdir, across the main and
+every subagent stream of the id since `dispatched`, in timestamp order, up to the first write
+to the work item whose input names `Definition of done` (or the template note under it). While
+the work item's `## Definition of done` is unwritten every such edit counts; `null` when the
+id has no stream, or when the definition is written but no record shows when. The text form
+adds `edits_before_definition_of_done=<n>` after the totals line.
 
 `source` is one of `clear|compact|restart|resume|startup`. `next_10_turns.turns` is fewer than
 10 when the stream ended sooner. `reads_of_context_file` counts Reads of the file the
@@ -860,8 +880,8 @@ stale); usage errors exit 2; a worker caller is refused (exit 1).
 
 ## Completion repeats (`state/learn/repeats.jsonl`, `learn_repeats`)
 
-When `hx complete done`'s `### Checks` or a planned acceptance check fails, the first 2,000
-bytes of its output are passed to `learn.repeat`. On `repeat` or `related` one line is appended
+When a planned acceptance check fails, the first 2,000 bytes of its output are passed to
+`learn.repeat` (`hx complete done` runs no check of its own, so it has no output to pass). On `repeat` or `related` one line is appended
 to `$HARNESS_ROOT/state/learn/repeats.jsonl`:
 
 ```json
@@ -869,9 +889,9 @@ to `$HARNESS_ROOT/state/learn/repeats.jsonl`:
  "check": "### Checks", "verdict": "repeat"}
 ```
 
-(`check` is `### Checks` for `hx complete`, the check ID for a planned run) and the line
-`learnings: repeat of L3 (0.84)` is appended to the `HX-CHECK-FAILED` output (or to the pasted
-acceptance-failure line; the native completion intent carries it as `learnings`). Nothing is
+(`check` is the planned run's check ID) and the line `learnings: repeat of L3 (0.84)` is
+appended to the pasted acceptance-failure line; the native completion intent carries it as
+`learnings`. Nothing is
 written on `new`. Advisory: the exit code and verdict are the check's. The fleet document of
 `hx metrics [--json]` gains `summary.learn_repeats`: `{"L3": 2}` — records per rule whose `ts`
 is later than that rule's last `new` or `merged` decision in `decisions.jsonl` (`{}` when

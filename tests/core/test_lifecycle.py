@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import wait_for
+from .conftest import wait_for, write_evidence
 
 PARTNER_ONLY = [
     ("dispatch", ["eng-001", "run/goal-eng-001.md"]),
@@ -255,6 +255,7 @@ def test_heartbeat_does_not_repaste_to_an_agent_that_completed(instance, hx, lau
     goals("eng-001")
     assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
     wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
+    write_evidence(instance, "eng-001")
     assert hx("complete", "done", harness_id="eng-001").returncode == 0
     (instance / "run" / "eng-001" / "fake-input.log").write_text("")
 
@@ -287,6 +288,7 @@ def test_heartbeat_wakes_the_partner_only_when_the_board_changed(instance, hx, l
     second = hx("heartbeat")
     assert "changed=false" in second.stdout, "nothing moved between the two"
 
+    write_evidence(instance, "eng-001")
     assert hx("complete", "done", harness_id="eng-001").returncode == 0
     third = hx("heartbeat")
     assert "changed=true" in third.stdout

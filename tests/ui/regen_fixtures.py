@@ -76,7 +76,7 @@ BOARD_ITEMS = [
         "dispatched": "2026-09-20T12:00:00Z", "completed": None,
         "open_subagents": 1, "goal_ts": "2026-09-20T12:00:03Z", "session_alive": True,
         "context_tokens": 48211, "seams": 2, "turn_ts": "2026-09-20T13:09:40Z",
-        "scope": "Add `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a",
+        "scope": "Add `--require-done` to `hx board` so the Partner can assert that a set of ids finished with",
     },
     {
         # Never dispatched: no goal, no stream, so `seams` and `context_tokens`
@@ -119,30 +119,53 @@ BOARD = {
 
 # -- goals (v1 cut: one entry per tasks.json id, no graph, no file compare) ---
 
+# A goal is one `## Goal` paragraph (CONTRACTS.md "Goals"): the worker writes its own
+# `## Definition of done` in the work item, and `hx complete done` requires its `## Evidence`.
 GOAL_001 = """## Goal
-Add `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a
-set of ids finished with outcome `done`.
+Add `--require-done` to `hx board` so the Partner can assert that a set of ids finished with
+outcome `done` without reading the listing.
+"""
+
+#: eng-001's work item as it stands mid-goal: the goal, the definition of done the worker wrote
+#: before its first edit, its tasks, and an `## Evidence` it has not filled yet. The first
+#: heading is still the file's old word for the goal, which the UI says the fleet's way.
+BODY_001 = """## Order
+Add `--require-done` to `hx board` so the Partner can assert that a set of ids finished with
+outcome `done` without reading the listing.
 
 ## Definition of done
 - `hx board --require-done eng-000` exits 0 and prints nothing extra.
+- `hx board --require-done eng-002` exits 1 and names the id and its state.
+- The existing `hx board` and `hx board --json` exit codes are unchanged.
 
-### Checks
-```bash
-python -m pytest tests/test_board.py -q
-```
+## Standing instructions
+- Write `## Definition of done` before your first edit, on top of your role's standard set.
+- Keep `## Tasks` current: mark a task done the moment it is done, add tasks the moment you discover them.
+- `hx complete done` requires a clean workdir, no open subagent, and a `## Evidence` line for each line of `## Definition of done`.
+- Your last action is `hx complete <outcome>`. Nothing after it.
+
+## Tasks
+- [x] Read spec 08 `hx board`; the exit rule is "exit 0 iff every listed item is complete with outcome done".
+- [x] Add `--require-done` to the argument parser in `src/hx/board.py`.
+- [ ] Refuse an id that has no `config/<id>/` rather than treating it as not-done.
+- [ ] Tests for the three exit paths in `tests/test_board.py`.
+
+## Evidence
+
+## Deliverables
+- `src/hx/board.py`, `tests/test_board.py`
+
+## Commands
+- `python -m pytest tests/test_board.py -q`
+
+## Open decision
+
+## Digest
 """
 
 GOAL_003 = """## Goal
 Decide where the seam threshold lives: per model in `config/models.json`, or per agent in
 `config/<id>/harness.json`. Write the recommendation and the losing option's cost.
-
-## Definition of done
-- A recommendation with the cost of the option not taken.
-
-### Checks
-```bash
-test -s /srv/hx/pods/engineers/eng-003-complete.md
-```
 """
 
 GOALS = {
@@ -151,7 +174,7 @@ GOALS = {
     "goals": [
         {
             "id": "eng-000", "pod": "engineers", "state": "complete", "outcome": "done",
-            "goal": "## Goal\nShip `hx board --json`.\n\n## Definition of done\n- It validates.\n\n### Checks\n```bash\ntrue\n```\n",
+            "goal": "## Goal\nShip `hx board --json`.\n",
             "addenda": [],
             "dispatched": "2026-09-20T10:00:00Z", "completed": "2026-09-20T11:58:12Z",
         },
@@ -182,7 +205,7 @@ MAIN_STATE = {
     "decisions": [
         {
             "d": "`--require-done` takes ids, not a file",
-            "why": "spec 08 shows it inline in the Partner's own `### Checks` block",
+            "why": "spec 08 shows the ids inline on the command line",
             "ev": [401],
         },
         {
@@ -301,12 +324,15 @@ DIGESTS = {
 # has something real in it.
 
 
-def work_item_body(goal: str, tasks: list[tuple[bool, str]], *, deliverables: str = "",
-                   commands: str = "", decision: str = "", digest: str = "") -> str:
-    """The rendered `templates/work-item.md` body: the goal, then the sections."""
+def work_item_body(goal: str, tasks: list[tuple[bool, str]], *, definition_of_done: str = "",
+                   evidence: str = "", deliverables: str = "", commands: str = "",
+                   decision: str = "", digest: str = "") -> str:
+    """The rendered `templates/work-item.md` body: the goal, the worker's own definition of
+    done, then the sections, with the `## Evidence` `hx complete done` requires."""
     checklist = "\n".join(f"- [{'x' if done else ' '}] {text}" for done, text in tasks)
     return (
-        f"{goal}\n## Tasks\n{checklist or '_none yet_'}\n\n"
+        f"{goal}\n## Definition of done\n{definition_of_done}\n\n"
+        f"## Tasks\n{checklist or '_none yet_'}\n\n## Evidence\n{evidence}\n\n"
         f"## Deliverables\n{deliverables}\n\n## Commands\n{commands}\n\n"
         f"## Open decision\n{decision}\n\n## Digest\n{digest}\n"
     )
@@ -376,14 +402,6 @@ def compactions(id: str, step_state) -> dict:
 GOAL_000 = """## Goal
 Ship `hx board --json` to the shape `CONTRACTS.md` gives: one entry per worker id, `partner`
 not among them.
-
-## Definition of done
-- `hx board --json` prints the contract document and exits 0.
-
-### Checks
-```bash
-python -m pytest tests/core/test_board.py -q
-```
 """
 
 STATE_000 = {
@@ -457,6 +475,10 @@ def other_shows() -> dict:
              (True, "Write `collect()` in `src/hx/board.py`."),
              (True, "Leave `partner` out of the items."),
              (True, "Cover a fresh root, one item and five in `tests/core/test_board.py`.")],
+            definition_of_done=("- `hx board --json` prints the contract document and exits 0.\n"
+                                "- `partner` is not among the items."),
+            evidence=("- `python -m pytest tests/core/test_board.py -q`: 9 passed (commit a41f0b2)\n"
+                      "- `test_board_leaves_the_partner_out` passed in the same run"),
             deliverables="- `src/hx/board.py`\n- `tests/core/test_board.py`",
             commands="```bash\npython -m pytest tests/core/test_board.py -q\n```",
             digest="`hx board --json` ships the contract document. `partner` is not an item.",
@@ -538,6 +560,7 @@ def other_shows() -> dict:
             GOAL_003,
             [(True, "Read spec 05 and spec 10 for where configuration lives."),
              (True, "Write the recommendation and the cost of the option not taken.")],
+            definition_of_done="- A recommendation with the cost of the option not taken.",
             deliverables="- The recommendation, in `## Open decision` below.",
             decision=("**Per model, in `config/models.json`.** The seam threshold is a share of the "
                       "context window, and the window is a property of the model, not of the agent.\n\n"
@@ -600,13 +623,13 @@ def other_shows() -> dict:
         id="res-001", pod="research", role="researcher", state="working", outcome=None,
         dispatched="2026-09-20T08:40:00Z", completed=None,
         goal=("## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and "
-               "record what you verified.\n\n## Definition of done\n- A note naming the fields "
-               "observed live.\n\n### Checks\n```bash\ntest -s notes/sessionstart.md\n```\n"),
+               "record what you verified.\n"),
         body=work_item_body(
             "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n",
             [(True, "Read the hook documentation for SessionStart."),
              (False, "Run one live session and capture the payload."),
              (False, "Write `notes/sessionstart.md` with the fields observed.")],
+            definition_of_done="- A note naming the fields observed live.",
             commands="```bash\ntest -s notes/sessionstart.md\n```",
         ),
         # No Companion pass yet: the board's `seams: 0` and this empty step state are
@@ -673,7 +696,7 @@ def main() -> int:
                 "id": "eng-001", "pod": "engineers", "outcome": None,
                 "dispatched": "2026-09-20T12:00:00Z",
             },
-            "body": existing["work_item"]["body"],
+            "body": BODY_001,
         },
         "task": {
             # v1 cut: no `after` in the task block.

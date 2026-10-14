@@ -68,8 +68,9 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   each from one source — the invariants (`config/CLAUDE.md`), the persona (`personas/<role>.md`,
   one file per role), the learnings (`LEARNINGS/<category>.md`, and `personas/<role>/<category>.md`
   for a role's own rules) and session memory (the work item) — and nothing per id is copied
-  from a shared source. The only per-id text is `harness.json` `purpose` and the work item's
-  `## Tasks`.
+  from a shared source. The only per-id text is `harness.json` `purpose` and the agent's own
+  sections of its work item (`## Tasks`, and with the goal contract below its definition of
+  done, orientation and evidence).
   - **Delivery is the `context` hook** (SessionStart, matcher `startup|resume|clear|compact`):
     at every boundary it prints the persona, the identity line `You are <id> in pod <pod>.
     <purpose>`, every rule file that holds a rule, whole, and one pointer line naming the work
@@ -122,6 +123,45 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     boundary (no bounding); the Partner runs `hx board` once after a boundary rather than
     carrying a board in context; resume re-injection is left to Claude Code's own dedup; a
     persona is printed whole with no `{{…}}` expansion.
+- Goals (CONTRACTS.md "Goals"): a goal is one `## Goal` paragraph — what the result is and why
+  — plus, when it depends on other work, one to three sentences saying on what. No
+  frontmatter, no text above it, no other heading: `## Definition of done` and `### Checks` in
+  a goal file are refused by name, each message saying where it went.
+  - **The worker writes its own definition of done.** The work-item template gains
+    `## Definition of done` (written before the first edit, on top of the role's standard set),
+    `## Orientation` (the explorer's cited starting points) and `## Evidence`. The backend,
+    frontend, release and QA personas carry a `## Your definition of done` standard set whose
+    first rule is "Orient before you write": one explorer subagent, graph-first and read-only,
+    drafts those sections before the first edit.
+  - **`hx complete done` runs no checks.** It requires a clean workdir, no open subagent
+    stream and a written `## Evidence` (not empty, not the template's note); otherwise
+    `HX-CHECK-FAILED` and nothing changes. `blocked`, `decision` and `exhausted` require only
+    that no subagent stream is open. Completion repeats (`learn_repeats`) now come from planned
+    acceptance checks only; the planned runtime's checks are unchanged.
+  - **`hx dispatch` runs nothing in the workdir:** the gate preflight and `HX-GATE-EMPTY` are
+    gone.
+  - **Addenda are prose.** `hx amend` and `hx resume` append the addendum and nothing else; an
+    addendum with a `Checks` heading (outside a fence) is refused, and `hx amend` prints
+    `HX-AMEND <id> addenda=<n>` where it printed `checks=replaced|unchanged`.
+  - **The explorer.** `harness.json` takes an optional `explorer` block, `{"model", "effort"}`,
+    the model validated against `config/models.json`; `templates/worker/harness.json` ships
+    `claude-sonnet-5-5` at `high` (the Meta contributor template has none). With one, the
+    identity line ends `Your explorer runs on <model> at <effort>.`, and `SUBAGENTS.md` tells a
+    subagent spawned as the explorer what it may write.
+  - `hx metrics <id>` reports `edits_before_definition_of_done`: workdir edits, main and
+    subagent streams, before the work item's definition of done was written; null when there
+    is no stream or the write cannot be placed.
+  - The scenario packs (`tests/scenario/m8`, `m8b`) and the UI fixtures carry paragraph goals;
+    m8b's contradiction now sits inside its one goal paragraph.
+  - **Existing instances:** a goal recorded under the old contract still shows and resumes, but
+    dispatching its text again is refused until it is one paragraph. An in-flight item has no
+    `## Evidence` section; `hx complete done` asks for one and the worker adds it.
+  - Decisions: the parser refuses other headings and text above `## Goal` but does not count
+    paragraphs or sentences (the Partner's skill and the scenario packs hold that line); a
+    `Checks` heading in an addendum is refused rather than silently ignored; `done` requires
+    `## Evidence` but not `## Definition of done`, whose timing `edits_before_definition_of_done`
+    measures instead; "ready for QA" is `## Deliverables` plus `hx complete done`, with no new
+    status.
 
 ### Fixed
 

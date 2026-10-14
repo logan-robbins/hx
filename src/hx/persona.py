@@ -17,7 +17,9 @@ every boundary, so an edit to any source lands at the next one. `boundary` build
                           file itself as their system-prompt flag; Codex reads it in
                           `$CODEX_HOME/AGENTS.md`, which `start.sh` writes at every exec
   identity line           `You are <id> in pod <pod>. <purpose>`: harness.json's id, pod and
-                          `purpose`, the one per-id paragraph (`identity_line`)
+                          `purpose`, the one per-id paragraph, then `Your explorer runs on
+                          <model> at <effort>.` when harness.json has an `explorer` block
+                          (`identity_line`)
   rules                   every `LEARNINGS/<category>.md` that holds a rule, then every
                           `personas/<role>/<category>.md` that does, whole (`hx.learn.rule_files`)
   pointer                 the one Read of the boundary: the `-working` work item (`PARTNER.md`
@@ -183,14 +185,20 @@ def role_text(root: Path, role: str) -> str | None:
 
 def identity_line(root: Path, item_id: str) -> str:
     """`You are <id> in pod <pod>. <purpose>`: the one line that makes an agent this agent and
-    not the next of its role. No purpose yet (absent, or the template's placeholder): the line
-    stops after the pod."""
+    not the next of its role. No purpose yet (absent, or the template's placeholder): that part
+    is left out. `Your explorer runs on <model> at <effort>.` closes it when harness.json has an
+    `explorer` block: the persona's first rule spawns that subagent with exactly these."""
     from .config_harness import purpose_text
 
     data = _harness(Path(root), item_id)
     purpose = purpose_text(data.get("purpose"))
     line = f"You are {item_id} in pod {data.get('pod') or item_id}."
-    return f"{line} {' '.join(purpose.split())}" if purpose else line
+    if purpose:
+        line = f"{line} {' '.join(purpose.split())}"
+    explorer = data.get("explorer")
+    if isinstance(explorer, dict) and explorer.get("model") and explorer.get("effort"):
+        line = f"{line} Your explorer runs on {explorer['model']} at {explorer['effort']}."
+    return line
 
 
 def subagents_template(root: Path, flavor: str) -> Path | None:

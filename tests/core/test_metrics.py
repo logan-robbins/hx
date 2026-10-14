@@ -90,7 +90,8 @@ def test_per_id_shape_matches_contracts(instance, work_item):
     (instance / "state" / "eng-001" / "s.json").write_text(json.dumps(
         {"working_set": {"files": [{"path": "/x/src/wip.py", "note": "n"}]}}))
     doc = per_id(instance, "eng-001")
-    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals", "cache"}
+    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals", "cache",
+                        "edits_before_definition_of_done"}
     assert (doc["id"], doc["stream"], doc["dispatched"]) == ("eng-001", "eng-001-main", DISPATCHED)
     assert set(doc["cache"]) == {"id", "invariant", "budget", "seam"}
     assert doc["cache"]["invariant"]["native_tool_schemas"] == "unmeasured"
@@ -346,3 +347,66 @@ def test_per_id_packet_bytes_prefers_the_seam_records_own_field(instance, work_i
     bare["ts"] = "2026-09-20T13:10:00Z"
     write_stream(instance, "eng-001", [legacy, packet, bare])
     assert [seam["packet_bytes"] for seam in per_id(instance, "eng-001")["seams"]] == [18422, 3900, None]
+
+
+# --- edits_before_definition_of_done ----------------------------------------------
+
+
+def _edit(path, ts, tool="Edit", **data):
+    return _tool(tool, ts=ts, file_path=str(path), **data)
+
+
+def _dod_case(instance, work_item):
+    item = work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    return item, instance / "wt" / "eng-001"
+
+
+def test_edits_before_definition_of_done_counts_workdir_edits_until_it_is_written(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    item, workdir = _dod_case(instance, work_item)
+    write_stream(instance, "eng-001", [
+        _edit(workdir / "a.py", "2026-09-20T11:00:00Z"),  # before this dispatch: not counted
+        _edit(workdir / "a.py", "2026-09-20T12:01:00Z"),
+        _edit(item, "2026-09-20T12:02:00Z", old_string="## Tasks", new_string="## Tasks\n- [ ] two"),
+        _edit(instance / "elsewhere.txt", "2026-09-20T12:03:00Z"),  # outside the workdir
+        _edit(workdir / "b.py", "2026-09-20T12:04:00Z", tool="Write"),
+        _edit(item, "2026-09-20T12:05:00Z", old_string="<yours, before your first edit: what "
+              "makes this goal done>", new_string="- the importer streams"),
+        _edit(workdir / "c.py", "2026-09-20T12:06:00Z"),  # after: not counted
+    ])
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) == 2
+    assert per_id(instance, "eng-001")["edits_before_definition_of_done"] == 2
+    assert "edits_before_definition_of_done=2" in render_per_id_text(per_id(instance, "eng-001"))
+
+
+def test_subagent_streams_count_and_the_order_is_by_timestamp(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    item, workdir = _dod_case(instance, work_item)
+    write_stream(instance, "eng-001", [
+        _edit(item, "2026-09-20T12:05:00Z", content="## Definition of done\n- streams\n"),
+    ])
+    sub = streams.log_dir(instance, "eng-001") / "eng-001-s001-closed.jsonl"
+    sub.write_text(json.dumps(_edit(workdir / "x.py", "2026-09-20T12:01:00Z")) + "\n")
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) == 1
+
+
+def test_an_unwritten_definition_counts_every_edit_so_far(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    _, workdir = _dod_case(instance, work_item)
+    write_stream(instance, "eng-001", [_edit(workdir / "a.py", "2026-09-20T12:01:00Z"),
+                                       _edit(workdir / "b.py", "2026-09-20T12:02:00Z")])
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) == 2
+
+
+def test_null_when_there_is_no_stream_or_the_write_cannot_be_placed(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    item, workdir = _dod_case(instance, work_item)
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) is None
+    item.write_text(item.read_text() + "\n## Definition of done\n- written from a shell\n")
+    write_stream(instance, "eng-001", [_edit(workdir / "a.py", "2026-09-20T12:01:00Z")])
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) is None

@@ -8,11 +8,40 @@ keeps your step state; you never talk to it.
 ## How work reaches you
 
 A `/goal` pointer names your work item, `$HARNESS_ROOT/pods/<pod>/<id>-working.md`. Read it
-first. `## Goal` is the whole task: the Partner wrote it knowing you cannot ask questions.
-The how is yours: decompose into `## Tasks`, fan out to subagents along micro bounds, and
-construct the deliverables yourself.
-`## Definition of done` is the contract; its `### Checks` block is what `hx complete done` will
-run, with `bash -e`, in your workdir. Read it before you start and design toward it.
+first. `## Goal` is the whole task: one paragraph the Partner wrote knowing you cannot ask
+questions. Everything else is yours: the `## Definition of done` (below), the decomposition
+into `## Tasks`, the subagents you fan out along micro bounds, and the deliverables.
+
+## Your definition of done
+
+`## Goal` is one paragraph: what the result is and why. Before your first edit you write the
+goal's own `## Definition of done` into the work item, on top of this standard set, which every
+goal of yours carries whether you repeat it or not:
+
+1. **Orient before you write**: spawn one explorer subagent with the goal paragraph (Agent
+   tool, model and effort from `harness.json` `explorer`). It uses the graph and memory, never
+   the editor: `hx code map --budget 5000 --focus <area>`, `type`, `callers`, `tests-for`,
+   `precedent`, `hx memory search`, `hx discipline orient --goal`. It returns, into the work
+   item, the goal-specific `## Definition of done` on top of this standard set, a `## Tasks`
+   list, the starting files and symbols with path:line, the test boundary, precedents, and
+   known dependencies. Every line must cite a graph result (path:line or a query it ran); you
+   check the ones that matter with `--expect` lints before your first edit and re-explore any
+   uncited line yourself.
+2. **Design first**: settle the interface before the implementation. When another worker or
+   component consumes it, commit a stub of that interface first, so they build against it
+   while you build behind it.
+3. **Unit tests** for every behaviour you add or change, each one failing without the change.
+4. **Pull from `dev` (or the principal branch)** at the start, before each new unit, and before
+   you finish. Resolve drift in small pulls, never in one large final merge.
+   `hx discipline pull --repo . --expect fresh` is the check: it exits 3 while the principal
+   branch has commits you have not pulled (it reads local refs, so `git fetch` first).
+5. **Evidence**: each line of `## Definition of done` gets a line in `## Evidence` naming what
+   proves it — an `hx tool-exec` receipt, an `hx evidence` event, a test command and its
+   result, a commit sha. `hx complete done` refuses an empty `## Evidence`.
+6. **Learnings**: a bug you find through unit tests, CI or QA is an `hx learn propose` the
+   moment you understand it, never a note in a file of your own.
+7. **Ready for QA**: `## Deliverables` names the branch, the commits and the commands QA
+   reruns; `hx complete done` is the status the Partner's board shows and dispatches QA on.
 
 ## How you work
 
@@ -47,16 +76,12 @@ run, with `bash -e`, in your workdir. Read it before you start and design toward
   change. `hx complete` measures your whole committed range against the repo's own size
   norms and refuses sign-off of an oversized unit; if that fires, ask the Partner to split
   the plan rather than landing it whole.
-- Pull from `dev` (or the principal branch) at assignment start, before each new unit,
-  and before sign-off. Resolve drift in small pulls, never in one large final merge.
-- `hx discipline pull --repo . --expect fresh` is the check form of that rule: it exits 3
-  while the principal branch has commits you have not pulled (it reads local refs, so
-  `git fetch` first).
 
 ## How you finish
 
-Run the `### Checks` yourself first. Then `hx complete done`. If it prints `HX-CHECK-FAILED`,
-fix the cause and run it again; do not weaken the checks. When you cannot finish:
+Check every line of your `## Definition of done` against `## Evidence`, then
+`hx complete done`. It refuses a dirty tree, an open subagent or an empty `## Evidence` with
+`HX-CHECK-FAILED`; fix the cause and run it again. When you cannot finish:
 `hx complete blocked` (something outside your control stops you: say what, first line of
 `## Open decision`), `hx complete decision` (the goal admits two defensible readings: state the
 question and both options, then stop), or `hx complete exhausted` (the goal is bigger than one

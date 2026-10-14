@@ -120,7 +120,8 @@ def test_idle_to_working(instance, hx, launched, goals):
 
     body = (instance / "pods" / "engineers" / "eng-001-working.md").read_text()
     assert "Rewrite the importer." in body, "the order is copied verbatim (spec 06)"
-    assert "### Checks" in body
+    # The worker's sections come from the template, empty until it writes them.
+    assert "## Definition of done" in body and "## Evidence" in body
     assert "{{" not in body, "every template token is rendered"
     assert (instance / "run" / "eng-001" / "goal").is_file()
 
@@ -186,15 +187,17 @@ def test_dispatch_refuses_a_non_idle_item(instance, hx, launched, goals):
     assert "refuse" in result.stderr and "working" in result.stderr
 
 
-def test_dispatch_refuses_a_goal_without_checks(instance, hx, launched):
+def test_dispatch_refuses_a_goal_that_writes_the_definition_of_done(instance, hx, launched):
+    """The old two-section goal: the definition of done is the worker's now."""
     launched("eng-001")
     path = instance / "run" / "goal-eng-001.md"
     path.parent.mkdir(exist_ok=True)
     path.write_text("## Goal\n\nDo it.\n\n## Definition of done\n\n- [ ] done\n")
     result = hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance)
     assert result.returncode == 2
-    assert "### Checks" in result.stderr
+    assert "the worker writes its own `## Definition of done`" in result.stderr
     assert not (instance / "tasks.json").exists(), "a refused dispatch writes nothing"
+    assert path.exists(), "a refused goal is not consumed"
 
 
 def test_dispatch_refuses_without_a_live_session(instance, hx, goals):
@@ -254,11 +257,17 @@ def test_an_interrupted_dispatch_recovers_on_re_run(instance, hx, launched, goal
 # --- complete -------------------------------------------------------------------------------
 
 
-def dispatch_working(instance, hx, goals, item_id="eng-001", **goal_kwargs):
+def dispatch_working(instance, hx, goals, item_id="eng-001", *, evidence=True, **goal_kwargs):
+    """Dispatch and wait for the goal; with `evidence`, the worker has also written its
+    `## Evidence`, which is all `hx complete done` asks of the work item."""
+    from .conftest import write_evidence
+
     goals(item_id, **goal_kwargs)
     result = hx("dispatch", item_id, f"run/goal-{item_id}.md", cwd=instance)
     assert result.returncode == 0, result.stderr
     wait_for_goal(instance, item_id)
+    if evidence:
+        write_evidence(instance, item_id)
     return instance
 
 
@@ -298,25 +307,25 @@ def test_complete_without_companion_state_digests_the_agents_own_deliverables(in
 
 
 @pytest.mark.parametrize("outcome", ["blocked", "decision", "exhausted"])
-def test_the_other_outcomes_run_no_checks(instance, hx, launched, goals, outcome):
-    """spec 02: `blocked`, `decision` and `exhausted` run no checks."""
+def test_the_other_outcomes_need_no_evidence(instance, hx, launched, goals, outcome):
+    """spec 02: `blocked`, `decision` and `exhausted` check nothing but open subagents."""
     launched("eng-001")
-    dispatch_working(instance, hx, goals, checks="exit 7")
+    dispatch_working(instance, hx, goals, evidence=False)
     result = hx("complete", outcome, harness_id="eng-001")
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.strip().split("\n")[-1] == f"HX-COMPLETE eng-001 {outcome}"
     assert tasks_of(instance)["eng-001"]["outcome"] == outcome
 
 
-def test_complete_refuses_a_failing_check_and_changes_nothing(instance, hx, launched, goals):
+def test_complete_refuses_an_empty_evidence_section_and_changes_nothing(instance, hx, launched, goals):
     launched("eng-001")
-    dispatch_working(instance, hx, goals, checks="echo 'the report is missing' >&2\nexit 3")
+    dispatch_working(instance, hx, goals, evidence=False)
     before = control_manifest(instance)
 
     result = hx("complete", "done", harness_id="eng-001")
     assert result.returncode == 1
     assert result.stdout.startswith("HX-CHECK-FAILED eng-001")
-    assert "the report is missing" in result.stdout
+    assert "`## Evidence` in your work item is empty" in result.stdout
     assert "HX-COMPLETE" not in result.stdout
     assert control_manifest(instance) == before, "a refused completion changes nothing"
     assert item_state(instance, "eng-001") == "working"

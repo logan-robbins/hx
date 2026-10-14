@@ -28,6 +28,9 @@ def dispatched(instance, hx, goals, item_id="eng-001", **kwargs):
         lambda: "/goal" in (instance / "run" / item_id / "fake-input.log").read_text(),
         what=f"{item_id}'s goal",
     )
+    from .conftest import write_evidence
+
+    write_evidence(instance, item_id)
     return instance
 
 
@@ -75,7 +78,8 @@ def test_show_nulls_what_later_milestones_produce(instance, hx, launched, goals)
     assert document["context_file"]["seam_ts"] is None, "no boundary yet"
     # M7 shipped: `metrics` is the contracted `hx metrics <id>` document now,
     # null only when it cannot be built — never a milestone placeholder.
-    assert set(document["metrics"]) == {"id", "stream", "dispatched", "seams", "totals", "cache"}
+    assert set(document["metrics"]) == {"id", "stream", "dispatched", "seams", "totals", "cache",
+                                        "edits_before_definition_of_done"}
     assert document["metrics"]["id"] == "eng-001"
     assert document["subagents"] == {}
     assert document["archive"] and document["bench"] == []
@@ -312,7 +316,7 @@ def test_task_prints_the_goal_and_its_addenda(instance, hx, launched, goals):
     dispatched(instance, hx, goals, goal="The dispatched order.")
     result = hx("task", harness_id="eng-001")
     assert result.returncode == 0, result.stderr
-    assert "The dispatched order." in result.stdout and "### Checks" in result.stdout
+    assert result.stdout == "## Goal\n\nThe dispatched order.\n", "the goal paragraph, nothing else"
 
     assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
     (instance / "run" / "addendum-eng-001.md").write_text("And also this.\n")

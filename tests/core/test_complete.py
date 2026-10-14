@@ -7,6 +7,9 @@ def _dispatched(instance, hx, launched, goals):
     launched("partner", "eng-001")
     goals("eng-001")
     assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
+    from .conftest import write_evidence
+
+    write_evidence(instance, "eng-001")
 
 
 def test_complete_done_does_not_wake_the_partner(instance, hx, launched, goals):
@@ -31,7 +34,7 @@ def test_complete_blocked_still_wakes_the_partner(instance, hx, launched, goals,
     assert calls == ["eng-001 blocked"]
 
 
-# --- the never-twice question at completion (TOOL_SKILL_PLAN step 4) ---------------------------
+# --- `done` requires the worker's `## Evidence`; repeats are the planned runtime's ------------
 
 import json  # noqa: E402
 import os  # noqa: E402
@@ -71,51 +74,35 @@ def learned(tmp_path, monkeypatch):
     return repo, env
 
 
-def _failing(monkeypatch, output):
-    from hx import complete
+def _item(repo, evidence):
+    item = repo.parent / "eng-001-working.md"
+    item.write_text("---\nid: eng-001\n---\n## Goal\n\nDo it.\n\n## Evidence\n" + evidence + "\n")
+    return item
 
-    script = f"printf '%s\\n' {json.dumps(output)}; exit 1"
-    monkeypatch.setattr(complete, "parse_goal_text", lambda *_: SimpleNamespace(checks=script))
 
-
-def test_a_failure_that_repeats_a_rule_is_recorded_and_still_fails(learned, monkeypatch):
+@pytest.mark.parametrize("evidence", ["", "<one line per line of your definition of done>"],
+                         ids=["empty", "template-note"])
+def test_done_refuses_an_unwritten_evidence_section(learned, monkeypatch, evidence):
     from hx import complete
 
     repo, env = learned
-    _failing(monkeypatch, f"{RULE_SIGNAL} {RULE_CHECK}")
+    item = _item(repo, evidence)
+    monkeypatch.setattr(complete, "require_work_item", lambda *_: item)
     with pytest.raises(complete.CheckFailed) as failed:
         complete.preflight(repo, "eng-001", "done", env=env)
-    message = failed.value.message
-    assert message.startswith("HX-CHECK-FAILED eng-001\n`### Checks` failed with exit 1")
-    assert message.rstrip().endswith("learnings: repeat of L1 (1.00)")
-    records = [json.loads(line) for line in
-               (repo / "state" / "learn" / "repeats.jsonl").read_text().splitlines()]
-    assert len(records) == 1
-    assert {k: records[0][k] for k in ("id", "rule", "score", "check")} == {
-        "id": "eng-001", "rule": "L1", "score": 1.0, "check": "### Checks"}
-    assert records[0]["ts"].endswith("Z")
+    assert failed.value.message.startswith("HX-CHECK-FAILED eng-001\n`## Evidence` in your work item is empty")
 
 
-def test_a_related_failure_is_recorded_with_its_score(learned, monkeypatch):
-    from hx import complete
+def test_done_with_evidence_passes_and_never_consults_the_learnings(learned, monkeypatch):
+    """No acceptance block runs at `hx complete done`, so there is no output to compare."""
+    from hx import complete, learn
 
     repo, env = learned
-    _failing(monkeypatch, RULE_SIGNAL)
-    with pytest.raises(complete.CheckFailed, match=r"learnings: repeat of L1 \(0\.\d\d\)"):
-        complete.preflight(repo, "eng-001", "done", env=env)
-    record = json.loads((repo / "state" / "learn" / "repeats.jsonl").read_text())
-    assert record["verdict"] == "related" and 0.25 <= record["score"] < 0.8
-
-
-def test_a_failure_matching_no_rule_writes_nothing(learned, monkeypatch):
-    from hx import complete
-
-    repo, env = learned
-    _failing(monkeypatch, "make: *** [all] Error 2")
-    with pytest.raises(complete.CheckFailed) as failed:
-        complete.preflight(repo, "eng-001", "done", env=env)
-    assert "learnings:" not in failed.value.message
-    assert not (repo / "state" / "learn" / "repeats.jsonl").exists()
+    item = _item(repo, "- pytest -q tests/importer: 12 passed (receipt r-1)")
+    monkeypatch.setattr(complete, "require_work_item", lambda *_: item)
+    monkeypatch.setattr(learn, "completion_repeat", lambda *a, **k: pytest.fail("consulted"))
+    proof = complete.preflight(repo, "eng-001", "done", env=env)
+    assert proof["source"] is not None and proof["acceptance"]
 
 
 def test_only_the_first_2000_bytes_are_the_signal(learned, monkeypatch):
@@ -127,15 +114,6 @@ def test_only_the_first_2000_bytes_are_the_signal(learned, monkeypatch):
                         {"verdict": "new", "rule": None, "score": 0.0, "action": ""})
     assert learn.completion_repeat(repo, "eng-001", "x" * 5000, check="c", env=env) is None
     assert len(seen[0].encode()) == 2000
-
-
-def test_a_passing_check_never_consults_the_learnings(learned, monkeypatch):
-    from hx import complete, learn
-
-    repo, env = learned
-    monkeypatch.setattr(complete, "parse_goal_text", lambda *_: SimpleNamespace(checks="true"))
-    monkeypatch.setattr(learn, "completion_repeat", lambda *a, **k: pytest.fail("consulted on a pass"))
-    complete.preflight(repo, "eng-001", "done", env=env)
 
 
 def test_a_failed_native_acceptance_check_carries_the_repeat_note(learned, monkeypatch):

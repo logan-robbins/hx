@@ -10,5 +10,5 @@ One thing to add while you are in this file: `detail` must be `null`, never an e
 when a check passes with nothing to say. The UI distinguishes the two and `hx board --json`
 already follows that rule ("absent values are `null`, never omitted").
 
-The definition of done and its `### Checks` are unchanged, and the check that `docs/` and the
-UI are untouched still applies.
+Your definition of done stands; add a line for the `null` rule, and the evidence that proves
+it, before you finish.

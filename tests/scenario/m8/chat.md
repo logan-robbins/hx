@@ -20,7 +20,7 @@ the same time.
 ```
 
 **The Partner takes no hx action before replying.** This message *is* its goal — there is no
-order file for the Partner, no dispatch of itself, no `/goal`. It reads the ask, decides what
+goal file for the Partner, no dispatch of itself, no `/goal`. It reads the ask, decides what
 it is going to do, records it in `PARTNER.md`, and answers.
 
 **The reply must contain:**
@@ -38,11 +38,11 @@ it is going to do, records it in `PARTNER.md`, and answers.
 
 ## Turn 2 — (no human input)
 
-The Partner decomposes the ask, writes both order files, runs `hx launch eng-001` and
+The Partner decomposes the ask, writes both goal files, runs `hx launch eng-001` and
 `hx launch eng-002` for ids that have no session yet, and dispatches **only the first**:
 
 ```
-hx dispatch eng-001 <the eng-001 order file>
+hx dispatch eng-001 <the eng-001 goal file>
 ```
 
 `eng-002` waits, and it waits in the Partner's head — not in hx. There is no `after` field and
@@ -102,9 +102,9 @@ fall back to English, but warn on stderr so a typo is still findable.
 Exit 0 either way — I don't want a stale locale breaking someone's script.
 ```
 
-**The Partner must then:** write `orders/eng-002.addendum.md` with that answer and run
-`hx resume eng-002 orders/eng-002.addendum.md`. Not `hx bench` and a new order — the worker
-keeps its `## Tasks`, its step state, its memory, and its workdir, and only the order grows.
+**The Partner must then:** write `goals/eng-002.addendum.md` with that answer and run
+`hx resume eng-002 goals/eng-002.addendum.md`. Not `hx bench` and a new goal — the worker
+keeps its `## Tasks`, its step state, its memory, and its workdir, and only the goal grows.
 
 ---
 
@@ -123,13 +123,15 @@ of the ask.
 - that both pieces shipped, described in the human's terms — the flag that shouts and the flag
   that speaks French, composing with each other;
 - what was decided about the unknown language, and that it was their decision;
-- that it was verified by running the checks, not by an agent saying so.
+- that it was verified — by the tests each worker's `## Evidence` names — not by an agent
+  saying so.
 
 **It must not contain:**
 
 - ids, work-item filenames, or state names as the substance of the answer;
-- hedging about whether it is finished. Each worker's `hx complete done` ran that item's
-  `### Checks` and printed `HX-COMPLETE <id> done`, so the Partner knows.
+- hedging about whether it is finished. Each worker's `hx complete done` refused until its
+  workdir was clean and its `## Evidence` named what proves each line of its definition of done,
+  and printed `HX-COMPLETE <id> done`, so the Partner knows.
 
 ---
 

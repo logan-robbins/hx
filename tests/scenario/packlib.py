@@ -91,7 +91,7 @@ def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: 
             body.replace("{{id}}", item_id)
             .replace("{{pod}}", worker_pod)
             .replace("{{dispatched}}", FIXED_TS)
-            .replace("{{goal}}", "## Goal\n\nscenario fixture\n\n## Definition of done\n\n1. n/a")
+            .replace("{{goal}}", "## Goal\n\nscenario fixture")
         )
         # Only a `complete` item carries an outcome in its frontmatter (spec 06).
         if outcome and state == "complete":
@@ -133,11 +133,22 @@ def real_board(root: pathlib.Path, states: dict[str, State]) -> tuple[list[str],
     return lines, r.stderr
 
 
-def checks_commands(checks: str) -> list[str]:
-    return [
-        line for line in checks.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
+def assert_goal_is_a_paragraph(path: pathlib.Path):
+    """A pack goal is what the Partner writes (CONTRACTS.md "Goals"): it parses with the
+    function `hx dispatch` validates with, and it is one paragraph plus, when it depends on
+    other work, one to three sentences saying on what. The worker writes its own
+    `## Definition of done`, so nothing here may pre-write one."""
+    sys.path.insert(0, str(REPO / "src"))
+    from hx.goals import parse_goal
+
+    goal = parse_goal(path)
+    paragraphs = [part for part in re.split(r"\n\s*\n", goal.goal.strip()) if part.strip()]
+    assert 1 <= len(paragraphs) <= 2, f"{path}: {len(paragraphs)} paragraphs; a goal is one"
+    if len(paragraphs) == 2:
+        sentences = re.findall(r"[.!?](?:\s|$)", paragraphs[1])
+        assert 1 <= len(sentences) <= 3, f"{path}: the dependency note is not 1-3 sentences"
+        assert "depends on" in paragraphs[1], f"{path}: a second paragraph is a dependency note"
+    return goal
 
 
 def assert_pack_config(path: pathlib.Path, workdir: pathlib.Path) -> dict:

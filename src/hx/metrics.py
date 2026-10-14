@@ -42,6 +42,88 @@ LIMIT_MARKERS = (
 #: Text-input tool names whose file argument counts as a read (Claude flavor).
 READ_TOOLS = {"Read"}
 
+#: A write to the work item whose input carries one of these wrote its definition of done: the
+#: heading, or the template note under it (`templates/work-item.md`).
+_DOD_MARKERS = ("Definition of done", "what makes this goal done")
+
+
+def _record_path(record: dict) -> str | None:
+    from .discipline import tool_input
+
+    data = tool_input(record)
+    path = data.get("file_path") or data.get("path") or data.get("notebook_path")
+    if isinstance(path, str):
+        return path
+    raw = record.get("input")
+    if isinstance(raw, str):
+        found = re.search(r'"(?:file_path|path|notebook_path)"\s*:\s*"([^"]+)"', raw)
+        if found:
+            return found.group(1)
+    return None
+
+
+def _inside(path: str, directory: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(directory.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def edits_before_definition_of_done(root: Path, item_id: str, since: str | None) -> int | None:
+    """Edit/Write tool calls on the workdir before the work item's `## Definition of done` was
+    written, for the current dispatch: a metric, never a block.
+
+    Every stream of the id counts (the explorer and other subagents write too), in timestamp
+    order from `since`. The moment the definition was written is the first write to the work
+    item whose input names `Definition of done`; while the work item's definition is still
+    empty, every workdir edit so far counts. `null` when there is no stream to read, or when
+    the definition is written but no stream record shows when (a shell write, a lost record).
+    """
+    from .complete import workdir_for
+    from .discipline import EDIT_TOOLS
+    from .workitems import SECTION_DEFINITION_OF_DONE, section_written, split_frontmatter_text
+
+    paths = [streams.main_stream(root, item_id), *streams.subagent_streams(root, item_id)]
+    paths = [p for p in paths if p.is_file()]
+    if not paths:
+        return None
+    floor = timestamps.parse(since) if since else None
+    records = []
+    for path in paths:
+        for record in streams.iter_records(path):
+            if record.get("event") != "post_tool" or record.get("tool") not in EDIT_TOOLS:
+                continue
+            ts = record.get("ts")
+            parsed = timestamps.parse(ts) if isinstance(ts, str) else None
+            if floor is not None and parsed is not None and parsed < floor:
+                continue
+            records.append((ts if isinstance(ts, str) else "", record))
+    records.sort(key=lambda pair: pair[0])
+
+    work_item = find_work_item(root, item_id)
+    written = False
+    if work_item is not None:
+        _, body = split_frontmatter_text(work_item.read_text())
+        written = section_written(body, SECTION_DEFINITION_OF_DONE)
+    own = work_item.name if work_item is not None else f"{item_id}-working.md"
+    workdir = workdir_for(root, item_id)
+
+    count = 0
+    for _, record in records:
+        target = _record_path(record)
+        if target is None:
+            continue
+        if target == own or target.endswith("/" + own):
+            raw = record.get("input")
+            text = raw if isinstance(raw, str) else json.dumps(raw)
+            if any(marker in text for marker in _DOD_MARKERS):
+                return count
+            continue
+        if _inside(target, workdir):
+            count += 1
+    return None if written else count
+
 
 def _read_json_rel(root: Path, rel: str) -> dict | None:
     try:
@@ -264,6 +346,9 @@ def per_id(root: Path, item_id: str) -> dict:
         "dispatched": dispatched,
         "seams": seams,
         "totals": totals,
+        # Orientation before change: a metric, never a block (docs/prompt-runtime.md).
+        "edits_before_definition_of_done": edits_before_definition_of_done(
+            root, item_id, dispatched if isinstance(dispatched, str) else None),
         # The invariant prompt prefix and cache age (TOOL_SKILL_PLAN step 8, `hx cache report`).
         "cache": _cache_or_none(root, item_id),
     }
@@ -301,6 +386,7 @@ def render_per_id_text(doc: dict) -> str:
     lines.append(f"totals seams={totals['seams']} tool_calls={totals['tool_calls']} "
                  f"reads_of_context_file={totals['reads_of_context_file']} "
                  f"reads_of_working_set={totals['reads_of_working_set']} other={totals['other']}")
+    lines.append(f"edits_before_definition_of_done={doc.get('edits_before_definition_of_done')}")
     cache = doc.get("cache")
     if cache:
         seam = cache.get("seam") or {}
