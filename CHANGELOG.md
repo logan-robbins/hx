@@ -162,6 +162,16 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
     `## Evidence` but not `## Definition of done`, whose timing `edits_before_definition_of_done`
     measures instead; "ready for QA" is `## Deliverables` plus `hx complete done`, with no new
     status.
+- The `hx-partner` skill is organised around the four things the Partner reads before it
+  decides: **status** (`hx board`, `hx show`, `hx read`, `hx goals`, `hx metrics`, fleet
+  memory), the **application map** (`hx map get|plan-context|check`: which responsibility a
+  change touches, its interfaces and consumers, who holds a lease), the **feature map** (the
+  code graph's `hx code submaps|map|contract|callers|tests-for`, for cutting units one worker
+  can finish) and the **assignment ledger** (`hx plan`, `hx loop --status`, leases, receipts).
+  Writing a goal is the paragraph rule and nothing else; the sections on writing `### Checks`
+  and lint lines are gone (a lint is now a line of the worker's definition of done). It also
+  covers the `explorer` block when creating a worker, `HX-AMEND` on resume, and the `done`
+  row as clean workdir, no open subagent and `## Evidence` written.
 
 ### Fixed
 
