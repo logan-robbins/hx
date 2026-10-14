@@ -99,7 +99,7 @@ instead.
   work item file: the goal, checks, live `## Tasks`, deliverables, open decision, digest; plus
   whether its Companion is running a pass right now, and an **Open last compaction** link that
   opens the Companion's latest compaction in another window), an **Open session** link that opens the
-  pane, step state, context file and stream tails in another window, Goals and Archive, and a
+  pane, step state, what the `context` hook hands it and stream tails in another window, Goals and Archive, and a
   Partner page with `PARTNER.md`, the board, and a chat box that sends a message to the Partner
   exactly as `hx wake partner` does.
   Full control (slash commands, interrupts) stays in `tmux attach -t partner`.
@@ -107,13 +107,13 @@ instead.
 
 ## 5. Personas
 
-Every worker's persona is rendered at each launch from its role's
-`~/hx/personas/<role>/AGENTS.md` (`backend-engineer`, `frontend-engineer`, `release-engineer`,
-`qa-engineer`) plus the one paragraph in its `harness.json` `purpose` that says what that id is
-for; nothing is copied per worker. What a worker learns becomes a learnings rule for its role
+Every worker is handed, at every boundary, its role's
+`~/hx/personas/<role>.md` (`backend-engineer`, `frontend-engineer`, `release-engineer`,
+`qa-engineer`) plus an identity line carrying the one paragraph in its `harness.json` `purpose`
+that says what that id is for; nothing is copied per worker. What a worker learns becomes a learnings rule for its role
 (§6), not a note in a file of its own. Edit a persona only by telling the Partner what to
-change; it takes effect at each worker's next `hx restart`. The
-Partner's own persona is `~/hx/config/partner/AGENTS.md`; the Companions' rules are
+change; it takes effect at each worker's next boundary (`/clear`, compaction, restart). The
+Partner's own persona is `~/hx/personas/partner.md`; the Companions' rules are
 `~/hx/companion/BASE.md` and `~/hx/companion/roles/<role>.md`.
 
 ## 6. Learnings

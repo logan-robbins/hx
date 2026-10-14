@@ -117,10 +117,11 @@ hx/skeleton/companion/roles/partner.md
 hx/skeleton/companion/roles/backend-engineer.md
 hx/skeleton/companion/roles/frontend-engineer.md
 hx/skeleton/companion/roles/release-engineer.md
-hx/skeleton/personas/partner/AGENTS.md
-hx/skeleton/personas/backend-engineer/AGENTS.md
-hx/skeleton/personas/frontend-engineer/AGENTS.md
-hx/skeleton/personas/release-engineer/AGENTS.md
+hx/skeleton/personas/partner.md
+hx/skeleton/personas/backend-engineer.md
+hx/skeleton/personas/frontend-engineer.md
+hx/skeleton/personas/release-engineer.md
+hx/skeleton/personas/qa-engineer.md
 hx/skeleton/templates/work-item.md
 hx/skeleton/templates/goal.md
 hx/skeleton/templates/addendum.md
@@ -141,7 +142,6 @@ hx/skeleton/adapters/meta/install.sh
 hx/skeleton/adapters/meta/start.sh
 hx/skeleton/adapters/meta/seam-command
 hx/skeleton/adapters/meta/hook.py
-hx/skeleton/config/partner/AGENTS.md
 hx/skeleton/config/partner/SUBAGENTS.md
 hx/skeleton/config/partner/harness.json
 hx/skills/hx-partner/SKILL.md

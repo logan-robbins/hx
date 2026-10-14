@@ -137,10 +137,10 @@ def test_partner_checkpoint_allows_seam_without_companion(instance, monkeypatch)
     monkeypatch.setattr(companion_mod, "is_running", lambda *a, **k: False)
     _behind(instance)
     _touch_marker(instance)
+    (instance / "PARTNER.md").write_text("# Partner state\n")
     result = seam(instance, "partner", env={})
     assert result["outcome"] == "taken"
-    context = instance / "run" / "partner" / "partner-main.context.md"
-    assert "## PARTNER.md" in context.read_text()
+    assert "\n## Status\n" in (instance / "PARTNER.md").read_text()
 
 
 def test_take_waits_out_an_open_menu(instance, monkeypatch):

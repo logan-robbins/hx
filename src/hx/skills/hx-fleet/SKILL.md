@@ -21,10 +21,10 @@ Ids are `<pod>-NNN`. Four worker roles ship, each with a persona and a matching 
 
 | Role | Persona | Companion rules | Typical ids |
 |---|---|---|---|
-| `backend-engineer` | `personas/backend-engineer/AGENTS.md` | `companion/roles/backend-engineer.md` | `be-001`, `be-002` |
-| `frontend-engineer` | `personas/frontend-engineer/AGENTS.md` | `companion/roles/frontend-engineer.md` | `fe-001` |
-| `release-engineer` | `personas/release-engineer/AGENTS.md` | `companion/roles/release-engineer.md` | `rel-001` |
-| `qa-engineer` | `personas/qa-engineer/AGENTS.md` | `companion/roles/qa-engineer.md` | `qa-001` |
+| `backend-engineer` | `personas/backend-engineer.md` | `companion/roles/backend-engineer.md` | `be-001`, `be-002` |
+| `frontend-engineer` | `personas/frontend-engineer.md` | `companion/roles/frontend-engineer.md` | `fe-001` |
+| `release-engineer` | `personas/release-engineer.md` | `companion/roles/release-engineer.md` | `rel-001` |
+| `qa-engineer` | `personas/qa-engineer.md` | `companion/roles/qa-engineer.md` | `qa-001` |
 
 All paths are relative to `$HARNESS_ROOT`. To create `be-001`:
 
@@ -63,10 +63,10 @@ That one file is the whole worker. Then:
 4. **Write `purpose`** in `harness.json`: the paragraph that says what *this* id is for — the
    domain it owns, the part of the codebase it lives in, the judgement you want from it. That
    paragraph is the whole difference between this agent and the next one of its role. Copy no
-   persona: every launch renders `run/<id>/persona.md` from `personas/<role>/AGENTS.md`, this
-   `purpose` and the learnings, so an edit to the role persona reaches every worker of the role
-   at its next launch. `hx doctor` warns `purpose:<id>` while the template's `{{purpose}}` is
-   left.
+   persona: at every boundary the `context` hook hands the worker `personas/<role>.md`, an
+   identity line (`You are <id> in pod <pod>. <purpose>`) and the learnings (`hx persona <id>`
+   prints it), so an edit to the role persona reaches every worker of the role at its next
+   boundary. `hx doctor` warns `purpose:<id>` while the template's `{{purpose}}` is left.
 5. **Copy nothing else.** What this worker's subagents are told is
    `templates/worker/SUBAGENTS.md`, shared by every worker and rendered with its id when the
    `SubagentStart` hook composes each subagent's context file; edit it there and every worker's
@@ -89,13 +89,13 @@ One command does all of this. None of it is optional and none of it is yours to 
   `hx-memory` for you; `hx-worker` and `hx-memory` for every worker; `hx-signoff` for release
   and QA engineers; `hx-conversion` only where `config/hx.json` names it in `skills` — and
   pre-seeds the home's `.claude.json` so no first-run wizard or trust dialog can stop a launch.
-- **`adapters/claude/start.sh`** renders `run/<id>/persona.md` from its sources
-  (`python -m hx.persona`: the role persona, `purpose`, the learnings), reads `seed/token` in its own process and
-  exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and execs the recorded binary (`config/claude.json`,
-  re-recorded at every launch so the fleet runs the current release; `DISABLE_AUTOUPDATER=1`
-  keeps a running session on one version) with
-  `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model`, `--effort` and
-  `--append-system-prompt-file`. No prompt argument, ever.
+- **`adapters/claude/start.sh`** refreshes the home's `CLAUDE.md` from `config/CLAUDE.md`,
+  reads `seed/token` in its own process and exports it as `CLAUDE_CODE_OAUTH_TOKEN`, and execs
+  the recorded binary (`config/claude.json`, re-recorded at every launch so the fleet runs the
+  current release; `DISABLE_AUTOUPDATER=1` keeps a running session on one version) with
+  `--dangerously-skip-permissions`, `IS_SANDBOX=1`, `--model` and `--effort`. No prompt
+  argument and no system-prompt flag, ever: the persona, the identity line and the learnings
+  arrive through the SessionStart `context` hook at every boundary, bounded at 10,000 bytes.
 - **The Companion** is launched in the same session's `companion` window, with its own home and
   its own system prompt composed from `companion/BASE.md`, the role file, and this agent's
   facts.
@@ -124,11 +124,14 @@ deleting anything.
 Two files, and both are required — `hx launch` refuses a `role` with no role file, so the pair
 is enforced rather than merely recommended.
 
-**`personas/<role>/AGENTS.md`** — the shape of the three shipped ones, which are the reference:
+**`personas/<role>.md`** — the shape of the shipped ones, which are the reference:
 identity (who it is and where it runs), how work reaches it, how it works, which files are
 its own, and how it finishes. It is shared by every worker of the role and holds nothing about
-any one of them — that is each worker's `purpose`. Read `personas/backend-engineer/AGENTS.md`
-before writing a new one; matching its shape matters more than matching its length.
+any one of them — that is each worker's `purpose`. Read `personas/backend-engineer.md`
+before writing a new one; matching its shape matters more than matching its length. The
+`context` hook prints it whole at every boundary, with the identity line and the rules, under a
+10,000-byte bound on Claude: keep it short, and `hx persona <id>` shows what an agent of the
+role is handed.
 
 **`companion/roles/<role>.md`** — the retention rules for this kind of agent: what its
 Companion keeps until the task completes, what it collapses, what it discards. The shipped
@@ -142,11 +145,14 @@ Then create workers from it exactly as in §1.
 
 Each layer has one source, and you edit the source:
 
-- what every worker of a role is — `personas/<role>/AGENTS.md`. It reaches every worker of the
-  role at its next `hx restart` or launch, existing ones included: nothing was copied;
+- what every worker of a role is — `personas/<role>.md`. It reaches every worker of the role
+  at its next boundary (`/clear`, compaction, restart), existing ones included: nothing was
+  copied;
 - what one worker is for — its `harness.json` `purpose`, same timing;
-- what every agent must hold — `config/CLAUDE.md`, re-read at every agent's next boundary;
-- what agents have learned — the learnings, through `hx learn accept`, never by hand.
+- what every agent must hold — `config/CLAUDE.md`, at every agent's next launch or restart
+  (it is the home's CLAUDE.md on Claude);
+- what agents have learned — the learnings, through `hx learn accept` (`--role R` files a rule
+  in `personas/<role>/<category>.md`), never by hand.
 
 None of it lands mid-task. A worker's lessons are proposals you review (`hx learn pending`),
 scoped to its role unless you widen them with `--global`; there is no per-worker memory file

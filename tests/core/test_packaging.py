@@ -167,7 +167,8 @@ def test_a_fresh_instance_has_no_mirror_worktrees_or_orders_dir(
     ).returncode == 0
     for gone in ("repos", "wt", "goals", "config/repo.json"):
         assert not (root / gone).exists(), gone
-    assert (root / "personas" / "partner" / "AGENTS.md").is_file()
+    assert (root / "personas" / "partner.md").is_file()
+    assert not (root / "personas" / "partner").exists(), "one file per role, no directory of AGENTS.md"
 
     from hx.board import collect
 

@@ -39,6 +39,25 @@ TS = "2026-09-20T13:10:00Z"
 #: handoff/ui-to-build.md.
 DEFAULT_STATE_BUDGET = 10_000
 
+#: `hx show`'s `context_file.text` is what the `context` hook hands the agent now
+#: (`hx persona <id>`, `hx.persona.boundary`): the role persona, the identity line, the rule
+#: files that hold a rule, and one pointer to the file its `path` names.
+ENGINEER_PERSONA = ("# Engineer\n\nYou are an engineer in this hx instance: one goal at a time, in "
+                    "your own workdir, committing as you go, finishing with `hx complete`.")
+BUILD_RULES = ("# Build\n\n**Rule L1** · Signal: a rename across directories broke an import · "
+               "Check: `git diff --name-status` shows R only within one directory · "
+               "Evidence: eng-000, 2026-09-19")
+IDLE_LINE = ("You have no task in progress. When you get one, a `/goal` pointer names your work "
+             "item; until then there is no file to read.")
+
+
+def handed(id, pod, purpose, file):
+    """The `context` hook's output for `id`: persona, identity, rules, then the pointer."""
+    pointer = (f"Use the Read tool once on {ROOT_ABS}/{file} before anything else; do not cat it "
+               "and do not read it twice.") if file else IDLE_LINE
+    return "\n\n".join([ENGINEER_PERSONA, f"You are {id} in pod {pod}. {purpose}", BUILD_RULES,
+                         pointer]) + "\n"
+
 
 # -- the board (v1 cut: no errors, no after/ready/goal_pending, no partner) ----
 
@@ -319,7 +338,7 @@ def show_document(
             "dispatched": dispatched,
             "completed": completed,
         },
-        "persona_path": f"run/{id}/persona.md",
+        "persona_path": f"personas/{role}.md",
         "step_state": step_state,
         "context_file": context_file,
         "streams": streams,
@@ -460,7 +479,7 @@ def other_shows() -> dict:
                        context_tokens=131880, ref={"transcript": "/srv/hx/run/eng-000/t.jsonl",
                                                    "tool_use_id": "toolu_bash_commit"}),
                 record(130, "2026-09-20T11:58:10Z", "eng-000-main", event="seam", source="clear",
-                       context_file="/srv/hx/run/eng-000/eng-000-main.context.md",
+                       context_file="/srv/hx/pods/engineers/eng-000-working.md",
                        context_file_bytes=2410, ref={"transcript": None}),
                 record(131, "2026-09-20T11:58:12Z", "eng-000-main", event="close",
                        ref={"transcript": None}),
@@ -484,12 +503,10 @@ def other_shows() -> dict:
             "totals": {"seams": 2, "tool_calls": 13, "reads_of_context_file": 2,
                        "reads_of_working_set": 0, "other": 11},
         },
+        # Complete: a record, so the hook points at nothing until the next goal.
         context_file={
-            "path": "run/eng-000/eng-000-main.context.md",
-            "text": ("# Context\n\n_source: state/eng-000/eng-000-main.json_\n\n"
-                     "## Goal\nship `hx board --json` to the CONTRACTS.md shape\n\n"
-                     "## Closed\n- st1 collect() returns the contract document (a41f0b2)\n"
-                     "- st2 `partner` is not an item (a41f0b2)\n"),
+            "path": None,
+            "text": handed("eng-000", "engineers", "Owns `hx board` and its JSON contract.", None),
             "seam_ts": "2026-09-20T11:58:10Z",
         },
         pane={"session": "eng-000", "alive": True,
@@ -508,7 +525,8 @@ def other_shows() -> dict:
         streams=[],
         pane={"session": "eng-002", "alive": True,
               "lines": ["Waiting. No goal dispatched."], "source": "session"},
-        context_file={"path": "run/eng-002/eng-002-main.context.md", "text": None, "seam_ts": None},
+        context_file={"path": None, "seam_ts": None,
+                      "text": handed("eng-002", "engineers", "Owns the importer.", None)},
         turn=None,
     )
 
@@ -542,7 +560,7 @@ def other_shows() -> dict:
                        context_tokens=71240, ref={"transcript": "/srv/hx/run/eng-003/t.jsonl",
                                                   "tool_use_id": "toolu_read_10"}),
                 record(75, "2026-09-20T12:46:02Z", "eng-003-main", event="seam", source="compact",
-                       context_file="/srv/hx/run/eng-003/eng-003-main.context.md",
+                       context_file="/srv/hx/pods/engineers/eng-003-working.md",
                        context_file_bytes=1980, ref={"transcript": None}),
                 record(76, "2026-09-20T12:47:20Z", "eng-003-main", event="post_tool", tool="Edit",
                        input='{"file_path": "pods/engineers/eng-003-working.md"}',
@@ -567,11 +585,8 @@ def other_shows() -> dict:
                        "reads_of_working_set": 2, "other": 1},
         },
         context_file={
-            "path": "run/eng-003/eng-003-main.context.md",
-            "text": ("# Context\n\n_source: state/eng-003/eng-003-main.json_\n\n"
-                     "## Goal\ndecide where the seam threshold lives\n\n"
-                     "## Decisions\n- per model in `config/models.json` — the threshold is a share of "
-                     "the context window\n"),
+            "path": None,
+            "text": handed("eng-003", "engineers", "Owns the seam policy and its thresholds.", None),
             "seam_ts": "2026-09-20T12:46:02Z",
         },
         pane={"session": "eng-003", "alive": True,
@@ -617,7 +632,8 @@ def other_shows() -> dict:
               "lines": ["(no session; the last 120 lines are from the log)",
                         "Read the hooks documentation. Next: capture one live payload."],
               "source": "log"},
-        context_file={"path": "run/res-001/res-001-main.context.md", "text": None, "seam_ts": None},
+        context_file={"path": None, "seam_ts": None,
+                      "text": handed("res-001", "research", "Reads the hooks documentation.", None)},
         turn={"ts": "2026-09-20T09:02:11Z", "background_tasks": []},
     )
 
@@ -636,6 +652,11 @@ def main() -> int:
     # touch them. Only the digests change: the Companion has written them now.
     streams = existing["streams"]
     for stream in streams:
+        for record in stream["tail"]:
+            # The boundary names the file its pointer named: the work item, since the main
+            # stream has no context file of its own.
+            if record.get("context_file", "").endswith("-main.context.md"):
+                record["context_file"] = f"{ROOT_ABS}/pods/engineers/eng-001-working.md"
         handle = stream["handle"]
         if handle in DIGESTS:
             stream["digest"] = DIGESTS[handle]
@@ -665,12 +686,17 @@ def main() -> int:
             "dispatched": "2026-09-20T12:00:00Z",
             "completed": None,
         },
-        "persona_path": "run/eng-001/persona.md",
+        "persona_path": "personas/engineer.md",
         "step_state": {
             "eng-001-main": accept(MAIN_STATE, seq=412),
             "eng-001-s001": accept(SUBAGENT_STATE, seq=40),
         },
-        "context_file": existing["context_file"],
+        "context_file": {
+            "path": "pods/engineers/eng-001-working.md",
+            "text": handed("eng-001", "engineers", "Owns the CLI's refusals and their exit codes.",
+                           "pods/engineers/eng-001-working.md"),
+            "seam_ts": "2026-09-20T12:50:00Z",
+        },
         "streams": streams,
         "subagents": existing["subagents"],
         "metrics": existing["metrics"],

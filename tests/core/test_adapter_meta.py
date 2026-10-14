@@ -234,9 +234,9 @@ def test_meta_start_exec_is_yolo_bare_and_isolated(instance, tmp_path):
     assert body["env"]["META_API_KEY"] == "meta-test-key"
     assert body["env"]["HARNESS_ID"] == "eng-001"
     assert body["cwd"] == str(instance / "wt" / "eng-001")
-    persona = instance / "run" / "eng-001" / "persona.md"
-    assert "You are eng-001" in persona.read_text()
-    assert "Things I learned" not in persona.read_text()
+    # Meta takes no system prompt: everything arrives through the `context` hook.
+    assert not (instance / "run" / "eng-001" / "persona.md").exists()
+    assert not any("persona" in arg for arg in argv)
 
 
 def test_meta_start_exec_uses_the_long_model_option(instance, tmp_path):

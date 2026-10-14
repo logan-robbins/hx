@@ -1,10 +1,12 @@
 """`adapters/claude/start.sh` — the entire launch (spec 11, 17.4).
 
-M0 pass criteria: "`start.sh` argv is exactly `--dangerously-skip-permissions --effort …
---model … --append-system-prompt-file run/<id>/persona.md` with no prompt argument;
-`persona.md` is rendered from its sources (`hx persona`) at exec", plus `--setting-sources user` (build-8
-item 0: the workdir is a checkout hx does not own, and its `.claude/settings.json` must
-never load).
+M0 pass criteria: `start.sh` argv is exactly `--dangerously-skip-permissions --setting-sources
+user --effort … --model …` with no prompt argument and no system-prompt flag: the persona, the
+identity line and the learnings arrive through the SessionStart `context` hook at every
+boundary (`hx persona <id>`), and the invariants through the home's `CLAUDE.md`, refreshed
+here at every launch. `--setting-sources user` is build-8 item 0: the workdir is a checkout hx
+does not own, and its `.claude/settings.json` must never load. Only a planned launch passes
+`--append-system-prompt-file`, with the persona its capsule prepared.
 
 The tmux tests run a real tmux server on a private socket and a fake `claude` that records
 its argv, env and cwd (ORCHESTRATION.md "Fake claude for M0-M5").
@@ -30,7 +32,6 @@ EXPECTED_FLAGS = [
     "xhigh",
     "--model",
     "claude-opus-5",
-    "--append-system-prompt-file",
 ]
 
 #: Flags spec 11 and 17.4 say are never passed.
@@ -92,17 +93,6 @@ def test_refuses_a_token_readable_by_anyone_else(ready):
     assert "refuse" in result.stderr and "0600" in result.stderr
 
 
-def test_exec_refuses_a_persona_it_cannot_render(ready):
-    """A role persona naming an identity variable hx does not have never reaches a session."""
-    role = ready / "personas" / "engineer" / "AGENTS.md"
-    role.parent.mkdir(parents=True, exist_ok=True)
-    role.write_text("You are {{id}}, owner of {{nothing}}.\n")
-    result = start(ready, "eng-001", "--exec")
-    assert result.returncode != 0
-    assert "refuse" in result.stderr and "could not render" in result.stderr
-    assert "nothing" in result.stderr
-
-
 def test_the_planned_capsule_persona_is_used_as_prepared(ready, tmp_path):
     """Inside a planned launch's capsule the verified planned prompt is the persona; start.sh
     must not render a different one from the instance sources."""
@@ -158,8 +148,8 @@ def launch_and_record(instance, item_id, tmux_server):
 
 def test_argv_is_exactly_spec_17_4(ready, tmux_server):
     record = launch_and_record(ready, "eng-001", tmux_server)
-    persona = str(ready / "run" / "eng-001" / "persona.md")
-    assert record["argv"] == EXPECTED_FLAGS + [persona]
+    assert record["argv"] == EXPECTED_FLAGS
+    assert "--append-system-prompt-file" not in record["argv"], "the persona comes from the hook"
 
 
 def test_no_prompt_argument_ever(ready, tmux_server):
@@ -233,26 +223,23 @@ def test_the_session_is_named_by_the_id_with_a_main_window(ready, tmux_server):
     assert "main" in windows
 
 
-def test_persona_is_rendered_from_its_sources(ready, tmux_server):
-    from hx import persona as persona_mod
-
+def test_no_persona_file_is_rendered(ready, tmux_server):
+    """Nothing is rendered into a file: `hx persona eng-001` is what the `context` hook prints."""
     launch_and_record(ready, "eng-001", tmux_server)
-    persona = (ready / "run" / "eng-001" / "persona.md").read_text()
-    assert persona == persona_mod.render(ready, "eng-001")
-    assert PERSONA.strip("\n") in persona
-    assert "UPDATES BELOW ONLY" not in persona
+    assert not (ready / "run" / "eng-001" / "persona.md").exists()
 
 
-def test_persona_is_regenerated_at_every_launch(ready, tmux_server):
+def test_the_home_claude_md_is_refreshed_at_every_launch(ready, tmux_server):
+    """The invariants' one channel on Claude (`config_harness.INVARIANTS_CHANNEL`)."""
     launch_and_record(ready, "eng-001", tmux_server)
-    harness = ready / "config" / "eng-001" / "harness.json"
-    body = json.loads(harness.read_text())
-    body["purpose"] = "You are eng-001, now a reviewer."
-    harness.write_text(json.dumps(body))
+    home = ready / "run" / "eng-001" / "home" / "CLAUDE.md"
+    clauses = ready / "config" / "CLAUDE.md"
+    assert home.read_text() == clauses.read_text()
+    clauses.write_text(clauses.read_text() + "\nAn edited invariant.\n")
     (ready / "run" / "eng-001" / "fake-argv.json").unlink()
     launch_and_record(ready, "eng-001", tmux_server)
-    persona = (ready / "run" / "eng-001" / "persona.md").read_text()
-    assert "You are eng-001, now a reviewer." in persona and PERSONA.strip("\n") not in persona
+    assert home.read_text().endswith("An edited invariant.\n")
+    assert PERSONA.strip("\n") not in home.read_text(), "the purpose is the hook's, not the home's"
 
 
 def test_relaunching_respawns_the_main_window(ready, tmux_server):

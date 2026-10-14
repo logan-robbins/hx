@@ -322,22 +322,19 @@ def test_check_warns_on_twins_wherever_they_are_filed(instance):
 # --- the persona region -------------------------------------------------------------------------
 
 
-def test_the_persona_region_carries_every_rule_whole(instance):
-    empty = learn.persona_region(instance)
-    assert str(instance / "LEARNINGS") in empty and "0 rule(s)" in empty
-    assert "never read the files" in empty and "hx learn propose --category" in empty
-    assert "###" not in empty, "no empty category blocks"
+def test_the_rule_files_are_the_category_files_that_hold_a_rule(instance):
+    """What the `context` hook prints whole (`hx.persona.boundary`): every category file with a
+    rule, taxonomy order; a file of boilerplate alone is not handed to anyone."""
+    assert learn.rule_files(instance) == []
     for category, signal in (("evidence", "a count quoted without its scope"), ("delivery", "a draft PR"),
                              ("evidence", "a reconstructed summary cited as raw")):
         learn.accept(instance, propose(instance, signal=signal, category=category, env=ENG)["id"], env=PARTNER)
-    region = learn.persona_region(instance)
-    rules = learn.read_rules(instance / "LEARNINGS")
-    assert "3 rule(s), last L3" in region
-    for rule in rules:
-        assert rule["line"] in region, rule["key"]
-    assert region.index("### evidence — ") < region.index("### delivery — ")
-    assert region.count("### ") == 2
-    assert region.index("**Rule L1**") < region.index("**Rule L3**") < region.index("**Rule L2**"), \
+    files = learn.rule_files(instance)
+    assert [path.name for path in files] == ["evidence.md", "delivery.md"], "taxonomy order"
+    text = "".join(path.read_text() for path in files)
+    for rule in learn.read_rules(instance / "LEARNINGS"):
+        assert rule["line"] in text, rule["key"]
+    assert text.index("**Rule L1**") < text.index("**Rule L3**") < text.index("**Rule L2**"), \
         "taxonomy order, then file order"
     summary = learn.summary(instance)
     assert summary["categories"] == {"evidence": 2, "delivery": 1} and summary["last"] == "L3"
@@ -346,13 +343,13 @@ def test_the_persona_region_carries_every_rule_whole(instance):
 # --- scope: global or one role ------------------------------------------------------------------
 
 
-def test_a_rule_line_may_carry_a_role_scope():
+def test_a_role_field_an_older_hx_wrote_is_read_and_can_be_dropped():
     rule = learn.parse_rule("**Rule T4** · Role: backend-engineer · Signal: s · Check: c · Evidence: e")
     assert rule["key"] == "T4" and rule["role"] == "backend-engineer"
     assert (rule["signal"], rule["check"], rule["evidence"]) == ("s", "c", "e")
     assert learn.parse_rule("**Rule T5** · Signal: s · Check: c · Evidence: e")["role"] is None
-    assert learn.render_rule("T", 4, "s", "c", "e", role="backend-engineer") == rule["line"]
-    assert learn.render_rule("T", 5, "s", "c", "e") == "**Rule T5** · Signal: s · Check: c · Evidence: e"
+    assert learn.without_role_field(rule["line"]) == learn.render_rule("T", 4, "s", "c", "e") \
+        == "**Rule T4** · Signal: s · Check: c · Evidence: e"
 
 
 def test_propose_role_scopes_the_rule_and_accept_keeps_it(instance):
@@ -360,8 +357,13 @@ def test_propose_role_scopes_the_rule_and_accept_keeps_it(instance):
     assert proposal["scope"] == "backend-engineer"
     record = learn.accept(instance, proposal["id"], env=PARTNER)
     assert record["scope"] == "backend-engineer"
-    (rule,) = learn.read_rules(instance / "LEARNINGS")
-    assert rule["role"] == "backend-engineer" and rule["line"].startswith("**Rule L1** · Role: backend-engineer · ")
+    assert learn.read_rules(instance / "LEARNINGS") == [], "a role's rule is not in the shared directory"
+    (rule,) = learn.read_all_rules(instance)
+    assert rule["role"] == "backend-engineer" and rule["line"].startswith("**Rule L1** · Signal: ")
+    held = instance / "personas" / "backend-engineer" / "evidence.md"
+    assert rule["file"] == str(held) and held.read_text().startswith("# backend-engineer · evidence\n")
+    assert learn.rule_files(instance, role="backend-engineer") == [held]
+    assert learn.rule_files(instance, role="qa-engineer") == [] == learn.rule_files(instance)
     decision = json.loads((instance / "LEARNINGS" / "decisions.jsonl").read_text().splitlines()[-1])
     assert decision["scope"] == "backend-engineer"
     assert propose(instance, env=ENG)["scope"] is None, "global unless a role is named"
@@ -374,7 +376,7 @@ def test_the_reviewer_decides_the_scope(instance):
     assert learn.accept(instance, widened["id"], global_scope=True, env=PARTNER)["scope"] == "global"
     narrowed = propose(instance, signal="b", env=ENG)
     assert learn.accept(instance, narrowed["id"], role="qa-engineer", env=PARTNER)["scope"] == "qa-engineer"
-    roles = {rule["key"]: rule["role"] for rule in learn.read_rules(instance / "LEARNINGS")}
+    roles = {rule["key"]: rule["role"] for rule in learn.read_all_rules(instance)}
     assert roles == {"L1": None, "L2": "qa-engineer"}
     both = propose(instance, signal="c", env=ENG)
     with pytest.raises(ValidationError):
@@ -393,23 +395,57 @@ def test_a_text_proposal_is_scoped_to_its_authors_role(instance):
     assert record["scope"] == "backend-engineer"
 
 
-def test_the_persona_region_is_global_rules_then_the_roles(instance):
+def test_the_rule_files_are_the_global_ones_then_the_roles(instance):
     for signal, role, category in (("everyone", None, "build"), ("backend only", "backend-engineer", "domain"),
                                    ("qa only", "qa-engineer", "testing"),
                                    ("backend build", "backend-engineer", "build")):
         learn.accept(instance, propose(instance, signal=signal, role=role, category=category, env=ENG)["id"],
                      env=PARTNER)
-    general = learn.persona_region(instance)
-    assert "everyone" in general and "backend only" not in general and "qa only" not in general
-    assert "1 rule(s), last L1" in general
-    backend = learn.persona_region(instance, role="backend-engineer")
+    relative = lambda files: [str(path.relative_to(instance)) for path in files]  # noqa: E731
+    assert relative(learn.rule_files(instance)) == ["LEARNINGS/build.md"]
+    assert relative(learn.rule_files(instance, role="backend-engineer")) == [
+        "LEARNINGS/build.md", "personas/backend-engineer/domain.md", "personas/backend-engineer/build.md",
+    ], "global first, then the role's in taxonomy order"
+    backend = "".join(path.read_text() for path in learn.rule_files(instance, role="backend-engineer"))
+    assert "everyone" in backend and "backend only" in backend and "backend build" in backend
     assert "qa only" not in backend
-    assert "3 rule(s), 2 of them for backend-engineer, last L4" in backend
-    assert backend.index("### build — ") < backend.index("**Rule L1**") \
-        < backend.index("### backend-engineer · domain") < backend.index("**Rule L2**"), "global first"
-    assert backend.index("### backend-engineer · domain") < backend.index("### backend-engineer · build"), \
-        "the role's rules in taxonomy order"
-    assert "--role <your role>" in backend
+
+
+def test_numbers_are_unique_across_the_shared_directory_and_every_role(instance):
+    keys = []
+    for signal, role in (("one", None), ("two", "backend-engineer"), ("three", "qa-engineer"), ("four", None)):
+        keys.append(learn.accept(instance, propose(instance, signal=signal, role=role, env=ENG)["id"],
+                                 env=PARTNER)["rule"])
+    assert keys == ["L1", "L2", "L3", "L4"]
+    assert learn.summary(instance)["roles"] == {"backend-engineer": 1, "qa-engineer": 1}
+    stray = instance / "personas" / "qa-engineer" / "notes.md"
+    stray.write_text("**Rule L9** · Signal: s · Check: c · Evidence: e\n")
+    twin = instance / "personas" / "qa-engineer" / "build.md"
+    twin.write_text(learn.category_header("build", "qa-engineer") + "**Rule L2** · Signal: x · Check: y · Evidence: z\n")
+    rows = learn.check(instance)
+    assert any(status == "fail" and "personas/qa-engineer/notes.md holds 1 rule(s)" in detail
+               for status, detail in rows)
+    assert any(status == "fail" and "L2 is also" in detail for status, detail in rows)
+
+
+def test_rules_an_older_hx_scoped_in_place_move_next_to_their_persona(instance, tmp_path):
+    domain = instance / "LEARNINGS" / "domain.md"
+    domain.write_text(learn.category_header("domain")
+                      + "**Rule L1** · Signal: everyone · Check: c · Evidence: e\n"
+                      + "**Rule L2** · Role: backend-engineer · Signal: backend · Check: c · Evidence: e\n")
+    assert any(status == "warn" and "still carry `Role:`" in detail for status, detail in learn.check(instance))
+    assert learn.migrate_role_rules(instance) == 1
+    assert "backend" not in domain.read_text() and "everyone" in domain.read_text()
+    moved = (instance / "personas" / "backend-engineer" / "domain.md").read_text()
+    assert "**Rule L2** · Signal: backend · Check: c · Evidence: e" in moved and "Role:" not in moved
+    assert learn.migrate_role_rules(instance) == 0, "once moved, nothing to do"
+    # A shared directory is the fleet's, not this instance's to empty.
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "domain.md").write_text("**Rule L7** · Role: qa-engineer · Signal: s · Check: c · Evidence: e\n")
+    env = {"HX_LEARNINGS": str(shared)}
+    assert learn.migrate_role_rules(instance, env) == 0
+    assert "Role: qa-engineer" in (shared / "domain.md").read_text()
 
 
 def test_cli_scope_round_trip(instance):

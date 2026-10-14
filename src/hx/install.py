@@ -87,16 +87,15 @@ EXPECTED_SKELETON_FILES = (
     "companion/BASE.md",
     "companion/roles/partner.md",
     "companion/roles/qa-engineer.md",
-    "personas/qa-engineer/AGENTS.md",
+    "personas/qa-engineer.md",
     "continuity/prompts/common.md",
     "continuity/prompts/audiences/worker.md",
     "continuity/prompts/audiences/companion.md",
     "config/CLAUDE.md",
     "config/models.json",
-    "config/partner/AGENTS.md",
     "config/partner/SUBAGENTS.md",
     "config/partner/harness.json",
-    "personas/partner/AGENTS.md",
+    "personas/partner.md",
     "templates/work-item.md",
 )
 
@@ -339,8 +338,10 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
         print(f"   kept     {name}")
     for name in result["missing"]:
         print(f"   missing  {name}")
-    # An instance from before the persona was rendered from its sources: each worker's per-id
-    # AGENTS.md moves into harness.json `purpose` and a learnings proposal (`hx.persona`).
+    # An instance on an older layout: personas/<role>/AGENTS.md and config/partner/AGENTS.md
+    # become personas/<role>.md, rules scoped in place move to personas/<role>/, and each
+    # worker's per-id AGENTS.md moves into harness.json `purpose` and a learnings proposal
+    # (`hx.persona`).
     from . import persona
 
     for migrated in persona.migrate_all(root, env=env):

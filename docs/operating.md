@@ -111,8 +111,8 @@ hx memory stats                                          # episodes by role and 
 ```
 
 Every Companion compaction is kept as a searchable **episode** with its time, agent, pod and
-role (`docs/memory.md`). Agents get the closest same-role episodes in their context file at every
-boundary without asking; from a shell you have no role, so `search` looks across all of them.
+role (`docs/memory.md`). Agents get the closest same-role episodes in their work item's `## Status`
+at every boundary without asking; from a shell you have no role, so `search` looks across all of them.
 Results are recency-weighted: yesterday's episode about the same file outranks last month's
 unless the older one matches much better.
 
@@ -202,13 +202,15 @@ the Partner does with `hx restart <id>`.
 
 The Partner's instructions live in two files you can read, and edit if you mean to:
 
-- `$HARNESS_ROOT/config/partner/AGENTS.md` — its persona. It reaches the Partner as system
-  prompt at every launch, followed by the learnings.
+- `$HARNESS_ROOT/personas/partner.md` — its persona. The `context` hook hands it to the
+  Partner at every boundary, followed by its identity line, the learnings and the pointer to
+  `PARTNER.md` (`hx persona partner` prints it).
 - `$HARNESS_ROOT/PARTNER.md` — what it has learned: the fleet, open questions, decisions,
   what has shipped. Read this when you want to know what the Partner thinks the state of the
   world is.
 
-A persona edit takes effect at the next launch of that agent, not immediately.
+A persona edit takes effect at that agent's next boundary (`/clear`, compaction, restart),
+not immediately.
 
 ## Who can run what
 
@@ -216,7 +218,7 @@ A persona edit takes effect at the next launch of that agent, not immediately.
 audience's list: from your shell (no `HARNESS_ID`) that is the operator view, inside the
 Partner's session the Partner's, inside a worker's session the worker's short list. The same
 table backs a refusal: a worker that runs a Partner or operator command (`hx dispatch`,
-`hx map publish`, `hx learn accept`, `hx compile`, `hx doctor`, …) gets `refuse:` and exit 1,
+`hx map publish`, `hx learn accept`, `hx persona`, `hx doctor`, …) gets `refuse:` and exit 1,
 and asks the Partner through `hx complete blocked|decision` instead. Which skills each home
 gets is `src/hx/skills/manifest.json`; an optional skill is turned on for an instance by
 naming it in `config/hx.json` `skills`; it reaches each home at that agent's next

@@ -20,7 +20,7 @@
     "dispatched": "2026-09-20T10:00:00Z",
     "completed": "2026-09-20T11:58:12Z"
   },
-  "persona_path": "run/eng-000/persona.md",
+  "persona_path": "personas/engineer.md",
   "step_state": {
     "eng-000-main": {
       "goal": "ship `hx board --json` to the CONTRACTS.md shape",
@@ -94,8 +94,8 @@
     }
   },
   "context_file": {
-    "path": "run/eng-000/eng-000-main.context.md",
-    "text": "# Context\n\n_source: state/eng-000/eng-000-main.json_\n\n## Goal\nship `hx board --json` to the CONTRACTS.md shape\n\n## Closed\n- st1 collect() returns the contract document (a41f0b2)\n- st2 `partner` is not an item (a41f0b2)\n",
+    "path": null,
+    "text": "# Engineer\n\nYou are an engineer in this hx instance: one goal at a time, in your own workdir, committing as you go, finishing with `hx complete`.\n\nYou are eng-000 in pod engineers. Owns `hx board` and its JSON contract.\n\n# Build\n\n**Rule L1** \u00b7 Signal: a rename across directories broke an import \u00b7 Check: `git diff --name-status` shows R only within one directory \u00b7 Evidence: eng-000, 2026-09-19\n\nYou have no task in progress. When you get one, a `/goal` pointer names your work item; until then there is no file to read.\n",
     "seam_ts": "2026-09-20T11:58:10Z"
   },
   "streams": [
@@ -141,7 +141,7 @@
           "stream": "eng-000-main",
           "event": "seam",
           "source": "clear",
-          "context_file": "/srv/hx/run/eng-000/eng-000-main.context.md",
+          "context_file": "/srv/hx/pods/engineers/eng-000-working.md",
           "context_file_bytes": 2410,
           "ref": {
             "transcript": null

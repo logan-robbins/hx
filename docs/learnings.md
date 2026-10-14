@@ -59,12 +59,18 @@ never goes stale.
 
 ## Scope: every agent, or every agent of one role
 
-A rule is global unless it names a role. A scoped rule carries `Role: <role>` first after its
-key, the role as `harness.json` names it:
+A rule is global when it lives in `LEARNINGS/<category>.md`. A rule scoped to one role lives
+next to that role's persona, in `personas/<role>/<category>.md` (the role as `harness.json`
+names it), in the same one-line shape:
 
 ```
-**Rule L9** · Role: backend-engineer · Signal: … · Check: … · Evidence: …
+personas/backend-engineer/build.md:  **Rule L9** · Signal: … · Check: … · Evidence: …
 ```
+
+Numbers are unique across the shared directory and every role's files, so `L9` names one rule
+wherever it lives. A line an older hx scoped in place (`**Rule L9** · Role: backend-engineer ·
+…`) is still read as that role's; `hx learn check` warns, and `hx launch`/`hx up`/`hx install`
+move it to the role's file (a shared fleet directory is left as it is).
 
 The scope is the reason per-agent memory is gone: a lesson one backend engineer paid for is
 owed to every backend engineer, from its next launch, and to nobody else. The proposer says
@@ -115,18 +121,15 @@ until someone merges them.
 
 ## How agents carry them
 
-`hx persona` (which every `start.sh` runs immediately before it execs) renders a fenced
-`learnings` region into every agent's persona: the directory's path and rule count, the propose line, and
-then **every global rule, whole**, under a `### <category> — <definition>` heading per non-empty
-category, in taxonomy order, then **every rule scoped to the agent's role**, under
-`### <role> · <category>` headings. Rules scoped to another role are not in it. The adapters pass the persona as the system prompt
-(`--append-system-prompt-file`), so the rules are present at every start and after every
-compaction with no Read, and prompt-cached with the rest of the invariant prompt. No agent
-is told to read the files; the persona tells it not to.
-
-The Partner keeps its own persona file, `config/partner/AGENTS.md`, and gets the learnings
-region after it like everyone else. A rule accepted today is in every agent's system prompt
-from its next launch.
+The `context` hook hands every agent, at every boundary (startup, resume, `/clear`,
+compaction), every global category file that holds a rule, then every file of its role's that
+does, each whole, after its persona and identity line (`hx.persona.boundary`;
+`hx persona <id>` prints it). Rules scoped to another role are not in it, and nothing is
+copied per agent: an accepted rule reaches every agent it applies to at its next boundary.
+No agent is told to read the files, unless the output passed the hook's bound (10,000 bytes on
+Claude, 32 KiB elsewhere), in which case it lists them as files to read once and `hx doctor`
+warns `hook-size`. The Partner is handed the global rules and the `partner` role's like
+everyone else, after `personas/partner.md`.
 
 ### Text proposals
 

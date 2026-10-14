@@ -81,14 +81,14 @@ clears such an item when the outcome is `done` and the session is dead.
     "dispatched": "…",
     "completed": null
   },
-  "persona_path": "run/eng-001/persona.md",
+  "persona_path": "personas/engineer.md",
   "step_state": {
     "eng-001-main": { "…the Companion's step-state JSON for that stream, spec 07…": 0 },
     "eng-001-s001": { "…": 0 }
   },
   "context_file": {
-    "path": "run/eng-001/eng-001-main.context.md",
-    "text": "…last composed context file, verbatim…",
+    "path": "pods/engineers/eng-001-working.md",
+    "text": "…what the context hook hands the agent now (`hx persona eng-001`), verbatim…",
     "seam_ts": "2026-09-20T12:50:00Z"
   },
   "streams": [
@@ -216,50 +216,87 @@ turns on, e.g. `"skills": ["hx-conversion"]`. Absent means none. A name that doe
 names a skill that is not `optional` in `src/hx/skills/manifest.json`, fails the doctor
 `skills` row. `hx install` rewrites only the three entry points and keeps every other key.
 
-## Prompt layers and the invariants channel
+## Prompt layers and their channels
 
 An agent's prompt is four layers with one source each: the invariants (`config/CLAUDE.md`),
-the role persona, the learnings (`hx.learn.persona_region`), and session memory (the work
-item: the agent's `## Tasks` and hx's `## Status` — step state, memory episodes, open subagent
+the role persona (`personas/<role>.md`), the learnings (`LEARNINGS/<category>.md` and, for the
+rules scoped to a role, `personas/<role>/<category>.md`), and session memory (the work item:
+the agent's `## Tasks` and hx's `## Status` — step state, memory episodes, open subagent
 handles — which `hx compose` rewrites in a `-working` item, and in `PARTNER.md` for the
-Partner, at every main-stream boundary). The invariants reach each agent through exactly one
-channel, `hx.config_harness.INVARIANTS_CHANNEL[flavor]`:
+Partner, at every main-stream boundary). Nothing is copied per id and nothing is rendered
+into a file. The invariants and the persona each reach an agent through exactly one channel:
 
-| Flavor | Channel | Carrier |
+| Flavor | Invariants (`INVARIANTS_CHANNEL`) | Persona (`PERSONA_CHANNEL`) |
 |---|---|---|
-| `claude` | `home` | `run/<id>/home/CLAUDE.md`, copied from `config/CLAUDE.md` by `install.sh` and refreshed by `start.sh --exec` |
-| `pi`, `grok` | `persona` | the persona's `hx:global` region (`hx persona`) |
-| `codex`, `meta` | `context` | the context file's `## Invariants` section (`hx compose`, `compose.carries_invariants`) |
+| `claude` | `home`: `run/<id>/home/CLAUDE.md`, copied from `config/CLAUDE.md` by `install.sh` and refreshed by `start.sh --exec` | `hook` |
+| `codex` | `agents`: `run/<id>/home/AGENTS.md` (`$CODEX_HOME/AGENTS.md`), written by `start.sh --exec` as `config/CLAUDE.md` then `personas/<role>.md` | `agents` |
+| `pi` | `hook` | `flag`: `--append-system-prompt <root>/personas/<role>.md` |
+| `grok` | `hook` | `flag`: `--rules "$(cat <root>/personas/<role>.md)"` |
+| `meta` | `hook` | `hook` |
 
-No other carrier holds them: `hx persona` renders an `hx:global` region only for a flavor
-whose channel is `persona`, and `hx compose` emits `## Invariants` only for `context`.
+`hook` is the output of the `context` hook (below). No Claude launch outside a planned capsule
+passes `--append-system-prompt-file`; the Companion keeps its own (`run/<id>/companion-system.md`).
+A role without `personas/<role>.md` launches without a persona.
 
-## `hx persona <id> [--print]` and `harness.json` `purpose`
+## The `context` hook (SessionStart, matcher `startup|resume|clear|compact`)
 
-`run/<id>/persona.md` is rendered from its sources by `hx.persona.render`, run as
-`python -m hx.persona --root ROOT ID` by every adapter's `start.sh --exec` immediately before it
-execs (outside a planned capsule, where `native_launch` prepares it), and by `hx launch` and
-`hx restart`. In order: the `hx:global` region (flavors whose invariants channel is `persona`),
-the role persona `personas/<role>/AGENTS.md` with identity variables filled in (or one line,
-`You are \`<id>\`, a \`<role>\` agent in pod \`<pod>\` of this hx instance.`, when the role has
-none; the Partner's is `config/partner/AGENTS.md`), `harness.json` `purpose` inserted before the
-persona's first `## ` heading, and the `hx:learnings` region. It is rewritten only when it
-changed. Output: `HX-PERSONA <id> run/<id>/persona.md bytes=<n>[ unchanged]`; `--print` prints
-the persona instead. `hx compile ID` without `--planned` refuses (exit 2) and names this command.
+At every boundary `hx-hook --id <id> context` rewrites `## Status` (`hx compose <id>`),
+appends a `boundary` record to the main stream (`{"event": "boundary", "source",
+"context_file": "<abs work item or PARTNER.md>"|null, "hook_bytes": <n>, "ref": {"transcript"}}`),
+sends the goal on `clear` with a `-working` item, and prints, as plain stdout, in order
+(`hx.persona.boundary`), parts separated by one blank line:
+
+1. `config/CLAUDE.md`, whole, where the invariants channel is `hook`;
+2. `personas/<role>.md`, whole, where the persona channel is `hook`;
+3. the identity line `You are <id> in pod <pod>. <purpose>` (`purpose` collapsed to one line;
+   without one the line ends after the pod);
+4. every `LEARNINGS/<category>.md` that holds a rule, then every
+   `personas/<role>/<category>.md` that does, whole, in taxonomy order;
+5. the pointer `Use the Read tool once on <abs path> before anything else; do not cat it and
+   do not read it twice.` naming the `-working` work item (`PARTNER.md` for the Partner). An
+   agent with no task in progress gets `hx.persona.IDLE_LINE` instead; the Partner without a
+   `PARTNER.md` gets no line.
+
+The output is bounded per flavor (`hx.persona.hook_bound`, UTF-8 bytes): 10,000 on Claude,
+which caps SessionStart output at 10,000 characters and otherwise hands the model a 2,000-character
+preview and a file path (code.claude.com/docs/en/hooks, "JSON output"), and 32 KiB on every
+other flavor. When the whole text is over the bound, part 4 is replaced by one block that
+opens `Your learnings are not printed here: …` and lists each rule file's absolute path as
+`- <path>`, to be read once; when it is still over, the persona goes into that list too
+(`Your persona and learnings are not printed here: …`). `hx doctor` warns `hook-size` naming
+every agent whose output went to files. Subagent streams keep their own context file
+(`hx compose <id> <stream>`, named by the `SubagentStart` hook).
+
+## `hx persona <id> [--summary]` and `harness.json` `purpose`
+
+`hx persona ID` prints exactly what the `context` hook prints for ID now, writing nothing.
+`--summary` prints `HX-PERSONA <id> bytes=<n> bound=<n>[ as-files=<k>]`. `hx launch` and
+`hx restart` build the same text before starting the agent, so a missing Partner persona
+(`personas/partner.md`) fails there, and remove a `run/<id>/persona.md` an older hx rendered.
+`hx compile` is gone; the planned runtime calls `hx.prompt_compiler` directly.
 
 `purpose` is an optional string in `harness.json`. Absent, empty, or containing the template's
-`{{purpose}}` placeholder (`config_harness.PURPOSE_PLACEHOLDER`) it is left out of the persona,
-and `hx doctor` warns `purpose:<id>`. `hx doctor` also warns `persona:<id>` for a worker whose
-role has no `personas/<role>/AGENTS.md`, and for a leftover `config/<id>/AGENTS.md`.
+`{{purpose}}` placeholder (`config_harness.PURPOSE_PLACEHOLDER`) it is left out of the identity
+line, and `hx doctor` warns `purpose:<id>`. `hx doctor` also warns `persona:<id>` for a worker
+whose role has no `personas/<role>.md`, for a `personas/<role>/AGENTS.md` of the layout before,
+and for a leftover `config/<id>/AGENTS.md`.
 
-Migration (`hx.persona.migrate`, run by `hx install`, `hx up`, `hx launch`, `hx restart`): a
-worker's `config/<id>/AGENTS.md` loses every paragraph a shared source already says (the role
-persona and the worker templates, shipped and installed, raw and identity-filled; template
-comments; stamped regions); what is left above the old header becomes `purpose` while that is
-the placeholder; promoted `hx:distilled` directives, memory below the old header, and a per-id
+Migration (run by `hx install`, `hx up`, `hx launch`, `hx restart`). `hx.persona.migrate_layout`:
+each `personas/<role>/AGENTS.md`, and `config/partner/AGENTS.md`, becomes `personas/<role>.md`
+when there is none yet (stamped regions dropped, `{{id}}`-style markers read as `<id>`); when
+there is one, an old file hx shipped untouched (`hx.persona.SHIPPED_PERSONAS`) is removed, and
+an edited one leaves the paragraphs the new persona does not say as one text proposal scoped to
+the role; memory below the old `## UPDATES BELOW ONLY` header becomes a proposal too (author
+`partner` for the Partner's). Rule lines an older hx scoped in place with `Role: <role>` move
+from the instance's own `LEARNINGS/` to `personas/<role>/<category>.md`
+(`hx.learn.migrate_role_rules`; a directory shared through `HX_LEARNINGS` or `hx.json`
+`learnings` is the fleet's and is left alone). `hx.persona.migrate`: a worker's
+`config/<id>/AGENTS.md` loses every paragraph a shared source already says (the role persona
+and the worker templates, shipped and installed, raw and identity-filled; template comments;
+stamped regions); what is left above the old header becomes `purpose` while that is the
+placeholder; promoted `hx:distilled` directives, memory below the old header, and a per-id
 paragraph `purpose` already replaced become one text proposal; then the file is removed.
-`hx install` prints `migrated config/<id>/AGENTS.md removed; …` per worker, `hx launch` the same
-on stderr.
+`hx install` prints `migrated <what moved>` per change, `hx launch` the same on stderr.
 
 
 ## `hx learn` (central learnings)
@@ -268,9 +305,12 @@ The directory holds one file per fixed category — `orientation`, `ownership`, 
 `domain`, `build`, `testing`, `runtime`, `evidence`, `delivery`, `harness`, `environment`
 (`hx.learn.CATEGORIES`, `hx learn categories`) — each a fixed header, `## Rules`, and rule
 lines. A rule line: `**Rule <P><n>** · Signal: … · Check: … · Evidence: …`, prefix 1–3
-capitals, numbers unique per prefix across every file, each cell one line; the category is the
-file, never part of the key. A rule scoped to one role carries `Role: <role>` first after the
-key (`**Rule <P><n>** · Role: backend-engineer · Signal: …`); without it the rule is global.
+capitals, numbers unique per prefix across every file — the global ones and every role's —,
+each cell one line; the category is the file, never part of the key. A rule scoped to one role
+lives in `personas/<role>/<category>.md` (same header, titled `# <role> · <category>`, plus a
+scope line); a rule in `LEARNINGS/<category>.md` is global. A line an older hx wrote with
+`Role: <role>` first after the key is still read as scoped to that role, and `hx learn check`
+warns until it is moved.
 A proposal (`LEARNINGS/proposals/<id>.json`):
 
 ```json
@@ -310,12 +350,9 @@ agent the prose came from, so a lesson one worker wrote reaches every worker of 
 `hx distill <id> <file>` prints `HX-DISTILL <id> proposal=<proposal id> goal_addenda=<n>
 recorded=<n>`: the file's text becomes one text proposal, and the addenda are removed.
 
-The persona region (`hx persona`, `hx.learn.persona_region(root, env, role)`) carries every
-global rule line whole under `### <category> — <definition>` headings in taxonomy order, then
-every rule scoped to the agent's role under `### <role> · <category>` headings; rules scoped to
-other roles are not in it. Its first line counts what it carries (`<n> rule(s)[, <k> of them
-for <role>], last <key>`). `hx doctor` warns `learnings-size` when the largest region any
-configured role renders is above `hx.learn.PERSONA_WARN_BYTES` (200 KiB).
+What an agent is handed (`hx.learn.rule_files(root, env, role)`, printed by the `context`
+hook) is every global category file that holds a rule, then every file of its role's that
+does, each whole; rules scoped to other roles are not in it.
 
 ## `templates/work-item.md` placeholders
 
@@ -510,7 +547,9 @@ Spec 07.4 and 08. One entry per seam record in the main stream since `dispatched
 ```
 
 `source` is one of `clear|compact|restart|resume|startup`. `next_10_turns.turns` is fewer than
-10 when the stream ended sooner. `reads_of_context_file` must be 1 per seam (spec 13 M7);
+10 when the stream ended sooner. `reads_of_context_file` counts Reads of the file the
+boundary points at — the work item, `PARTNER.md` for the Partner; the field keeps the name it
+had when that file was a composed context file — and must be 1 per seam (spec 13 M7);
 `reads_of_working_set` is the waste metric. Text form: one line per seam with the same fields.
 
 Turns come from the harness transcript the post-seam boundary record references
@@ -542,7 +581,6 @@ No id: one entry per board item plus `summary`, `partner` and `graph`:
       "ties": {"mentions": ["qa-056"]},
       "links": {"work_item": "pods/eng/eng-001-working.md",
                 "harness": "config/eng-001/harness.json",
-                "context": "run/eng-001/eng-001-main.context.md",
                 "stream": "logs/eng-001/eng-001-main.jsonl",
                 "pane_log": "logs/eng-001/eng-001-pane.log",
                 "goal_marker": "run/eng-001/goal"},
@@ -873,7 +911,8 @@ Counted from `post_tool` records. A search is a Grep/Glob-type tool or a shell c
 `grep`, `rg`, `ag`, `ack`, `fd`, `find`, `git grep`, `hx code search|symbols|impact|edges|callers|type|signature`,
 `hx memory search`, `hx content search` or `hx recall`; an edit is an Edit/Write-type tool or a
 shell `apply_patch`, `sed -i`, `perl -i`, `cat >`/`>>` or `tee`; a module read is a distinct path
-read by a Read-type tool or a shell `cat|head|tail|less|bat|nl`, never the `*.context.md` file.
+read by a Read-type tool or a shell `cat|head|tail|less|bat|nl`, never the agent's own work
+item (`PARTNER.md` for the Partner): that is the one read a boundary asks for.
 `searches_before_first_edit` and `modules_read_before_first_write` stop at the first edit
 (`first_edit_seq`, `null` when there is none, in which case the whole window counts);
 `task_reprints` counts every `hx task` after the seam. The same three fields are added to every
@@ -905,8 +944,8 @@ per command, then `HX-METRICS-COMMANDS commands=<n> calls=<n>`. An ID or `--watc
 Every entry of `seams` in `hx metrics <id> [--json]` also carries `packet_bytes`: the size in
 bytes of the packet the restored conversation starts from. It is the seam record's own
 `packet_bytes` when a packet path writes one. Otherwise it is the record's
-`context_file_bytes`, because a legacy seam restores from the composed context file and the
-two are the same bytes. It is `null` when the record has neither. The text form appends it
+`context_file_bytes` — the size of the work item (`PARTNER.md`) with the `## Status` hx just
+wrote, which is what a legacy seam restores from. It is `null` when the record has neither. The text form appends it
 after `task_reprints`. `tests/live/test_compaction_scenario.py` reports it per lane in
 docs/compaction-scenario-results.md.
 
@@ -946,35 +985,36 @@ Operator and Partner only. It covers every `config/<id>/` directory, or one; an 
 ```json
 {"ts": "2026-10-12T12:00:00Z",
  "agents": [{"id": "eng-001",
-   "invariant": {"persona_bytes": 9120, "persona_source": "run/eng-001/persona.md",
-                 "claude_md_bytes": 2048, "claude_md_in_persona": false,
-                 "learnings_bytes": 1400, "learnings_in_persona": true,
+   "invariant": {"claude_md_bytes": 2048, "claude_md_channel": "home",
+                 "persona_bytes": 4353, "persona_source": "personas/engineer.md",
+                 "persona_channel": "hook", "identity_bytes": 180,
+                 "learnings_bytes": 1400, "learnings_as_files": [],
+                 "hook_bytes": 6120, "hook_bound": 10000,
                  "skills": ["hx-memory", "hx-worker"], "skills_source": "installed",
-                 "skill_descriptions_bytes": 1310, "prefix_bytes": 12478,
+                 "skill_descriptions_bytes": 1310, "prefix_bytes": 9291,
                  "native_tool_schemas": "unmeasured", "host_context": "unmeasured"},
    "budget": {"model": "claude-opus-5", "invariant_ceiling_tokens": 200000,
-              "working_room_tokens": 800000, "within": true, "share": 0.0624},
+              "working_room_tokens": 800000, "within": true, "share": 0.0465},
    "seam": {"last_seam_ts": "2026-10-12T11:56:00Z", "cache_ttl": "1h",
             "ttl_source": "harness.json cache_ttl", "state": "warm", "cacheable": true,
-            "prefix_tokens": 12478, "ttl_s": 3600, "age_s": 240,
+            "prefix_tokens": 9291, "ttl_s": 3600, "age_s": 240,
             "recommendation": "keep-prefix", "note": "..."}}]}
 ```
 
-- `persona_source` is `run/<id>/persona.md` once a launch rendered it. Before that it is
-  `rendered (hx persona)`: the persona `start.sh` would render now, which the report renders
-  without writing. `null` means it cannot be rendered.
-- `claude_md_bytes` is `config/CLAUDE.md`. It counts toward `prefix_bytes` only when the
-  persona does not already contain the `hx:global` marker (`claude_md_in_persona: false`): the
-  invariants reach each agent through one channel (`config_harness.INVARIANTS_CHANNEL`), and
-  only Pi and Grok carry them inside the persona.
-- `learnings_bytes` is `learn.persona_region` (what `hx persona` renders). It counts toward
-  `prefix_bytes` only when the persona does not already contain the learnings marker
-  (`learnings_in_persona: false`).
+- Each source reaches the agent once, through its channel (`claude_md_channel`,
+  `persona_channel`; see Prompt layers), so each counts once toward `prefix_bytes`:
+  `claude_md_bytes` (`config/CLAUDE.md`), `persona_bytes` (`personas/<role>.md`, `null` when
+  the role has none, with `persona_source`), `identity_bytes` (the identity line) and
+  `learnings_bytes` (the rule files as the `context` hook prints them, or the list of files
+  the bound made of them; `learnings_as_files` names what went as files).
+- `hook_bytes` and `hook_bound` are the size of what the `context` hook prints now
+  (`hx persona ID`) and its bound; `null` when it cannot be built.
 - `skills` lists the installed copies in `run/<id>/home/skills` (or `home/muse/skills` for
   Muse); `skills_source` is then `installed`. Without them it lists the manifest's choice and
   says `manifest`. Only the frontmatter `description` bytes count: the listing cost. Skill
   bodies are not invariant.
-- `prefix_bytes` is charged one token per byte against `invariant_ceiling_tokens`, which is
+- `prefix_bytes` is those four plus `skill_descriptions_bytes`, charged one token per byte
+  against `invariant_ceiling_tokens`, which is
   `prompt_cache.invariant_budget` for the `harness.json` model's row. The `budget` values are
   `null` when the model has no row.
 - `native_tool_schemas` and `host_context` are always the string `unmeasured`. They are
@@ -986,7 +1026,7 @@ Operator and Partner only. It covers every `config/<id>/` directory, or one; an 
 The text form is one line per agent, then the sentinel:
 
 ```text
-eng-001: prefix 12478 B (persona 9120, CLAUDE.md 2048, learnings 1400 in persona, skill descriptions 1310 over 2) = 6.2% of claude-opus-5 ceiling 200000; tool schemas and host context unmeasured; last seam 240s ago, warm against 1h (harness.json cache_ttl)
+eng-001: prefix 9291 B (CLAUDE.md 2048 via home, persona 4353 via hook, identity 180, learnings 1400, skill descriptions 1310 over 2; hook 6120 of 10000 B) = 4.6% of claude-opus-5 ceiling 200000; tool schemas and host context unmeasured; last seam 240s ago, warm against 1h (harness.json cache_ttl)
 HX-CACHE-REPORT agents=1 over_budget=0
 ```
 

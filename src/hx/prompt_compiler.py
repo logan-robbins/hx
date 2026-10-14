@@ -8,9 +8,9 @@ its `harness.json`:
 
   continuity/prompts/common.md          every audience
   continuity/prompts/audiences/<a>.md   the audience's mechanics
-  personas/<role>/AGENTS.md             the `## Domain judgment` section of the persona a live
+  personas/<role>.md                    the `## Domain judgment` section of the persona a live
                                         agent of the role reads (the Partner's:
-                                        config/partner/AGENTS.md); worker, Partner, subagent
+                                        personas/partner.md); worker, Partner, subagent
   harness.json `purpose`                a worker's purpose
   companion/roles/<role>.md             a Companion's role file, as compose_system_prompt reads it
   continuity/policy.md, policy/<a>.md   operator policy
@@ -31,7 +31,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from . import compile as legacy, persona as persona_mod, store
+from . import persona as persona_mod, store
 from .ids import PARTNER
 from .persona import LEGACY_HEADER
 from .config_harness import load_harness, purpose_text, NO_SYSTEM_PROMPT_FLAVORS
@@ -45,7 +45,7 @@ AUDIENCES = {"worker", "partner", "companion", "subagent"}
 DOMAIN_RE = re.compile(r"^## Domain judgment\n(?P<body>.*?)(?=^## |\Z)", re.S | re.M)
 
 
-def _prefix(path, *, required=False):
+def _prefix(path, *, required=False, persona=False):
     if not path.is_file():
         if required:
             raise ValidationError(f"missing prompt source: {path}")
@@ -58,7 +58,7 @@ def _prefix(path, *, required=False):
                 raise ValidationError(f"prompt source exceeds 64 KiB before its memory boundary: {path}")
             # A persona installed before the learnings were the memory channel still ends
             # at the old header; nothing below it is prompt.
-            if path.name == "AGENTS.md" and line.rstrip(b"\r\n") == LEGACY_HEADER.encode():
+            if persona and line.rstrip(b"\r\n") == LEGACY_HEADER.encode():
                 break
             chunks.append(line)
     try:
@@ -73,12 +73,11 @@ def _source(root, relative):
 
 
 def _domain(root, item_id, config):
-    """`(path, text)`: the `## Domain judgment` section of the persona the live agent reads —
-    `config/partner/AGENTS.md` for the Partner, `personas/<role>/AGENTS.md` otherwise — or ""
-    when the role has no persona or the persona has no such section. A region an earlier hx
-    stamped into the Partner's file is not part of it."""
-    path = root / "config" / PARTNER / "AGENTS.md" if item_id == PARTNER else persona_mod.role_source(root, config.role)
-    match = DOMAIN_RE.search(legacy.REGION_RE.sub("", _prefix(path, required=item_id == PARTNER)))
+    """`(path, text)`: the `## Domain judgment` section of the persona the live agent reads,
+    `personas/<role>.md` (the Partner's `personas/partner.md`), or "" when the role has no
+    persona or the persona has no such section."""
+    path = persona_mod.role_source(root, config.role)
+    match = DOMAIN_RE.search(_prefix(path, required=item_id == PARTNER, persona=True))
     return path, match["body"].strip("\n") if match else ""
 
 
@@ -109,7 +108,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
     audience = audience or ("partner" if item_id == "partner" else "worker")
     if audience not in AUDIENCES or (audience == "partner") != (item_id == "partner") and audience not in {"companion", "subagent"}:
         raise ValidationError("prompt audience does not match the configured executor")
-    values = legacy.identity_values(root, item_id)
+    values = persona_mod.identity_values(root, item_id)
     # The repository currently launches companions through the Claude adapter.
     runtime = "claude" if audience == "companion" else config.flavor
     channel = "context" if audience == "subagent" or runtime in NO_SYSTEM_PROMPT_FLAVORS else "system"
@@ -121,7 +120,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True):
     identity_text = "Session identity: " + canonical(identity) + ".\nThe current task or frozen pass supplies assignment-specific inputs; identity alone does not supply a goal."
     sections, sources, seen = [], [], set()
     def add(name, path, body):
-        expanded = legacy.expand_identity(body, values)
+        expanded = persona_mod.expand_identity(body, values)
         source_hash = hashlib.sha256(body.encode()).hexdigest()
         body_hash = hashlib.sha256(expanded.encode()).hexdigest()
         sources.append({"section": name, "path": str(path) if path else None, "source_hash": source_hash})

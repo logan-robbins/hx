@@ -30,26 +30,33 @@ PURPOSE_PLACEHOLDER = "{{purpose}}"
 #: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
 FLAVORS = ("claude", "pi", "grok", "meta", "codex")
 
-#: Flavors whose CLI takes no system prompt, verified per adapter: `muse` exposes no
-#: such flag (the persona file is derived for inspection only) and neither does `codex`
-#: (launched bare, persona derived and unused). Claude, Pi and Grok inject the persona
-#: at launch. Agents on these flavors get the persona in the context file instead
-#: (`compose.persona`, spec 02 Identity).
+#: Flavors whose CLI takes no system-prompt flag, verified per adapter: `muse` exposes none
+#: and neither does `codex` (launched bare). The planned runtime's prompt compiler puts their
+#: system section in the context channel (`hx.prompt_compiler`).
 NO_SYSTEM_PROMPT_FLAVORS = ("meta", "codex")
 
 #: The one channel `config/CLAUDE.md` (the invariants) reaches an agent through, per flavor.
 #: Exactly one each, never two: `home` is the home's native user CLAUDE.md, which
-#: `adapters/claude/install.sh` copies and Claude Code loads at every start (Claude is the only
-#: flavor with such a file); `persona` is the rendered `run/<id>/persona.md`, the system
-#: prompt Pi and Grok are launched with, since neither reads a CLAUDE.md; `context` is the
-#: `## Invariants` section of the context file, for the flavors that take no system prompt.
-INVARIANTS_CHANNEL = {"claude": "home", "pi": "persona", "grok": "persona",
-                      "meta": "context", "codex": "context"}
+#: `adapters/claude/start.sh` refreshes and Claude Code loads at every start; `agents` is
+#: `$CODEX_HOME/AGENTS.md`, which `adapters/codex/start.sh` writes at every exec (the
+#: invariants, then the persona); `hook` is the `context` hook's output at every boundary
+#: (`hx.persona.boundary`), for the flavors with no user instruction file hx can use.
+INVARIANTS_CHANNEL = {"claude": "home", "codex": "agents", "pi": "hook", "grok": "hook", "meta": "hook"}
+
+#: The one channel `personas/<role>.md` reaches an agent through, per flavor: `hook` is the
+#: `context` hook's output at every boundary; `flag` is the file itself, passed to Pi's
+#: `--append-system-prompt` and Grok's `--rules` at launch; `agents` is `$CODEX_HOME/AGENTS.md`.
+PERSONA_CHANNEL = {"claude": "hook", "codex": "agents", "pi": "flag", "grok": "flag", "meta": "hook"}
 
 
 def invariants_channel(flavor: str) -> str:
-    """`home`, `persona` or `context`: where the invariants reach an agent of this flavor."""
+    """`home`, `agents` or `hook`: where the invariants reach an agent of this flavor."""
     return INVARIANTS_CHANNEL.get(flavor, "home")
+
+
+def persona_channel(flavor: str) -> str:
+    """`hook`, `flag` or `agents`: where the persona reaches an agent of this flavor."""
+    return PERSONA_CHANNEL.get(flavor, "hook")
 
 #: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
 #: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no

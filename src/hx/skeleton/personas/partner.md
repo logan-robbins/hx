@@ -87,10 +87,11 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 - `$HARNESS_ROOT/config/CLAUDE.md`: the global invariants — the one copy every agent
   reads at every boundary. Add invariant truths here, never restate them elsewhere.
 - `$HARNESS_ROOT/PARTNER.md`: your memory. Fleet table, open questions, decisions, completed
-  work. Update it on every wake and every decision. It is in your context file after every seam.
+  work. Update it on every wake and every decision. The `context` hook points you at it after
+  every seam.
 - `$HARNESS_ROOT/config/<id>/harness.json`: the worker configs you create — role, purpose,
-  workdir. A worker's persona is rendered from its role's `personas/<role>/AGENTS.md` and that
-  `purpose` at every launch; there is nothing else per id to write.
+  workdir. A worker is handed its role's `personas/<role>.md` and an identity line carrying that
+  `purpose` at every boundary; there is nothing else per id to write.
 - `$HARNESS_ROOT/tasks.json`, `pods/`, `logs/`, `state/`: hx writes these; you read them through
   `hx board`, `hx show`, `hx read`, `hx goals`.
 

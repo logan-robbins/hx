@@ -356,17 +356,21 @@ def test_the_deferred_seam_is_taken_at_the_next_quiet_boundary(working, tmux_ser
     wait_for(lambda: "/clear" in pasted(working, "eng-001"), what="the `/clear`")
 
 
-def test_hx_seam_recomposes_the_context_file_before_it_cuts(working, tmux_server):
-    """The file the agent Reads after the seam is composed *at* the seam, not before it."""
+def test_hx_seam_rewrites_the_status_before_it_cuts(working, tmux_server):
+    """The work item the agent Reads after the seam has its `## Status` written *at* the seam,
+    not before it."""
     from hx.seam import seam
 
-    context = working / "run" / "eng-001" / "eng-001-main.context.md"
-    context.write_text("stale\n")
+    item = working / "pods" / "engineers" / "eng-001-working.md"
+    state = working / "state" / "eng-001"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "eng-001-main.json").write_text(json.dumps({"seq": 5, "goal": "written at the seam"}))
+    assert "written at the seam" not in item.read_text()
     seam_marker_for(working)
     result = seam(working, "eng-001", env={"HX_TMUX": " ".join(tmux_server)})
     assert result["outcome"] == "taken"
-    assert context.read_text() != "stale\n"
-    assert "## Tasks" in context.read_text()
+    assert "goal: written at the seam" in item.read_text().split("\n## Status\n", 1)[1]
+    assert not (working / "run" / "eng-001" / "eng-001-main.context.md").exists()
 
 
 def test_the_seam_record_is_the_spec_07_4_shape(working, tmux_server):

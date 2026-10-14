@@ -66,10 +66,10 @@ def _seam(root, item_id, ts):
 
 @pytest.fixture
 def cached(instance):
-    """eng-001 launched: a derived persona, the one CLAUDE.md, two installed skills, a seam."""
+    """eng-001 launched: a role persona, the one CLAUDE.md, two installed skills, a seam."""
     run = instance / "run" / "eng-001"
     run.mkdir(parents=True, exist_ok=True)
-    (run / "persona.md").write_text("P" * 3000)
+    (instance / "personas" / "engineer.md").write_text("P" * 3000)
     (instance / "config" / "CLAUDE.md").write_text("C" * 1000)
     home = run / "home"
     _skill(home, "hx-worker", "Operating manual.")
@@ -79,18 +79,36 @@ def cached(instance):
     return instance
 
 
-def test_report_sums_the_invariant_prefix_and_says_what_is_unmeasured(cached):
-    from hx.learn import persona_region
+def _valid(root, **fields):
+    """harness.json as `config_harness.validate_harness` accepts it, which `hx persona` needs:
+    the fixture's top-level `cache_ttl`, which only the report reads, is not a harness field."""
+    harness = root / "config" / "eng-001" / "harness.json"
+    body = {key: value for key, value in json.loads(harness.read_text()).items() if key != "cache_ttl"}
+    harness.write_text(json.dumps({**body, **fields}))
 
+
+def test_report_sums_the_invariant_prefix_and_says_what_is_unmeasured(cached):
+    from hx import learn, persona
+
+    _valid(cached)
+
+    proposal = learn.propose(cached, signal="s", check="c", evidence="e", category="build",
+                             env={"HARNESS_ID": "eng-001"})
+    learn.accept(cached, proposal["id"], env={"HARNESS_ID": "partner"})
     (row,) = prompt_cache.report(cached, "eng-001", now="2026-10-12T12:00:00Z")["agents"]
     invariant = row["invariant"]
-    learnings = len(persona_region(cached).encode())
-    assert invariant["persona_bytes"] == 3000 and invariant["persona_source"] == "run/eng-001/persona.md"
+    handed = persona.boundary(cached, "eng-001")
+    sizes = {name: size for name, _source, size in handed["parts"]}
+    assert invariant["persona_bytes"] == 3000 and invariant["persona_source"] == "personas/engineer.md"
+    assert (invariant["persona_channel"], invariant["claude_md_channel"]) == ("hook", "home")
     assert invariant["claude_md_bytes"] == 1000
-    assert invariant["learnings_bytes"] == learnings and invariant["learnings_in_persona"] is False
+    assert invariant["identity_bytes"] == sizes["identity"] > 0
+    assert invariant["learnings_bytes"] == sizes["rules"] > 0 and invariant["learnings_as_files"] == []
+    assert (invariant["hook_bytes"], invariant["hook_bound"]) == (handed["bytes"], 10_000)
     assert invariant["skills"] == ["hx-memory", "hx-worker"] and invariant["skills_source"] == "installed"
     assert invariant["skill_descriptions_bytes"] == len("Operating manual.") + len("Search episodes.")
-    assert invariant["prefix_bytes"] == 3000 + 1000 + learnings + invariant["skill_descriptions_bytes"]
+    assert invariant["prefix_bytes"] == (3000 + 1000 + sizes["identity"] + sizes["rules"]
+                                         + invariant["skill_descriptions_bytes"])
     assert invariant["native_tool_schemas"] == "unmeasured"
     assert invariant["host_context"] == "unmeasured"
     budget = row["budget"]
@@ -101,14 +119,17 @@ def test_report_sums_the_invariant_prefix_and_says_what_is_unmeasured(cached):
     assert row["seam"] is None  # no seam yet: nothing to age
 
 
-def test_report_does_not_count_learnings_twice_when_the_persona_carries_them(cached):
-    from hx.compile import LEARNINGS_BEGIN
-
-    (cached / "run" / "eng-001" / "persona.md").write_text(f"P\n{LEARNINGS_BEGIN}\nrules\n")
+@pytest.mark.parametrize("flavor,claude_md,role_persona", [
+    ("claude", "home", "hook"), ("codex", "agents", "agents"), ("pi", "hook", "flag"),
+    ("meta", "hook", "hook"),
+])
+def test_report_counts_each_source_once_whatever_its_channel(cached, flavor, claude_md, role_persona):
+    _valid(cached, flavor=flavor)
     (row,) = prompt_cache.report(cached, "eng-001")["agents"]
     invariant = row["invariant"]
-    assert invariant["learnings_in_persona"] is True
+    assert (invariant["claude_md_channel"], invariant["persona_channel"]) == (claude_md, role_persona)
     assert invariant["prefix_bytes"] == (invariant["persona_bytes"] + invariant["claude_md_bytes"]
+                                         + invariant["identity_bytes"] + invariant["learnings_bytes"]
                                          + invariant["skill_descriptions_bytes"])
 
 
@@ -123,14 +144,12 @@ def test_report_ages_the_last_seam_against_the_harness_cache_ttl(cached):
     assert seam["prefix_tokens"] == row["invariant"]["prefix_bytes"]
 
 
-def test_report_renders_the_persona_and_reads_the_manifest_before_launch(instance):
-    from hx import persona
-
+def test_report_reads_the_sources_and_the_manifest_before_launch(instance):
     (row,) = prompt_cache.report(instance, "eng-001")["agents"]
     invariant = row["invariant"]
-    assert invariant["persona_source"] == "rendered (hx persona)"
-    assert invariant["persona_bytes"] == len(persona.render(instance, "eng-001").encode())
-    assert invariant["learnings_in_persona"] is True and invariant["claude_md_in_persona"] is False
+    # The conftest instance ships no `personas/engineer.md`: no persona, and none invented.
+    assert invariant["persona_bytes"] is None and invariant["persona_source"] is None
+    assert invariant["identity_bytes"] > 0 and invariant["hook_bytes"] > 0
     assert not (instance / "run" / "eng-001" / "persona.md").exists(), "the report never writes"
     assert invariant["skills_source"] == "manifest"
     assert "hx-worker" in invariant["skills"]

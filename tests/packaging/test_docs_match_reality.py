@@ -360,12 +360,12 @@ def test_every_shipped_role_has_both_halves():
     keeps. `hx launch` refuses a role with no role file, so a persona shipped without one is a
     worker that cannot start."""
     for role in (*SHIPPED_ROLES, "partner"):
-        assert (PERSONAS / role / "AGENTS.md").is_file(), f"no persona for {role}"
+        assert (PERSONAS / f"{role}.md").is_file(), f"no persona for {role}"
         assert (ROLES / f"{role}.md").is_file(), f"no companion role file for {role}"
 
 
 def test_no_persona_is_shipped_without_a_role_file_or_the_other_way_round():
-    personas = sorted(p.name for p in PERSONAS.iterdir() if p.is_dir())
+    personas = sorted(p.stem for p in PERSONAS.glob("*.md"))
     roles = sorted(p.stem for p in ROLES.glob("*.md"))
     assert personas == roles, (personas, roles)
 
@@ -375,14 +375,11 @@ def test_the_worker_template_defaults_to_a_role_that_ships():
         (REPO / "src" / "hx" / "skeleton" / "templates" / "worker" / "harness.json").read_text()
     )
     assert worker["role"] in SHIPPED_ROLES, worker["role"]
-    assert (PERSONAS / worker["role"] / "AGENTS.md").is_file()
+    assert (PERSONAS / f"{worker['role']}.md").is_file()
 
 
-def test_the_partner_config_is_the_partner_persona():
-    """`config/partner/AGENTS.md` is what the Partner launches with; `personas/partner/AGENTS.md`
-    is what the Partner would copy to rebuild it. Two texts would mean two Partners."""
-    config = (REPO / "src" / "hx" / "skeleton" / "config" / "partner" / "AGENTS.md").read_text()
-    persona = (PERSONAS / "partner" / "AGENTS.md").read_text()
-    assert config == persona, (
-        "config/partner/AGENTS.md has drifted from personas/partner/AGENTS.md"
-    )
+def test_the_partner_has_one_persona():
+    """`personas/partner.md` is the Partner's persona, the one the `context` hook hands it; a
+    second copy under `config/partner/` would mean two Partners."""
+    assert (PERSONAS / "partner.md").is_file()
+    assert not (REPO / "src" / "hx" / "skeleton" / "config" / "partner" / "AGENTS.md").exists()

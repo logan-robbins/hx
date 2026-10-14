@@ -1,50 +1,28 @@
-"""`hx compose <id> [<stream>]` — the single file the agent is handed at every boundary.
+"""`hx compose <id> [<stream>]` — session memory at every boundary.
 
-Spec 02 "Single-file context": everything the agent needs that is not already in its system
-prompt, composed by hx into one file per stream with a fixed section schema, always current on
-disk. The hook output is only the path, so rehydration costs exactly one Read, never a search
-and never a second file.
+The main stream has no context file: its boundary read is the work item itself. hx keeps the
+work item's `## Status` (`PARTNER.md`'s for the Partner) current — rewritten at every
+main-stream compose, which runs at a boundary, so the agent is not writing the file — and the
+`context` hook points the agent at it (`hx.persona.boundary`). The agent keeps `## Tasks`.
+`## Status` holds, as `###` subsections (`status_parts`):
 
-Sections, in the order spec 07.3 fixes them:
+  Step state       — `state/<id>/<stream>.json`, rendered (written by the Companion)
+  Memory episodes  — the closest episodes other agents left behind (`docs/memory.md`);
+                     never the Partner's, none with `companion.memory_inject_k: 0`
+  Open subagent handles — `run/<id>/subagents.json` and every `-open` stream
 
-  0. Invariants    — `config/CLAUDE.md` whole: the global rules the Partner manages,
-                     only on the flavors whose invariants channel is the context file
-                     (`config_harness.INVARIANTS_CHANNEL`: Meta and Codex, which take no
-                     system prompt). Claude already loaded the same file as its home's
-                     native CLAUDE.md, and Pi and Grok carry it in their persona; a
-                     second copy here would spend the same tokens again at every boundary
-  0. Persona       — the rendered persona (`hx.persona.render`: role persona, `purpose`,
-                     learnings), main stream only, and only on flavors whose CLI takes
-                     no system prompt (`NO_SYSTEM_PROMPT_FLAVORS`): everywhere else the
-                     persona is injected at launch and carrying it here too would spend
-                     context for nothing. Rendered live from the sources, so it is the
-                     same text `start.sh` would pass as a system prompt
-  1. Who your subagents are — subagent streams only: the shared `templates/worker/SUBAGENTS.md`
-                     rendered with this agent's identity (`hx.persona.render_subagents`;
-                     `templates/contributor/` for Meta), or its own `config/<id>/SUBAGENTS.md`.
-                     There is no per-agent memory section: what one agent learned
-                     reaches every agent of its role as a learnings rule (the persona's
-                     `hx:learnings` region, `hx learn propose --role`), and what it did is
-                     its step state and the episode store (4, 4b)
-  2. Task          — the `## Goal` section of the Work Item, with the addenda `hx resume`
-                     appended to it
-  3. Tasks         — the work item's `## Tasks` section (main stream only)
-  4. Step state    — `state/<id>/<stream>.json`, rendered
-  4b. Memory episodes — the closest episodes other agents left behind (`docs/memory.md`),
-                     omitted when `companion.memory_inject_k` is 0
-  5. Open handles  — `run/<id>/subagents.json` and every `-open` stream
+A subagent stream gets one context file, `run/<id>/<stream>.context.md`, which the
+`SubagentStart` hook names (spec 02 "Single-file context"), sections in this order:
 
-Session memory is the work item: the agent keeps `## Tasks`, and hx keeps `## Status` (4, 4b
-and 5 as `###` subsections), rewritten in the `-working` item at every main-stream compose —
-a boundary, so the agent is not writing the file — and in `PARTNER.md` for the Partner
-(`write_status`). One render feeds both the work item and sections 4, 4b and 5 here; the
-context file still carries them until a boundary hands the agent the work item itself.
-
-Everywhere else the persona is never here: it is in the system prompt, via
-`--append-system-prompt-file` (spec 02 Identity, 11). For `partner` the file also
-carries current `PARTNER.md`, `hx board`, and companion scheduling state. It excludes
-personal memory and episode lookup. Bounded Claude reset packets can be attached directly;
-other packets use the single-file read path.
+  Invariants       — `config/CLAUDE.md` whole, on the flavors whose invariants reach the
+                     parent through the `context` hook (`config_harness.INVARIANTS_CHANNEL`
+                     `hook`: Pi, Grok, Meta), which a subagent does not see; Claude and
+                     Codex subagents load the same file their parent does
+  Who your subagents are — the shared `templates/worker/SUBAGENTS.md` rendered with this
+                     agent's identity (`hx.persona.render_subagents`; `templates/contributor/`
+                     for Meta), or its own `config/<id>/SUBAGENTS.md`
+  Task             — the spawn prompt
+  Step state, Memory episodes, Open subagent handles — the stream's own status
 """
 
 from __future__ import annotations
@@ -53,8 +31,8 @@ import argparse
 import json
 from pathlib import Path
 
-from . import board as board_mod, store, streams
-from .config_harness import NO_SYSTEM_PROMPT_FLAVORS, flavor_of, invariants_channel
+from . import store, streams
+from .config_harness import flavor_of, invariants_channel
 from .errors import NotFound, Refused, ValidationError
 from .ids import PARTNER
 from .workitems import (
@@ -86,6 +64,11 @@ def is_main_stream(item_id: str, stream: str) -> bool:
     return stream == main_stream_name(item_id)
 
 
+def boundary_name(item_id: str) -> str:
+    """The name of the file a boundary's one Read is of: `PARTNER.md`, else the work item."""
+    return "PARTNER.md" if item_id == PARTNER else f"{item_id}-working.md"
+
+
 def _relative(root: Path, path: Path) -> str:
     try:
         return str(path.relative_to(root))
@@ -100,19 +83,14 @@ def _section(title: str, source: str | None, body: str) -> str:
 
 
 def carries_invariants(root: Path, item_id: str) -> bool:
-    """Whether this agent's context file is its invariants channel (`INVARIANTS_CHANNEL`)."""
-    return invariants_channel(flavor_of(root, item_id)) == "context"
+    """Whether this agent's subagent context files carry the invariants: where the parent gets
+    them from the `context` hook (`INVARIANTS_CHANNEL` `hook`), which a subagent does not run."""
+    return invariants_channel(flavor_of(root, item_id)) == "hook"
 
 
 def invariants(root: Path) -> tuple[str | None, str]:
-    """Section 0. The global invariants, whole, for the flavors whose channel this is.
-
-    One copy lives at `config/CLAUDE.md`, managed only by the Partner, and it reaches each
-    agent exactly once (`config_harness.INVARIANTS_CHANNEL`): a Claude home loads its copy
-    natively (`start.sh` refreshes it at every launch), Pi and Grok carry it in the rendered
-    persona, and Meta and Codex — no system prompt — read it here, live, at every boundary.
-    Personas, skills, and templates point at it instead of restating the rules.
-    """
+    """The global invariants, whole: one copy at `config/CLAUDE.md`, managed only by the
+    Partner, reaching each agent exactly once (`config_harness.INVARIANTS_CHANNEL`)."""
     path = root / "config" / "CLAUDE.md"
     if not path.is_file():
         return _relative(root, path), ""
@@ -120,30 +98,12 @@ def invariants(root: Path) -> tuple[str | None, str]:
 
 
 def subagents(root: Path, item_id: str) -> tuple[str, str]:
-    """Section 1, subagent streams only: what this agent's subagents are told, rendered at
-    delivery from the one shared template, so nothing is copied per id."""
+    """What this agent's subagents are told, rendered at delivery from the one shared
+    template, so nothing is copied per id."""
     from . import persona as persona_mod
 
     source, text = persona_mod.render_subagents(root, item_id)
     return source or f"templates/worker/SUBAGENTS.md", text
-
-
-def persona(root: Path, item_id: str) -> tuple[str | None, str]:
-    """The persona section: the persona `hx persona <id>` renders, from its sources.
-
-    Only for flavors whose CLI takes no system prompt (`NO_SYSTEM_PROMPT_FLAVORS`):
-    everywhere else the persona is injected at launch, and carrying it here too would
-    spend context on every boundary for nothing. Main stream only — subagent streams
-    carry the rendered `SUBAGENTS.md` as their identity. The invariants are not in it on
-    these flavors: the Invariants section carries them (`INVARIANTS_CHANNEL`).
-
-    Returns `(None, "")` when the section must be omitted.
-    """
-    if flavor_of(root, item_id) not in NO_SYSTEM_PROMPT_FLAVORS:
-        return None, ""
-    from . import persona as persona_mod
-
-    return f"hx persona {item_id}", persona_mod.render(root, item_id).strip("\n")
 
 
 #: What a subagent gets in place of the goal. Spec 07.3 says "the subagent prompt", but the
@@ -159,7 +119,8 @@ SUBAGENT_TASK = (
 
 
 def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[str | None, str]:
-    """Section 2. The goal as dispatched, plus every addendum `hx resume` appended.
+    """The goal as dispatched, plus every addendum `hx resume` appended: what memory is asked
+    about before the Companion has written a step state.
 
     For a subagent stream it is the spawn prompt instead: that *is* its task, and the parent's
     goal is not its business (spec 07.3).
@@ -185,15 +146,6 @@ def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[
         parts.append(f"### Goal addendum {addendum.get('ts', '')}\n\n{addendum.get('text', '')}")
     text = "\n\n".join(part.strip("\n") for part in parts if part.strip())
     return ("tasks.json" if text else None), text
-
-
-def tasks_section(root: Path, item_id: str) -> tuple[str | None, str]:
-    """Section 3. The agent's own running task list — what it gets back after a seam."""
-    work_item = find_work_item(root, item_id)
-    if work_item is None:
-        return None, ""
-    _, body = split_frontmatter_text(work_item.read_text())
-    return _relative(root, work_item), section_text(body, SECTION_TASKS) or ""
 
 
 #: The tag vocabulary of the rendered step state. The reader of this section is an LLM
@@ -233,7 +185,7 @@ def _ev(entry: dict) -> str:
 
 
 def render_step_state(state: dict) -> str:
-    """Section 4, rendered dense rather than dumped: one tagged line per fact (spec 07.2).
+    """The step state, rendered dense rather than dumped: one tagged line per fact (spec 07.2).
 
     Unknown keys are rendered too, so a Companion that grows a field is not silently dropped
     from the file the agent actually reads.
@@ -313,7 +265,7 @@ def render_step_state(state: dict) -> str:
 
 
 def step_state(root: Path, item_id: str, stream: str) -> tuple[str | None, str]:
-    """Section 4. Written by the Companion (spec 07.2); absent until M5."""
+    """Written by the Companion (spec 07.2); absent until its first pass."""
     path = root / "state" / item_id / f"{stream}.json"
     if not path.is_file():
         return None, ""
@@ -335,7 +287,7 @@ def step_state(root: Path, item_id: str, stream: str) -> tuple[str | None, str]:
 def memory_episodes(
     root: Path, item_id: str, stream: str, *, fallback: str = ""
 ) -> tuple[str | None, str] | None:
-    """Section 4b. What other agents already worked out about this, from episode memory.
+    """What other agents already worked out about this, from episode memory.
 
     Everything the Companions of this instance ever compacted lives in one searchable
     collection (`docs/memory.md`). The query is built from this stream's own step state — goal,
@@ -345,7 +297,7 @@ def memory_episodes(
 
     Returns `None` when the agent has `companion.memory_inject_k: 0`, which is how the section
     is turned off. Chroma being absent or broken is not an error here: the body says so in one
-    line and the rest of the file composes exactly as before.
+    line and the rest composes exactly as before.
     """
     from . import memory as memory_mod
 
@@ -367,7 +319,7 @@ def memory_episodes(
 
 
 def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
-    """Section 5. The subagents still running, by handle, so the agent knows what it is owed."""
+    """The subagents still running, by handle, so the agent knows what it is owed."""
     mapping_path = root / "run" / item_id / "subagents.json"
     mapping: dict = {}
     if mapping_path.is_file():
@@ -394,9 +346,9 @@ def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
 def status_parts(
     root: Path, item_id: str, stream: str, *, fallback: str = ""
 ) -> list[tuple[str, str | None, str]]:
-    """`(title, source, body)` for each part of a stream's status: its step state (4), the
-    closest memory episodes (4b; never the Partner's, none with `memory_inject_k: 0`), and its
-    open subagent handles (5). Computed once per compose: the episode lookup opens chroma."""
+    """`(title, source, body)` for each part of a stream's status: its step state, the
+    closest memory episodes (never the Partner's, none with `memory_inject_k: 0`), and its
+    open subagent handles. Computed once per compose: the episode lookup opens chroma."""
     parts = [("Step state", *step_state(root, item_id, stream))]
     if not (item_id == PARTNER and is_main_stream(item_id, stream)):
         injected = memory_episodes(root, item_id, stream, fallback=fallback)
@@ -410,8 +362,7 @@ STATUS_NOTE = "_hx rewrites this section at every boundary (`hx compose`); do no
 
 
 def status_text(parts: list[tuple[str, str | None, str]]) -> str:
-    """The body of `## Status`: the parts as `###` subsections, sources left out (the context
-    file names them)."""
+    """The body of `## Status`: the parts as `###` subsections, sources left out."""
     blocks = [STATUS_NOTE]
     for title, _source, body in parts:
         blocks.append(f"### {title}\n\n{body.rstrip() or NONE_YET}")
@@ -469,146 +420,48 @@ def write_status(root: Path, item_id: str, parts: list[tuple[str, str | None, st
     return path
 
 
-#: The handover is a resume pointer, not an archive: PARTNER.md grows all day, so its
-#: append-only sections ride bounded while identity, rules, digest, fleet, pods and open
-#: questions ride whole. Tails win (newest last) except Notes, whose curated constants sit
-#: at the head. Counts are data rows kept, not lines.
-_PARTNER_TAIL_ROWS = {"## Decisions made": 15, "## Completed work": 5}
-_PARTNER_HEAD_LINES = {"## Notes": 60}
-
-
-def _is_separator(line: str) -> bool:
-    return line.startswith("|") and "-" in line and set(line.strip()) <= {"|", "-", ":", " "}
-
-
-def _tail_table(body: list[str], keep: int) -> list[str]:
-    sep = next((i for i, line in enumerate(body) if _is_separator(line)), None)
-    head = body[: sep + 1] if sep is not None else []
-    rows = [line for line in body[len(head):] if line.startswith("|")]
-    if len(rows) <= keep:
-        return body
-    return head + rows[-keep:] + ["", f"_{len(rows) - keep} older rows omitted — full text in PARTNER.md._"]
-
-
-def _head_lines(body: list[str], keep: int) -> list[str]:
-    if len(body) <= keep:
-        return body
-    return body[:keep] + ["", f"_{len(body) - keep} further lines omitted — full text in PARTNER.md._"]
-
-
-def _bound_partner_md(text: str) -> str:
-    """PARTNER.md with the append-only sections bounded (spec 07.3)."""
-    head: list[str] = []
-    chunks: list[tuple[str, list[str]]] = []
-    header: str | None = None
-    body: list[str] = []
-    for line in text.split("\n"):
-        if line.startswith("## "):
-            if header is None:
-                head = body
-            else:
-                chunks.append((header, body))
-            header, body = line.strip(), []
-        else:
-            body.append(line)
-    if header is None:
-        return text
-    chunks.append((header, body))
-    out = head
-    for name, section in chunks:
-        if name == SECTION_STATUS:
-            # hx wrote it from the parts the context file renders as its own sections.
-            continue
-        if name in _PARTNER_TAIL_ROWS:
-            section = _tail_table(section, _PARTNER_TAIL_ROWS[name])
-        elif name in _PARTNER_HEAD_LINES:
-            section = _head_lines(section, _PARTNER_HEAD_LINES[name])
-        out.append(name)
-        out.extend(section)
-    return "\n".join(out)
+#: The opening of a subagent's context file.
+SUBAGENT_INTRO = ("This file is everything hx has for you that you were not already given at launch. "
+                  "Read it once; you do not need to search for anything it contains.")
 
 
 def compose_text(
     root: Path, item_id: str, stream: str, *, subagent_prompt: str | None = None, env=None,
     status: list[tuple[str, str | None, str]] | None = None,
 ) -> str:
-    """The whole context file, sections in the order spec 07.3 fixes. `status` is the parts
-    `compose` already computed (`status_parts`) for the work item."""
-    main = is_main_stream(item_id, stream)
-    persona_source, persona_text = persona(root, item_id)
-    if main and persona_source is not None:
-        intro = (
-            "Your invariants and your persona are the first sections of this file. The rest "
-            "is everything else hx has for you. Read it once; you do not need to search for "
-            "anything it contains."
-        )
-    else:
-        intro = (
-            "This file is everything hx has for you that you were not already given at launch. "
-            "Read it once; you do not need to search for anything it contains."
-        )
-    parts = [
-        f"# Context for {stream}",
-        "",
-        intro,
-        "",
-    ]
-
+    """A subagent stream's context file, sections in order. `status` is the parts already
+    computed (`status_parts`). The main stream has none: its boundary read is the work item."""
+    if is_main_stream(item_id, stream):
+        raise ValidationError(f"{stream}: the main stream has no context file; the `context` "
+                              f"hook points {item_id} at its work item (`hx persona {item_id}`)")
+    parts = [f"# Context for {stream}", "", SUBAGENT_INTRO, ""]
     if carries_invariants(root, item_id):
-        source, text = invariants(root)
-        parts.append(_section("Invariants", source, text))
-
-    if main and persona_source is not None:
-        parts.append(_section("Persona", persona_source, persona_text))
-
-    if not main:
-        source, text = subagents(root, item_id)
-        parts.append(_section("Who your subagents are", source, text))
-
-    source, text = task(root, item_id, None if main else (subagent_prompt or ""))
+        parts.append(_section("Invariants", *invariants(root)))
+    parts.append(_section("Who your subagents are", *subagents(root, item_id)))
+    source, text = task(root, item_id, subagent_prompt or "")
     parts.append(_section("Task", source, text))
-    # What memory is asked about before the Companion has written a step state to ask from.
-    goal_text = text
-
-    if main:
-        source, text = tasks_section(root, item_id)
-        parts.append(_section("Tasks", source, text))
-
-    for title, source, text in status if status is not None else status_parts(
-            root, item_id, stream, fallback=goal_text):
-        parts.append(_section(title, source, text))
-
-    if item_id == PARTNER and main:
-        partner_md = root / "PARTNER.md"
-        parts.append(
-            _section(
-                "PARTNER.md",
-                _relative(root, partner_md),
-                _bound_partner_md(partner_md.read_text()) if partner_md.is_file() else "",
-            )
-        )
-        parts.append(_section("Board", "hx board", "Run `hx board` when current lane status is needed."))
-
+    for title, source, body in status if status is not None else status_parts(
+            root, item_id, stream, fallback=text):
+        parts.append(_section(title, source, body))
     return "\n".join(parts).rstrip("\n") + "\n"
 
 
 def compose(
     root: Path, item_id: str, stream: str | None = None, *, subagent_prompt: str | None = None, env=None
-) -> Path:
-    """Write `## Status` into the work item (main stream), then the context file, and return
-    the context file's path (spec 08 `hx compose`)."""
+) -> Path | None:
+    """The main stream: rewrite `## Status` in the work item (`PARTNER.md`) and return that
+    file, or None when there is none (no task in progress). A subagent stream: write its
+    context file and return its path (spec 08 `hx compose`)."""
     root = Path(root)
     stream = stream or main_stream_name(item_id)
     if not (root / "config" / item_id).is_dir() and find_work_item(root, item_id) is None:
         raise NotFound(f"{item_id}: no work item and no config/{item_id}/; unknown id")
-    status = None
     if is_main_stream(item_id, stream):
         status = status_parts(root, item_id, stream, fallback=task(root, item_id)[1])
-        write_status(root, item_id, status)
+        return write_status(root, item_id, status)
     path = context_path(root, item_id, stream)
     store.atomic_write_text(
-        path, compose_text(root, item_id, stream, subagent_prompt=subagent_prompt, env=env,
-                           status=status)
+        path, compose_text(root, item_id, stream, subagent_prompt=subagent_prompt, env=env)
     )
     return path
 
@@ -672,5 +525,6 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             path = ledger.artifacts / result["packet_hash"]
             print(canonical({key: value for key, value in {**result, "path": str(path)}.items() if key != "text"}) if args.json or args.ack else path)
         return 0
-    print(compose(root, args.id, args.stream, env=env))
+    written = compose(root, args.id, args.stream, env=env)
+    print(written if written is not None else f"{args.id}: no task in progress; no `## Status` to write")
     return 0

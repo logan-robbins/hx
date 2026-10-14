@@ -119,8 +119,8 @@ def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
     elif REQUIRED_FLAG in command:
         found.append((OK, f"{REQUIRED_FLAG} in the pane's argv"))
     elif "start.sh" in command:
-        # The launcher has not exec'd the binary yet: it is still running its refusals and
-        # deriving persona.md. Reading its argv here says nothing about the agent, and a
+        # The launcher has not exec'd the binary yet: it is still running its refusals.
+        # Reading its argv here says nothing about the agent, and a
         # failure would be simply untrue (handoff/gtm-to-build.md gtm-8).
         found.append((
             WARN,
@@ -592,21 +592,32 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
     return rows
 
 
-def _configured_roles(root: Path) -> list[str]:
-    """Every `role` a `config/<id>/harness.json` names, sorted, unreadable files skipped."""
-    roles = set()
+def _hook_size(root: Path, env) -> list[tuple[str, str, str]]:
+    """A WARN naming every configured agent whose `context` hook output passed its bound
+    (`hx.persona.hook_bound`), so sources went as files to read instead of printed text."""
+    from . import persona as persona_mod
+    from .errors import HxError
+
+    over = []
     for harness in sorted((root / "config").glob("*/harness.json")):
-        try:
-            role = json.loads(harness.read_text()).get("role")
-        except (OSError, ValueError, AttributeError):
+        item_id = harness.parent.name
+        if not ID_RE.match(item_id):
             continue
-        if isinstance(role, str) and role:
-            roles.add(role)
-    return sorted(roles)
+        try:
+            handed = persona_mod.boundary(root, item_id, env=env)
+        except (HxError, OSError, ValueError):
+            continue
+        if handed["as_files"]:
+            over.append(f"{item_id} ({', '.join(handed['as_files'])} past {handed['bound']} B)")
+    if not over:
+        return []
+    return [(WARN, "hook-size",
+             "the context hook lists sources as files to read instead of printing them for "
+             + "; ".join(over) + "; merge twins (hx learn check) or scope rules to a role")]
 
 
 def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
-    """What `hx persona` renders a worker from (docs/prompt-runtime.md § Prompt layers): a
+    """What the `context` hook hands a worker (docs/prompt-runtime.md § Prompt layers): a
     `purpose` the Partner actually wrote, a role persona, and no per-id file left over."""
     from .config_harness import purpose_text
 
@@ -622,16 +633,20 @@ def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
     if purpose_text(data.get("purpose")) is None:
         rows.append((WARN, f"purpose:{item_id}",
                      "harness.json `purpose` is absent or still the template's placeholder, so the "
-                     "persona says nothing about what this agent is for; write one paragraph there"))
+                     "identity line says nothing about what this agent is for; write one paragraph there"))
     role = data.get("role")
-    if isinstance(role, str) and not (root / "personas" / role / "AGENTS.md").is_file():
+    if isinstance(role, str) and not (root / "personas" / f"{role}.md").is_file():
         rows.append((WARN, f"persona:{item_id}",
-                     f"personas/{role}/AGENTS.md is missing; the persona is one identity line "
-                     "plus the purpose and the learnings"))
+                     f"personas/{role}.md is missing; the agent gets its identity line, the "
+                     "learnings and the pointer alone"))
+    if isinstance(role, str) and (root / "personas" / role / "AGENTS.md").is_file():
+        rows.append((WARN, f"persona:{item_id}",
+                     f"personas/{role}/AGENTS.md is the persona layout before personas/{role}.md; "
+                     f"`hx launch {item_id}` (or `hx up`, `hx install`) moves it"))
     if (root / "config" / item_id / "AGENTS.md").is_file():
         rows.append((WARN, f"persona:{item_id}",
-                     f"config/{item_id}/AGENTS.md is a per-id persona from before the persona was "
-                     f"rendered from its sources; `hx launch {item_id}` (or `hx up`, `hx install`) "
+                     f"config/{item_id}/AGENTS.md is a per-id persona from before the persona came "
+                     f"from its sources; `hx launch {item_id}` (or `hx up`, `hx install`) "
                      "moves it into harness.json `purpose` and a learnings proposal"))
     if (root / "config" / item_id / "SUBAGENTS.md").is_file():
         rows.append((WARN, f"subagents:{item_id}",
@@ -748,16 +763,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 f"{learnings['pending']} pending proposal(s)"
                 + (" (hx learn pending)" if learnings["pending"] else ""),
             ))
-            # Every agent carries the global rules and its role's in its system prompt
-            # (docs/learnings.md); the largest region any configured role renders is the bound.
-            sizes = {role: len(learn_mod.persona_region(root, env, role=role).encode())
-                     for role in [None, *_configured_roles(root)]}
-            role, region_bytes = max(sizes.items(), key=lambda item: item[1])
-            if region_bytes > learn_mod.PERSONA_WARN_BYTES:
-                checks.append((WARN, "learnings-size",
-                               f"the learnings region is {region_bytes // 1024} KiB in every "
-                               f"{role + ' ' if role else ''}persona "
-                               f"(> {learn_mod.PERSONA_WARN_BYTES // 1024} KiB); merge twins (hx learn check)"))
+            # Every agent is handed the global rules and its role's at every boundary
+            # (docs/learnings.md); past the hook's bound they go as files to read.
+            checks.extend(_hook_size(root, env))
         legacy = root / "LEARNINGS.md"
         if legacy.is_file():
             checks.append((WARN, "learnings-legacy",

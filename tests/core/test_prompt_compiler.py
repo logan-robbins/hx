@@ -38,7 +38,7 @@ def test_worker_roles_have_resolved_identity_and_one_planned_channel(instance, f
     assert '"runtime":' + json.dumps(flavor) in rendered
     assert "Things I learned" not in rendered and "UPDATES BELOW ONLY" not in rendered
     assert "one observable behavior end to end" in rendered
-    persona_text = (instance / "personas" / role / "AGENTS.md").read_text()
+    persona_text = (instance / "personas" / f"{role}.md").read_text()
     assert prompts.DOMAIN_RE.search(persona_text)["body"].strip("\n") in rendered, \
         "the role persona's domain judgment is the planned prompt's"
     assert "Commit as you go" not in rendered and "tmux" not in rendered, \
@@ -73,13 +73,13 @@ def test_companions_receive_frozen_pass_policy_and_role_retention_without_worker
 @pytest.mark.parametrize("flavor", ["claude", "codex"])
 def test_partner_is_compiled_from_its_audience_and_role_instead_of_exempted(instance, flavor):
     configure(instance, item_id="partner", flavor=flavor, role="partner")
-    (instance / "config" / "partner" / "AGENTS.md").write_text(
-        (prompts.BUNDLE / "config" / "partner" / "AGENTS.md").read_text())
+    (instance / "personas" / "partner.md").write_text(
+        (prompts.BUNDLE / "personas" / "partner.md").read_text())
     result = prompts.build(instance, "partner")
     rendered = text(result)
     assert "Real dependencies remain\ndependencies" in rendered
     assert "Pass current contracts and relevant findings into assignments" in rendered, \
-        "the domain judgment of config/partner/AGENTS.md"
+        "the domain judgment of personas/partner.md"
     assert "No blockers by construction" not in rendered, "its live mechanics stay live"
     assert "runtime's completion and readiness results" in rendered
     assert "hx plan finish" not in rendered
@@ -103,9 +103,10 @@ def test_planned_and_live_personas_are_one_source(instance):
     data = configure(instance)
     data["purpose"] = "Owns the importer service and its schema."
     (instance / "config" / "eng-001" / "harness.json").write_text(json.dumps(data))
-    source = instance / "personas" / "backend-engineer" / "AGENTS.md"
+    source = instance / "personas" / "backend-engineer.md"
     source.write_text(source.read_text() + "Prefer the importer's own retry helper.\n")
-    planned, live = text(prompts.build(instance, "eng-001")), persona.render(instance, "eng-001")
+    planned = text(prompts.build(instance, "eng-001"))
+    live = persona.boundary(instance, "eng-001")["text"]
     for line in ("Prefer the importer's own retry helper.", "Owns the importer service and its schema."):
         assert line in planned and line in live
     assert "## How you work" in live and "## How you work" not in planned
@@ -123,7 +124,7 @@ def test_the_planned_prompt_reads_no_per_id_file_no_invariants_and_no_memory(ins
     after = prompts.build(instance, "eng-001")
     assert after["version"] == before["version"], "config/CLAUDE.md reaches agents through its own channel"
     assert "OLD PER-ID PERSONA" not in text(after)
-    source = instance / "personas" / "backend-engineer" / "AGENTS.md"
+    source = instance / "personas" / "backend-engineer.md"
     source.write_text(source.read_text() + "\n" + LEGACY_HEADER + "\n" + "OLD PERSONAL STATE " * 100000)
     rendered = text(prompts.build(instance, "eng-001"))
     assert "OLD PERSONAL STATE" not in rendered
@@ -181,11 +182,9 @@ def test_context_bundle_validates_sources_and_never_claims_system_prefix_loaded(
         prompts.context_instructions(instance, "eng-001", Path(bundle["manifest_path"]), workdir=bundle["identity"]["workdir"])
 
 
-def test_compile_planned_cli_returns_a_manifest_and_enforces_identity(instance, run_hx):
+def test_a_planned_build_returns_a_manifest_and_enforces_identity(instance):
     configure(instance, flavor="meta", role="qa-engineer")
-    result = run_hx("compile", "eng-001", "--planned", "--root", str(instance))
-    assert result.returncode == 0, result.stderr
-    manifest = json.loads(result.stdout)
+    manifest = prompts.build(instance, "eng-001")
     assert Path(manifest["manifest_path"]).is_file()
     assert manifest["identity"]["role"] == "qa-engineer"
     with pytest.raises(ValidationError, match="audience"):
@@ -197,5 +196,5 @@ def test_qa_role_and_companion_are_valid_installed_configuration(instance):
     configure(instance, role="qa-engineer")
     config = load_harness(instance / "config" / "eng-001" / "harness.json")
     assert config.role == "qa-engineer"
-    assert (instance / "personas" / "qa-engineer" / "AGENTS.md").is_file()
+    assert (instance / "personas" / "qa-engineer.md").is_file()
     assert (instance / "companion" / "roles" / "qa-engineer.md").is_file()

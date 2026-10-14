@@ -505,10 +505,10 @@ def test_compose_without_chromadb_says_so_in_one_line(instance, monkeypatch):
     )
     unavailable(monkeypatch)
 
-    text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
-    assert "## Memory episodes" in text
+    text = compose_mod.status_text(compose_mod.status_parts(instance, "eng-001", "eng-001-main"))
+    assert "### Memory episodes" in text
     assert "_memory unavailable: chromadb is not importable" in text
-    assert "## Step state" in text and "## Open subagent handles" in text
+    assert "### Step state" in text and "### Open subagent handles" in text
 
 
 # --- the CLI ---------------------------------------------------------------------------------------
@@ -580,9 +580,10 @@ def test_the_memory_section_carries_other_agents_episodes_and_not_its_own(instan
         json.dumps(state_with("make the CSV importer stream, my own state"))
     )
 
-    text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
-    section = text[text.index("## Memory episodes"):text.index("## Open subagent handles")]
-    assert "_source: `state/memory/chroma`_" in section
+    parts = compose_mod.status_parts(instance, "eng-001", "eng-001-main")
+    assert {title: source for title, source, _ in parts}["Memory episodes"] == "state/memory/chroma"
+    text = compose_mod.status_text(parts)
+    section = text[text.index("### Memory episodes"):text.index("### Open subagent handles")]
     assert 'Search more: `hx memory search "' in section
     # `--all-roles` is the Partner's (hx.cli.AUDIENCES): a worker's hint does not name it.
     assert "--all-roles" not in section
@@ -591,8 +592,8 @@ def test_the_memory_section_carries_other_agents_episodes_and_not_its_own(instan
     assert bullets and all("my own state" not in line for line in bullets), (
         "its own step state is the section above; only the query line repeats it"
     )
-    assert text.index("## Step state") < text.index("## Memory episodes")
-    assert text.index("## Memory episodes") < text.index("## Open subagent handles")
+    assert text.index("### Step state") < text.index("### Memory episodes")
+    assert text.index("### Memory episodes") < text.index("### Open subagent handles")
 
 
 @needs_chroma
@@ -623,9 +624,9 @@ def test_memory_inject_k_zero_drops_the_section_entirely(instance):
         "id": "eng-001", "pod": "engineers", "role": "engineer", "model": "claude-opus-5",
         "effort": "xhigh", "workdir": "wt/eng-001", "companion": {"memory_inject_k": 0},
     }))
-    text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
-    assert "## Memory episodes" not in text
-    assert "## Step state" in text
+    text = compose_mod.status_text(compose_mod.status_parts(instance, "eng-001", "eng-001-main"))
+    assert "### Memory episodes" not in text
+    assert "### Step state" in text
 
 
 def test_the_inject_query_is_the_goal_the_next_step_and_the_hypothesis():

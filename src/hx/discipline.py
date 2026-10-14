@@ -334,13 +334,17 @@ def classify_call(record: dict) -> tuple[str, list[str]]:
     return ("read", reads) if reads else ("other", [])
 
 
-def post_seam_counts(records: list[dict], context_suffix: str = ".context.md") -> dict:
+def post_seam_counts(records: list[dict], item_id: str | None = None) -> dict:
     """Orientation after a boundary, from the `post_tool` records that follow it.
 
     `searches_before_first_edit` and `modules_read_before_first_write` stop at the first
     edit (the whole window when there is none); `task_reprints` counts every `hx task`.
-    A read of the context file is not a module read: it is the one read hx asks for.
+    A read of the agent's work item (`PARTNER.md` for the Partner) is not a module read: it is
+    the one read the boundary asks for.
     """
+    from .compose import boundary_name
+
+    own = boundary_name(item_id) if item_id else None
     calls = [r for r in records if r.get("event") == "post_tool"]
     searches, modules, reprints = 0, set(), 0
     first_edit = None
@@ -355,7 +359,7 @@ def post_seam_counts(records: list[dict], context_suffix: str = ".context.md") -
         elif kind == "search":
             searches += 1
         elif kind == "read":
-            modules.update(p for p in paths if not p.endswith(context_suffix))
+            modules.update(p for p in paths if not (own and (p == own or p.endswith("/" + own))))
     return {"tool_calls": len(calls), "first_edit_seq": first_edit,
             "searches_before_first_edit": searches,
             "modules_read_before_first_write": len(modules), "task_reprints": reprints}
@@ -373,7 +377,7 @@ def post_seam(root, item_id: str) -> dict:
     seam = records[seams[-1]]
     return {"id": item_id, "stream": path.name.removesuffix(".jsonl"), "seam_seq": seam.get("seq"),
             "seam_ts": seam.get("ts"), "source": seam.get("source"),
-            **post_seam_counts(records[seams[-1] + 1:])}
+            **post_seam_counts(records[seams[-1] + 1:], item_id)}
 
 
 def main(argv, root, *, env=None) -> int:

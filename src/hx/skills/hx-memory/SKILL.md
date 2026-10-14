@@ -16,8 +16,8 @@ not yours alone. `hx memory search` is how you read it.
 
 ## Before you search: the file you already have
 
-Your context file has a **Memory episodes** section, already filtered to your role and already
-excluding your own state. Read that first. It is free — you have it in front of you — and it
+Your work item's `## Status` has a **Memory episodes** part, already filtered to your role and
+already excluding your own state. Read that first. It is free — you have it in front of you — and it
 is the answer often enough that a search is a wasted tool call.
 
 Search when that section is empty, when it does not cover what you need, or when the thing you
@@ -89,7 +89,7 @@ hx recall --id eng-001 --limit 3                    # one persona's finished Wor
 ```
 
 Bounds are the point: a query or a filter is required, at most 20 hits, excerpts capped.
-Reach for this only after the context file's Memory episodes section and `hx memory search`
+Reach for this only after your `## Status`'s Memory episodes and `hx memory search`
 came up empty. The Partner in particular treats this as file memory, never a first read —
 its context is what/why/state, and the how stays here until genuinely needed.
 

@@ -43,6 +43,7 @@ command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 
 
 home=$root/run/$id/home
 harness=$root/config/$id/harness.json
+# A planned launch's compiled system prompt (`native_launch`); nothing else writes it.
 persona=$root/run/$id/persona.md
 
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -76,6 +77,10 @@ fi
 [ -n "$bin" ] || die "refuse: no codex binary; record {bin, version} in config/codex.json"
 [ -x "$bin" ] || die "refuse: pinned codex binary $bin is not executable"
 
+role=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["role"])' "$harness")
+# The role persona, read from $CODEX_HOME/AGENTS.md (`config_harness.PERSONA_CHANNEL`): nothing is rendered
+# or copied per id. A role without one launches without it.
+role_persona=$root/personas/$role.md
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
 [ -n "$model" ] || die "refuse: $harness has no \`model\`"
@@ -86,15 +91,17 @@ if [ "$mode" = exec ]; then
   mkdir -p "$root/run/$id" "$home/sessions"
   if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
     # A planned launch's persona is the compiled planned system prompt, prepared in its
-    # private root and verified by the controller (`native_launch`); rendering it again from
-    # the instance sources would replace what was verified.
+    # private root and verified by the controller (`native_launch`).
     [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
   else
-    # Rendered from its sources immediately before exec (`hx.persona`): the role persona,
-    # harness.json `purpose`, and the learnings. An edit to any of them lands at the next
-    # launch or restart; nothing is copied per id.
-    "$python" -m hx.persona --root "$root" "$id" >/dev/null \
-      || die "refuse: could not render $persona (\`hx persona $id\` says why)"
+    # Codex reads `$CODEX_HOME/AGENTS.md` as its user instructions at every start: the
+    # invariants and the role persona, concatenated here at every exec so an edit to either
+    # lands at the next launch or restart (`config_harness.INVARIANTS_CHANNEL`, `PERSONA_CHANNEL`).
+    # The identity line and the learnings arrive through the `context` hook at every boundary.
+    {
+      if [ -f "$root/config/CLAUDE.md" ]; then cat "$root/config/CLAUDE.md"; fi
+      if [ -f "$role_persona" ]; then printf '\n'; cat "$role_persona"; fi
+    } > "$home/AGENTS.md"
   fi
 
   cd "$cwd"

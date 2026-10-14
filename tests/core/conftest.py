@@ -114,7 +114,7 @@ def instance(tmp_path):
             (root / "wt" / item_id).mkdir(parents=True, exist_ok=True)
         (config / "harness.json").write_text(json.dumps(harness, indent=2) + "\n")
         if item_id == "partner":
-            (config / "AGENTS.md").write_text("You are the Partner.\n")
+            (root / "personas" / "partner.md").write_text("You are the Partner.\n")
         (root / "pods" / pod).mkdir(parents=True, exist_ok=True)
         roles = root / "companion" / "roles"
         roles.mkdir(parents=True, exist_ok=True)

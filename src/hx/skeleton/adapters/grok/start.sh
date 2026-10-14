@@ -39,6 +39,7 @@ command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 
 
 home=$root/run/$id/home
 harness=$root/config/$id/harness.json
+# A planned launch's compiled system prompt (`native_launch`); nothing else writes it.
 persona=$root/run/$id/persona.md
 
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -72,22 +73,23 @@ effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effor
 [ -n "$model" ] || die "refuse: $harness has no \`model\`"
 [ -n "$effort" ] || die "refuse: $harness has no \`effort\`"
 # Grok effort levels are low/medium/high/xhigh; hx max saturates at xhigh.
+role=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["role"])' "$harness")
+# The role persona, passed as it is (`config_harness.PERSONA_CHANNEL`): nothing is rendered
+# or copied per id. A role without one launches without it.
+role_persona=$root/personas/$role.md
 [ "$effort" = max ] && effort=xhigh
 
 if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/sessions"
+  rules_args=()
   if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
     # A planned launch's persona is the compiled planned system prompt, prepared in its
-    # private root and verified by the controller (`native_launch`); rendering it again from
-    # the instance sources would replace what was verified.
+    # private root and verified by the controller (`native_launch`).
     [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
-  else
-    # Rendered from its sources immediately before exec (`hx.persona`): the role persona,
-    # harness.json `purpose`, and the learnings. An edit to any of them lands at the next
-    # launch or restart; nothing is copied per id.
-    "$python" -m hx.persona --root "$root" "$id" >/dev/null \
-      || die "refuse: could not render $persona (\`hx persona $id\` says why)"
+    rules_args=(--rules "$(cat "$persona")")
+  elif [ -f "$role_persona" ]; then
+    rules_args=(--rules "$(cat "$role_persona")")
   fi
 
   cd "$cwd"
@@ -97,10 +99,11 @@ if [ "$mode" = exec ]; then
   export XAI_API_KEY="$(cat "$token_file")"
   export PATH="$root/bin:$PATH"
 
-  # No prompt argument. --rules appends the persona to the system prompt;
+  # No prompt argument. --rules appends the persona to the system prompt; the invariants,
+  # the identity line and the learnings arrive through the `context` hook at every boundary.
   # --minimal keeps the session in scrollback-native rendering.
   exec "$bin" --minimal --permission-mode bypassPermissions \
-    -m "$model" --reasoning-effort "$effort" --rules "$(cat "$persona")"
+    -m "$model" --reasoning-effort "$effort" ${rules_args[@]+"${rules_args[@]}"}
 fi
 
 read -r -a TMUX_CMD <<< "${HX_TMUX:-tmux}"

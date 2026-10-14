@@ -25,7 +25,7 @@
     "dispatched": "2026-09-20T12:00:00Z",
     "completed": null
   },
-  "persona_path": "run/eng-001/persona.md",
+  "persona_path": "personas/engineer.md",
   "step_state": {
     "eng-001-main": {
       "goal": "add `--require-done` to hx board, with the spec 08 exit rule",
@@ -160,8 +160,8 @@
     }
   },
   "context_file": {
-    "path": "run/eng-001/eng-001-main.context.md",
-    "text": "# Memory\nPrefer same-directory renames; spec 08 forbids timeouts anywhere.\n\n# Task\n## Order\nAdd `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a\nset of ids finished with outcome `done`. Read spec 08 for the exit-code rule: exit 0 iff every\nlisted item is `complete` with outcome `done`.\n\n## Definition of done\n- `hx board --require-done eng-000` exits 0 and prints nothing extra.\n- `hx board --require-done eng-002` exits 1 and names the id and its state.\n- The existing `hx board` and `hx board --json` exit codes are unchanged.\n\n### Checks\n```bash\npython -m pytest tests/test_board.py -q\nhx board --require-done eng-000\n```\n\n## Order addendum 2026-09-20T12:30:00Z\nAlso refuse an id with no `config/<id>/` directory; exit 1 and name it.\n\n# Tasks\n- [x] Read spec 08 `hx board`.\n- [ ] Refuse an unknown id.\n\n# Step state\nopen: st7 refuse an id with no config/<id>/\nclosed: st6 (1b90c3d)\n\n# Open subagents\n- eng-001-s001\n",
+    "path": "pods/engineers/eng-001-working.md",
+    "text": "# Engineer\n\nYou are an engineer in this hx instance: one goal at a time, in your own workdir, committing as you go, finishing with `hx complete`.\n\nYou are eng-001 in pod engineers. Owns the CLI's refusals and their exit codes.\n\n# Build\n\n**Rule L1** \u00b7 Signal: a rename across directories broke an import \u00b7 Check: `git diff --name-status` shows R only within one directory \u00b7 Evidence: eng-000, 2026-09-19\n\nUse the Read tool once on /srv/hx/pods/engineers/eng-001-working.md before anything else; do not cat it and do not read it twice.\n",
     "seam_ts": "2026-09-20T12:50:00Z"
   },
   "streams": [
@@ -177,7 +177,7 @@
           "stream": "eng-001-main",
           "event": "boundary",
           "source": "startup",
-          "context_file": "/srv/hx/run/eng-001/eng-001-main.context.md",
+          "context_file": "/srv/hx/pods/engineers/eng-001-working.md",
           "ref": {
             "transcript": null
           }

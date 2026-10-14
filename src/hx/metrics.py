@@ -130,7 +130,10 @@ def _next_10_turns(root: Path, item_id: str, seam_ts: str | None,
     if not transcript.is_file():
         return dict(nulls)
     floor = timestamps.parse(seam_ts) if seam_ts else None
-    context_name = f"{item_id}-main.context.md"
+    # The boundary's one Read is of the work item (PARTNER.md); the field keeps its name.
+    from .compose import boundary_name
+
+    context_name = boundary_name(item_id)
     working_set = _working_set_paths(root, item_id)
     turns = tool_calls = reads_ctx = reads_ws = 0
     try:
@@ -154,7 +157,7 @@ def _next_10_turns(root: Path, item_id: str, seam_ts: str | None,
             target = (use.get("input") or {}).get("file_path", "")
             if not isinstance(target, str):
                 continue
-            if target.endswith(context_name):
+            if target == context_name or target.endswith("/" + context_name):
                 reads_ctx += 1
             elif target in working_set:
                 reads_ws += 1
@@ -210,12 +213,12 @@ def _seam_entries(root: Path, item_id: str, since: str | None) -> list[dict]:
             if later.get("event") == "seam":
                 break
             window.append(later)
-        orient = discipline.post_seam_counts(window)
+        orient = discipline.post_seam_counts(window, item_id)
         entries[-1].update({key: orient[key] for key in (
             "searches_before_first_edit", "modules_read_before_first_write", "task_reprints")})
         # The restored packet's size (TOOL_SKILL_PLAN step 6): a seam record's own
         # `packet_bytes` when a packet path writes one, else its `context_file_bytes` — a
-        # legacy seam restores from the composed context file, so those are the same bytes.
+        # legacy seam restores from the work item, so those are the same bytes.
         packet = record.get("packet_bytes", record.get("context_file_bytes"))
         entries[-1]["packet_bytes"] = packet if isinstance(packet, int) else None
     return entries
@@ -342,7 +345,6 @@ def _links(root: Path, item_id: str, work_item_rel: str | None) -> dict:
     return {
         "work_item": work_item_rel,
         "harness": rel(root / "config" / item_id / "harness.json"),
-        "context": rel(root / "run" / item_id / f"{item_id}-main.context.md"),
         "stream": rel(streams.main_stream(root, item_id)),
         "pane_log": rel(root / "logs" / item_id / f"{item_id}-pane.log"),
         "goal_marker": rel(root / "run" / item_id / "goal"),

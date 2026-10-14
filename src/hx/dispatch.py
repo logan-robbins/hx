@@ -57,7 +57,7 @@ CODEX_HOME_WIPE = ("sessions",)
 #: The Companion's home and system prompt are kept for the same reason the agent's home is:
 #: its session is continuous and serves the same agent across dispatches, and deleting its
 #: `CLAUDE_CONFIG_DIR` out from under a running process breaks it quietly (spec 10).
-RUN_KEEP = ("home", "persona.md", "companion-home", "companion-system.md")
+RUN_KEEP = ("home", "companion-home", "companion-system.md")
 
 GATE_EMPTY = "HX-GATE-EMPTY"
 #: Seconds the gate preflight gives a goal's Checks before it stops judging them. The one
@@ -217,7 +217,8 @@ def gate_preflight(root: Path, item_id: str, checks: str, *, env=None, budget: f
 
 
 def _reset_run_dir(root: Path, item_id: str) -> None:
-    """Clear `run/<id>/` except `home/` and `persona.md`, and wipe the home's own memory."""
+    """Clear `run/<id>/` except the homes and the Companion's system prompt (`RUN_KEEP`), and
+    wipe the home's own memory."""
     run = root / "run" / item_id
     run.mkdir(parents=True, exist_ok=True)
     for entry in run.iterdir():

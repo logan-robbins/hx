@@ -1,6 +1,6 @@
 ---
 name: hx-worker
-description: Operating manual for an hx HarnessAgent — read the context file once at every boundary, search the code graph and memory before building, keep the work item's Tasks section current, commit as you go, keep large outputs out of context (hx exec, content, sift, tool-exec, tools), use subagents, report typed progress in a planned run, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, before writing new code, when a command's output is large, when spawning subagents, or when completing or failing a completion.
+description: Operating manual for an hx HarnessAgent — read the work item once at every boundary, search the code graph and memory before building, keep the work item's Tasks section current, commit as you go, keep large outputs out of context (hx exec, content, sift, tool-exec, tools), use subagents, report typed progress in a planned run, and finish with hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, before writing new code, when a command's output is large, when spawning subagents, or when completing or failing a completion.
 metadata:
   hx-audience: worker
   hx-roles: "*"
@@ -10,44 +10,48 @@ metadata:
 # hx-worker
 
 You are a HarnessAgent in an hx instance: a full Claude Code session, in your own tmux session,
-with your own workdir, running under a `/goal`. This skill is the mechanics. Who you are came
-with your system prompt at launch and is always there; you never look it up.
+with your own workdir, running under a `/goal`. This skill is the mechanics. Who you are is
+handed to you at every boundary; you never look it up.
 
 ## Your lifecycle, start to finish
 
 ### 1. The boundary
 
 Every conversation you have starts at a boundary: dispatch, resume, a seam, a restart, a
-compaction. At every one of them a hook prints a single line (spec 09.1, verbatim):
+compaction. At every one of them the `context` hook hands you, already in your context:
+
+- your role's persona (on Pi and Grok it is your system prompt instead, on Codex your
+  `AGENTS.md`);
+- your identity line: `You are <id> in pod <pod>. <purpose>`;
+- every learnings rule that applies to you — the global ones, then your role's — whole;
+- and last, one line (spec 09.1, verbatim):
 
 ```
 Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
 ```
 
-The global rules (`config/CLAUDE.md`) reach you once: as your CLAUDE.md on Claude, inside
-your persona on Pi and Grok, and as the context file's first section (`## Invariants`) on
-Codex and Meta — they are not restated here. One mechanics note the invariants do not carry:
-use the Read tool (a Bash `cat` of that path does not count as the one Read the seam metric
-measures).
+The global rules (`config/CLAUDE.md`) reach you once: as your CLAUDE.md on Claude, your
+`AGENTS.md` on Codex, and at the top of what the hook hands you on Pi, Grok and Meta — they are
+not restated here. One mechanics note the invariants do not carry: use the Read tool (a Bash
+`cat` of that path does not count as the one Read the seam metric measures).
 
-That path is your context file. It holds, in order:
+That path is your work item. It holds, in order:
 
-0. Invariants and your persona — Codex and Meta only; read them, do not restate them
-1. Your goal — the verbatim `## Goal` and every addendum
+1. Your goal — the `## Goal` paragraph and every addendum
 2. Your `## Tasks` section, as you last left it
-3. Your step state — what your Companion recorded: open steps with the next action, closed
-   steps with their commits, decisions, dead ends, the working set, blockers
-4. Memory episodes — the closest step states other agents of your role left behind
-5. Your open subagent handles
+3. `## Status`, which hx rewrites at every boundary and you never edit:
+   - `### Step state` — what your Companion recorded: open steps with the next action, closed
+     steps with their commits, decisions, dead ends, the working set, blockers
+   - `### Memory episodes` — the closest step states other agents of your role left behind
+   - `### Open subagent handles`
 
-It is always current, it is composed fresh at each boundary, and it is the only file you need.
-Do not search for context. Do not re-read a file your `working_set` already carries a note
-about unless it has changed since — the note is there so you do not have to. One Read per
-boundary, and the rest is work.
+It is always current, its `## Status` is written fresh at each boundary, and it is the only
+file you need. Do not search for context. Do not re-read a file your `working_set` already
+carries a note about unless it has changed since — the note is there so you do not have to.
+One Read per boundary, and the rest is work. With no task in progress the last line says so
+instead, and your goal arrives as a `/goal` pointer.
 
-Your persona is not in it, because it is in your system prompt already.
-
-**Reading section 4.** The step state is rendered dense: one tagged line per fact, no prose,
+**Reading the step state.** It is rendered dense: one tagged line per fact, no prose,
 because you pay for it at every boundary. The tags:
 
 ```
@@ -64,8 +68,7 @@ dead:    tried, abandoned — do not retry    seq:    the stream cursor
 as done. `[1402,1409]` are evidence seqs in your raw stream; you never need them, but they are
 what your Companion cited.
 
-There may also be a **Memory episodes** section after it: what other agents in this instance
-did on similar work. Read it before you go looking for anything — and see the `hx-memory`
+`### Memory episodes` follows it: what other agents in this instance did on similar work. Read it before you go looking for anything — and see the `hx-memory`
 skill for how to search further.
 
 ### 2. The goal
@@ -142,7 +145,7 @@ The Work Item body is your running task list. You own `## Tasks`, `## Deliverabl
 - Put the fact you needed right next to the task that needed it. "auth is wired in
   `src/api/mw.py:40`, not in the router" is worth more after a seam than any amount of prose.
 
-`## Tasks` is what your context file carries back to you after a seam. A stale `## Tasks` is
+`## Tasks` is what your work item carries back to you after a seam. A stale `## Tasks` is
 the single most expensive mistake available to you here.
 
 ### 5. Commit as you go
@@ -237,7 +240,7 @@ state.
 
 The **Companion** is a second session, paired with you, that reads your tool calls and keeps
 that step state current. You never talk to it and it never talks to you. What it produces is
-sections 4 and 5 of your context file:
+the `### Step state` of your work item's `## Status`:
 
 - **open steps with a `next` action** — the sentence that tells you where to put your hands
   when you come back;
@@ -267,10 +270,10 @@ hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an
 hx learn classify --signal "<what you saw>" --check "<the test>"            # which of the eleven kinds it is
 ```
 
-Every rule in force for you — the global ones, then your role's — is in your system prompt,
-the `hx:learnings` region of your persona, whole, category by category, at every start and
-after every compaction. Never read
-the files (`LEARNINGS/<category>.md`, or the fleet's shared directory); `hx learn list <key>`
+Every rule in force for you — the global ones, then your role's — is handed to you by the
+`context` hook, whole, category by category, at every start, `/clear` and compaction. Read the
+files (`LEARNINGS/<category>.md`, `personas/<role>/<category>.md`) only when that hook lists
+them as files instead of printing them; `hx learn list <key>`
 prints one rule when you want to quote it. You never write them: the proposal is reviewed by
 a different session, which may refile it under another category, and that is what keeps each
 lesson one rule. Signal is what the next agent will *see*; Check is something a script or a
@@ -288,7 +291,7 @@ hx complete exhausted   # the task was larger than one agent
 
 **Before you run it**, propose what should outlive this task and is not already a rule: what
 tripped you up, which command actually works here, what surprised you. `hx learn propose
---role <your role> …` makes it a rule every agent of your role carries in its system prompt
+--role <your role> …` makes it a rule every agent of your role is handed at every boundary
 once a reviewer accepts it (leave out `--role` when every agent needs it). What you did needs
 nothing more from you: your commits, your `## Tasks` and your step state are kept, and the
 episode store hands them to the next agent that works near them. There is no memory file of
@@ -411,8 +414,8 @@ is deliberate — a prompt nobody is there to answer is a hung agent — and it 
 yours to keep rather than the harness's to enforce. Writing into `state/` or another id's work
 item corrupts a running agent's memory, silently, and nothing will tell either of you.
 
-Your own files are your `workdir`, your `-working` work item, and your `AGENTS.md` below the
-header. That is the whole list.
+Your own files are your `workdir` and your `-working` work item (all of it but `## Status`,
+which is hx's). That is the whole list.
 
 You run, for yourself: `hx task`, `hx complete`, and `hx progress` in a planned run. That is
 also the whole list.

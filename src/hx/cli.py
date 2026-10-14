@@ -29,7 +29,6 @@ from . import bench as bench_cmd
 from . import board as board_cmd
 from . import complete as complete_cmd
 from . import companion as companion_cmd
-from . import compile as compile_cmd
 from . import compose as compose_cmd
 from . import dispatch as dispatch_cmd
 from . import distill as distill_cmd
@@ -77,7 +76,6 @@ IMPLEMENTED = {
     "check": checks_cmd.main,
     "map": map_cmd.main,
     "plan": planning_cmd.main,
-    "compile": compile_cmd.main,
     "complete": complete_cmd.main,
     # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
     # what they do arrives at M2 and M5 (spec 13).
@@ -158,8 +156,7 @@ the control plane:
   recall [QUERY] [--id ID]       last-resort file-memory search over completed items
   companion ID [--once]        the Companion loop, one per agent
   companion ID --run RUN --request ID [--stream STREAM]  execute one frozen ledger pass
-  compile ID --planned         versioned prompts for the planned runtime
-  persona ID [--print]         render run/ID/persona.md from role persona, purpose and learnings
+  persona ID [--summary]       print what the context hook hands ID at every boundary
   flush ID                     wait for the Companion to reach the log head
   restart ID / up / heartbeat  relaunch, boot, and the human's own cron
   wake partner TEXT            the one way anything reaches the Partner
@@ -245,7 +242,7 @@ AUDIENCES: dict[str, set[str]] = {
         "map init", "map import", "map export", "map overlay", "map propose", "map refresh",
         "map publish", "map plan-context", "map get", "map check", "map anchor",
         "learn pending", "learn accept", "learn reject", "learn list",
-        "tools index", "compile", "persona",
+        "tools index", "persona",
         "handoff check", "handoff capture", "handoff pushed", "handoff sums",
         "discipline profile", "discipline orient",
         "memory search --all-roles", "memory stats", "memory list",
@@ -279,7 +276,7 @@ AUDIENCES: dict[str, set[str]] = {
     "companion": set(),
     "runtime": {
         "capture", "observe", "flush", "seam", "compose", "check", "companion", "loop", "wake",
-        "code index", "tools acknowledge", "persona",
+        "code index", "tools acknowledge",
     },
 }
 

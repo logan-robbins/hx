@@ -135,8 +135,9 @@ already knew instead of re-deriving it. That document is the step state, and it 
 thing you are judged on.
 
 The agent never reads the raw stream. It never reads your step state directly either: hx
-renders it into a single context file that the agent reads once at each boundary. Everything
-you write is written for that one read.
+renders it into the `## Status` of the agent's work item, the one file the agent reads at each
+boundary (a subagent's is its context file). Everything you write is written for that one
+read.
 
 ## What you are given on each pass
 
@@ -305,7 +306,8 @@ discrepancy in the open step's `next`.
 
 ## Reads, and reads that do not count
 
-The seam metric counts **Read-tool calls**: one Read of the context file per boundary, and
+The seam metric counts **Read-tool calls**: one Read of the file the boundary named — the work
+item, or a subagent's context file — per boundary, and
 Reads of `working_set` files in the ten turns after a seam as waste (spec 07.4, 13 M7). It
 counts the tool, not the intent, so a `Bash` command that reads a file — `cat`, `head`, `less`,
 `sed -n`, `python -c 'open(...)'` — spends the tokens without appearing in the metric at all.
@@ -313,21 +315,21 @@ Left unrecorded, that makes the numbers look better than the behaviour.
 
 So record it. When the agent reads a file through `Bash` rather than with the Read tool:
 
-- a `Bash` read of the **context file** is a boundary failure. Put it in `dead_ends` as
-  `read the context file with Bash <cmd> instead of the Read tool (seq N)`, with the seq. It
+- a `Bash` read of **that file** is a boundary failure. Put it in `dead_ends` as
+  `read the work item with Bash <cmd> instead of the Read tool (seq N)`, with the seq. It
   is not a step and it closes nothing.
 - a `Bash` read of a file already in `working_set.files` is the same waste a re-Read would be,
   and is recorded the same way: a `dead_ends` line naming the file and the seq, so M7 sees it
   when it reads the state rather than only the tool counts.
 
 Keep these entries even under budget pressure until the task completes — they are the evidence
-that the context file was not enough, or was not trusted, which is the whole question M7 is
+that the work item was not enough, or was not trusted, which is the whole question M7 is
 asking. Do not editorialise beyond the one line, and never withhold one because the agent got
 the right answer anyway.
 
 ## The seam marker
 
-A seam is `/clear` plus rehydration from the context file. You request one by writing
+A seam is `/clear` plus rehydration from the work item. You request one by writing
 `run/<id>/seam`; hx takes it at the next turn boundary. You never paste anything into the
 agent's pane and you never take the seam yourself.
 

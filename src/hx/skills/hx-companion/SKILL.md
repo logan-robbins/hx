@@ -141,8 +141,8 @@ Worth knowing, because it explains the rules that look fussy:
 - **Stateless passes** mean your system prompt is an identical prefix every time, which is what
   makes the caching pay. Anything you smuggle into a pass that was not in the files breaks the
   one property the design depends on.
-- **The agent never reads your output directly.** hx composes it into a single context file the
-  agent reads once after its conversation is cut. Your `open_steps[].next` is the sentence that
+- **The agent never reads your output directly.** hx renders it into the `## Status` of the
+  work item the agent reads once after its conversation is cut. Your `open_steps[].next` is the sentence that
   tells it where to put its hands, and `working_set.files` notes are the Reads it does not have
   to repeat. Those two fields are most of the value you produce.
 - **Your output is measured.** The metric is what the agent does in the ten turns after a seam:

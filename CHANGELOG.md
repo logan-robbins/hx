@@ -65,87 +65,63 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ### Changed
 
 - Prompt layers (docs/prompt-runtime.md § Prompt layers): every agent's prompt is four layers,
-  each from one source — the invariants (`config/CLAUDE.md`), the persona, the learnings and
-  session memory — and nothing per id is copied from a shared source.
-  - The invariants reach each agent through exactly one channel
-    (`config_harness.INVARIANTS_CHANNEL`): Claude's home `CLAUDE.md`, refreshed by
-    `start.sh --exec` at every launch; the persona's `hx:global` region on Pi and Grok; the
-    context file's `## Invariants` on Codex and Meta.
-  - The persona is rendered, not compiled into a per-id file: every `start.sh --exec` runs
-    `python -m hx.persona` (`hx persona ID [--print]`) immediately before it execs, from
-    `personas/<role>/AGENTS.md`, the new `harness.json` `purpose` (the one per-id paragraph;
-    the templates ship `"{{purpose}}"` and `hx doctor` warns `purpose:<id>` until it is
-    written) and the learnings. `config/<id>/AGENTS.md` is no longer read, written or
-    required for a worker. **Existing instances:** `hx install`, `hx up`, `hx launch` and
-    `hx restart` migrate each worker's file — its per-id paragraph becomes `purpose`, anything
-    else no shared source already says becomes one pending learnings text proposal
-    (`hx learn pending`), and the file is removed. Plain `hx compile ID` is gone (exit 2,
-    pointing at `hx persona`); `hx compile ID --planned` stays. `hx distill` turns promoted
-    directives into a text proposal instead of writing them into the agent's file, and its
-    `--memory` option is gone. `hx learn accept --keep` turns a text proposal holding several
-    lessons into several rules.
-  - Learnings are global or scoped to one role: a scoped rule carries `Role: <role>` after its
-    key, `hx learn propose --role R` proposes one, `hx learn accept ID --role R | --global`
-    decides it, `hx learn list` prints the scope (`--role R|global` filters), and the output
-    lines and `decisions.jsonl` carry `scope`. Each persona's learnings region is the global
-    rules, then its role's (`### <role> · <category>`); other roles' rules are not in it. A
-    migrated or distilled text proposal is scoped to its agent's role, so what one worker
-    learned reaches every worker of its role. `hx doctor` bounds `learnings-size` by the
-    largest region any configured role renders. Existing rules have no `Role:` and stay global.
-  - The `## UPDATES BELOW ONLY` memory channel is gone. No agent keeps a memory file: a lesson
-    is a learnings proposal (scoped to the agent's role), and what an agent did is its step
-    state and the episode store. `hx compose` has no `## Memory` section (subagent streams
-    keep `## Who your subagents are`); the shipped personas, `config/CLAUDE.md`, the skills and
-    the docs no longer tell anyone to write below a header. **Existing instances:** a
-    `config/partner/AGENTS.md` with the old header keeps its persona and loses the header; what
-    was below it becomes a text proposal scoped to `partner` (authored as the Partner, so the
-    human decides it). An installed role persona that still ends at the header is read up to
-    it (`hx.persona.LEGACY_HEADER`). The scenario packs ship each worker as a `harness.json`
-    with its `purpose` instead of a per-id `AGENTS.md`.
+  each from one source — the invariants (`config/CLAUDE.md`), the persona (`personas/<role>.md`,
+  one file per role), the learnings (`LEARNINGS/<category>.md`, and `personas/<role>/<category>.md`
+  for a role's own rules) and session memory (the work item) — and nothing per id is copied
+  from a shared source. The only per-id text is `harness.json` `purpose` and the work item's
+  `## Tasks`.
+  - **Delivery is the `context` hook** (SessionStart, matcher `startup|resume|clear|compact`):
+    at every boundary it prints the persona, the identity line `You are <id> in pod <pod>.
+    <purpose>`, every rule file that holds a rule, whole, and one pointer line naming the work
+    item (`PARTNER.md` for the Partner; `hx.persona.IDLE_LINE` with no task in progress).
+    `hx persona ID [--summary]` prints exactly that, writing nothing. The output is bounded —
+    10,000 bytes on Claude, whose SessionStart output is capped at 10,000 characters, 32 KiB
+    elsewhere — and past the bound the rule files, then the persona, are listed as paths to
+    read once instead (`hx doctor` warns `hook-size`). The invariants and the persona each have
+    exactly one channel per flavor (`config_harness.INVARIANTS_CHANNEL`, `PERSONA_CHANNEL`):
+    Claude reads its home `CLAUDE.md` (refreshed by `start.sh --exec`) and the persona from the
+    hook; Codex reads both from `$CODEX_HOME/AGENTS.md`, written at launch; Pi and Grok take
+    the persona file through their launch flag and the invariants from the hook; Meta takes
+    both from the hook. No Claude worker or Partner launch passes `--append-system-prompt-file`
+    any more, so a persona or `purpose` edit reaches a Claude agent at its next boundary.
+  - **Session memory is the work item.** `hx compose <id>` rewrites a `## Status` section in
+    the `-working` item (and at the end of `PARTNER.md`) at every boundary — step state, memory
+    episodes, open subagent handles as `###` parts — and the main stream has no context file
+    any more: the boundary's one Read is the work item. Subagent streams keep their own
+    context file (`run/<id>/<stream>.context.md`, named by the `SubagentStart` hook), which
+    carries the invariants for the hook-channel flavors. The boundary record's
+    `context_file` names the work item, and `hx metrics` keeps the field names
+    `reads_of_context_file` and `context_file_bytes` for the file the boundary named.
+  - **Learnings are global or a role's.** `hx learn accept ID --role R` writes the rule to
+    `personas/<role>/<category>.md`; `--global` (or no scope) to `LEARNINGS/<category>.md`.
+    Each agent is handed the global files and its own role's, never another role's.
+  - **Gone:** `src/hx/compile.py` and `hx compile` (the planned runtime calls
+    `hx.prompt_compiler` directly), `config/<id>/AGENTS.md`, `run/<id>/persona.md`,
+    `templates/*/AGENTS.md`, `personas/<role>/AGENTS.md`, the persona's `hx:global` and
+    learnings regions, the context file's `## Invariants`, and the `## UPDATES BELOW ONLY`
+    memory channel (a lesson is a learnings proposal; what an agent did is its step state).
   - A worker is its `config/<id>/harness.json`. `templates/worker/` and
-    `templates/contributor/` ship `harness.json` and `SUBAGENTS.md` only; the template
-    `AGENTS.md` is gone. `SUBAGENTS.md` is no longer copied per id: the `SubagentStart` hook
-    renders the shared `templates/worker/SUBAGENTS.md` (`templates/contributor/` for a Meta
-    worker) with the worker's identity into each subagent's context file
-    (`hx.persona.render_subagents`), and the Pi extension renders the same text. A
-    `config/<id>/SUBAGENTS.md` still replaces it for that one id, and `hx doctor` warns
-    `subagents:<id>` while one exists. **Existing instances:** the launch migration removes a
-    `config/<id>/SUBAGENTS.md` that is a copy of a template (identity filled in or not,
-    comments ignored) and keeps one that says something else.
-  - Planned runs read the live sources (docs/prompt-runtime.md § Planned prompt sources):
-    `hx compile ID --planned` reads `continuity/prompts/common.md`, the audience's
-    `continuity/prompts/audiences/<audience>.md`, the `## Domain judgment` section of the
-    persona (`personas/<role>/AGENTS.md`; the Partner's `config/partner/AGENTS.md`) for a
-    worker, the Partner and a subagent, a worker's `harness.json` `purpose`, the Companion's
-    `companion/roles/<role>.md`, and operator policy (`continuity/policy.md`,
-    `continuity/policy/<audience>.md`), nothing else. The rest of the persona is the live
-    session's mechanics (tmux, `/goal`, `## Tasks`), which the audience file replaces; compiling
-    it in would also have pushed a planned worker's system prompt past the native launch's
-    8000-byte initial budget (`hx.native_launch`), so a shipped role's planned prompt carries the
-    same role text it did, plus its `purpose`. `continuity/prompts/roles/` and
-    `continuity/prompts/companion-roles/` are gone: every sentence moved verbatim into a
-    `## Domain judgment` section of `personas/<role>/AGENTS.md` (and `config/partner/AGENTS.md`)
-    and a `## Retention judgment` section of `companion/roles/<role>.md`, so live workers and
-    Companions read them too. Two persona lines the moved text contradicts changed: the backend
-    persona's fixed migration, model, handler, client order is gone ("there is no universal
-    order"), and the release persona's `Never run \`git push\`` reads "Push or publish only
-    what the goal names in words". The `generic.md` fallbacks are gone: a role without a
-    persona gets no domain section (its identity section names the role; `common.md` already
-    keeps a missing capability explicit), and a Companion without a role file is refused, as
-    live. `config/CLAUDE.md` and per-id `AGENTS.md` text are no longer compiled in, so a
-    bundle has no `migration_review` and `hx.compile.strip_known_blocks` is gone; a rule for
-    planned runs belongs in `continuity/policy.md`.
-  - Session memory is the work item (docs/prompt-runtime.md § Prompt layers): the agent keeps
-    `## Tasks`, and every main-stream `hx compose` (each boundary) rewrites a `## Status`
-    section in the `-working` item, right after `## Tasks` — the step state, memory episodes
-    and open subagent handles as `###` subsections, from the render that fills the context
-    file's sections of the same names (`hx.compose.write_status`). The Partner's goes at the
-    end of `PARTNER.md`, and is left out of `PARTNER.md`'s copy in the context file. An idle
-    or completed item is never written, an unchanged status leaves the file untouched, and
-    `templates/work-item.md` ships the section's placeholder. The context file keeps its
-    sections and the `SessionStart` line still names it: what a boundary hands the agent is
-    part of the delivery decision, so the context file shrinks to the delivery parts only once
-    that lands.
+    `templates/contributor/` ship `harness.json` and `SUBAGENTS.md` only. `SUBAGENTS.md` is not
+    copied per id: the `SubagentStart` hook renders the shared one with the worker's identity
+    into each subagent's context file; a `config/<id>/SUBAGENTS.md` still replaces it for that
+    id (`hx doctor` warns `subagents:<id>`).
+  - Planned runs read the live sources (docs/prompt-runtime.md § Planned prompt sources): the
+    audience files, the `## Domain judgment` section of `personas/<role>.md`, a worker's
+    `purpose`, the Companion's `companion/roles/<role>.md` and operator policy, nothing else;
+    `continuity/prompts/roles/` and `continuity/prompts/companion-roles/` are gone, their text
+    moved into those sections.
+  - **Existing instances:** `hx install`, `hx up`, `hx launch` and `hx restart` migrate. Each
+    `personas/<role>/AGENTS.md` (and `config/partner/AGENTS.md`) becomes `personas/<role>.md`,
+    an edited one leaving the paragraphs the new persona does not say as one text proposal
+    scoped to the role; memory below the old header becomes a proposal too. A worker's
+    `config/<id>/AGENTS.md` loses every paragraph a shared source already says, its per-id
+    paragraph becomes `purpose`, anything else becomes one text proposal, and the file is
+    removed; `run/<id>/persona.md` is removed. Rule lines an older hx scoped in place with
+    `Role: <role>` move to `personas/<role>/<category>.md`. A `config/<id>/SUBAGENTS.md` that
+    is a copy of a template is removed. Decisions: Partner reads `PARTNER.md` whole at every
+    boundary (no bounding); the Partner runs `hx board` once after a boundary rather than
+    carrying a board in context; resume re-injection is left to Claude Code's own dedup; a
+    persona is printed whole with no `{{…}}` expansion.
 
 ### Fixed
 

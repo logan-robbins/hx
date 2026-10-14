@@ -228,7 +228,7 @@ SEAM = {"event": "seam", "ts": "2026-09-20T12:50:00Z", "source": "clear",
         "context_file_bytes": 4200}
 
 POST_SEAM = [
-    _tool("Read", file_path="/w/run/eng-001/eng-001-main.context.md"),
+    _tool("Read", file_path="/w/pods/engineers/eng-001-working.md"),
     _tool("Bash", command="hx task"),
     _tool("Grep", pattern="def pull"),
     _tool("Read", file_path="/w/src/a.py"),

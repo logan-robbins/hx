@@ -102,8 +102,10 @@ def step_state(root: Path, item_id: str) -> dict:
     return load_state(state_path(root, item_id, f"{item_id}-main")) or {}
 
 
-def seam_record(root: Path, item_id: str, context_file: Path, *, source: str = SEAM_SOURCE) -> dict:
-    """The `seam` record of spec 07.4, which `hx metrics` reads (CONTRACTS.md)."""
+def seam_record(root: Path, item_id: str, context_file: Path | None, *, source: str = SEAM_SOURCE) -> dict:
+    """The `seam` record of spec 07.4, which `hx metrics` reads (CONTRACTS.md).
+    `context_file_bytes` is the size of the file the boundary reads: the work item
+    (`PARTNER.md` for the Partner), with the `## Status` hx just wrote."""
     state = step_state(root, item_id)
     working_set = state.get("working_set") or {}
     files = working_set.get("files") if isinstance(working_set, dict) else None
@@ -112,7 +114,7 @@ def seam_record(root: Path, item_id: str, context_file: Path, *, source: str = S
         "source": source,
         "prompt_version": state.get("prompt_version"),
         "context_tokens_before": streams.last_context_tokens(root, item_id),
-        "context_file_bytes": context_file.stat().st_size if context_file.is_file() else 0,
+        "context_file_bytes": context_file.stat().st_size if context_file and context_file.is_file() else 0,
         "working_set_size": len(files) if isinstance(files, list) else 0,
     }
 
@@ -138,8 +140,8 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
 
     if find_work_item(root, item_id) is None and item_id != PARTNER:
         raise NotFound(f"{item_id}: no work item; a seam belongs to a dispatched agent (spec 06)")
-    # The Partner has no work item and no goal: its seam is /clear + rehydrate from the
-    # context file, and the `context` hook on `clear` sends no pointer for it.
+    # The Partner has no work item and no goal: its seam is /clear + rehydrate from
+    # PARTNER.md, and the `context` hook on `clear` sends no `/goal` for it.
 
     # Readiness gate (spec 09.2): take only when the pane can receive `/clear` and the
     # Companion is caught up. Otherwise signal once, append a watcher record, and leave
@@ -170,9 +172,9 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
                                      "streams": waiting_streams(root, item_id)})
         return {"id": item_id, "outcome": WAITING, "seq": seq, "background_tasks": []}
 
-    # Sequence is spec 08's: the context file is composed from what the Companion recorded,
-    # then the `/clear` is queued and the record written.
-    context_file = Path(compose_mod.compose(root, item_id, stream, env=env))
+    # Sequence is spec 08's: `## Status` is written from what the Companion recorded, then
+    # the `/clear` is queued and the record written.
+    context_file = compose_mod.compose(root, item_id, stream, env=env)
 
     goal_mod.paste(pane_target(item_id, env), seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))

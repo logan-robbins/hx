@@ -5,8 +5,8 @@
 #   start.sh <id>          ensure tmux session <id> with the session env of spec 11, and run
 #                          the launcher in window `main` (cwd harness.json.workdir,
 #                          HARNESS_ROOT for partner)
-#   start.sh --exec <id>   the launcher itself: render run/<id>/persona.md from its sources
-#                          (`python -m hx.persona`), refresh the home's CLAUDE.md, then exec
+#   start.sh --exec <id>   the launcher itself: refresh the home's CLAUDE.md, then exec (the
+#                          persona arrives through the SessionStart `context` hook)
 #
 # The argv is exactly spec 17.4: no prompt argument, no --resume, no compaction variables.
 #
@@ -70,6 +70,9 @@ else
   window=main
 fi
 harness=$root/config/$id/harness.json
+# Only a planned launch has a persona file: the compiled planned system prompt in its private
+# root (`native_launch`). Every other launch gets its persona from the SessionStart `context`
+# hook at every boundary (`hx.persona.boundary`), with no system-prompt flag.
 persona=$root/run/$id/persona.md
 companion_system=$root/run/$id/companion-system.md
 
@@ -153,22 +156,18 @@ ACEOF
 if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id"
+  system_args=()
   if [ "$role" = companion ]; then
-    system_prompt=$companion_system
+    system_args=(--append-system-prompt-file "$companion_system")
   else
     if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
       # A planned launch's persona is the compiled planned system prompt, prepared in its
-      # private root and verified by the controller (`native_launch`); rendering it again from
-      # the instance sources would replace what was verified.
+      # private root and verified by the controller (`native_launch`).
       [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
-    else
-      # Rendered from its sources immediately before exec (`hx.persona`): the role persona,
-      # harness.json `purpose`, and the learnings. An edit to any of them lands at the next
-      # launch or restart; nothing is copied per id.
-      "$python" -m hx.persona --root "$root" "$id" >/dev/null \
-        || die "refuse: could not render $persona (\`hx persona $id\` says why)"
+      system_args=(--append-system-prompt-file "$persona")
     fi
-    system_prompt=$persona
+    # Otherwise no system-prompt flag: the persona, the identity line and the learnings arrive
+    # through the SessionStart `context` hook at every boundary (`hx persona $id` prints it).
     # The invariants' one channel on Claude is the home's native user CLAUDE.md
     # (`config_harness.INVARIANTS_CHANNEL`), refreshed here so an edit to config/CLAUDE.md
     # lands at the next launch or restart, like a persona edit, not only at a reinstall.
@@ -230,7 +229,7 @@ if [ "$mode" = exec ]; then
     --effort "$effort" \
     --model "$model" \
     ${tool_args[@]+"${tool_args[@]}"} \
-    --append-system-prompt-file "$system_prompt"
+    ${system_args[@]+"${system_args[@]}"}
 fi
 
 # --- session mode: put the launcher in window `main` of tmux session <id> ------------------

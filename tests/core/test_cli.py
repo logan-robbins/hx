@@ -17,9 +17,9 @@ SPEC_08_COMMANDS = {
     "memory",
     # File memory (CONTRACTS.md `hx read` and `hx recall`), likewise post-spec-08.
     "recall",
-    # Planned prompt compiler (`compile --planned`), and the persona every start.sh renders
-    # from the role persona, `purpose` and the learnings; likewise post-spec-08.
-    "compile", "persona",
+    # What the `context` hook hands an agent at every boundary, from the role persona, the
+    # identity line and the learnings; likewise post-spec-08.
+    "persona",
     # Addenda distillation: shrinks the Work Item and tasks.json record back
     # down after resumes and amends accumulate; likewise post-spec-08.
     "distill",

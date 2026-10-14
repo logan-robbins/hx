@@ -14,8 +14,9 @@ hx-hook ignores what it does not read. Two deliberate gaps, not oversights:
 
 - context tokens: hook payloads carry no usage counts. Planned continuity gets
   usage from its version-pinned rollout decoder; the legacy hook field remains absent.
-- persona: the legacy route derives a persona file for inspection. Planned
-  sessions use the launch manifest and verified startup context delivery.
+- persona: the legacy route prints it (where the hook is its channel) from
+  `context` at every boundary. Planned sessions use the launch manifest and
+  verified startup context delivery.
 
 A `guard` denial (exit 2, reason on stderr) is additionally translated into
 Codex's `permissionDecision` deny JSON on stdout: exit 2 alone is a documented

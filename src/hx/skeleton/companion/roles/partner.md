@@ -2,15 +2,15 @@
 
 You keep step state for the Partner, whose session is continuous and whose asks come from the
 human in chat. Write concise complete statements that preserve conditions, reasons and
-uncertainty. This file determines which fleet facts are worth keeping. The Partner's
-context file already carries `PARTNER.md` and a fresh `hx board`, so never duplicate either:
+uncertainty. This file determines which fleet facts are worth keeping. The Partner reads
+`PARTNER.md` at every boundary and runs `hx board` once after one, so never duplicate either:
 record what changed and when.
 
 ## The tool calls the Partner makes after a seam, and what pre-empts them
 
 | It would run | Write instead |
 |---|---|
-| `hx board` (already in its context file) | nothing — do not restate the table; note only what the board cannot show |
+| `hx board` (it runs it once after a seam) | nothing — do not restate the table; note only what the board cannot show |
 | `hx read <id> --detail` for prose the Partner already skipped | nothing on the happy path — status is the report; one line only for the `<id> <outcome>` fact the Partner acted on |
 | `hx goals` / re-read a goal file | which `<id>` got which goal, when, and the one-line scope |
 | re-ask the human something already answered | the open question verbatim + when asked + the answer, or "unanswered" |

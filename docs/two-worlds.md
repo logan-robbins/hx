@@ -73,13 +73,12 @@ Yours load normally. In a harness session there is exactly one CLAUDE.md —
 `start.sh` at every launch — and the product repo's own
 `CLAUDE.md` and `AGENTS.md` are excluded by `claudeMdExcludes` plus instruction-files mode
 `claude-md`, so nothing inside a worker's `workdir` is discovered. That home copy is the
-invariants' only channel on Claude: neither the persona nor the context file carries a
-second copy (`config_harness.INVARIANTS_CHANNEL`; Pi and Grok, which read no CLAUDE.md, carry
-it in the persona, and Codex and Meta, which take no system prompt, in the context file).
-The persona's
-sources (`personas/<role>/AGENTS.md`, `harness.json` `purpose`) live in the instance rather than
-in any workdir for the same reason: Claude Code's own `AGENTS.md` discovery cannot see them,
-and they reach the agent only by the paths hx chooses.
+invariants' only channel on Claude: the `context` hook's output does not carry a second
+copy (`config_harness.INVARIANTS_CHANNEL`; Codex reads them in `$CODEX_HOME/AGENTS.md`, and Pi,
+Grok and Meta, which read no CLAUDE.md, in the hook's output). The persona's sources
+(`personas/<role>.md`, `harness.json` `purpose`) live in the instance rather than in any
+workdir for the same reason: Claude Code's own `AGENTS.md` discovery cannot see them, and they
+reach the agent only by the paths hx chooses.
 
 ## The Companion's session
 
@@ -178,21 +177,23 @@ reaches your remote when you or the Partner run git yourself, in a directory you
 
 ## System prompt
 
-Yours is the default. A harness session gets the default plus one file:
-`--append-system-prompt-file $HARNESS_ROOT/run/<id>/persona.md`, rendered by `start.sh`
-immediately before `exec` (`python -m hx.persona`) from its sources: the role persona
-`personas/<role>/AGENTS.md`, the one per-id paragraph in `harness.json` `purpose`, and every
-learnings rule. That is why an agent always knows who it is and what its role has learned, at
-zero cost, across compaction and `/clear`, and why an edit to a source reaches every agent of
-the role at its next launch without anything being copied per id. `start.sh` refuses to launch
-when the persona cannot be rendered (an unknown `{{variable}}` in the role persona, say).
+Yours is the default, and so is a harness session's: no system-prompt flag. What makes the
+agent who it is arrives through the SessionStart `context` hook at every boundary — startup,
+resume, `/clear`, compaction — as plain stdout Claude Code injects as context: the role persona
+`personas/<role>.md`, the identity line (`You are <id> in pod <pod>. <purpose>`, from
+`harness.json`), every learnings rule that applies to the role, and one pointer to the work item
+(`hx persona <id>` prints it). That is why an agent always knows who it is and what its role has
+learned across compaction and `/clear`, and why an edit to a source reaches every agent of the
+role at its next boundary without anything being copied per id. The output is bounded at
+10,000 bytes, under Claude Code's 10,000-character hook cap; past it the rules, then the
+persona, are listed as files to read once.
 
 The launch is exactly spec 17.4 and nothing more:
 
 ```
 env HARNESS_ID=<id> HARNESS_ROOT=<root> CLAUDE_CONFIG_DIR=<root>/run/<id>/home DISABLE_AUTOUPDATER=1 \
-  <config/claude.json bin> --dangerously-skip-permissions --effort <level> --model <full id> \
-  --append-system-prompt-file <root>/run/<id>/persona.md
+  <config/claude.json bin> --dangerously-skip-permissions --setting-sources user \
+  --effort <level> --model <full id>
 ```
 
 No prompt argument, no `--resume`, no compaction environment variables. Everything the agent is
@@ -245,7 +246,7 @@ the only reader of the streams, and the agent never reads them at all.
 | Credentials | Yours (Keychain or `~/.claude/.credentials.json`) | One token in `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`; yours never read |
 | Permissions | Whatever you chose | Bypass, always; guard hook instead |
 | Working dir | Your checkout | `wt/<id>`, sparse, without the repo's `.claude/` |
-| System prompt | Default | Default + `run/<id>/persona.md` |
+| System prompt | Default | Default; the persona arrives through the `context` hook |
 | Version | Auto-updating | Pinned; `DISABLE_AUTOUPDATER=1` |
 | Goal | None | The `/goal` pointer to a work item |
 | Visibility | Your terminal | `tmux attach` or `hx ui` |
@@ -267,11 +268,11 @@ present tense about something unbuilt.
 | seven `claudeMdExcludes` globs under `wt/**` and `repos/**` | `install.sh` |
 | `crossSessionInbound: accept` for the Partner alone | `install.sh`, `if is_partner` |
 | one skill per role, copied and not symlinked | `install.sh`, `cp -R` after `rm -rf` |
-| `config/CLAUDE.md` becomes the home's `CLAUDE.md`, refreshed at every launch, and is carried nowhere else on Claude | `install.sh`; `start.sh` `--exec`; `compose.carries_invariants` |
+| `config/CLAUDE.md` becomes the home's `CLAUDE.md`, refreshed at every launch, and is carried nowhere else on Claude | `install.sh`; `start.sh` `--exec`; `persona.boundary` (`INVARIANTS_CHANNEL`) |
 | auth is one token at `seed/token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`, never in argv | `start.sh`, the `export` before `exec` |
 | both adapters refuse a missing or group-readable token | `install.sh` and `start.sh`, the `token_mode` checks |
 | agent homes hold no credentials file | asserted by `packaging/e2e-deploy.sh` step 14 |
-| the persona is rendered from its sources immediately before `exec` | `start.sh` `--exec`, `python -m hx.persona` |
+| the persona, identity line and rules arrive through the `context` hook at every boundary, bounded | `hook_context.handle`, `persona.boundary` |
 | launch argv is exactly spec 17.4, no prompt argument, no `--resume` | `start.sh` |
 | `DISABLE_AUTOUPDATER=1` and the pinned `bin` from `config/claude.json` | `start.sh` |
 | the dispatch home wipe is exactly `projects/`, `file-history/`, `history.jsonl` | `dispatch.py` `HOME_WIPE` |

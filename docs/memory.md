@@ -102,11 +102,11 @@ own-role result is empty or clearly about a different area.
 
 Exact output shapes are in `CONTRACTS.md`.
 
-## In the context file
+## In the work item's status
 
-`hx compose` adds a **Memory episodes** section directly after **Step state**, on main and
-subagent streams (subagents get half the `k`); on a main stream the same text is a
-`### Memory episodes` subsection of the work item's `## Status`. The query is built from this stream's own step
+`hx compose` writes a `### Memory episodes` part directly after `### Step state` in the work
+item's `## Status`, which the agent reads at every boundary; a subagent stream's context file
+carries the same text as a `## Memory episodes` section (subagents get half the `k`). The query is built from this stream's own step
 state — goal, every open step's intent and next, the hypothesis — falling back to the goal text
 before the Companion has written anything. The agent's own id is excluded: its own state is the
 section above, and seeing it again as a "memory" is noise at best. With fewer than two hits under
@@ -114,9 +114,7 @@ the role filter the search is repeated across all roles, because a thin own-role
 exactly when another persona's episode is worth reading.
 
 ```
-## Memory episodes
-
-_source: `state/memory/chroma`_
+### Memory episodes
 
 Search more: `hx memory search "make the CSV importer stream" --all-roles`
 

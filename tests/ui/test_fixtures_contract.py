@@ -144,8 +144,11 @@ def test_each_show_fixture_has_the_contract_shape(name):
     assert "### Checks" in show["task"]["goal"]
     assert "```bash" in show["task"]["goal"]
     assert set(show["context_file"]) == {"path", "text", "seam_ts"}
-    assert show["context_file"]["path"].startswith(f"run/{show['id']}/")
-    assert show["persona_path"] == f"run/{show['id']}/persona.md"
+    # The file the `context` hook's pointer names: the `-working` item, or none.
+    path = show["context_file"]["path"]
+    assert path is None or path == f"pods/{show['pod']}/{show['id']}-working.md", path
+    assert show["context_file"]["text"], "what the hook hands the agent now"
+    assert show["persona_path"] == f"personas/{show['role']}.md"
     for handle, compaction in show["compactions"].items():
         assert set(compaction) == {"path", "ts", "seq", "text"}
         assert compaction["path"] == f"state/eng-001/{handle}.json"
@@ -211,7 +214,7 @@ def test_the_main_stream_opens_with_a_boundary():
     first = main_tail()[0]
     assert first["event"] == "boundary"
     assert first["source"] in BOUNDARY_SOURCES
-    assert first["context_file"], "a boundary names the context file it handed over"
+    assert first["context_file"].endswith("-working.md"), "a boundary names the file it pointed at"
 
 
 def test_a_post_tool_record_has_what_the_view_renders():

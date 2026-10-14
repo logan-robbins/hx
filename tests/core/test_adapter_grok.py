@@ -166,6 +166,8 @@ def test_grok_start_exec_is_minimal_bare_and_isolated(instance, tmp_path):
         "          open(os.environ['HX_ARGV_FILE'], 'w'))\n"
     )
     fake.chmod(0o755)
+    role = instance / "personas" / "engineer.md"
+    role.write_text("# Engineer\n\nYou are an engineer in this hx instance.\n")
     result = subprocess.run(
         ["bash", str(instance / "adapters" / "grok" / "start.sh"), "--exec", "eng-001"],
         env=clean_env(
@@ -184,9 +186,9 @@ def test_grok_start_exec_is_minimal_bare_and_isolated(instance, tmp_path):
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
     assert "-p" not in argv and "--print" not in argv
     assert not any(arg.startswith("The goal") for arg in argv)
-    assert "--rules" in argv
-    assert "You are eng-001" in argv[argv.index("--rules") + 1]
-    assert "Things I learned" not in argv[argv.index("--rules") + 1]
+    # The role file's text (`config_harness.PERSONA_CHANNEL` `flag`): nothing is rendered.
+    assert argv[argv.index("--rules") + 1] == role.read_text().rstrip("\n")
+    assert not (instance / "run" / "eng-001" / "persona.md").exists()
     assert body["env"]["GROK_HOME"] == str(instance / "run" / "eng-001" / "home")
     assert body["env"]["XAI_API_KEY"] == "xai-test-key"
     assert body["env"]["HARNESS_ID"] == "eng-001"

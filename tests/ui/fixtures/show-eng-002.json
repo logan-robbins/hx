@@ -20,12 +20,12 @@
     "dispatched": null,
     "completed": null
   },
-  "persona_path": "run/eng-002/persona.md",
+  "persona_path": "personas/engineer.md",
   "step_state": {},
   "context_file": {
-    "path": "run/eng-002/eng-002-main.context.md",
-    "text": null,
-    "seam_ts": null
+    "path": null,
+    "seam_ts": null,
+    "text": "# Engineer\n\nYou are an engineer in this hx instance: one goal at a time, in your own workdir, committing as you go, finishing with `hx complete`.\n\nYou are eng-002 in pod engineers. Owns the importer.\n\n# Build\n\n**Rule L1** \u00b7 Signal: a rename across directories broke an import \u00b7 Check: `git diff --name-status` shows R only within one directory \u00b7 Evidence: eng-000, 2026-09-19\n\nYou have no task in progress. When you get one, a `/goal` pointer names your work item; until then there is no file to read.\n"
   },
   "streams": [],
   "subagents": {},

@@ -52,7 +52,7 @@ def write_transcript(root, name="t.jsonl"):
         {"type": "assistant", "isSidechain": False, "timestamp": "2026-09-20T12:51:00Z",
          "message": {"role": "assistant", "content": [
              {"type": "tool_use", "name": "Read",
-              "input": {"file_path": "/x/run/eng-001/eng-001-main.context.md"}}]}},
+              "input": {"file_path": "/x/pods/engineers/eng-001-working.md"}}]}},
         {"type": "assistant", "isSidechain": False, "timestamp": "2026-09-20T12:52:00Z",
          "message": {"role": "assistant", "content": [
              {"type": "tool_use", "name": "Edit", "input": {"file_path": "/x/a.py"}},
@@ -237,7 +237,7 @@ def test_per_id_seam_carries_post_seam_orientation(instance, work_item):
     write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
     write_stream(instance, "eng-001", [
         seam_record(),
-        _tool("Read", file_path="/x/run/eng-001/eng-001-main.context.md"),
+        _tool("Read", file_path="/x/pods/engineers/eng-001-working.md"),
         _tool("Grep", pattern="thing"),
         _tool("Read", file_path="/x/src/a.py"),
         _tool("Bash", command="hx task"),

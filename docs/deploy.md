@@ -76,13 +76,13 @@ It refuses to run as root, checks `tmux`, `git` and Python, and records the `cla
    created  companion/roles/release-engineer.md
    created  config/CLAUDE.md
    created  config/models.json
-   created  config/partner/AGENTS.md
    created  config/partner/SUBAGENTS.md
    created  config/partner/harness.json
-   created  personas/backend-engineer/AGENTS.md
-   created  personas/frontend-engineer/AGENTS.md
-   created  personas/partner/AGENTS.md
-   created  personas/release-engineer/AGENTS.md
+   created  personas/backend-engineer.md
+   created  personas/frontend-engineer.md
+   created  personas/partner.md
+   created  personas/qa-engineer.md
+   created  personas/release-engineer.md
    created  templates/addendum.md
    created  templates/goal.md
    created  templates/work-item.md
@@ -96,8 +96,8 @@ It refuses to run as root, checks `tmux`, `git` and Python, and records the `cla
 A `claude` newer than the live suite has passed on installs the same way and is marked
 `untested` beside the newest tested version. `partner` is the only agent a fresh instance has; `templates/worker/harness.json` is
 what the Partner fills in to create another (its role, its one-paragraph `purpose`, its
-workdir), and `personas/<role>/AGENTS.md` are the four role personas every launch renders the
-agent's persona from. You never do either yourself — the Partner has a skill for it.
+workdir), and `personas/<role>.md` are the role personas each agent is handed at every
+boundary. You never do either yourself — the Partner has a skill for it.
 
 ## 3. Seed the token
 
@@ -252,16 +252,15 @@ ok    skeleton         adapters/meta/hook.py
 ok    skeleton         companion/BASE.md
 ok    skeleton         companion/roles/partner.md
 ok    skeleton         companion/roles/qa-engineer.md
-ok    skeleton         personas/qa-engineer/AGENTS.md
+ok    skeleton         personas/qa-engineer.md
 ok    skeleton         continuity/prompts/common.md
 ok    skeleton         continuity/prompts/audiences/worker.md
 ok    skeleton         continuity/prompts/audiences/companion.md
 ok    skeleton         config/CLAUDE.md
 ok    skeleton         config/models.json
-ok    skeleton         config/partner/AGENTS.md
 ok    skeleton         config/partner/SUBAGENTS.md
 ok    skeleton         config/partner/harness.json
-ok    skeleton         personas/partner/AGENTS.md
+ok    skeleton         personas/partner.md
 ok    skeleton         templates/work-item.md
 ok    learnings        ~/hx/LEARNINGS: 0 rule(s) (none), 0 pending proposal(s)
 ok    models           2 model(s): claude-opus-5 window=1000000 seam=200000 autocompact=250000, claude-sonnet-5 window=1000000 seam=200000 autocompact=250000

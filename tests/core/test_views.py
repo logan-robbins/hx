@@ -56,7 +56,10 @@ def test_show_json_matches_contracts_on_a_dispatched_item(instance, hx, launched
     }
     assert document["task"]["outcome"] is None and document["task"]["completed"] is None
     assert document["task"]["dispatched"]
-    assert document["persona_path"] == "run/eng-001/persona.md"
+    # The conftest instance has no `personas/engineer.md`: the role has no persona.
+    assert document["persona_path"] is None
+    (instance / "personas" / "engineer.md").write_text("# Engineer\n")
+    assert json.loads(hx("show", "eng-001", "--json").stdout)["persona_path"] == "personas/engineer.md"
     assert document["pane"]["session"] == "eng-001" and document["pane"]["alive"] is True
     assert document["pane"]["lines"]
 
@@ -66,8 +69,10 @@ def test_show_nulls_what_later_milestones_produce(instance, hx, launched, goals)
     dispatched(instance, hx, goals)
     document = json.loads(hx("show", "eng-001", "--json").stdout)
     assert document["step_state"] == {}, "the Companion writes step state at M5"
-    assert document["context_file"]["text"] is None, "hx compose lands at M2"
-    assert document["context_file"]["path"] == "run/eng-001/eng-001-main.context.md"
+    # What the `context` hook hands it now (`hx persona eng-001`), and the file its pointer names.
+    assert document["context_file"]["path"] == "pods/engineers/eng-001-working.md"
+    assert document["context_file"]["text"].startswith("You are eng-001 in pod engineers.")
+    assert document["context_file"]["seam_ts"] is None, "no boundary yet"
     # M7 shipped: `metrics` is the contracted `hx metrics <id>` document now,
     # null only when it cannot be built — never a milestone placeholder.
     assert set(document["metrics"]) == {"id", "stream", "dispatched", "seams", "totals", "cache"}

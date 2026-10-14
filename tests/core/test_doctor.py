@@ -296,29 +296,28 @@ def test_an_instance_on_a_shared_directory_is_not_asked_for_its_own_skeleton_fil
     assert str(shared) in detail_for(checks, "learnings")[0]
 
 
-def test_warns_on_the_single_file_layout_and_an_oversized_region(instance, monkeypatch):
-    from hx import learn
+def test_warns_on_the_single_file_layout(instance):
     (instance / "LEARNINGS.md").write_text("# old\n")
-    monkeypatch.setattr(learn, "PERSONA_WARN_BYTES", 10)
     checks = run_checks(instance)
     assert ("learnings-legacy", WARN) in statuses(checks)
-    assert ("learnings-size", WARN) in statuses(checks), detail_for(checks, "learnings-size")
     assert ("learnings", OK) in statuses(checks)
+    assert ("hook-size", WARN) not in statuses(checks)
 
 
-def test_the_region_size_bound_is_the_largest_role_region(instance, monkeypatch):
-    """A role's rules are only in that role's personas, so the bound is the largest region any
-    configured role renders, and the warning names that role."""
-    from hx import learn
-    global_size = len(learn.persona_region(instance).encode())
-    monkeypatch.setattr(learn, "PERSONA_WARN_BYTES", global_size + 200)
-    assert ("learnings-size", WARN) not in statuses(run_checks(instance))
+def test_hook_size_names_every_agent_whose_hook_output_passed_its_bound(instance, monkeypatch):
+    """The `context` hook prints rules whole up to its bound and lists them as files past it
+    (`hx.persona.boundary`); doctor names each agent that happens to, and only those."""
+    from hx import learn, persona
+    largest = max(persona.boundary(instance, item_id)["bytes"] for item_id in ("eng-001", "partner"))
+    monkeypatch.setattr(persona, "HOOK_BYTES_BY_FLAVOR", {"claude": largest + 200})
+    assert ("hook-size", WARN) not in statuses(run_checks(instance))
     proposal = learn.propose(instance, signal="x" * 400, check="c", evidence="e", category="build",
                              role="engineer", env={"HARNESS_ID": "eng-001"})
     learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
     checks = run_checks(instance)
-    assert ("learnings-size", WARN) in statuses(checks)
-    assert "every engineer persona" in detail_for(checks, "learnings-size")[0]
+    assert ("hook-size", WARN) in statuses(checks)
+    (detail,) = detail_for(checks, "hook-size")
+    assert "eng-001 (personas/engineer/build.md past" in detail and "partner" not in detail
 
 
 # --- skills (TOOL_SKILL_PLAN step 1) -----------------------------------------------------------

@@ -87,23 +87,6 @@ def _file_bytes(path) -> int | None:
         return None
 
 
-def _persona(root, item_id: str, env=None) -> tuple[int | None, str | None, str]:
-    """(bytes, source, text) of the persona in the agent's system prompt: `run/<id>/persona.md`
-    once a launch rendered it, else what `start.sh` would render now (`hx.persona.render`)."""
-    from . import persona as persona_mod
-    from .errors import HxError
-
-    derived = root / "run" / item_id / "persona.md"
-    if derived.is_file():
-        text = derived.read_text(errors="replace")
-        return len(text.encode()), f"run/{item_id}/persona.md", text
-    try:
-        text = persona_mod.render(root, item_id, env=env)
-    except (HxError, OSError, ValueError):
-        return None, None, ""
-    return len(text.encode()), "rendered (hx persona)", text
-
-
 def _skill_description_bytes(path) -> int:
     from .skill_manifest import parse_frontmatter
 
@@ -158,27 +141,33 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     """One agent's invariant prefix against its model's budget, and its last seam's cache age."""
     from pathlib import Path
 
-    from . import learn, timestamps
-    from .compile import GLOBAL_BEGIN, LEARNINGS_BEGIN
+    from . import persona as persona_mod, timestamps
+    from .config_harness import invariants_channel, persona_channel
     from .config_models import load_models
+    from .errors import HxError
 
     root = Path(root)
-    persona_bytes, persona_source, persona_text = _persona(root, item_id, env)
     claude_md = _file_bytes(root / "config" / "CLAUDE.md")
     harness = _harness_json(root, item_id)
+    role = harness.get("role") if isinstance(harness.get("role"), str) else None
+    flavor = harness.get("flavor") if isinstance(harness.get("flavor"), str) else "claude"
+    persona_file = root / "personas" / f"{role}.md" if role else None
+    persona_bytes = _file_bytes(persona_file) if persona_file else None
     try:
-        # What `hx persona` renders for this agent: global rules plus its role's.
-        learnings = len(learn.persona_region(root, env, role=harness.get("role")).encode())
-    except (ValidationError, OSError):
-        learnings = None
-    in_persona = LEARNINGS_BEGIN in persona_text
-    # The invariants reach each agent once (`config_harness.INVARIANTS_CHANNEL`); on Pi and
-    # Grok that once is inside the persona, so the file is not charged a second time.
-    claude_md_in_persona = GLOBAL_BEGIN in persona_text
+        handed = persona_mod.boundary(root, item_id, env=env)
+    except (HxError, OSError, ValueError):
+        handed = None
+    by_part: dict[str, int] = {}
+    for name, _source, size in (handed or {}).get("parts", []):
+        by_part[name] = by_part.get(name, 0) + size
+    # Each source reaches the agent once, by its channel (`config_harness.INVARIANTS_CHANNEL`,
+    # `PERSONA_CHANNEL`): counted once here whichever it is. The rules count as the hook prints
+    # them — whole, or as the list of files the bound made of them.
+    learnings = (by_part.get("rules", 0) + by_part.get("as-files", 0)) if handed else None
+    identity = by_part.get("identity", 0)
     skills, skills_source = _skills(root, item_id, env)
     descriptions = sum(_skill_description_bytes(path) for path in skills.values())
-    prefix = ((persona_bytes or 0) + (0 if claude_md_in_persona else (claude_md or 0))
-              + descriptions + (0 if in_persona else (learnings or 0)))
+    prefix = (claude_md or 0) + (persona_bytes or 0) + identity + (learnings or 0) + descriptions
     model = harness.get("model") if isinstance(harness.get("model"), str) else None
     budget = {"model": model, "invariant_ceiling_tokens": None, "working_room_tokens": None,
               "within": None, "share": None}
@@ -215,9 +204,14 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     return {
         "id": item_id,
         "invariant": {
-            "persona_bytes": persona_bytes, "persona_source": persona_source,
-            "claude_md_bytes": claude_md, "claude_md_in_persona": claude_md_in_persona,
-            "learnings_bytes": learnings, "learnings_in_persona": in_persona,
+            "claude_md_bytes": claude_md, "claude_md_channel": invariants_channel(flavor),
+            "persona_bytes": persona_bytes,
+            "persona_source": f"personas/{role}.md" if persona_bytes is not None else None,
+            "persona_channel": persona_channel(flavor),
+            "identity_bytes": identity, "learnings_bytes": learnings,
+            "learnings_as_files": list(handed["as_files"]) if handed else [],
+            "hook_bytes": handed["bytes"] if handed else None,
+            "hook_bound": handed["bound"] if handed else None,
             "skills": list(skills), "skills_source": skills_source,
             "skill_descriptions_bytes": descriptions,
             "prefix_bytes": prefix,
@@ -253,12 +247,13 @@ def render_report(doc: dict) -> str:
     for row in doc["agents"]:
         inv, budget, seam = row["invariant"], row["budget"], row["seam"]
         share = "n/a" if budget["share"] is None else f"{budget['share']:.1%}"
-        line = (f"{row['id']}: prefix {inv['prefix_bytes']} B (persona {inv['persona_bytes']}, "
-                f"CLAUDE.md {inv['claude_md_bytes']}"
-                f"{' in persona' if inv.get('claude_md_in_persona') else ''}, "
+        line = (f"{row['id']}: prefix {inv['prefix_bytes']} B (CLAUDE.md {inv['claude_md_bytes']} "
+                f"via {inv['claude_md_channel']}, persona {inv['persona_bytes']} via "
+                f"{inv['persona_channel']}, identity {inv['identity_bytes']}, "
                 f"learnings {inv['learnings_bytes']}"
-                f"{' in persona' if inv['learnings_in_persona'] else ''}, "
-                f"skill descriptions {inv['skill_descriptions_bytes']} over {len(inv['skills'])}) "
+                f"{' as files' if inv['learnings_as_files'] else ''}, "
+                f"skill descriptions {inv['skill_descriptions_bytes']} over {len(inv['skills'])}; "
+                f"hook {inv['hook_bytes']} of {inv['hook_bound']} B) "
                 f"= {share} of {budget['model'] or 'no model'} ceiling "
                 f"{budget['invariant_ceiling_tokens']}; tool schemas and host context unmeasured")
         if seam is not None:

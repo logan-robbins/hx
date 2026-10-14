@@ -12,7 +12,7 @@ are all fixed by spec 13 (M7), 07.4, and decision D8 in spec 14.
 
 ## The claim under test
 
-> After a seam, a HarnessAgent continues from its context file **without re-reading files its
+> After a seam, a HarnessAgent continues from its work item **without re-reading files its
 > `working_set` already notes, and without repeating a dead end**.
 
 A seam is `/clear` plus rehydration (spec 02, 09.3). The agent loses its conversation and is
@@ -32,7 +32,8 @@ a corpus of fixtures would measure the fixtures.
 - `logs/<id>/<id>-main.jsonl` and every subagent stream, from dispatch to `hx complete`;
 - the `tasks.json` entry: goal, addenda, outcome, timestamps;
 - the final work item body, including `## Tasks` as the agent left it and its `## Digest`;
-- `config/<id>/harness.json` and the rendered `run/<id>/persona.md` as they stood at each point;
+- `config/<id>/harness.json`, `personas/<role>.md` and the rule files as they stood at each
+  point (`hx persona <id>` printed what the agent was handed);
 - the workdir's `git log --oneline`, which is what `closed_steps[].commit` refers to.
 
 **How it is captured:** `hx dispatch` already archives `logs/<id>/` and `state/<id>/` to
@@ -66,9 +67,9 @@ At each point:
    `hx companion` would, so the step state is what it would really have been. The Companion is
    stateless per call and takes the previous step state plus the records after its cursor, so a
    replay is faithful by construction.
-2. Compose the context file with `hx compose <id> <id>-main`.
-3. Start a fresh HarnessAgent, hand it that path the way the `context` hook does, and let it
-   run ten turns under the same `/goal`.
+2. Write the work item's `## Status` with `hx compose <id>`.
+3. Start a fresh HarnessAgent, hand it what `hx persona <id>` prints the way the `context`
+   hook does, and let it run ten turns under the same `/goal`.
 4. Record the metric.
 
 Step 3 is a live Claude Code session, which is why M7 comes after M6 and why this is not a
@@ -79,13 +80,13 @@ Budget for it deliberately rather than discovering the cost mid-run.
 
 `hx metrics <id>` reads it back from the `seam` records hx appends to the stream at every
 boundary (spec 07.4), which carry `prompt_version`, the `context_tokens` before the seam, and
-the context file's size. Per seam (spec 13 M7, D8):
+the size of the file the boundary named (`context_file_bytes`). Per seam (spec 13 M7, D8):
 
 | Measure | What it counts | What it means |
 |---|---|---|
-| **`working_set` re-Reads** | Read tool calls in the ten turns after the seam whose path appears in `working_set.files` of the step state that produced the context file | **Waste.** The Companion recorded a note about that file and the agent went back to it anyway, so either the note was missing the fact the agent needed or it was not trusted |
+| **`working_set` re-Reads** | Read tool calls in the ten turns after the seam whose path appears in `working_set.files` of the step state that produced the work item's `## Status` | **Waste.** The Companion recorded a note about that file and the agent went back to it anyway, so either the note was missing the fact the agent needed or it was not trusted |
 | **Other tool calls** | Every other tool call in those ten turns | **Work**, roughly. Not free of waste, but not waste this metric can attribute |
-| **Context-file Reads** | Reads of the context file path itself | **Must be exactly 1.** More than one means the agent could not hold it; zero means it never read it, and the seam failed outright |
+| **Context-file Reads** | Reads of the work item path itself (`reads_of_context_file`) | **Must be exactly 1.** More than one means the agent could not hold it; zero means it never read it, and the seam failed outright |
 
 Two further things to record per seam, not as pass/fail but because they are what you will
 reach for when a number moves and you need to know why:
@@ -116,7 +117,7 @@ M7 passes when, across the corpus:
 A failure here changes the design, not the decision to have a Companion (spec 14: "A failed
 test changes the design, not the decision's existence"). The likely changes, in the goal worth
 trying: the note-writing rule for `working_set.files`; the eviction order; the `next` field's
-phrasing rule; the section order in the context file (spec 07.3); and only then the budget.
+phrasing rule; the part order in `## Status` (spec 07.3); and only then the budget.
 
 ## Judging a prompt change
 

@@ -110,6 +110,8 @@ def test_pi_start_exec_is_bare_and_isolated(instance, tmp_path):
         "          open(os.environ['HX_ARGV_FILE'], 'w'))\n"
     )
     fake.chmod(0o755)
+    role = instance / "personas" / "engineer.md"
+    role.write_text("# Engineer\n\nYou are an engineer in this hx instance.\n")
     result = subprocess.run(
         ["bash", str(instance / "adapters" / "pi" / "start.sh"), "--exec", "eng-001"],
         env=clean_env(
@@ -128,10 +130,10 @@ def test_pi_start_exec_is_bare_and_isolated(instance, tmp_path):
     assert "--no-context-files" in argv
     assert "-p" not in argv and "--print" not in argv
     assert not any(arg.startswith("The goal") for arg in argv)
-    persona = str(instance / "run" / "eng-001" / "persona.md")
-    assert argv[argv.index("--append-system-prompt") + 1] == persona
-    assert "You are eng-001" in Path(persona).read_text()
-    assert "Things I learned" not in Path(persona).read_text()
+    # The role file itself (`config_harness.PERSONA_CHANNEL` `flag`): nothing is rendered.
+    assert argv[argv.index("--append-system-prompt") + 1] == str(role)
+    assert not (instance / "run" / "eng-001" / "persona.md").exists()
+    assert not (instance / "run" / "eng-001" / "home" / "APPEND_SYSTEM.md").exists()
     assert body["env"]["PI_CODING_AGENT_DIR"] == str(instance / "run" / "eng-001" / "home")
     assert body["env"]["HARNESS_ID"] == "eng-001"
     assert body["cwd"] == str(instance / "wt" / "eng-001")

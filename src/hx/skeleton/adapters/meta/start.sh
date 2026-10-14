@@ -39,6 +39,7 @@ command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 
 
 home=$root/run/$id/home
 harness=$root/config/$id/harness.json
+# A planned launch's compiled system prompt (`native_launch`); nothing else writes it.
 persona=$root/run/$id/persona.md
 
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -77,15 +78,8 @@ if [ "$mode" = exec ]; then
   mkdir -p "$root/run/$id" "$home/data"
   if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
     # A planned launch's persona is the compiled planned system prompt, prepared in its
-    # private root and verified by the controller (`native_launch`); rendering it again from
-    # the instance sources would replace what was verified.
+    # private root and verified by the controller (`native_launch`).
     [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
-  else
-    # Rendered from its sources immediately before exec (`hx.persona`): the role persona,
-    # harness.json `purpose`, and the learnings. An edit to any of them lands at the next
-    # launch or restart; nothing is copied per id.
-    "$python" -m hx.persona --root "$root" "$id" >/dev/null \
-      || die "refuse: could not render $persona (\`hx persona $id\` says why)"
   fi
 
   cd "$cwd"
@@ -97,7 +91,8 @@ if [ "$mode" = exec ]; then
   export PATH="$root/bin:$PATH"
 
   # No prompt argument. --yolo disables approval and sandboxing and trusts the
-  # workspace for this run; the persona file is derived above for inspection.
+  # workspace for this run. Muse takes no system prompt: the invariants, the persona, the
+  # identity line and the learnings arrive through the `context` hook at every boundary.
   exec "$bin" --yolo --model "$model" --reasoning-effort "$effort"
 fi
 
