@@ -1,9 +1,12 @@
 """`hx complete <outcome>` — the HarnessAgent's last action (spec 06, 08).
 
-Completion is machine-checked, never prose: `done` runs the goal's `### Checks` block with
-`bash -e` in the workdir, requires a clean `git status` when that workdir is a git repository,
-and requires no subagent stream to be open. A refusal prints `HX-CHECK-FAILED <id>` with the failing output, changes nothing, and
-leaves the item `working` with its goal active, so the agent fixes it and runs it again.
+Completion is machine-checked, never prose: `done` requires a clean `git status` when the
+workdir is a git repository, no open subagent stream, and a `## Evidence` section in the work
+item that is not empty — the worker's own record of what proves each line of the
+`## Definition of done` it wrote. hx runs no acceptance block of its own: the goal is one
+paragraph and the worker owns its definition of done. A refusal prints `HX-CHECK-FAILED <id>`
+with the reason, changes nothing, and leaves the item `working` with its goal active, so the
+agent fixes it and runs it again.
 
 Only success prints `HX-COMPLETE <id> <outcome>` as the last line of stdout. That line is the
 goal evaluator's proof, because it reads tool output in the transcript and calls no tools
@@ -13,7 +16,6 @@ itself (spec 06).
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -23,16 +25,18 @@ from .caller import require_agent_caller
 from .config_harness import load_harness, resolve_workdir
 from .errors import Refused
 from .ids import OUTCOMES, PARTNER
-from .goals import parse_goal_text
 from .workitems import (
     SECTION_DIGEST,
+    SECTION_EVIDENCE,
     SECTION_TASKS,
+    TEMPLATE_NOTE,
     replace_section,
     parse_work_item,
     rename_state,
     require_work_item,
     section_bounds,
     section_text,
+    section_written,
     set_frontmatter,
     split_frontmatter_text,
 )
@@ -45,7 +49,7 @@ DIGEST_PLACEHOLDER = "pending companion"
 
 #: `templates/work-item.md` ships `## Digest` with an angle-bracketed note saying the
 #: Companion fills it in. That note is not content, so it is replaced, not appended to.
-_TEMPLATE_NOTE = re.compile(r"^<[^>]*>$")
+_TEMPLATE_NOTE = TEMPLATE_NOTE
 
 
 class CheckFailed(Refused):
@@ -53,7 +57,7 @@ class CheckFailed(Refused):
 
 
 def workdir_for(root: Path, item_id: str) -> Path:
-    """The directory checks run in: `harness.json.workdir`, whatever the Partner chose (17.2).
+    """The directory `done` inspects: `harness.json.workdir`, whatever the Partner chose (17.2).
 
     hx creates no repository and no worktree for it; it is simply a path.
     """
@@ -63,22 +67,6 @@ def workdir_for(root: Path, item_id: str) -> Path:
         if config.workdir:
             return resolve_workdir(config.workdir, root)
     return root
-
-
-def run_checks(checks: str, workdir: Path, env=None) -> subprocess.CompletedProcess:
-    """Run the `### Checks` block with `bash -e`; every command must exit 0 (spec 06)."""
-    import os
-
-    child = dict(os.environ if env is None else env)
-    child.setdefault("HARNESS_ROOT", str(workdir))
-    return subprocess.run(
-        ["bash", "-e", "-c", checks],
-        cwd=str(workdir),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=child,
-    )
 
 
 def workdir_is_dirty(workdir: Path) -> tuple[bool, str]:
@@ -129,35 +117,23 @@ def preflight(root: Path, item_id: str, outcome: str, *, env=None) -> dict | Non
             f"{listing}Commit your work, then run `hx complete done` again."
         )
 
-    entry = tasks_mod.load_tasks(root).get(item_id) or {}
-    goal_text = entry.get("goal")
-    if not goal_text:
+    _, body = split_frontmatter_text(require_work_item(root, item_id).read_text())
+    if not section_written(body, SECTION_EVIDENCE):
         raise CheckFailed(
-            f"{CHECK_FAILED} {item_id}\nno goal recorded in tasks.json; `hx complete done` runs "
-            f"the `### Checks` block of the goal it was dispatched with (spec 06)."
+            f"{CHECK_FAILED} {item_id}\n`{SECTION_EVIDENCE}` in your work item is empty: one line per "
+            f"item of your `## Definition of done`, naming the `hx tool-exec` receipt, `hx evidence` "
+            f"event, test command or commit that proves it. Write it, then run `hx complete done` again."
         )
-    checks = parse_goal_text(goal_text, f"tasks.json[{item_id}].goal").checks
+
+    # The source as it stands now, so that the final guard can tell whether anything moved
+    # between this check and the completion being written (the Companion's flush runs between).
     from . import fingerprints
     import os
-    check_env = dict(os.environ if env is None else env)
-    before = fingerprints.source(workdir, [], check_env)
-    result = run_checks(checks, workdir, env)
-    if result.returncode != 0:
-        raise CheckFailed(
-            f"{CHECK_FAILED} {item_id}\n`### Checks` failed with exit {result.returncode} in {workdir}:\n"
-            f"{result.stdout}{result.stderr}"
-        )
-    # Checks can write files or even commit changed inputs. Recheck both content
-    # identity and cleanliness after execution before allowing the completion path.
-    after = fingerprints.source(workdir, [], check_env)
-    dirty, listing = workdir_is_dirty(workdir)
-    if dirty:
-        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nthe workdir became dirty during verification:\n{listing}")
-    if before["repository"] and (not before["complete"] or not after["complete"] or any(
-        before[key] != after[key] for key in ("hash", "observation_hash")
-    )):
-        raise CheckFailed(f"{CHECK_FAILED} {item_id}\nsource inputs changed during verification; run checks again on the final source.")
-    return {"source": after if after["repository"] else None, "acceptance": _acceptance_identity(entry)}
+
+    entry = tasks_mod.load_tasks(root).get(item_id) or {}
+    source = fingerprints.source(workdir, [], dict(os.environ if env is None else env))
+    return {"source": source if source["repository"] else None,
+            "acceptance": _acceptance_identity(entry)}
 
 
 def final_workspace_guard(root: Path, item_id: str, proof: dict | None, *, env=None) -> None:
@@ -322,7 +298,8 @@ def complete(root: Path, outcome: str, *, item_id: str | None = None, env=None) 
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx complete", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx complete", add_help=True,
+                                     epilog="example: hx complete done")
     parser.add_argument("outcome", choices=list(OUTCOMES))
     parser.add_argument("--id", help="the id to complete (default: HARNESS_ID)")
     parser.add_argument("--root", help=argparse.SUPPRESS)

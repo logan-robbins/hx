@@ -7,8 +7,11 @@ procedure, and it leaves the token step (§2) to you.
 ## What you need
 
 - macOS or Linux, `tmux`, `git`, Python 3.14, and `uv`.
-- Claude Code installed and on your `PATH` at a version hx has been tested with (`claude
-  --version`; the list is `src/hx/packaging/tested-claude-versions.json`, currently `2.1.280` and `2.1.278`).
+- Claude Code installed and on your `PATH`, at any current version. hx records the version it
+  finds and re-records it at every launch, so the fleet runs the latest release; `hx doctor`
+  says `tested` when it is one the live suite has passed on (the list is
+  `src/hx/packaging/tested-claude-versions.json`, currently `2.1.296`, `2.1.289`, `2.1.280`,
+  and `2.1.278`) and `untested` otherwise, and never refuses.
 - A Claude subscription (Max or Pro), or an Anthropic API key supplied below.
 
 Alternatively, supply an Anthropic API key in a dotenv file. `hx` uses an existing
@@ -38,8 +41,7 @@ Pick a directory for the instance. It must not be inside `~/.claude` (hx refuses
 hx install --root ~/hx
 ```
 
-To use a local dotenv fallback, pass `--env-file /absolute/path/to/.env`. If your Claude
-Code version is newer than hx's tested list, add `--ignore-claude-version`. The env file
+To use a local dotenv fallback, pass `--env-file /absolute/path/to/.env`. The env file
 path is saved in the instance, so later `hx up` runs use it automatically. Existing
 credentials under `seed/` always take precedence over the env file.
 
@@ -94,10 +96,11 @@ instead.
 - The UI is already running: `hx install` started it in tmux session `ui`. Open
   `http://127.0.0.1:8765/`. It is read-only: the Board (every worker, its state and outcome,
   whether its session is alive, its context size and seams), an Agent drawer per worker (its
-  work item file: the goal, checks, live `## Tasks`, deliverables, open decision, digest; plus
+  work item file: the goal, the definition of done the worker wrote, live `## Tasks`, evidence,
+  deliverables, open decision, digest; plus
   whether its Companion is running a pass right now, and an **Open last compaction** link that
   opens the Companion's latest compaction in another window), an **Open session** link that opens the
-  pane, step state, context file and stream tails in another window, Goals and Archive, and a
+  pane, step state, what the `context` hook hands it and stream tails in another window, Goals and Archive, and a
   Partner page with `PARTNER.md`, the board, and a chat box that sends a message to the Partner
   exactly as `hx wake partner` does.
   Full control (slash commands, interrupts) stays in `tmux attach -t partner`.
@@ -105,11 +108,13 @@ instead.
 
 ## 5. Personas
 
-The Partner installs a persona when it creates a worker, from `~/hx/personas/<role>/AGENTS.md`:
-`backend-engineer`, `frontend-engineer`, `release-engineer`. Each persona is the part above
-`## UPDATES BELOW ONLY`; the worker's own memory accumulates below it. Edit a persona only by
-telling the Partner what to change; it takes effect at that worker's next `hx restart`. The
-Partner's own persona is `~/hx/config/partner/AGENTS.md`; the Companions' rules are
+Every worker is handed, at every boundary, its role's
+`~/hx/personas/<role>.md` (`backend-engineer`, `frontend-engineer`, `release-engineer`,
+`qa-engineer`) plus an identity line carrying the one paragraph in its `harness.json` `purpose`
+that says what that id is for; nothing is copied per worker. What a worker learns becomes a learnings rule for its role
+(§6), not a note in a file of its own. Edit a persona only by telling the Partner what to
+change; it takes effect at each worker's next boundary (`/clear`, compaction, restart). The
+Partner's own persona is `~/hx/personas/partner.md`; the Companions' rules are
 `~/hx/companion/BASE.md` and `~/hx/companion/roles/<role>.md`.
 
 ## 6. Learnings

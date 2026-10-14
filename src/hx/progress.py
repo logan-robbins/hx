@@ -168,7 +168,8 @@ def snapshot(store: ContinuityStore, run_id: str, *, worker_id: str | None = Non
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx progress")
+    parser = argparse.ArgumentParser(prog="hx progress",
+                                     epilog="example: hx progress --file /tmp/progress.json")
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--file", help="submit a sparse progress update")
     action.add_argument("--run", help="read this run's update revision and current cursor")

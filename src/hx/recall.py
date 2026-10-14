@@ -119,7 +119,8 @@ def recall(
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx recall", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx recall", add_help=True,
+                                     epilog='example: hx recall "alembic revision for the assets table"')
     parser.add_argument("query", nargs="?", help="substring to find in completed Work Items")
     parser.add_argument("--id", dest="item_id", help="one id's completed bodies only")
     parser.add_argument("--pod", help="one pod's completed bodies only")

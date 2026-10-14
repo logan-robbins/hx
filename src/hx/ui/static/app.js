@@ -300,19 +300,6 @@ function companionNote(c) {
 function fold(label, body) {
   return `<details class="fold"><summary class="small-label">${label}</summary><div class="fold-body">${body}</div></details>`;
 }
-/* The composed context carries a "Memory episodes" section (spec 07.6). The user wants the
- * count, not the memories, so the drawer drops the section body and keeps a one-line tally. */
-function withoutMemoryEpisodes(text) {
-  const lines = (text || "").split("\n");
-  const start = lines.findIndex((l) => /^#{1,3}\s+Memory episodes\s*$/.test(l));
-  if (start < 0) return text;
-  let end = lines.findIndex((l, i) => i > start && /^#{1,3}\s+/.test(l));
-  if (end < 0) end = lines.length;
-  const episodes = lines.slice(start, end).filter((l) => /^\s*[-*]\s+\d{4}-\d{2}-\d{2}T/.test(l)).length;
-  const note = `_${count(episodes, "memory episode")} injected · not shown here (hx memory search)_`;
-  return [...lines.slice(0, start + 1), "", note, "", ...lines.slice(end)].join("\n");
-}
-
 /* What the Companion is doing for this agent, without exposing the step state itself:
  * whether a pass is running, when it last wrote, and the open steps it is tracking. The
  * raw state stays one click away for whoever needs to check it. */
@@ -1665,7 +1652,8 @@ function agentDrawer(a) {
 }
 
 /* The Session page: everything `hx show <id>` carries that is not the work item — the tmux
- * pane, the Companion's raw step state, the last composed context file, the stream tails,
+ * pane, the Companion's raw step state, what the `context` hook hands the agent at a boundary
+ * (`hx persona <id>`) and the file its pointer names, the stream tails,
  * the subagents and `hx metrics`. The drawer links here with target=_blank, so it opens in
  * its own window and the drawer stays the agent's file. */
 function sessionPage(focus) {
@@ -1690,8 +1678,8 @@ function sessionPage(focus) {
       ? ""
       : block("Companion", a ? companionPanel(show, a, openSteps(id)) : notYet) +
         block("Step state", Object.keys(stepStates).length ? slot(Object.entries(stepStates).map(([handle, state]) => stepState(handle, state))) : notYet) +
-        `<section class="panel"><div class="panel-body">${fold("Context file", contextFile
-          ? `<code class="file-path">${esc(contextFile.path)} · seam ${esc(clock(contextFile.seam_ts))}</code>${slot(markdown(withoutMemoryEpisodes(contextFile.text) || "_not composed yet_"), "context")}`
+        `<section class="panel"><div class="panel-body">${fold("Boundary context", contextFile
+          ? `<code class="file-path">${esc(contextFile.path || "no work item")} · boundary ${esc(clock(contextFile.seam_ts))}</code>${slot(markdown(contextFile.text || "_not available_"), "context")}`
           : notYet)}</div></section>`) +
     block("Streams", (show.streams || []).length ? slot((show.streams || []).map((s) => streamCard(s, show.metrics || null))) : notYet) +
     (partner

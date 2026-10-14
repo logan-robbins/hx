@@ -66,15 +66,15 @@ same line (`hx.learn.go_line`), so the fleet's cron honours the gate without a w
 ## 4. Goals across many instances
 
 - Keep goal templates in the fleet root and validate each one with
-  `hx.goals.parse_goal_text(text, path)` before anyone dispatches it: exactly `## Goal`,
-  `## Definition of done`, and a `### Checks` fenced bash block. `hx dispatch` refuses a goal whose
-  Checks already pass on the untouched tree (`src/hx/dispatch.py`), so Checks must assert the
-  deliverable, not the environment.
+  `hx.goals.parse_goal_text(text, path)` before anyone dispatches it: one `## Goal` paragraph,
+  optionally one to three sentences on its dependencies, nothing else. The worker writes its
+  own `## Definition of done` on top of its role's standard set, and `hx complete done`
+  requires the `## Evidence` it leaves; fleet-wide rules belong in the role personas.
 - One `hx dispatch` call per wave with every independent goal in it; one stream per dispatch is
   how capacity sits idle. Completion wakes the Partner; nobody polls panes.
 - Systematic failures are promoted to one shared `LEARNINGS/` — one file per category of mistake — as rules
   (`Rule · Signal · Check · Evidence`), never as file-and-line notes; every rule a grep can decide
-  becomes a lint the Checks run. Each instance appends application facts to its own map file and
+  becomes a lint a definition of done cites. Each instance appends application facts to its own map file and
   proposes only the rule to the shared file — `hx learn propose` from the agent that was tripped
   up, `hx learn accept` from its Partner on the next wake, with every instance's `config/hx.json`
   `learnings` pointing at the one directory (docs/learnings.md). Nobody opens a file for writing,
@@ -91,8 +91,9 @@ same line (`hx.learn.go_line`), so the fleet's cron honours the gate without a w
 (`src/hx/appmap.py`). A team whose repository must receive product files only has to deny both
 commands in the hook guard and refuse any `.hx/`, `.claude/`, env or evidence path inside a
 worktree (a deny-paths entry for the repository root plus a deny-commands regex for
-`\bhx\s+(plan|map)\b`). Put a ship check in every goal's Checks: allowed path prefixes only, no
-harness or evidence file names, no protected team files, required commit author and trailer.
+`\bhx\s+(plan|map)\b`). Put the ship check in the role persona's standard set, so every
+definition of done carries it: allowed path prefixes only, no harness or evidence file names, no
+protected team files, required commit author and trailer.
 Worktrees for lanes live outside the repository (`/data/worktrees/<fleet>-<area>-<id>`), and every
 lane's environment file lives under the instance root, never in the worktree.
 
@@ -118,8 +119,8 @@ reader can tell an edited handoff from the one that was reviewed.
 
 Instances merge into one branch. Serialize the merges with a host-wide lock
 (`flock /data/<fleet>-merge-lock/<repo>.lock`) held by the release goal from "merge base in" to
-"push", so two instances never race the same integration branch, and let the release goal's
-Checks require the exact merge result to have been tested (`git merge-base --is-ancestor
+"push", so two instances never race the same integration branch, and let the release
+persona's standard set require the exact merge result to have been tested (`git merge-base --is-ancestor
 origin/<base> HEAD` plus a local gate line with the head SHA).
 
 ## 8. Channels between instances

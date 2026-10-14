@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Run from Git's post-merge hook or an operator's post-merge job.
+set -euo pipefail
+repository="${HX_CODE_REPO:-$(git rev-parse --show-toplevel)}"
+args=(code index --root "${HARNESS_ROOT:?HARNESS_ROOT must name the hx instance}" --repo "$repository")
+if [ -n "${HX_CODE_INDEXER_CHECKOUT:-}" ]; then
+  args+=(--resolved --indexer-checkout "$HX_CODE_INDEXER_CHECKOUT")
+fi
+exec "${HX_BIN:-hx}" "${args[@]}"

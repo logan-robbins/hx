@@ -337,6 +337,56 @@ def test_every_chroma_open_happens_under_the_lock(instance, monkeypatch):
     assert held and all(held), held
 
 
+# --- the embedding model is never downloaded by an agent -----------------------------------------
+
+
+def _model_elsewhere(monkeypatch, tmp_path):
+    """Point chroma's default embedder at an empty cache, as an agent's scratch HOME would be."""
+    from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+
+    monkeypatch.setattr(ONNXMiniLM_L6_V2, "DOWNLOAD_PATH", tmp_path / "onnx_models")
+    return ONNXMiniLM_L6_V2
+
+
+@needs_chroma
+def test_an_uncached_model_is_unavailable_not_downloaded(instance, monkeypatch, tmp_path):
+    from hx import memory
+
+    cls = _model_elsewhere(monkeypatch, tmp_path)
+
+    def never(self):
+        raise AssertionError("hx asked chroma to download the embedding model")
+
+    monkeypatch.setattr(cls, "_download_model_if_not_exists", never)
+    seed(instance, "eng-001", "eng-001-main", "seam", state_with("stream the importer"))
+    with pytest.raises(memory.MemoryUnavailable) as caught:
+        memory.search(instance, "importer", k=1)
+    assert "hx memory warm" in str(caught.value)
+    assert not (tmp_path / "onnx_models").exists()
+
+
+@needs_chroma
+def test_warm_downloads_once_and_is_idempotent(instance, monkeypatch, tmp_path, capsys):
+    from hx import memory
+
+    cls = _model_elsewhere(monkeypatch, tmp_path)
+    fetched: list[int] = []
+
+    def fake_download(self):
+        fetched.append(1)
+        folder = tmp_path / "onnx_models" / cls.EXTRACTED_FOLDER_NAME
+        folder.mkdir(parents=True)
+        for name in memory.MODEL_FILES:
+            (folder / name).write_text("x")
+
+    monkeypatch.setattr(cls, "_download_model_if_not_exists", fake_download)
+    assert memory.main(["warm"], instance) == 0
+    assert memory.main(["warm"], instance) == 0
+    assert fetched == [1]
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"HX-MEMORY model={tmp_path / 'onnx_models' / 'onnx'}"] * 2
+
+
 # --- indexing ------------------------------------------------------------------------------------
 
 
@@ -505,10 +555,10 @@ def test_compose_without_chromadb_says_so_in_one_line(instance, monkeypatch):
     )
     unavailable(monkeypatch)
 
-    text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
-    assert "## Memory episodes" in text
+    text = compose_mod.status_text(compose_mod.status_parts(instance, "eng-001", "eng-001-main"))
+    assert "### Memory episodes" in text
     assert "_memory unavailable: chromadb is not importable" in text
-    assert "## Step state" in text and "## Open subagent handles" in text
+    assert "### Step state" in text and "### Open subagent handles" in text
 
 
 # --- the CLI ---------------------------------------------------------------------------------------
@@ -580,17 +630,20 @@ def test_the_memory_section_carries_other_agents_episodes_and_not_its_own(instan
         json.dumps(state_with("make the CSV importer stream, my own state"))
     )
 
-    text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
-    section = text[text.index("## Memory episodes"):text.index("## Open subagent handles")]
-    assert "_source: `state/memory/chroma`_" in section
-    assert 'Search more: `hx memory search "' in section and "--all-roles`" in section
+    parts = compose_mod.status_parts(instance, "eng-001", "eng-001-main")
+    assert {title: source for title, source, _ in parts}["Memory episodes"] == "state/memory/chroma"
+    text = compose_mod.status_text(parts)
+    section = text[text.index("### Memory episodes"):text.index("### Open subagent handles")]
+    assert 'Search more: `hx memory search "' in section
+    # `--all-roles` is the Partner's (hx.cli.AUDIENCES): a worker's hint does not name it.
+    assert "--all-roles" not in section
     assert "eng-002/seam" in section
     bullets = [line for line in section.splitlines() if line.startswith("- ")]
     assert bullets and all("my own state" not in line for line in bullets), (
         "its own step state is the section above; only the query line repeats it"
     )
-    assert text.index("## Step state") < text.index("## Memory episodes")
-    assert text.index("## Memory episodes") < text.index("## Open subagent handles")
+    assert text.index("### Step state") < text.index("### Memory episodes")
+    assert text.index("### Memory episodes") < text.index("### Open subagent handles")
 
 
 @needs_chroma
@@ -621,9 +674,9 @@ def test_memory_inject_k_zero_drops_the_section_entirely(instance):
         "id": "eng-001", "pod": "engineers", "role": "engineer", "model": "claude-opus-5",
         "effort": "xhigh", "workdir": "wt/eng-001", "companion": {"memory_inject_k": 0},
     }))
-    text = compose_mod.compose_text(instance, "eng-001", "eng-001-main")
-    assert "## Memory episodes" not in text
-    assert "## Step state" in text
+    text = compose_mod.status_text(compose_mod.status_parts(instance, "eng-001", "eng-001-main"))
+    assert "### Memory episodes" not in text
+    assert "### Step state" in text
 
 
 def test_the_inject_query_is_the_goal_the_next_step_and_the_hypothesis():

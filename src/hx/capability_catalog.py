@@ -17,6 +17,32 @@ from .errors import ValidationError
 from .store import atomic_write_json
 
 LIMIT = 262144
+#: The handshake revision hx's client speaks; MCP 2026-07-28 keeps it valid by its compatibility
+#: clause. MODERN_VERSION is only sent with the one `server/discover` call after a refusal.
+HANDSHAKE_VERSION = '2024-11-05'
+MODERN_VERSION = '2026-07-28'
+
+
+class Rejected(Conflict):
+    """A JSON-RPC error answer; `error` is the server's error object."""
+
+    def __init__(self, message, error):
+        super().__init__(message)
+        self.error = error if isinstance(error, dict) else {}
+
+
+def _versions(body, key=None):
+    """Bounded version strings: `body[key]` of a discover result, or an error's `data.supported`."""
+    if not isinstance(body, dict):
+        return []
+    if key is None:
+        data = body.get('data')
+        source = data.get('supported') if isinstance(data, dict) else None
+    else:
+        source = body.get(key)
+    if not isinstance(source, list):
+        return []
+    return [v for v in source if isinstance(v, str) and 0 < len(v) <= 32 and v.isprintable()][:16]
 
 
 class MCP:
@@ -28,11 +54,40 @@ class MCP:
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
         self.pending = b''
         self.serial = 0
+        self.protocol_version = None
 
     def __enter__(self):
-        self.call('initialize', {'protocolVersion': '2024-11-05', 'capabilities': {}, 'clientInfo': {'name': 'hx', 'version': '1'}})
+        try:
+            answer = self.call('initialize', {'protocolVersion': HANDSHAKE_VERSION, 'capabilities': {}, 'clientInfo': {'name': 'hx', 'version': '1'}})
+        except Rejected as refusal:
+            raise Conflict(self.discover_refusal(refusal.error)) from None
+        # TOOL_SKILL_PLAN step 8: the version this server answered with, kept in the catalog.
+        version = answer.get('protocolVersion') if isinstance(answer, dict) else None
+        self.protocol_version = version if isinstance(version, str) and len(version) <= 32 else None
         self.send({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
         return self
+
+    def discover_refusal(self, error):
+        """One `server/discover` call after a refused `initialize`; the refusal names the versions.
+
+        MCP 2026-07-28 servers that dropped the handshake answer `server/discover` with
+        `supportedVersions`, or an `UnsupportedProtocolVersionError` whose `data.supported` lists
+        them; a modern-only server SHOULD also name them in its `initialize` error.
+        """
+        versions = _versions(error)
+        try:
+            found = self.call('server/discover', {'_meta': {
+                'io.modelcontextprotocol/protocolVersion': MODERN_VERSION,
+                'io.modelcontextprotocol/clientInfo': {'name': 'hx', 'version': '1'},
+                'io.modelcontextprotocol/clientCapabilities': {}}})
+            versions = versions or _versions(found, 'supportedVersions')
+        except Rejected as second:
+            versions = versions or _versions(second.error)
+        except (Conflict, ValueError):
+            pass
+        named = ('supported versions ' + ', '.join(versions)) if versions else 'reported no supported versions'
+        return (f'MCP server refused initialize ({HANDSHAKE_VERSION}); server/discover: {named}. '
+                'Register a server that keeps the handshake, or unregister it.')
 
     def send(self, body):
         data = (canonical(body) + '\n').encode()
@@ -78,7 +133,7 @@ class MCP:
             if message.get('id') != identity:
                 continue
             if 'error' in message:
-                raise Conflict('MCP server rejected the request')
+                raise Rejected('MCP server rejected the request', message['error'])
             return message['result']
         raise Conflict('MCP server response timed out')
 
@@ -112,7 +167,7 @@ def config(root):
 
 def index(root):
     declared = config(root)
-    entries = {}
+    entries, servers = {}, {}
     if len(declared['servers']) > 16 or len(declared['skills']) > 64:
         raise ValidationError('capability sources exceed 16 MCP servers or 64 skills')
     for name, server in declared['servers'].items():
@@ -121,6 +176,7 @@ def index(root):
         client = MCP(server['command'])
         try:
             with client:
+                servers[name] = {'protocol_version': client.protocol_version}
                 cursor = None
                 seen = set()
                 for _ in range(16):
@@ -154,11 +210,12 @@ def index(root):
         body = path.read_text()
         entries['skill:' + name] = {'kind': 'skill', 'path': str(path), 'source': digest(body),
             'purpose': next((line[12:].strip() for line in body.splitlines()[:32] if line.startswith('description:')), name)[:384]}
-    value = {'version': digest(entries), 'configuration': digest(declared), 'entries': entries}
+    value = {'version': digest(entries), 'configuration': digest(declared), 'entries': entries,
+             'servers': servers}
     if len(canonical(value).encode()) > LIMIT:
         raise ValidationError('capability catalog exceeds 256 KiB; register a smaller set')
     atomic_write_json(Path(root) / 'state/capabilities.json', value)
-    return {'version': value['version'], 'capabilities': len(entries)}
+    return {'version': value['version'], 'capabilities': len(entries), 'servers': servers}
 
 
 def read(root):

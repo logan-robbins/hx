@@ -1,8 +1,8 @@
 # greet — the M8 fixture repo
 
 A deliberately tiny product repo, so the M8 end-to-end run (spec 13) is about the harness and
-not about the software. Standard library only, no build step, no dependencies: every command in
-the two orders' `### Checks` blocks runs anywhere `python3` does.
+not about the software. Standard library only, no build step, no dependencies: everything the
+two goals ask for runs anywhere `python3` does.
 
 ```
 greet.py              the CLI

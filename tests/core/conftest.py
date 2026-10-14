@@ -33,8 +33,36 @@ MODELS = {
     "claude-sonnet-5": {"window": 1000000, "autocompact_window": 250000, "threshold": 200000},
 }
 
+#: eng-001's `purpose`: the one per-id paragraph its persona is rendered with (`hx.persona`).
 PERSONA = "You are eng-001, an engineer.\nYou commit as you go.\n"
-AGENTS_MD = PERSONA + "\n## UPDATES BELOW ONLY\n\nThings I learned: nothing yet.\n"
+
+
+def manifest_skills(root: Path, item_id: str, *, companion: bool = False, **env: str) -> set[str]:
+    """The skills `src/hx/skills/manifest.json` gives `<id>`'s home (TOOL_SKILL_PLAN step 1)."""
+    sys.path.insert(0, str(SRC))
+    from hx import skill_manifest
+
+    return set(skill_manifest.for_agent(SRC / "hx" / "skills", root, item_id,
+                                        companion=companion, env=env))
+
+
+def installed_skills(path: Path) -> set[str]:
+    """The skill directories actually installed under one home's skills directory."""
+    return {p.name for p in path.iterdir() if p.is_dir() and not p.name.startswith(".")}
+
+
+def fake_home(path: Path) -> Path:
+    """A scratch HOME for a child hx. Nothing of the operator's `~/.claude` reaches it; the
+    embedding model cache `~/.cache/chroma` is shared by symlink when the operator has one, so
+    no test fetches the 80 MB model, and without one `hx memory` reports unavailable (it never
+    downloads: `hx.memory._embedding_function`)."""
+    path.mkdir(parents=True, exist_ok=True)
+    real = Path(os.environ.get("HOME", "")) / ".cache" / "chroma"
+    link = path / ".cache" / "chroma"
+    if real.is_dir() and not link.exists():
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(real)
+    return path
 
 
 def clean_env(**extra: str) -> dict[str, str]:
@@ -62,7 +90,7 @@ def run_hx(tmp_path):
     def _run(*args: str, env_extra: dict[str, str] | None = None, cwd: Path | None = None):
         env = clean_env(**(env_extra or {}))
         env.setdefault("HOME", str(tmp_path / "fake-home"))
-        Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+        fake_home(Path(env["HOME"]))
         return subprocess.run(
             [sys.executable, "-m", "hx", *args],
             env=env,
@@ -96,11 +124,11 @@ def instance(tmp_path):
         }
         if item_id != "partner":
             harness["workdir"] = str(root / "wt" / item_id)
+            harness["purpose"] = PERSONA.strip("\n")
             (root / "wt" / item_id).mkdir(parents=True, exist_ok=True)
         (config / "harness.json").write_text(json.dumps(harness, indent=2) + "\n")
-        (config / "AGENTS.md").write_text(
-            AGENTS_MD if item_id == "eng-001" else f"You are the Partner.\n\n## UPDATES BELOW ONLY\n"
-        )
+        if item_id == "partner":
+            (root / "personas" / "partner.md").write_text("You are the Partner.\n")
         (root / "pods" / pod).mkdir(parents=True, exist_ok=True)
         roles = root / "companion" / "roles"
         roles.mkdir(parents=True, exist_ok=True)
@@ -112,9 +140,13 @@ def instance(tmp_path):
     token.write_text("sk-ant-oat-fake-token\n")
     token.chmod(0o600)
 
-    tested = json.loads(
+    supported = json.loads(
         (SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text()
-    )["versions"][0]
+    )["versions"]
+    # Pin the selected simulator's reported version, as a real installation does.
+    tested = subprocess.run([sys.executable, str(FAKE_CLAUDE), "--version"],
+        env=clean_env(), check=True, capture_output=True, text=True).stdout.split()[0]
+    assert tested in supported, "the fake Claude version must be in the tested set"
     (root / "config" / "claude.json").write_text(
         json.dumps({"bin": str(FAKE_CLAUDE), "version": tested}, indent=2) + "\n"
     )
@@ -157,36 +189,33 @@ def work_item(instance):
     return _write
 
 
+#: A goal is one `## Goal` paragraph and nothing else (spec 06, CONTRACTS.md "Goals").
 GOAL = """## Goal
 
 {goal}
-
-## Definition of done
-
-- [ ] it is done
-
-### Checks
-
-```bash
-{checks}
-```
 """
 
-
-#: A gate that fails before the dispatch and passes after it: `hx dispatch` refuses a block
-#: that already exits 0 on the untouched tree (`HX-GATE-EMPTY`, spec 08), and `hx complete
-#: done` runs the same block once the item is `working`. Both set `HARNESS_ID` to the id.
-DISPATCHED_CHECKS = (
-    'test -f "$HARNESS_ROOT"/pods/*/"$HARNESS_ID"-working.md '
-    '|| { echo "FAIL: $HARNESS_ID is not working yet"; exit 1; }'
-)
+#: What a worker leaves in `## Evidence` before `hx complete done`, which refuses it empty.
+EVIDENCE = "- the change is committed: `git log --oneline -1` in the workdir (fixture)"
 
 
-def write_goal(root: Path, item_id: str, *, goal="Do the thing.", checks=DISPATCHED_CHECKS) -> Path:
+def write_goal(root: Path, item_id: str, *, goal="Do the thing.") -> Path:
     """A goal file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
     path = root / "run" / f"goal-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(GOAL.format(goal=goal, checks=checks))
+    path.write_text(GOAL.format(goal=goal))
+    return path
+
+
+def write_evidence(root: Path, item_id: str, text: str = EVIDENCE) -> Path:
+    """The worker's half of `hx complete done`: a written `## Evidence` in its work item."""
+    from hx.workitems import SECTION_EVIDENCE, find_work_item, replace_section, section_bounds
+
+    path = find_work_item(root, item_id)
+    if section_bounds(path.read_text(), SECTION_EVIDENCE) is None:
+        path.write_text(path.read_text().rstrip("\n") + f"\n\n{SECTION_EVIDENCE}\n{text}\n")
+    else:
+        replace_section(path, SECTION_EVIDENCE, text)
     return path
 
 
@@ -210,7 +239,7 @@ def manifest(root: Path, *, skip=()) -> dict[str, str]:
 
 @pytest.fixture
 def agent(instance):
-    """Add another worker id to the scratch instance: config, persona, worktree."""
+    """Add another worker id to the scratch instance: config (with its purpose), worktree."""
 
     def _add(item_id: str, *, pod: str = "engineers", role: str = "engineer", git: bool = False):
         config = instance / "config" / item_id
@@ -224,13 +253,11 @@ def agent(instance):
                     "model": "claude-opus-5",
                     "effort": "high",
                     "workdir": f"wt/{item_id}",
+                    "purpose": f"You are {item_id}.",
                 },
                 indent=2,
             )
             + "\n"
-        )
-        (config / "AGENTS.md").write_text(
-            f"You are {item_id}.\n\n## UPDATES BELOW ONLY\n\nnothing yet.\n"
         )
         workdir = instance / "wt" / item_id
         workdir.mkdir(parents=True, exist_ok=True)
@@ -278,8 +305,7 @@ def hx(instance, tmux_server):
         )
         if harness_id is not None:
             env["HARNESS_ID"] = harness_id
-        env["HOME"] = str(instance.parent / "fake-home")
-        Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(fake_home(instance.parent / "fake-home"))
         return subprocess.run(
             [sys.executable, "-m", "hx", *args],
             env=env,

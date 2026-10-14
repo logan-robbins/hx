@@ -15,7 +15,11 @@ map_scope is supplied, include useful map changes in the same patch response. Re
 selected records and versions; omit map changes when they add no current application fact.
 
 Choose context, same-goal storage, compression, or deletion for relevance to the current goal.
-Maintain reset-ready working state, not a conversation summary. For the Partner, discard
+Maintain reset-ready working state, not a conversation summary. Respect the prompt cache:
+while the invariant prefix (persona, learnings, policy) is warm, propose append-only deltas
+and never reorder retained facts; when the pass follows a cold seam (cache expired), compress
+and restructure freely — the rewrite is already owed, so that is the moment to drop and
+reorder obsolete state. For the Partner, discard
 intermediate worker exchanges after recording any scheduling consequence. For engineering
 and QA, preserve the current task list, useful exact commands, unresolved failures and
 retry conditions until the remaining work no longer needs them.

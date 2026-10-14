@@ -55,11 +55,10 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
     # Refuse active/unrelated native goals before changing the work item or tasks.json.
     goal.check_native_delivery(root, item_id, resume_blocked=True)
 
-    # The addendum, and the `### Checks` replacement when it carries one, are computed and
-    # validated in full before anything is written: `hx amend`'s path exactly (spec 08).
+    # The addendum is computed in full before anything is written: `hx amend`'s path exactly
+    # (spec 08).
     entries = tasks_mod.load_tasks(root)
-    recorded = (entries.get(item_id) or {}).get("goal")
-    amendment = amend_mod.plan(root, item_id, addendum, addendum_path, recorded)
+    amendment = amend_mod.plan(root, item_id, addendum)
     ts = amendment.ts
     entry = entries.setdefault(item_id, tasks_mod.new_entry("", item.dispatched or ts))
     goal.check_background_tasks(root, item_id)
@@ -82,7 +81,6 @@ def resume(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> 
         "ts": ts,
         "file": str(final.relative_to(root)),
         "goal": sent,
-        "checks": "replaced" if amendment.replaced else "kept",
         "addenda": len(entry["addenda"]),
     }
 

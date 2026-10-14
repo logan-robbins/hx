@@ -13,8 +13,9 @@ what it does not read. Two deliberate gaps, not oversights:
 
 - context tokens: legacy tool hooks carry no usage counts. Planned capture
   records PostLLMCall attempt usage separately; it is not a context-window total.
-- persona: the legacy route derives a persona file for inspection. Planned
-  sessions use the launch manifest and verified startup context delivery.
+- persona: the legacy route prints it (where the hook is its channel) from
+  `context` at every boundary. Planned sessions use the launch manifest and
+  verified startup context delivery.
 
 Hook commands run through the shell with a cleared environment, so everything
 the hook needs (--hook-bin, --root) is baked into the command line at install

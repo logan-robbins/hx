@@ -16,6 +16,9 @@ Keep negation, conditions, uncertainty, exact paths, symbols, commands and check
 Use the runtime task checkpoint as current authority; do not rewrite its facts from memory.
 Remove repeated tool output, superseded application states, completed exploration, and
 irrelevant history. Preserve unresolved failures and call/result identities still needed.
+Keep invariant information (identity, policy, learnings) byte-stable so the prompt cache
+keeps paying for it; restructure working state only at a cold seam, when the cache has
+expired and the rewrite costs nothing extra.
 Do not invent successful checks, infer completion, or create personal worker memory.
 Keep the summary within 4096 UTF-8 bytes. If mandatory obligations cannot fit, state the
 remaining obligation and its checkpoint/evidence address; never silently truncate it.'''

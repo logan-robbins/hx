@@ -33,3 +33,10 @@ Finished components → one line + commit sha. Discard raw HTML, CSS dumps and c
 once the fact they proved is recorded; keep the one error line verbatim when something is
 failing. A `Bash cat` of a working-set file is waste; record it as a dead end so the metric
 sees it.
+
+## Retention judgment
+
+Retain the active user journey, required UI states, current API/design contracts, unresolved
+accessibility issues, and visual evidence with build, route, viewport, and method. Distinguish
+an observation from an assumption. Expire screenshots, shapes, and diagnostics when their
+source/build changes or they no longer support a remaining step.

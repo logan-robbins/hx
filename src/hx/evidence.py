@@ -44,7 +44,8 @@ def read(store: ContinuityStore, event_id: str, *, offset: int = 0, limit: int =
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx evidence")
+    parser = argparse.ArgumentParser(prog="hx evidence",
+                                     epilog="example: hx evidence EVENT_ID --offset 8000 --limit 8000")
     parser.add_argument("event_id")
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=8000)

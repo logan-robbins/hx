@@ -20,17 +20,48 @@ from .ids import ID_RE, PARTNER
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
-_OPTIONAL = ("workdir", "harness", "companion", "flavor")
+_OPTIONAL = ("workdir", "harness", "companion", "flavor", "purpose", "explorer")
+
+#: `explorer`: what the worker's orientation subagent runs on. Every engineer persona's first
+#: rule spawns it with the goal paragraph before the first edit (Agent tool, this model and
+#: effort), and the identity line names both. Both keys are required when the block is there.
+_EXPLORER_FIELDS = ("model", "effort")
+
+#: What `templates/worker/harness.json` ships in `purpose`. The Partner replaces it with the one
+#: paragraph that makes this agent different from the next one of its role; until then the
+#: rendered persona has no purpose and `hx doctor` warns (docs/prompt-runtime.md).
+PURPOSE_PLACEHOLDER = "{{purpose}}"
 
 #: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
 FLAVORS = ("claude", "pi", "grok", "meta", "codex")
 
-#: Flavors whose CLI takes no system prompt, verified per adapter: `muse` exposes no
-#: such flag (the persona file is derived for inspection only) and neither does `codex`
-#: (launched bare, persona derived and unused). Claude, Pi and Grok inject the persona
-#: at launch. Agents on these flavors get the persona in the context file instead
-#: (`compose.persona`, spec 02 Identity).
+#: Flavors whose CLI takes no system-prompt flag, verified per adapter: `muse` exposes none
+#: and neither does `codex` (launched bare). The planned runtime's prompt compiler puts their
+#: system section in the context channel (`hx.prompt_compiler`).
 NO_SYSTEM_PROMPT_FLAVORS = ("meta", "codex")
+
+#: The one channel `config/CLAUDE.md` (the invariants) reaches an agent through, per flavor.
+#: Exactly one each, never two: `home` is the home's native user CLAUDE.md, which
+#: `adapters/claude/start.sh` refreshes and Claude Code loads at every start; `agents` is
+#: `$CODEX_HOME/AGENTS.md`, which `adapters/codex/start.sh` writes at every exec (the
+#: invariants, then the persona); `hook` is the `context` hook's output at every boundary
+#: (`hx.persona.boundary`), for the flavors with no user instruction file hx can use.
+INVARIANTS_CHANNEL = {"claude": "home", "codex": "agents", "pi": "hook", "grok": "hook", "meta": "hook"}
+
+#: The one channel `personas/<role>.md` reaches an agent through, per flavor: `hook` is the
+#: `context` hook's output at every boundary; `flag` is the file itself, passed to Pi's
+#: `--append-system-prompt` and Grok's `--rules` at launch; `agents` is `$CODEX_HOME/AGENTS.md`.
+PERSONA_CHANNEL = {"claude": "hook", "codex": "agents", "pi": "flag", "grok": "flag", "meta": "hook"}
+
+
+def invariants_channel(flavor: str) -> str:
+    """`home`, `agents` or `hook`: where the invariants reach an agent of this flavor."""
+    return INVARIANTS_CHANNEL.get(flavor, "home")
+
+
+def persona_channel(flavor: str) -> str:
+    """`hook`, `flag` or `agents`: where the persona reaches an agent of this flavor."""
+    return PERSONA_CHANNEL.get(flavor, "hook")
 
 #: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
 #: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no
@@ -87,10 +118,19 @@ class HarnessConfig:
     flavor: str = "claude"
     harness: dict = field(default_factory=dict)
     companion: dict = field(default_factory=dict)
+    purpose: str | None = None
+    explorer: dict = field(default_factory=dict)
 
     @property
     def is_partner(self) -> bool:
         return self.id == PARTNER
+
+
+def purpose_text(value: object) -> str | None:
+    """The purpose as written, or None while it is absent, empty, or still the placeholder."""
+    if not isinstance(value, str) or not value.strip() or PURPOSE_PLACEHOLDER in value:
+        return None
+    return value.strip("\n")
 
 
 def _require_str(data: dict, key: str, path: str) -> str:
@@ -170,6 +210,32 @@ def validate_harness(
             f"got `flavor` `{flavor}`"
         )
 
+    purpose = data.get("purpose")
+    if purpose is not None and not isinstance(purpose, str):
+        raise ValidationError(f"{path}: `purpose` must be a string, got {type(purpose).__name__}")
+
+    explorer = data.get("explorer") or {}
+    if not isinstance(explorer, dict):
+        raise ValidationError(f"{path}: `explorer` must be an object, got {type(explorer).__name__}")
+    if explorer:
+        unknown_explorer = sorted(set(explorer) - set(_EXPLORER_FIELDS))
+        if unknown_explorer:
+            raise ValidationError(
+                f"{path}: unknown `explorer` field(s) {', '.join(unknown_explorer)}; allowed: "
+                f"{', '.join(_EXPLORER_FIELDS)}"
+            )
+        for key in _EXPLORER_FIELDS:
+            value = explorer.get(key)
+            if not isinstance(value, str) or value.strip() == "":
+                raise ValidationError(
+                    f"{path}: `explorer.{key}` must be a non-empty string, got `{value!r}`"
+                )
+        if explorer["effort"] not in EFFORT_LEVELS:
+            raise ValidationError(
+                f"{path}: `explorer.effort` must be one of {', '.join(EFFORT_LEVELS)} "
+                f"(spec 11), got `{explorer['effort']}`"
+            )
+
     harness = data.get("harness") or {}
     if not isinstance(harness, dict):
         raise ValidationError(f"{path}: `harness` must be an object, got {type(harness).__name__}")
@@ -237,6 +303,11 @@ def validate_harness(
             f"(known: {', '.join(sorted(models)) or 'none'}); spec 05 requires it to be listed, "
             f"and models are always full ids, never aliases (spec 08)"
         )
+    if models is not None and explorer and explorer["model"] not in models:
+        raise ValidationError(
+            f"{path}: `explorer.model` `{explorer['model']}` is not in config/models.json "
+            f"(known: {', '.join(sorted(models)) or 'none'}); like `model`, it must be listed"
+        )
 
     if root is not None:
         role_file = root / "companion" / "roles" / f"{role}.md"
@@ -260,6 +331,8 @@ def validate_harness(
         flavor=flavor,
         harness=harness,
         companion=companion,
+        purpose=purpose_text(purpose),
+        explorer=explorer,
     )
 
 

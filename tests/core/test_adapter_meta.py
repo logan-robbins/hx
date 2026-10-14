@@ -157,6 +157,8 @@ def test_meta_install_writes_an_xdg_home_and_the_companion(instance):
     assert "--id eng-001" in (home / "muse" / "settings.json").read_text()
     assert "--root" in (home / "muse" / "settings.json").read_text()
     assert (home / "muse" / "skills" / "hx-worker" / "SKILL.md").is_file()
+    from .conftest import installed_skills, manifest_skills
+    assert installed_skills(home / "muse" / "skills") == manifest_skills(instance, "eng-001")
     companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
     assert companion.is_file()
     assert "companion-stop" in companion.read_text()
@@ -232,9 +234,9 @@ def test_meta_start_exec_is_yolo_bare_and_isolated(instance, tmp_path):
     assert body["env"]["META_API_KEY"] == "meta-test-key"
     assert body["env"]["HARNESS_ID"] == "eng-001"
     assert body["cwd"] == str(instance / "wt" / "eng-001")
-    persona = instance / "run" / "eng-001" / "persona.md"
-    assert "You are eng-001" in persona.read_text()
-    assert "Things I learned" not in persona.read_text()
+    # Meta takes no system prompt: everything arrives through the `context` hook.
+    assert not (instance / "run" / "eng-001" / "persona.md").exists()
+    assert not any("persona" in arg for arg in argv)
 
 
 def test_meta_start_exec_uses_the_long_model_option(instance, tmp_path):

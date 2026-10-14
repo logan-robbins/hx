@@ -119,8 +119,8 @@ def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
     elif REQUIRED_FLAG in command:
         found.append((OK, f"{REQUIRED_FLAG} in the pane's argv"))
     elif "start.sh" in command:
-        # The launcher has not exec'd the binary yet: it is still running its refusals and
-        # deriving persona.md. Reading its argv here says nothing about the agent, and a
+        # The launcher has not exec'd the binary yet: it is still running its refusals.
+        # Reading its argv here says nothing about the agent, and a
         # failure would be simply untrue (handoff/gtm-to-build.md gtm-8).
         found.append((
             WARN,
@@ -534,6 +534,128 @@ def live_grok_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]
     return found
 
 
+#: Skill directories an agent CLI may discover inside its working directory: Claude's project
+#: skills, the Agent Skills location Codex and Pi scan, and Pi's own (TOOL_SKILL_PLAN step 7).
+WORKDIR_SKILL_DIRS = (".claude/skills", ".agents/skills", ".pi/skills")
+#: Flavors that scan `$HOME/.agents/skills` whatever their own config directory says.
+HOST_SKILL_FLAVORS = ("codex", "pi")
+
+
+def _workdir_of(root: Path, item_id: str) -> Path | None:
+    """`harness.json` `workdir`, resolved against the root; None when unreadable or unset."""
+    try:
+        data = json.loads((root / "config" / item_id / "harness.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = data.get("workdir") if isinstance(data, dict) else None
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else root / path
+
+
+def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str, str]]:
+    """`skills-isolation` warnings: skills that could reach a worker from outside its home.
+
+    A worker's workdir is a product checkout, and its `.claude/skills`, `.agents/skills` or
+    `.pi/skills` must never load into the worker. Claude under `--setting-sources user` is
+    unverified for project skills on the pinned version; Codex and Pi need project trust, which
+    hx never grants. Codex and Pi also scan `$HOME/.agents/skills` regardless of `CODEX_HOME`
+    or `PI_CODING_AGENT_DIR`, so a non-empty one is reported while such a worker is configured
+    (Pi launches with `--no-skills`). Warnings until docs/two-worlds.md records both checks.
+    """
+    env = os.environ if env is None else env
+    rows: list[tuple[str, str, str]] = []
+    workers = [item_id for item_id in ids if item_id != "partner"]
+    for item_id in workers:
+        workdir = _workdir_of(root, item_id)
+        if workdir is None:
+            continue
+        found = [rel for rel in WORKDIR_SKILL_DIRS if (workdir / rel).is_dir()]
+        if found:
+            rows.append((WARN, "skills-isolation",
+                         f"{item_id}: workdir {workdir} contains {', '.join(found)}; a checkout's "
+                         "skills must never load into a worker (docs/two-worlds.md, Skills)"))
+    host_workers = [i for i in workers if flavor_of(root, i) in HOST_SKILL_FLAVORS]
+    home = env.get("HOME")
+    if host_workers and home:
+        host = Path(home) / ".agents" / "skills"
+        try:
+            entries = sorted(p.name for p in host.iterdir()) if host.is_dir() else []
+        except OSError:
+            entries = []
+        if entries:
+            rows.append((WARN, "skills-isolation",
+                         f"~/.agents/skills holds {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+                         f"while Codex or Pi worker(s) {', '.join(host_workers)} are configured; "
+                         "Codex scans it whatever CODEX_HOME says (docs/two-worlds.md, Skills)"))
+    return rows
+
+
+def _hook_size(root: Path, env) -> list[tuple[str, str, str]]:
+    """A WARN naming every configured agent whose `context` hook output passed its bound
+    (`hx.persona.hook_bound`), so sources went as files to read instead of printed text."""
+    from . import persona as persona_mod
+    from .errors import HxError
+
+    over = []
+    for harness in sorted((root / "config").glob("*/harness.json")):
+        item_id = harness.parent.name
+        if not ID_RE.match(item_id):
+            continue
+        try:
+            handed = persona_mod.boundary(root, item_id, env=env)
+        except (HxError, OSError, ValueError):
+            continue
+        if handed["as_files"]:
+            over.append(f"{item_id} ({', '.join(handed['as_files'])} past {handed['bound']} B)")
+    if not over:
+        return []
+    return [(WARN, "hook-size",
+             "the context hook lists sources as files to read instead of printing them for "
+             + "; ".join(over) + "; merge twins (hx learn check) or scope rules to a role")]
+
+
+def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
+    """What the `context` hook hands a worker (docs/prompt-runtime.md § Prompt layers): a
+    `purpose` the Partner actually wrote, a role persona, and no per-id file left over."""
+    from .config_harness import purpose_text
+
+    if item_id == "partner":
+        return []
+    try:
+        data = json.loads((root / "config" / item_id / "harness.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    rows = []
+    if purpose_text(data.get("purpose")) is None:
+        rows.append((WARN, f"purpose:{item_id}",
+                     "harness.json `purpose` is absent or still the template's placeholder, so the "
+                     "identity line says nothing about what this agent is for; write one paragraph there"))
+    role = data.get("role")
+    if isinstance(role, str) and not (root / "personas" / f"{role}.md").is_file():
+        rows.append((WARN, f"persona:{item_id}",
+                     f"personas/{role}.md is missing; the agent gets its identity line, the "
+                     "learnings and the pointer alone"))
+    if isinstance(role, str) and (root / "personas" / role / "AGENTS.md").is_file():
+        rows.append((WARN, f"persona:{item_id}",
+                     f"personas/{role}/AGENTS.md is the persona layout before personas/{role}.md; "
+                     f"`hx launch {item_id}` (or `hx up`, `hx install`) moves it"))
+    if (root / "config" / item_id / "AGENTS.md").is_file():
+        rows.append((WARN, f"persona:{item_id}",
+                     f"config/{item_id}/AGENTS.md is a per-id persona from before the persona came "
+                     f"from its sources; `hx launch {item_id}` (or `hx up`, `hx install`) "
+                     "moves it into harness.json `purpose` and a learnings proposal"))
+    if (root / "config" / item_id / "SUBAGENTS.md").is_file():
+        rows.append((WARN, f"subagents:{item_id}",
+                     f"config/{item_id}/SUBAGENTS.md replaces the shared templates/worker/SUBAGENTS.md "
+                     "for this id (a copy of the template is removed at launch, so this one says "
+                     "something else); fold it into the template unless it is meant for this id alone"))
+    return rows
+
+
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
     checks: list[tuple[str, str, str]] = []
 
@@ -580,18 +702,23 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                     [binary, "--version"], capture_output=True, text=True, check=False
                 )
                 installed_version = bare_claude_version(installed.stdout or "")
+                from . import claude_bin
                 if pinned_version and installed_version and installed_version != pinned_version:
+                    # A record, not a gate: the binary moved on and the next launch boundary
+                    # re-records it (`hx.claude_bin.refresh_pin`). Worth knowing, never fatal.
                     checks.append((
-                        FAIL,
+                        WARN,
                         "claude",
-                        f"{binary} reports {installed_version} but config/claude.json pins "
-                        f"{pinned_version}; install the pinned version or re-run "
-                        f"`hx install --claude <bin>` (spec 17.1)",
+                        f"{binary} now reports {installed_version}; config/claude.json recorded "
+                        f"{pinned_version}. The next `hx launch`, `hx restart` or `hx up` "
+                        f"re-records it ({claude_bin.describe(installed_version)})",
                     ))
                 else:
-                    checks.append(
-                        (OK, "claude", f"{binary} pinned at {pinned_version or 'an unrecorded version'}")
-                    )
+                    shown = installed_version or pinned_version
+                    checks.append((
+                        OK, "claude",
+                        f"{binary} at {claude_bin.describe(shown) if shown else 'an unrecorded version'}",
+                    ))
     else:
         checks.append(
             (WARN, "claude", "config/claude.json absent; `hx install` records {bin, version} (spec 17.1)")
@@ -599,6 +726,23 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
 
     if not root.is_dir():
         return checks
+
+    # Episode memory's embedding model (docs/memory.md): on disk, or every `hx memory` and the
+    # Memory episodes section report unavailable until the operator warms it. Never downloaded
+    # by an agent.
+    from . import memory as memory_mod
+
+    try:
+        missing = memory_mod.model_missing()
+    except memory_mod.MemoryUnavailable as exc:
+        checks.append((WARN, "memory-model", str(exc)))
+    else:
+        if missing:
+            checks.append((WARN, "memory-model",
+                           f"{memory_mod.model_dir()} lacks {missing[0]}; `hx memory warm` "
+                           "downloads it once (~80 MB); until then episode memory is unavailable"))
+        else:
+            checks.append((OK, "memory-model", str(memory_mod.model_dir())))
 
     # Central learnings (docs/learnings.md): where the directory is, how many rules, what waits.
     from . import learn as learn_mod
@@ -636,12 +780,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 f"{learnings['pending']} pending proposal(s)"
                 + (" (hx learn pending)" if learnings["pending"] else ""),
             ))
-            # Every agent carries the whole region in its system prompt (docs/learnings.md).
-            region_bytes = len(learn_mod.persona_region(root, env).encode())
-            if region_bytes > learn_mod.PERSONA_WARN_BYTES:
-                checks.append((WARN, "learnings-size",
-                               f"the learnings region is {region_bytes // 1024} KiB in every persona "
-                               f"(> {learn_mod.PERSONA_WARN_BYTES // 1024} KiB); merge twins (hx learn check)"))
+            # Every agent is handed the global rules and its role's at every boundary
+            # (docs/learnings.md); past the hook's bound they go as files to read.
+            checks.extend(_hook_size(root, env))
         legacy = root / "LEARNINGS.md"
         if legacy.is_file():
             checks.append((WARN, "learnings-legacy",
@@ -684,6 +825,15 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 for model in sorted(models.values(), key=lambda m: m.id)
             )
             checks.append((OK, "models", f"{len(models)} model(s): {described}"))
+
+    # The skills the adapters install (TOOL_SKILL_PLAN step 1): the manifest, the Agent Skills
+    # frontmatter rules, the size bounds, and no worker skill naming a command a worker is
+    # refused. `HX_SKILLS_DIR` points it at another directory, as it does the adapters.
+    from . import skill_manifest
+
+    for status, detail in skill_manifest.check(skill_manifest.skills_dir(env),
+                                               root if root.is_dir() else None):
+        checks.append((status, "skills", detail))
 
     hx_json = root / "config" / "hx.json"
     if hx_json.is_file():
@@ -744,6 +894,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     if not ids:
         checks.append((WARN, "agents", "no config/<id>/ yet"))
     for item_id in ids:
+        checks.extend(_persona_sources(root, item_id))
         home = root / "run" / item_id / "home"
         flavor = flavor_of(root, item_id)
         if item_id == "partner" and flavor not in PARTNER_FLAVORS:
@@ -796,6 +947,8 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     codex_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "codex"]
     if codex_ids:
         checks.extend(_codex_instance(root, codex_ids))
+    # Two-worlds isolation for skill discovery (TOOL_SKILL_PLAN step 7).
+    checks.extend(skill_isolation(root, ids, env))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the

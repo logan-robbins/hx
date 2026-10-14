@@ -1,16 +1,15 @@
 """`hx amend <id> <addendum-file>` — correct an item's goal in place (spec 08).
 
 The addendum lands exactly where `hx resume` puts one: `### Goal addendum <ts>` beneath the
-Work Item's `## Goal`, and `{ts, text}` in `tasks.json[<id>].addenda`. When the addendum
-carries its own `### Checks` heading with a fenced ```bash block, that block also replaces the
-Checks block in `tasks.json[<id>].goal` and in the Work Item's `## Definition of done`, which
-is what `hx complete done` runs and what the worker reads. Before that replacement is written,
-the amended goal must pass `parse_goal_text` and must carry the new block; otherwise nothing is
-written at all.
+Work Item's `## Goal`, and `{ts, text}` in `tasks.json[<id>].addenda`. It is prose the worker
+reads: there is no acceptance block to replace, because the worker owns its
+`## Definition of done` and `hx complete done` checks the `## Evidence` it left. An addendum
+that carries a `### Checks` heading is refused, so a Partner writing to the old contract learns
+it before anything is written.
 
 Unlike a resume, an amend changes no state, pastes nothing and restarts nothing: the item may
-be `working`, and the worker's next `hx task` or `hx complete done` reads the amended record.
-The addendum file is consumed once the amend succeeds, like every goal and addendum file.
+be `working`, and the worker's next `hx task` or boundary reads the amended record. The
+addendum file is consumed once the amend succeeds, like every goal and addendum file.
 """
 
 from __future__ import annotations
@@ -21,8 +20,8 @@ from pathlib import Path
 
 from . import store, tasks as tasks_mod, timestamps
 from .caller import require_partner_caller
-from .errors import NotFound, Refused, ValidationError
-from .goals import _fenced_bash, addendum_checks, checks_fence_span, parse_goal_text, replace_checks
+from .errors import NotFound, Refused
+from .goals import _headings
 from .ids import PARTNER
 from .workitems import (
     SECTION_GOAL,
@@ -37,7 +36,7 @@ AMEND = "HX-AMEND"
 #: Spec 06: the addendum heading, shared with `hx resume`.
 ADDENDUM_HEADING = "### Goal addendum"
 
-#: A `working` item is the point: its Checks can be corrected without a pause. A `complete`
+#: A `working` item is the point: its goal can be corrected without a pause. A `complete`
 #: one is amended before a resume or for the record. An `idle` item has no goal to amend.
 AMENDABLE = ("working", "complete")
 
@@ -49,14 +48,8 @@ class Amendment:
     work_item: Path
     front: str
     body: str
-    goal: str | None
-    checks: str | None
     addendum: str
     ts: str
-
-    @property
-    def replaced(self) -> bool:
-        return self.goal is not None
 
 
 def read_addendum(addendum_file: str | Path, command: str) -> tuple[Path, str]:
@@ -66,60 +59,29 @@ def read_addendum(addendum_file: str | Path, command: str) -> tuple[Path, str]:
     text = path.read_text().strip("\n")
     if not text.strip():
         raise Refused(f"refuse: {path} is empty; an addendum says what changed (spec 08 `hx {command}`)")
+    for _, level, heading in _headings(text):
+        if heading == "Checks":
+            raise Refused(
+                f"refuse: {path}: `{'#' * level} Checks`; there is no Checks block to replace — the "
+                f"worker owns `## Definition of done` and `hx complete done` requires its "
+                f"`## Evidence`. Say what changed in prose; nothing was written"
+            )
     return path, text
 
 
-def _checks_in(body: str, path: str) -> str:
-    lines = body.split("\n")
-    opened, closed = checks_fence_span(lines, path)
-    return "\n".join(lines[opened + 1 : closed]).strip("\n")
-
-
-def plan(root: Path, item_id: str, addendum: str, addendum_path: Path, recorded_goal: str | None,
-         *, ts: str | None = None) -> Amendment:
-    """Compute the amended Work Item body and goal. Raises, and writes nothing, on any refusal."""
+def plan(root: Path, item_id: str, addendum: str, *, ts: str | None = None) -> Amendment:
+    """Compute the amended Work Item body. Raises, and writes nothing, on any refusal."""
     ts = ts or timestamps.now()
     work_item = require_work_item(root, item_id)
     front, body = split_frontmatter_text(work_item.read_text())
     body = append_to_section_text(body, SECTION_GOAL, f"{ADDENDUM_HEADING} {ts}\n\n{addendum}", path=work_item)
-
-    try:
-        fence = addendum_checks(addendum, addendum_path)
-    except ValidationError as exc:
-        raise Refused(f"refuse: {exc.message}; nothing was written") from None
-    if fence is None:
-        return Amendment(work_item, front, body, None, None, addendum, ts)
-
-    if not recorded_goal:
-        raise Refused(
-            f"refuse: tasks.json has no goal for {item_id}, so there is no `### Checks` block to "
-            f"replace; nothing was written"
-        )
-    label = f"tasks.json[{item_id}].goal"
-    try:
-        goal = replace_checks(recorded_goal, fence, label)
-        wanted = _fenced_bash(fence, str(addendum_path))
-        parsed = parse_goal_text(goal, f"{label} as amended by {addendum_path}")
-        body = replace_checks(body, fence, work_item)
-        in_item = _checks_in(body, str(work_item))
-    except ValidationError as exc:
-        raise Refused(f"refuse: {exc.message}; nothing was written") from None
-    # The substitution must have taken in both places, or the amend would report `replaced`
-    # over a goal that still runs the old block.
-    if parsed.checks != wanted or in_item != wanted:
-        raise Refused(
-            f"refuse: the `### Checks` replacement did not take in "
-            f"{label if parsed.checks != wanted else work_item}; nothing was written"
-        )
-    return Amendment(work_item, front, body, goal, parsed.checks, addendum, ts)
+    return Amendment(work_item, front, body, addendum, ts)
 
 
 def write(root: Path, item_id: str, amendment: Amendment, entries: dict[str, dict], entry: dict) -> None:
     """The Work Item first, then `tasks.json`, the same order as `hx resume`."""
     store.atomic_write_text(amendment.work_item, amendment.front + amendment.body)
     entry.setdefault("addenda", []).append({"ts": amendment.ts, "text": amendment.addendum})
-    if amendment.goal is not None:
-        entry["goal"] = amendment.goal
     tasks_mod.write_tasks(root, entries)
 
 
@@ -145,19 +107,14 @@ def amend(root: Path, item_id: str, addendum_file: str | Path, *, env=None) -> d
     if entry is None:
         raise Refused(f"refuse: {item_id} has no tasks.json record; it was never dispatched (spec 08)")
 
-    amendment = plan(root, item_id, addendum, addendum_path, entry.get("goal"))
+    amendment = plan(root, item_id, addendum)
     write(root, item_id, amendment, entries, entry)
     addendum_path.unlink(missing_ok=True)
-    return {
-        "id": item_id,
-        "ts": amendment.ts,
-        "checks": "replaced" if amendment.replaced else "kept",
-        "addenda": len(entry["addenda"]),
-    }
+    return {"id": item_id, "ts": amendment.ts, "addenda": len(entry["addenda"])}
 
 
 def line(result: dict) -> str:
-    return f"{AMEND} {result['id']} checks={result['checks']} addenda={result['addenda']}"
+    return f"{AMEND} {result['id']} addenda={result['addenda']}"
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:

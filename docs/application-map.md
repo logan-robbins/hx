@@ -245,3 +245,24 @@ objects have overhead beyond the raw source size; these bounds are not an RSS li
 
 No local embedding model, vector service, or worker process is started by these commands.
 The map is shared application knowledge; it does not store workers' personal histories.
+
+## Structural code candidates and non-Python anchors
+
+`hx code` supplies derived, repository-scoped candidates beside the ledger.
+`hx map anchor --repo PATH --path FILE --symbol QUALIFIED` uses the syntax index
+for C#, TypeScript/JavaScript, Go and Rust. Index the repository first; an absent,
+ambiguous or stale definition fails explicitly. The anchor hashes the declaration
+span, including its body, rather than silently degrading to the whole file.
+Portable-map and committed-source verification use the same structural extractor,
+so a clone can validate its anchors without copying instance state. Python keeps
+its AST resolver.
+
+`hx code edges [PATH]` returns imports, calls, implements and tests as candidate
+relations with lane and source provenance. External custom kinds survive export;
+they remain attributes/evidence until mapped onto the semantic relation vocabulary.
+`hx code submaps` proposes component records with measured coupling, member files,
+boundary edges and the directory-layout baseline. Its `put` operations require
+the existing map-patch envelope (current run, snapshot, read versions, evidence).
+Neither structural extraction nor clustering promotes a map assertion. Promotion
+counts are recorded after a live wave; the benchmark currently records no live
+wave, so promotion effectiveness remains unmeasured.

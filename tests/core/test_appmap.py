@@ -307,3 +307,37 @@ def test_batch_map_validation_closes_its_sqlite_connection(mapped, monkeypatch):
     appmap.check(repo)
     with pytest.raises(appmap.sqlite3.ProgrammingError, match="closed"):
         connections[0].execute("SELECT 1")
+
+
+@pytest.mark.parametrize('path,source,symbol', [
+    ('thing.cs', 'namespace Acme;\npublic class Thing {\n public int Run(string value) { return 1; }\n}\n', 'Acme.Thing.Run'),
+    ('thing.ts', 'export class Thing {\n run(value: string): number { return 1; }\n}\n', 'Thing.run'),
+])
+def test_non_python_symbol_anchor(tmp_path, path, source, symbol):
+    from hx import code_index
+    repo = tmp_path / 'polyglot'
+    repo.mkdir()
+    (repo / path).write_text(source)
+    root = tmp_path / 'instance'
+    with pytest.raises(ValidationError, match='syntax index'):
+        appmap.source_anchor(repo, path, symbol, index_root=root)
+    code_index.index_repo(root, repo)
+    actual = appmap.source_anchor(repo, path, symbol, index_root=root)
+    assert actual['sha256'] == code_index.symbols_for(root, symbol)[0]['anchor_sha']
+    assert actual['line'] >= 1 and actual['end_line'] >= actual['line']
+    (repo / path).write_text(source.replace('return 1', 'return 2'))
+    with pytest.raises(ValidationError, match='stale'):
+        appmap.source_anchor(repo, path, symbol, index_root=root)
+
+
+def test_non_python_committed_anchor_survives_map_check_and_import(mapped,capsys):
+    from hx import code_index
+    store,repo=mapped[:2]
+    (repo/'widget.cs').write_text('namespace Acme;\nclass Widget { public int Run() { return 1; } }\n')
+    code_index.index_repo(store.root,repo)
+    anchor=appmap.source_anchor(repo,'widget.cs','Acme.Widget.Run',index_root=store.root)
+    write(repo,record('widget',claim='observed',anchors=[anchor]))
+    commit(repo)
+    assert appmap.main(['check','--repo',str(repo)],store.root)==0
+    assert json.loads(capsys.readouterr().out)['valid']
+    assert appmap.import_baseline(store,repo)['valid']

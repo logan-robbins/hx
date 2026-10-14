@@ -18,6 +18,7 @@ what the test suites use.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -86,17 +87,15 @@ EXPECTED_SKELETON_FILES = (
     "companion/BASE.md",
     "companion/roles/partner.md",
     "companion/roles/qa-engineer.md",
-    "personas/qa-engineer/AGENTS.md",
+    "personas/qa-engineer.md",
     "continuity/prompts/common.md",
     "continuity/prompts/audiences/worker.md",
     "continuity/prompts/audiences/companion.md",
-    "continuity/prompts/roles/qa-engineer.md",
     "config/CLAUDE.md",
     "config/models.json",
-    "config/partner/AGENTS.md",
     "config/partner/SUBAGENTS.md",
     "config/partner/harness.json",
-    "personas/partner/AGENTS.md",
+    "personas/partner.md",
     "templates/work-item.md",
 )
 
@@ -129,7 +128,15 @@ def entry_points() -> dict[str, str]:
 def write_hx_json(root: Path) -> dict[str, str]:
     """Record the entry points the adapters and hooks read (CONTRACTS.md, spec 17.1)."""
     recorded = entry_points()
-    store.atomic_write_json(root / "config" / "hx.json", recorded)
+    # The entry points are rewritten; anything else the instance records there (`skills`,
+    # `learnings`, `learnings_prefix`; CONTRACTS.md) survives a re-install.
+    path = root / "config" / "hx.json"
+    try:
+        kept = json.loads(path.read_text()) if path.is_file() else {}
+    except json.JSONDecodeError:
+        kept = {}
+    merged = {**kept, **recorded} if isinstance(kept, dict) else dict(recorded)
+    store.atomic_write_json(path, merged)
     link_bin(root, recorded)
     return recorded
 
@@ -236,7 +243,11 @@ TOKEN_WAIT_EXIT = 4
 
 
 def preflight(root: Path, claude: str | None, env=None, *, ignore_claude_version: bool = False) -> dict:
-    """Step 1: refuse root, check the tools, pin a tested `claude` (spec 17.2 step 1)."""
+    """Step 1: refuse root, check the tools, record the `claude` found (spec 17.2 step 1).
+
+    `ignore_claude_version` is accepted for callers written against the former tested-version
+    gate. Versions are recorded, never refused, so it changes nothing.
+    """
     import shutil
     import subprocess
     import sys
@@ -260,9 +271,7 @@ def preflight(root: Path, claude: str | None, env=None, *, ignore_claude_version
             raise HxError(f"{tool} is not on PATH; hx needs it (spec 17.2 step 1)")
 
     binary = claude_bin.find_binary(claude)
-    pinned = claude_bin.probe(binary)
-    if not ignore_claude_version:
-        claude_bin.require_tested(pinned)
+    pinned = claude_bin.probe(binary, env=env)
     return {"bin": binary, "version": pinned}
 
 
@@ -300,7 +309,8 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     parser.add_argument("--root", help="HARNESS_ROOT to create (default: $HARNESS_ROOT, else ~/hx)")
     parser.add_argument("--claude", default=None, help="the claude binary to pin (default: PATH)")
     parser.add_argument("--env-file", help="load provider API keys from this dotenv file at startup")
-    parser.add_argument("--ignore-claude-version", action="store_true", help="skip the tested-version gate")
+    # Accepted so scripts written against the former tested-version gate keep working; a no-op.
+    parser.add_argument("--ignore-claude-version", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--skeleton-only",
         action="store_true",
@@ -315,7 +325,9 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     pin = None
     if not args.skeleton_only:
         pin = preflight(root, args.claude, env, ignore_claude_version=args.ignore_claude_version)
-        print(f"1. claude {pin['version']} at {pin['bin']}")
+        from . import claude_bin
+
+        print(f"1. claude {pin['version']} at {pin['bin']} ({claude_bin.status_text(pin['version'])})")
 
     # --- step 2 ------------------------------------------------------------------------
     result = install_skeleton(root)
@@ -326,6 +338,14 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
         print(f"   kept     {name}")
     for name in result["missing"]:
         print(f"   missing  {name}")
+    # An instance on an older layout: personas/<role>/AGENTS.md and config/partner/AGENTS.md
+    # become personas/<role>.md, rules scoped in place move to personas/<role>/, and each
+    # worker's per-id AGENTS.md moves into harness.json `purpose` and a learnings proposal
+    # (`hx.persona`).
+    from . import persona
+
+    for migrated in persona.migrate_all(root, env=env):
+        print(f"   migrated {persona.describe_migration(migrated)}")
 
     from . import envfile
     if args.env_file:

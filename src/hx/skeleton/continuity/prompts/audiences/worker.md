@@ -18,3 +18,6 @@ then run `hx complete done` and end the turn. The runtime executes or reuses the
 acceptance checks, drains the companion, closes execution, and publishes the unit. A
 request or status message is not completion. If verification fails, the unit remains open.
 Report missing prerequisites or ambiguous acceptance to the Partner; do not weaken checks.
+
+Before new code, query `hx code type`, `signature`, `contract` or `precedent`
+for reuse. Use `--expect` lints; `--owners` reads ledger leases.

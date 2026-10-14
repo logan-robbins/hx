@@ -189,7 +189,9 @@ def test_three_parallel_subagents_get_three_isolated_streams(working):
     # Each carries its own task, and none carries another's.
     first = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
     assert "look at thing 1" in first and "look at thing 2" not in first
-    assert "subagent" in first.lower(), "SUBAGENTS.md is the memory section (spec 07.3)"
+    assert "You are a subagent of `eng-001`" in first, \
+        "the shared SUBAGENTS.md, rendered with the parent's id (spec 07.3)"
+    assert "_source: `templates/worker/SUBAGENTS.md`_" in first
     assert "\n## Tasks\n" not in first, "`## Tasks` is main-stream only"
 
 
@@ -354,17 +356,21 @@ def test_the_deferred_seam_is_taken_at_the_next_quiet_boundary(working, tmux_ser
     wait_for(lambda: "/clear" in pasted(working, "eng-001"), what="the `/clear`")
 
 
-def test_hx_seam_recomposes_the_context_file_before_it_cuts(working, tmux_server):
-    """The file the agent Reads after the seam is composed *at* the seam, not before it."""
+def test_hx_seam_rewrites_the_status_before_it_cuts(working, tmux_server):
+    """The work item the agent Reads after the seam has its `## Status` written *at* the seam,
+    not before it."""
     from hx.seam import seam
 
-    context = working / "run" / "eng-001" / "eng-001-main.context.md"
-    context.write_text("stale\n")
+    item = working / "pods" / "engineers" / "eng-001-working.md"
+    state = working / "state" / "eng-001"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "eng-001-main.json").write_text(json.dumps({"seq": 5, "goal": "written at the seam"}))
+    assert "written at the seam" not in item.read_text()
     seam_marker_for(working)
     result = seam(working, "eng-001", env={"HX_TMUX": " ".join(tmux_server)})
     assert result["outcome"] == "taken"
-    assert context.read_text() != "stale\n"
-    assert "## Tasks" in context.read_text()
+    assert "goal: written at the seam" in item.read_text().split("\n## Status\n", 1)[1]
+    assert not (working / "run" / "eng-001" / "eng-001-main.context.md").exists()
 
 
 def test_the_seam_record_is_the_spec_07_4_shape(working, tmux_server):

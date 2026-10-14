@@ -9,6 +9,12 @@ them.
 It is an accelerator and never a precondition. Nothing in hx fails, blocks or slows down because
 memory is broken, empty, or not installed.
 
+It is one of two places a later agent learns from an earlier one, and there is no third: no
+agent keeps a memory file of its own. What was *done* — steps, dead ends, commits — is an
+episode, found by similarity. What was *learned* — a rule the next agent of the role should
+have had — is a learnings proposal (`hx learn propose --role <role>`, docs/learnings.md),
+reviewed once and carried whole in every system prompt of that role.
+
 ## What is in it
 
 One **episode** per boundary, four kinds:
@@ -85,6 +91,7 @@ same file is usually worse advice than yesterday's, but a much better match stil
 hx memory search QUERY [--role R] [--pod P] [--id ID] [--kind K] [--k N]
                        [--all-roles] [--half-life-h H] [--json]
 hx memory index
+hx memory warm
 hx memory list [--id ID] [--role R] [--kind K] [--limit N] [--json]
 hx memory stats [--json]
 ```
@@ -96,10 +103,11 @@ own-role result is empty or clearly about a different area.
 
 Exact output shapes are in `CONTRACTS.md`.
 
-## In the context file
+## In the work item's status
 
-`hx compose` adds a **Memory episodes** section directly after **Step state**, on main and
-subagent streams (subagents get half the `k`). The query is built from this stream's own step
+`hx compose` writes a `### Memory episodes` part directly after `### Step state` in the work
+item's `## Status`, which the agent reads at every boundary; a subagent stream's context file
+carries the same text as a `## Memory episodes` section (subagents get half the `k`). The query is built from this stream's own step
 state — goal, every open step's intent and next, the hypothesis — falling back to the goal text
 before the Companion has written anything. The agent's own id is excluded: its own state is the
 section above, and seeing it again as a "memory" is noise at best. With fewer than two hits under
@@ -107,9 +115,7 @@ the role filter the search is repeated across all roles, because a thin own-role
 exactly when another persona's episode is worth reading.
 
 ```
-## Memory episodes
-
-_source: `state/memory/chroma`_
+### Memory episodes
 
 Search more: `hx memory search "make the CSV importer stream" --all-roles`
 
@@ -129,10 +135,12 @@ Three `harness.json` `companion` fields control it:
 - The store is `state/memory/chroma`, collection `episodes`, **global to the instance**. Every
   agent's episodes land in it; the persona filter is applied at query time, never at write time,
   so one agent can deliberately read what another learned.
-- The embedding function is chroma's default, ONNX all-MiniLM-L6-v2. It downloads once into
-  `~/.cache/chroma/onnx_models` (not `~/.claude`, which hx never touches) and runs locally
-  thereafter. It is not a model call in the spec-02 sense: no Claude Code session, no API, no
-  network at query time.
+- The embedding function is chroma's default, ONNX all-MiniLM-L6-v2, cached under
+  `~/.cache/chroma/onnx_models` (not `~/.claude`, which hx never touches) and run locally. hx
+  hands chroma the function only when its six model files are already on disk; otherwise every
+  open raises `MemoryUnavailable` naming `hx memory warm`, the operator's one-time ~80 MB
+  download. An agent at a boundary never downloads anything: chroma would otherwise fetch the
+  archive from S3 under whatever `HOME` the process has. `hx doctor` reports `memory-model`.
 - An instance that has never produced an episode never opens chroma at all — `hx compose` checks
   for `state/memory/chroma/chroma.sqlite3` or a non-empty queue first.
 - To reset: delete `state/memory/`. Everything in it is derived from episodes that have already

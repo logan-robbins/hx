@@ -11,6 +11,9 @@ def complete_one(instance, hx, launched, goals, item_id="eng-001", **kwargs):
     launched(item_id)
     goals(item_id, **kwargs)
     assert hx("dispatch", item_id, f"run/goal-{item_id}.md", cwd=instance).returncode == 0
+    from .conftest import write_evidence
+
+    write_evidence(instance, item_id)
     assert hx("complete", "done", harness_id=item_id).returncode == 0
     return instance
 

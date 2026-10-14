@@ -43,9 +43,9 @@ Two things worth knowing about that exchange:
 - **The Partner should not have a recommendation it has already acted on.** If it tells you
   what it chose rather than asking, say so — the whole point of `decision` is that the choice
   was not the agent's to make.
-- **Your answer should retract whatever it replaces.** "JSON only; drop criterion 3" is a
-  better answer than "JSON only", because the definition of done is what the goal evaluator
-  judges and two contradictory criteria make the item unsatisfiable.
+- **Your answer should retract whatever it replaces.** "JSON only; drop the text form" is a
+  better answer than "JSON only", because the worker rewrites its own definition of done from
+  the goal and every addendum, and two contradictory instructions make it unsatisfiable.
 
 ## What a seam looks like in a pane
 
@@ -111,8 +111,8 @@ hx memory stats                                          # episodes by role and 
 ```
 
 Every Companion compaction is kept as a searchable **episode** with its time, agent, pod and
-role (`docs/memory.md`). Agents get the closest same-role episodes in their context file at every
-boundary without asking; from a shell you have no role, so `search` looks across all of them.
+role (`docs/memory.md`). Agents get the closest same-role episodes in their work item's `## Status`
+at every boundary without asking; from a shell you have no role, so `search` looks across all of them.
 Results are recency-weighted: yesterday's episode about the same file outranks last month's
 unless the older one matches much better.
 
@@ -144,9 +144,10 @@ serves a read-only view on `127.0.0.1` (port from `config/ui.json`, default 8765
 graph is the home page: the Partner at the root, every worker as a card with its Companion
 beside it, the Companion pulsing while a pass runs, and the memory store's episode count in the
 header. Click a worker and its drawer opens: the work item file as the agent keeps it (goal,
-definition of done, live `## Tasks`, deliverables, open decision, digest) and its Companion's
-status. Two links open in their own window — **Open session** (the pane, step state, context
-file, stream tails, subagents, metrics) and **Open last compaction** (what the Companion last
+the definition of done it wrote, live `## Tasks`, evidence, deliverables, open decision,
+digest) and its Companion's
+status. Two links open in their own window — **Open session** (the pane, step state, what
+the `context` hook hands the agent, stream tails, subagents, metrics) and **Open last compaction** (what the Companion last
 wrote for a stream, rendered and then verbatim as the master reads it; the Companion node in
 the graph opens the same page). Across pods: Task board, Harness Agents, Activity, Goals (every
 dispatched goal and its addenda, from `tasks.json`), Archive, and the Partner chat, whose box
@@ -180,7 +181,7 @@ tmux kill-server                 # the lot, Partner included
 ```
 
 Nothing is lost by killing a session. The work item, the goal, the step state, the logs and
-the agent's memory are all files; `hx launch <id>` brings a worker back, and a `working` item
+the learnings are all files; `hx launch <id>` brings a worker back, and a `working` item
 gets its `/goal` again on the way up. What you do lose is the conversation the agent was in the
 middle of, so prefer stopping between completions when you have the choice.
 
@@ -193,7 +194,7 @@ the Partner does with `hx restart <id>`.
 |---|---|
 | A worker `working` with a dead session | Nothing restarted it yet. The Partner runs `hx restart <id>`; so does `hx heartbeat` |
 | A worker that has been `working` a long time | Look at `hx show <id>` — its `## Tasks` and open steps say what it thinks it is doing. Long is not the same as stuck |
-| `HX-CHECK-FAILED` in a pane | Working as intended. The agent's checks did not pass; it fixes and retries. Nothing to do |
+| `HX-CHECK-FAILED` in a pane | Working as intended. Its workdir was dirty, a subagent was still open, or its `## Evidence` was empty; it fixes and retries. Nothing to do |
 | The Partner idle with work outstanding | It is waiting for a wake, which arrives when a worker completes. If a worker has completed and nothing happened, `hx show <id>` and tell the Partner |
 | A compaction summary in a worker's pane | Should not happen: hx seams first. Worth reporting |
 | `hx restart partner` does not return | The pane is frozen by a provider usage limit, so the restart's wait never ends. `tmux kill-session -t '=partner'` (with the instance's `HX_TMUX`), then `hx launch partner`; prefer an API key for that instance (`docs/multi-instance.md` §2) |
@@ -202,11 +203,48 @@ the Partner does with `hx restart <id>`.
 
 The Partner's instructions live in two files you can read, and edit if you mean to:
 
-- `$HARNESS_ROOT/config/partner/AGENTS.md` — its persona, above the `## UPDATES BELOW ONLY`
-  line. It reaches the Partner as system prompt at every launch. Below that line is the
-  Partner's own memory; leave it alone.
+- `$HARNESS_ROOT/personas/partner.md` — its persona. The `context` hook hands it to the
+  Partner at every boundary, followed by its identity line, the learnings and the pointer to
+  `PARTNER.md` (`hx persona partner` prints it).
 - `$HARNESS_ROOT/PARTNER.md` — what it has learned: the fleet, open questions, decisions,
   what has shipped. Read this when you want to know what the Partner thinks the state of the
   world is.
 
-A persona edit takes effect at the next launch of that agent, not immediately.
+A persona edit takes effect at that agent's next boundary (`/clear`, compaction, restart),
+not immediately.
+
+## Who can run what
+
+`hx help` prints the commands the caller's audience sees, and `hx help --all` prints every
+audience's list: from your shell (no `HARNESS_ID`) that is the operator view, inside the
+Partner's session the Partner's, inside a worker's session the worker's short list. The same
+table backs a refusal: a worker that runs a Partner or operator command (`hx dispatch`,
+`hx map publish`, `hx learn accept`, `hx persona`, `hx doctor`, …) gets `refuse:` and exit 1,
+and asks the Partner through `hx complete blocked|decision` instead. Which skills each home
+gets is `src/hx/skills/manifest.json`; an optional skill is turned on for an instance by
+naming it in `config/hx.json` `skills`; it reaches each home at that agent's next
+`hx launch`, which runs the adapter's `install.sh` (`hx restart` does not), and `hx doctor`'s `skills` row says which are on and whether every skill is well-formed.
+
+## Keeping model IDs current
+
+`hx models` asks Anthropic, OpenAI, xAI and Meta which models they serve now and prints, per
+provider, what is new, gone or deprecated against `config/models.json` and `docs/models.md`,
+with each model's input window; TypeSafe's decision model is printed as `pinned`. It reads
+keys from your environment, the instance's env file or its `seed/` files and never prints
+one; a provider without a key is `unverified`, which is expected for Anthropic when the
+instance runs on a Claude subscription token. It changes nothing: `hx models --expect current`
+exits 3 when a configured model is no longer active or its window is larger than the provider
+allows, which is the cue to edit the registry yourself (the Partner's `hx-fleet` skill §7 says
+the same to the Partner).
+
+## Command examples and registered MCP servers
+
+Every command in a worker's `hx help` column ends its `--help` with one example invocation, and
+the `hx-worker` skill lists the same examples. An agent that is unsure of a flag should copy the
+example, not guess. `hx code` is the exception for now; its help belongs to the code-graph work.
+`hx tools index` now records, per registered MCP server, the `protocolVersion` it answered with
+(`servers` in `state/capabilities.json` and in the command's output). hx's client still opens
+with the `2024-11-05` handshake. If a server refuses that handshake (an MCP 2026-07-28 server
+that dropped backward compatibility), indexing calls `server/discover` once, stops, and names
+the versions the server supports. Unregister that server rather than expecting the client to
+change mid-release.

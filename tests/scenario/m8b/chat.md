@@ -13,9 +13,9 @@ can greet spit out JSON? I want to use it from a script without parsing the word
 One sentence, then they go away. That is the point of this scenario: the ask is casual, and
 nobody — not the human, not the Partner — notices that it leaves something undecided.
 
-**The Partner must:** take the ask as its goal — it has no order file of its own and dispatches
-nothing to itself — then write the order for `eng-001`, `hx launch eng-001` if that id has no
-session yet, and `hx dispatch eng-001 <the order file>`.
+**The Partner must:** take the ask as its goal — it has no goal file of its own and dispatches
+nothing to itself — then write the goal for `eng-001`, `hx launch eng-001` if that id has no
+session yet, and `hx dispatch eng-001 <the goal file>`.
 
 **The reply must contain:** that it has taken it on. Nothing more is required; there is
 genuinely nothing to report yet.
@@ -45,7 +45,7 @@ early" below.
 
 - a recommendation presented as a decision already taken;
 - any suggestion that the human run a command or edit a file;
-- blame. The order was the Partner's own, and the contradiction was the Partner's own.
+- blame. The goal was the Partner's own, and the contradiction was the Partner's own.
 
 The human answers:
 
@@ -54,8 +54,8 @@ JSON only. That's the whole point of the flag. The Hello-grepping scripts are mi
 them.
 ```
 
-**The Partner must then:** write `orders/eng-001.addendum.md` with that answer and run
-`hx resume eng-001 orders/eng-001.addendum.md`.
+**The Partner must then:** write `goals/eng-001.addendum.md` with that answer and run
+`hx resume eng-001 goals/eng-001.addendum.md`.
 
 ---
 
@@ -66,8 +66,8 @@ done?
 ```
 
 **The reply must contain:** that `--json` ships and prints only JSON; that the human decided
-to drop the human-readable line rather than keep it; and that it was verified by running the
-checks.
+to drop the human-readable line rather than keep it; and that it was verified by the tests
+its `## Evidence` names.
 
 **It must not contain:** ids, work-item filenames, or state names as the substance.
 
@@ -75,16 +75,16 @@ checks.
 
 ## If the Partner catches it early
 
-A Partner that reads its own draft of `orders/eng-001.md`, notices that criterion 3 contradicts
-the `## Order` paragraph, and asks the human before dispatching has done the right thing and a
+A Partner that reads its own draft of `goals/eng-001.md`, notices that its greeting-first sentence
+contradicts its JSON-only one, and asks the human before dispatching has done the right thing and a
 better thing. That run is a **pass**, by this route instead:
 
 - turn 1's reply asks the question rather than reporting that work has started;
-- `eng-001` is dispatched once, with an unambiguous order, and completes `done` first time;
+- `eng-001` is dispatched once, with an unambiguous goal, and completes `done` first time;
 - `expected/02-eng-001-decision.txt` and `expected/03-eng-001-resumed.txt` do not occur: the
   board goes from `01-eng-001-working` straight to a `done` board.
 
-What is **not** a pass is a run in which nobody notices: the worker picks one reading, the
-checks pass because they are neutral, and the item completes `done` with a decision nobody
+What is **not** a pass is a run in which nobody notices: the worker picks one reading, writes
+only that half into its definition of done, and the item completes `done` with a decision nobody
 made. That is the failure this scenario exists to catch, and it is silent — which is why it is
 worth a scenario of its own rather than a line in m8.

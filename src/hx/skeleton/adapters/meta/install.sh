@@ -5,10 +5,9 @@
 # home/muse/settings.json) and XDG_DATA_HOME points at home/data (sessions live
 # in home/data/muse/sessions). settings.json carries the Unrestricted posture,
 # goal-friendly defaults, and the hx hooks with --id/--hook-bin/--root baked
-# in, because hook commands run with a cleared environment. The persona file is
-# derived by start.sh for inspection; the 1.3.0 CLI has no verifiable
-# system-prompt flag, so identity arrives through the context file and the
-# pasted goal pointer. Auth is META_API_KEY from seed/meta-token, exported at
+# in, because hook commands run with a cleared environment. The 1.3.0 CLI has no
+# verifiable system-prompt flag, so the invariants, the persona, the identity line
+# and the learnings arrive through the SessionStart `context` hook at every boundary. Auth is META_API_KEY from seed/meta-token, exported at
 # launch; the home holds no credentials. Nothing is read from ~/.config/muse.
 #
 # The Companion is still a Claude session. After the meta home is written this runs
@@ -125,8 +124,10 @@ PYEOF
 
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
-  for want in hx-worker hx-memory; do
-    [ "$want" != hx-memory ] || [ -z "${HX_CONTINUITY_RUN:-}" ] || continue
+  # The manifest decides (src/hx/skills/manifest.json, CONTRACTS.md).
+  wants=$("$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id") ||
+    die "skill manifest: cannot select the skills for $id from $skills_src"
+  for want in $wants; do
     [ -d "$skills_src/$want" ] || continue
     rm -rf "$home/muse/skills/$want"
     cp -R "$skills_src/$want" "$home/muse/skills/$want"

@@ -27,7 +27,6 @@ def check_files(row, *, replacing=None):
     capsule = Path(payload['capsule'])
     worker = payload['worker_id']
     paths = [(Path(payload['packet_path']), CONTEXT_BYTES),
-             (capsule / 'config' / worker / 'AGENTS.md', CONTEXT_BYTES),
              (capsule / 'run' / worker / 'persona.md', CONTEXT_BYTES)]
     home = capsule / 'run' / worker / 'home'
     paths += [(home / name, MEMORY_BYTES) for name in ('MEMORY.md', 'memory.md', 'context.md')]

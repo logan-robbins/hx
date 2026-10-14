@@ -198,7 +198,7 @@ def _source_file(target):
             raise ValidationError("source changed during its bounded read")
 
 
-def source_anchor(repository: Path, path: str, symbol: str | None = None, *, with_stamp=False) -> dict:
+def source_anchor(repository: Path, path: str, symbol: str | None = None, *, with_stamp=False, index_root=None) -> dict:
     relative_path(path)
     repository = repository.resolve()
     target = (repository / path).resolve()
@@ -219,7 +219,31 @@ def source_anchor(repository: Path, path: str, symbol: str | None = None, *, wit
             content_hash = hasher.hexdigest()
         else:
             if target.suffix != ".py":
-                raise ValidationError("this language has no qualified-symbol resolver; use a verified file anchor and candidate symbol relationships")
+                from . import code_extract, code_index, code_store
+                if target.suffix.lower() not in code_extract.LANGUAGES:
+                    raise ValidationError("this language has no qualified-symbol resolver")
+                with _source_file(target) as (handle, _):
+                    raw = handle.read(SOURCE_BYTES + 1)
+                if len(raw) > SOURCE_BYTES:
+                    raise ValidationError("symbol validation exceeds its source budget")
+                if index_root is not None:
+                    candidates = [r for r in code_index.symbols_for(index_root, symbol,
+                        repo=code_store.namespace(repository), path=path) if r['lane'] == 'syntax']
+                    if len(candidates) != 1 or candidates[0]['stale']:
+                        raise ValidationError(f"symbol {symbol} is absent, ambiguous or stale in the syntax index; run hx code index --repo {repository}")
+                else:
+                    natural = code_extract.LANGUAGES.get(target.suffix.lower()) == 'natural'
+                    candidates = [r for r in code_extract.extract(raw.decode('utf-8'), path)[0] if
+                        (r['qualified'].casefold() == symbol.casefold() if natural else r['qualified'] == symbol)]
+                if len(candidates) != 1:
+                    raise ValidationError(f"symbol {symbol} is absent or ambiguous in {path}")
+                line, end_line = candidates[0]['line'], candidates[0]['end_line']
+                content_hash = hashlib.sha256(b"".join(raw.splitlines(keepends=True)[line - 1:end_line])).hexdigest()
+                after = _source_stamp(repository, path)
+                if before != after:
+                    raise ValidationError(f"map source changed while validating: {path}")
+                result = {"path": path, "symbol": symbol, "sha256": content_hash, "line": line, "end_line": end_line}
+                return {"anchor": result, "source_stamp": after} if with_stamp else result
             with _source_file(target) as (handle, _):
                 raw = handle.read(SOURCE_BYTES + 1)
             if len(raw) > SOURCE_BYTES:
@@ -413,7 +437,7 @@ def _committed_anchor(repository, commit, anchor):
                 hasher.update(chunk)
             return hasher.hexdigest()
         with tempfile.TemporaryDirectory(prefix="hx-map-symbol-") as temporary:
-            target = Path(temporary) / "source.py"
+            target = Path(temporary) / ("source" + Path(anchor["path"]).suffix)
             with target.open("wb") as handle:
                 remaining = SOURCE_BYTES + 1
                 while remaining:
@@ -424,7 +448,7 @@ def _committed_anchor(repository, commit, anchor):
                     remaining -= len(chunk)
             if remaining == 0:
                 raise ValidationError("committed symbol source exceeds its syntax budget")
-            return source_anchor(Path(temporary), "source.py", anchor["symbol"])["sha256"]
+            return source_anchor(Path(temporary), target.name, anchor["symbol"])["sha256"]
 
 
 def _committed_json(repository, commit, path, expected):
@@ -706,7 +730,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     elif args.command == "check":
         result = check(repository)
     elif args.command == "anchor":
-        result = source_anchor(repository, args.path, args.symbol)
+        result = source_anchor(repository, args.path, args.symbol, index_root=root)
     else:
         with ContinuityStore(root) as store:
             if args.command == "import":

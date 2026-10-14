@@ -20,6 +20,7 @@ from .native_launch import _bytes
 
 REQUEST_BYTES = 32768
 OUTPUT_BYTES = 65536
+COMPANION_MAX_OUTPUT_TOKENS = "8192"
 
 
 def instructions():
@@ -178,7 +179,7 @@ def execute(store, job_id, *, env=None, timeout_s=60):
     execution_env = {key: value for key, value in (os.environ if env is None else env).items()
                      if key in {"PATH", "TMPDIR", "ANTHROPIC_BASE_URL"}}
     execution_env.update(CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1", CLAUDE_CODE_DISABLE_AUTO_MEMORY="1",
-        CLAUDE_CODE_MAX_OUTPUT_TOKENS="4096", DISABLE_AUTOUPDATER="1")
+        CLAUDE_CODE_MAX_OUTPUT_TOKENS=COMPANION_MAX_OUTPUT_TOKENS, DISABLE_AUTOUPDATER="1")
     execution_env["ANTHROPIC_API_KEY" if credential.startswith("sk-ant-api") else "CLAUDE_CODE_OAUTH_TOKEN"] = credential
     execution = None
     pending_hash = None

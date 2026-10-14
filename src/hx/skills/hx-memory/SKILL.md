@@ -1,6 +1,10 @@
 ---
 name: hx-memory
 description: How to search this instance's episode memory with `hx memory search` — every step state every agent has ever written, indexed and recency-weighted. Use when picking up a work item, when hitting a blocker someone may already have hit, when asking how something was done in this repository before, or when you need what an earlier release or merge actually did.
+metadata:
+  hx-audience: partner worker
+  hx-roles: "*"
+  hx-loads-when: picking up a work item, a blocker someone may have hit, how something was done here before
 ---
 
 # hx-memory
@@ -12,8 +16,8 @@ not yours alone. `hx memory search` is how you read it.
 
 ## Before you search: the file you already have
 
-Your context file has a **Memory episodes** section, already filtered to your role and already
-excluding your own state. Read that first. It is free — you have it in front of you — and it
+Your work item's `## Status` has a **Memory episodes** part, already filtered to your role and
+already excluding your own state. Read that first. It is free — you have it in front of you — and it
 is the answer often enough that a search is a wasted tool call.
 
 Search when that section is empty, when it does not cover what you need, or when the thing you
@@ -37,16 +41,13 @@ That is the whole of the normal case. Facts about it:
   it the problem, the symbol, the error, the area — `"alembic revision for the assets table"`,
   `"npm publish 403"`, `"where the redis client is constructed"`.
 
-Widen only when the own-role result is empty, or when what comes back is clearly about a
-different area than the one you asked about:
-
-```bash
-hx memory search "npm publish 403 on the private registry" --all-roles
-```
-
-`--all-roles` drops the role filter and nothing else. Reach for it deliberately: a frontend
+When the own-role result is empty, name the role whose work you need instead: a frontend
 episode about a release step is often exactly right, and a frontend episode about components
 is noise in a backend search.
+
+```bash
+hx memory search "npm publish 403 on the private registry" --role release-engineer
+```
 
 Other flags, when you know what you are narrowing to:
 
@@ -63,16 +64,7 @@ Other flags, when you know what you are narrowing to:
 Each hit prints a header line — timestamp, agent id, role, kind, `seq`, score — and then the
 episode text.
 
-## The other subcommands
-
-```bash
-hx memory list [--id ID] [--role R] [--limit N]   # newest first, metadata only
-hx memory stats                                   # counts by role and kind, queue length
-hx memory index                                   # force-drain the write queue into the index
-```
-
-`search` indexes what is pending before it queries, so `index` is only for when you want the
-work done now rather than on the next search.
+`search` indexes what is pending before it queries, so there is nothing to drain first.
 
 ## When to reach for it
 
@@ -88,7 +80,7 @@ work done now rather than on the next search.
 ## File memory: the last resort
 
 Completed Work Item bodies live on as files — live `*-complete.md` items and
-`pods/<pod>/archive/` bodies from `hx bench`. `hx recall` searches them with plain
+`pods/<pod>/archive/` bodies of benched items. `hx recall` searches them with plain
 substring matching, no embeddings:
 
 ```bash
@@ -97,7 +89,7 @@ hx recall --id eng-001 --limit 3                    # one persona's finished Wor
 ```
 
 Bounds are the point: a query or a filter is required, at most 20 hits, excerpts capped.
-Reach for this only after the context file's Memory episodes section and `hx memory search`
+Reach for this only after your `## Status`'s Memory episodes and `hx memory search`
 came up empty. The Partner in particular treats this as file memory, never a first read —
 its context is what/why/state, and the how stays here until genuinely needed.
 
@@ -107,5 +99,19 @@ It is not authoritative about the present. An episode is what was true when an a
 the repository is what is true now. Use memory to know where to look and what not to repeat —
 then verify against the tree before you act on it.
 
-It is also not your own memory. What you want to carry into your *next* task goes below
-`## UPDATES BELOW ONLY` in your `AGENTS.md`, as always.
+It is also not where a lesson goes. A rule the next agent of your role should have had is
+`hx learn propose --role <your role>`; the episode store holds what was done, not what was
+learned.
+
+## Two places it does not reach
+
+**The code itself.** Whether a type exists, what its signature is, who calls it, which tests
+cover a path: those are facts about the tree, and the code graph answers them exactly —
+`hx code type|signature|callers|tests-for|precedent` (the `hx-worker` skill, "Search before
+you build"). Memory holds what agents *did*; the graph holds what the repository *is*. Ask the
+graph first for code, memory first for history.
+
+**A planned run.** Under `HX_CONTINUITY_RUN`, a unit assigned through the ledger rather than a
+goal file, `hx memory` and `hx recall` are refused: the unit's packet carries what it needs, and
+a fact it had to search for is a packet defect to report. This skill is not installed into a
+planned home for the same reason.

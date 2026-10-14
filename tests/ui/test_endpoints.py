@@ -100,7 +100,7 @@ def test_orders_keeps_the_order_text_verbatim(ui):
     _, show = ui.client.json("/api/show/eng-001")
     recorded = next(o for o in goals["goals"] if o["id"] == "eng-001")["goal"]
     assert recorded == show["task"]["goal"]
-    assert "## Goal" in recorded and "### Checks" in recorded
+    assert recorded.startswith("## Goal\n") and "### Checks" not in recorded
 
 
 def test_archive_holds_benched_bodies_and_dispatches(ui):

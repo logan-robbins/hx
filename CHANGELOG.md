@@ -11,6 +11,32 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- `hx memory warm` (operator): the one-time download of the embedding model into
+  `~/.cache/chroma/onnx_models`. Every other chroma open now requires the model already on disk
+  and otherwise raises `MemoryUnavailable` naming the command — an agent at a boundary never
+  downloads. Before this, chroma's default embedder fetched the 80 MB archive from S3 under
+  whatever `HOME` the process had: in the test suite that was every scratch HOME, which is why
+  `hx resume` tests sat idle for minutes. `hx doctor` gained the `memory-model` row. The core
+  tests' scratch HOMEs share the operator's `~/.cache/chroma` by symlink.
+- The test suite runs on every core (`pytest-xdist`, `-n auto` in `pyproject.toml`; the `test`
+  extra installs it). The core lane went from 32 min serial to about 6 min on eight workers.
+
+- Search and retrieval (docs/search-and-retrieval.md): `hx code` indexes symbols, imports,
+  and source text (Porter + trigram FTS5, reciprocal rank fusion, proximity rerank, fuzzy
+  fallback) with `search`, `symbols`, `impact`, and candidate graph `edges`; `hx content`
+  is a persistent exact-text store for docs and web (`index`, multi-query `search`, SSRF-
+  hardened TTL-cached `fetch`, `stats`); `hx exec` runs Python/JavaScript/shell in isolated
+  subprocesses where only stdout returns, with intent indexing over 5 KB and pointer-only
+  output over 100 KB, plus `exec file` (`FILE_CONTENT`) and concurrent `exec batch`;
+  `hx sift` applies Jev (`jev-1.13.0`) semantic sifting, failure triage, and check ordering
+  over deterministic candidates — advisory only, degrading to `unsifted` on provider failure.
+- Discipline and prompt caching: `hx discipline profile/orient/commit` derives module-size
+  bounds and orientation load from the repo itself and judges whether a diff is one
+  committable unit; `hx plan validate` now reports waves, level widths, max parallelism, and
+  interface-first warnings; `hx cache assess/budget` makes prompt-cache TTL and the invariant
+  budget explicit, with companion passes append-only while warm and restructuring when cold;
+  `hx learn classify/repeat/invariant` classifies at the moment of learning, detects a
+  repeated mistake against existing rules, and charges learnings against the invariant budget.
 
 - `hx learn`: the central learnings — `LEARNINGS/<category>.md`, one file per fixed category
   of mistake (`hx learn categories`: orientation, ownership, planning, domain, build, testing,
@@ -44,6 +70,136 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   `hx install` no longer resolves the `claude` launcher's symlink when it records `bin`, for
   the same reason: the native installer's `~/.local/bin/claude` points into
   `~/.local/share/claude/versions/<v>`, which its auto-update deletes.
+
+### Changed
+
+- Prompt layers (docs/prompt-runtime.md § Prompt layers): every agent's prompt is four layers,
+  each from one source — the invariants (`config/CLAUDE.md`), the persona (`personas/<role>.md`,
+  one file per role), the learnings (`LEARNINGS/<category>.md`, and `personas/<role>/<category>.md`
+  for a role's own rules) and session memory (the work item) — and nothing per id is copied
+  from a shared source. The only per-id text is `harness.json` `purpose` and the agent's own
+  sections of its work item (`## Tasks`, and with the goal contract below its definition of
+  done, orientation and evidence).
+  - **Delivery is the `context` hook** (SessionStart, matcher `startup|resume|clear|compact`):
+    at every boundary it prints the persona, the identity line `You are <id> in pod <pod>.
+    <purpose>`, every rule file that holds a rule, whole, and one pointer line naming the work
+    item (`PARTNER.md` for the Partner; `hx.persona.IDLE_LINE` with no task in progress).
+    `hx persona ID [--summary]` prints exactly that, writing nothing. The output is bounded —
+    10,000 bytes on Claude, whose SessionStart output is capped at 10,000 characters, 32 KiB
+    elsewhere — and past the bound the rule files, then the persona, are listed as paths to
+    read once instead (`hx doctor` warns `hook-size`). The invariants and the persona each have
+    exactly one channel per flavor (`config_harness.INVARIANTS_CHANNEL`, `PERSONA_CHANNEL`):
+    Claude reads its home `CLAUDE.md` (refreshed by `start.sh --exec`) and the persona from the
+    hook; Codex reads both from `$CODEX_HOME/AGENTS.md`, written at launch; Pi and Grok take
+    the persona file through their launch flag and the invariants from the hook; Meta takes
+    both from the hook. No Claude worker or Partner launch passes `--append-system-prompt-file`
+    any more, so a persona or `purpose` edit reaches a Claude agent at its next boundary.
+  - **Session memory is the work item.** `hx compose <id>` rewrites a `## Status` section in
+    the `-working` item (and at the end of `PARTNER.md`) at every boundary — step state, memory
+    episodes, open subagent handles as `###` parts — and the main stream has no context file
+    any more: the boundary's one Read is the work item. Subagent streams keep their own
+    context file (`run/<id>/<stream>.context.md`, named by the `SubagentStart` hook), which
+    carries the invariants for the hook-channel flavors. The boundary record's
+    `context_file` names the work item, and `hx metrics` keeps the field names
+    `reads_of_context_file` and `context_file_bytes` for the file the boundary named.
+  - **Learnings are global or a role's.** `hx learn accept ID --role R` writes the rule to
+    `personas/<role>/<category>.md`; `--global` (or no scope) to `LEARNINGS/<category>.md`.
+    Each agent is handed the global files and its own role's, never another role's.
+  - **Gone:** `src/hx/compile.py` and `hx compile` (the planned runtime calls
+    `hx.prompt_compiler` directly), `config/<id>/AGENTS.md`, `run/<id>/persona.md`,
+    `templates/*/AGENTS.md`, `personas/<role>/AGENTS.md`, the persona's `hx:global` and
+    learnings regions, the context file's `## Invariants`, and the `## UPDATES BELOW ONLY`
+    memory channel (a lesson is a learnings proposal; what an agent did is its step state).
+  - A worker is its `config/<id>/harness.json`. `templates/worker/` and
+    `templates/contributor/` ship `harness.json` and `SUBAGENTS.md` only. `SUBAGENTS.md` is not
+    copied per id: the `SubagentStart` hook renders the shared one with the worker's identity
+    into each subagent's context file; a `config/<id>/SUBAGENTS.md` still replaces it for that
+    id (`hx doctor` warns `subagents:<id>`).
+  - Planned runs read the live sources (docs/prompt-runtime.md § Planned prompt sources): the
+    audience files, the `## Domain judgment` section of `personas/<role>.md`, a worker's
+    `purpose`, the Companion's `companion/roles/<role>.md` and operator policy, nothing else;
+    `continuity/prompts/roles/` and `continuity/prompts/companion-roles/` are gone, their text
+    moved into those sections.
+  - **Existing instances:** `hx install`, `hx up`, `hx launch` and `hx restart` migrate. Each
+    `personas/<role>/AGENTS.md` (and `config/partner/AGENTS.md`) becomes `personas/<role>.md`,
+    an edited one leaving the paragraphs the new persona does not say as one text proposal
+    scoped to the role; memory below the old header becomes a proposal too. A worker's
+    `config/<id>/AGENTS.md` loses every paragraph a shared source already says, its per-id
+    paragraph becomes `purpose`, anything else becomes one text proposal, and the file is
+    removed; `run/<id>/persona.md` is removed. Rule lines an older hx scoped in place with
+    `Role: <role>` move to `personas/<role>/<category>.md`. A `config/<id>/SUBAGENTS.md` that
+    is a copy of a template is removed. Decisions: Partner reads `PARTNER.md` whole at every
+    boundary (no bounding); the Partner runs `hx board` once after a boundary rather than
+    carrying a board in context; resume re-injection is left to Claude Code's own dedup; a
+    persona is printed whole with no `{{…}}` expansion.
+  - **Measured** (docs/prompt-runtime.md § Measured; the measuring test was throwaway and is not committed):
+
+    | Variant | | Persona | Home `CLAUDE.md` | Boundary Read | `hx cache report` prefix | At a boundary |
+    |---|---|---|---|---|---|---|
+    | conftest | before | 8,295 (`run/<id>/persona.md`, system prompt) | 2,946 | 3,497 (context file) | 12,200 | 14,738 |
+    | conftest | after | 6,558 (`context` hook output) | 3,353 | 1,954 (work item) | 10,719 | 11,865 |
+    | template | before | 12,583 | 2,946 | 7,699 | 16,488 | 23,228 |
+    | template | after | 6,617 | 3,353 | 1,954 | 10,778 | 11,924 |
+
+    One launched `backend-engineer` worker on a fresh instance with no rules, in bytes. "Before"
+    is the tree this work started from; "after" is this one. The conftest variant carries the
+    test fixture's `purpose`; the template variant carries a one-line `purpose` plus, before, the
+    template's per-id `AGENTS.md` and, after, the template's `explorer` block. "At a boundary" is
+    persona + home `CLAUDE.md` + the boundary Read. The hook output is the persona (6,225 bytes for
+    `backend-engineer`, up from 4,360 with the definition-of-done standard set), the identity line
+    and the pointer; an idle agent's is 120 bytes shorter and it has no boundary Read. The before
+    Read was an idle agent's context file, which repeated `config/CLAUDE.md`; the after Read is a
+    dispatched work item with a one-line goal. `config/CLAUDE.md` grew by the goal-contract
+    paragraphs.
+- Goals (CONTRACTS.md "Goals"): a goal is one `## Goal` paragraph — what the result is and why
+  — plus, when it depends on other work, one to three sentences saying on what. No
+  frontmatter, no text above it, no other heading: `## Definition of done` and `### Checks` in
+  a goal file are refused by name, each message saying where it went.
+  - **The worker writes its own definition of done.** The work-item template gains
+    `## Definition of done` (written before the first edit, on top of the role's standard set),
+    `## Orientation` (the explorer's cited starting points) and `## Evidence`. The backend,
+    frontend, release and QA personas carry a `## Your definition of done` standard set whose
+    first rule is "Orient before you write": one explorer subagent, graph-first and read-only,
+    drafts those sections before the first edit.
+  - **`hx complete done` runs no checks.** It requires a clean workdir, no open subagent
+    stream and a written `## Evidence` (not empty, not the template's note); otherwise
+    `HX-CHECK-FAILED` and nothing changes. `blocked`, `decision` and `exhausted` require only
+    that no subagent stream is open. Completion repeats (`learn_repeats`) now come from planned
+    acceptance checks only; the planned runtime's checks are unchanged.
+  - **`hx dispatch` runs nothing in the workdir:** the gate preflight and `HX-GATE-EMPTY` are
+    gone.
+  - **Addenda are prose.** `hx amend` and `hx resume` append the addendum and nothing else; an
+    addendum with a `Checks` heading (outside a fence) is refused, and `hx amend` prints
+    `HX-AMEND <id> addenda=<n>` where it printed `checks=replaced|unchanged`.
+  - **The explorer.** `harness.json` takes an optional `explorer` block, `{"model", "effort"}`,
+    the model validated against `config/models.json`; `templates/worker/harness.json` ships
+    `claude-sonnet-5-5` at `high` (the Meta contributor template has none). With one, the
+    identity line ends `Your explorer runs on <model> at <effort>.`, and `SUBAGENTS.md` tells a
+    subagent spawned as the explorer what it may write.
+  - `hx metrics <id>` reports `edits_before_definition_of_done`: workdir edits, main and
+    subagent streams, before the work item's definition of done was written; null when there
+    is no stream or the write cannot be placed.
+  - The scenario packs (`tests/scenario/m8`, `m8b`) and the UI fixtures carry paragraph goals;
+    m8b's contradiction now sits inside its one goal paragraph.
+  - **Existing instances:** a goal recorded under the old contract still shows and resumes, but
+    dispatching its text again is refused until it is one paragraph. An in-flight item has no
+    `## Evidence` section; `hx complete done` asks for one and the worker adds it.
+  - Decisions: the parser refuses other headings and text above `## Goal` but does not count
+    paragraphs or sentences (the Partner's skill and the scenario packs hold that line); a
+    `Checks` heading in an addendum is refused rather than silently ignored; `done` requires
+    `## Evidence` but not `## Definition of done`, whose timing `edits_before_definition_of_done`
+    measures instead; "ready for QA" is `## Deliverables` plus `hx complete done`, with no new
+    status.
+- The `hx-partner` skill is organised around the four things the Partner reads before it
+  decides: **status** (`hx board`, `hx show`, `hx read`, `hx goals`, `hx metrics`, fleet
+  memory), the **application map** (`hx map get|plan-context|check`: which responsibility a
+  change touches, its interfaces and consumers, who holds a lease), the **feature map** (the
+  code graph's `hx code submaps|map|contract|callers|tests-for`, for cutting units one worker
+  can finish) and the **assignment ledger** (`hx plan`, `hx loop --status`, leases, receipts).
+  Writing a goal is the paragraph rule and nothing else; the sections on writing `### Checks`
+  and lint lines are gone (a lint is now a line of the worker's definition of done). It also
+  covers the `explorer` block when creating a worker, `HX-AMEND` on resume, and the `done`
+  row as clean workdir, no open subagent and `## Evidence` written.
 
 ### Fixed
 
@@ -124,6 +280,29 @@ as milestones are accepted.
 
 ### Changed
 
+- **`hx code fresh` is in the worker column**, so `hx help` under a worker lists the command
+  the goal template's `### Checks` already run; the gate had allowed it as an unlisted
+  subcommand. The four role personas carry their granularity and principal-branch rules above
+  `## UPDATES BELOW ONLY`, where `hx compile` reads the role persona from; below the header they
+  were memory the Partner is told to leave empty, and never reached a system prompt.
+- **The packaged skills match the surface.** `hx-worker` gains "Search before you build"
+  (the graph queries, `--expect` lints, provenance), the context-economy tools by mode, and the
+  planned-run rules (`hx progress`, leases, no memory); `hx-partner` gains the lookups before a
+  goal, the three graph lint lines for `### Checks`, the assignment ledger (`hx plan`) and the
+  never-twice record; `hx-fleet`, `hx-setup`, `hx-memory` and `hx-companion` describe the
+  manifest-driven skill install, the recorded binary, the post-merge graph hook, the operator
+  column and the planned Companion pass. `hx restart` re-records the Claude version as
+  `hx launch` does.
+- **Claude Code versions are recorded, not gated.** `hx install` no longer refuses a
+  `claude` missing from `packaging/tested-claude-versions.json`; it records `{bin, version}`
+  for whatever it finds and prints `tested` or `untested` beside it. Every launch boundary
+  (`hx launch`, `hx restart`, `hx up`) re-records the version the binary reports now
+  (`hx.claude_bin.refresh_pin`), so a fleet runs the latest release from its next launch;
+  `DISABLE_AUTOUPDATER=1` still keeps a running session on one binary. `hx doctor` warns,
+  never fails, when the binary has moved past the record. `--ignore-claude-version` is a
+  no-op kept for scripts. The tested list is the record of what the live suite last passed
+  on (docs/github-plan.md §4, docs/two-worlds.md, docs/deploy.md, docs/getting-started.md,
+  the `hx-setup` skill, CONTRACTS.md).
 - **`hx dispatch` refuses a goal whose `### Checks` already exit 0 in the workdir.** An
   existing goal whose gate is `true`, or passes on the untouched tree, must be rewritten to fail
   before the work exists. The 120 s budget is the one timeout in hx.

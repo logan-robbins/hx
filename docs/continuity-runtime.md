@@ -146,7 +146,7 @@ check output. Details are retrieved only when they affect a decision.
 
 Instructions, pass, and supplied tool schemas are limited to 32 KiB. Native execution
 is limited to six turns, 60 seconds, and 64 KiB captured output, with a requested
-4,096-token generation limit. Worker output caps use the same model-level layer; the runtime controls tokens rather than forecasting dollar spend.
+8,192-token generation limit. Worker output caps use the same model-level layer; the runtime controls tokens rather than forecasting dollar spend.
 One durable root-wide running slot serializes model execution on low-memory hosts.
 The current implementation honors the configured model and creates no worker memory.
 

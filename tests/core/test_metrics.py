@@ -52,7 +52,7 @@ def write_transcript(root, name="t.jsonl"):
         {"type": "assistant", "isSidechain": False, "timestamp": "2026-09-20T12:51:00Z",
          "message": {"role": "assistant", "content": [
              {"type": "tool_use", "name": "Read",
-              "input": {"file_path": "/x/run/eng-001/eng-001-main.context.md"}}]}},
+              "input": {"file_path": "/x/pods/engineers/eng-001-working.md"}}]}},
         {"type": "assistant", "isSidechain": False, "timestamp": "2026-09-20T12:52:00Z",
          "message": {"role": "assistant", "content": [
              {"type": "tool_use", "name": "Edit", "input": {"file_path": "/x/a.py"}},
@@ -90,12 +90,19 @@ def test_per_id_shape_matches_contracts(instance, work_item):
     (instance / "state" / "eng-001" / "s.json").write_text(json.dumps(
         {"working_set": {"files": [{"path": "/x/src/wip.py", "note": "n"}]}}))
     doc = per_id(instance, "eng-001")
-    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals"}
+    assert set(doc) == {"id", "stream", "dispatched", "seams", "totals", "cache",
+                        "edits_before_definition_of_done"}
     assert (doc["id"], doc["stream"], doc["dispatched"]) == ("eng-001", "eng-001-main", DISPATCHED)
+    assert set(doc["cache"]) == {"id", "invariant", "budget", "seam"}
+    assert doc["cache"]["invariant"]["native_tool_schemas"] == "unmeasured"
+    assert doc["cache"]["seam"]["last_seam_ts"] == "2026-09-20T12:50:00Z"
     (seam,) = doc["seams"]
     assert set(seam) == {"seq", "ts", "source", "prompt_version", "context_tokens_before",
-                         "context_file_bytes", "working_set_size", "next_10_turns"}
+                         "context_file_bytes", "working_set_size", "next_10_turns",
+                         "searches_before_first_edit", "modules_read_before_first_write",
+                         "task_reprints", "packet_bytes"}
     assert seam["prompt_version"] == "b1/r2"
+    assert seam["packet_bytes"] == 18422  # the composed context file is a legacy seam's packet
     assert seam["next_10_turns"] == {"turns": 2, "tool_calls": 3,
                                     "reads_of_context_file": 1,
                                     "reads_of_working_set": 1, "other": 1}
@@ -192,3 +199,214 @@ def test_watch_emits_snapshot_then_delta(instance, work_item):
     thread.join()
     assert second["type"] == "delta"
     assert "tasks" in second["changed"]
+
+
+# --- learn_repeats (TOOL_SKILL_PLAN step 4) -------------------------------------------------
+
+
+def test_fleet_summary_counts_completion_repeats_since_each_rules_last_accept(instance, monkeypatch):
+    monkeypatch.delenv("HX_LEARNINGS", raising=False)
+    repeats = instance / "state" / "learn" / "repeats.jsonl"
+    repeats.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"id": "eng-001", "rule": "L1", "score": 0.91, "ts": "2026-10-01T10:00:00Z", "check": "### Checks"},
+        {"id": "eng-001", "rule": "L1", "score": 0.88, "ts": "2026-10-03T10:00:00Z", "check": "### Checks"},
+        {"id": "eng-002", "rule": "L2", "score": 0.40, "ts": "2026-10-02T10:00:00Z", "check": "unit"},
+    ]
+    repeats.write_text("".join(json.dumps(row) + "\n" for row in rows) + "not json\n")
+    decisions = instance / "LEARNINGS" / "decisions.jsonl"
+    decisions.parent.mkdir(parents=True, exist_ok=True)
+    decisions.write_text(json.dumps({"ts": "2026-10-02T00:00:00Z", "decision": "merged", "rule": "L1"}) + "\n")
+    doc = collect_fleet(instance)
+    assert doc["summary"]["learn_repeats"] == {"L1": 1, "L2": 1}
+    assert "learn_repeats(2): L1=1 L2=1" in render_fleet_text(doc)
+
+
+def test_fleet_summary_has_empty_learn_repeats_without_records(instance):
+    assert collect_fleet(instance)["summary"]["learn_repeats"] == {}
+
+
+# --- post-seam orientation per seam and `--commands` (TOOL_SKILL_PLAN step 5) --------------------
+
+
+def _tool(tool, ts="2026-09-20T12:51:00Z", **data):
+    return {"ts": ts, "event": "post_tool", "tool": tool, "input": json.dumps(data), "output": ""}
+
+
+def test_per_id_seam_carries_post_seam_orientation(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    write_stream(instance, "eng-001", [
+        seam_record(),
+        _tool("Read", file_path="/x/pods/engineers/eng-001-working.md"),
+        _tool("Grep", pattern="thing"),
+        _tool("Read", file_path="/x/src/a.py"),
+        _tool("Bash", command="hx task"),
+        _tool("Edit", file_path="/x/src/a.py"),
+        _tool("Read", file_path="/x/src/b.py"),
+    ])
+    (seam,) = per_id(instance, "eng-001")["seams"]
+    assert (seam["searches_before_first_edit"], seam["modules_read_before_first_write"],
+            seam["task_reprints"]) == (1, 1, 1)
+    text = render_per_id_text(per_id(instance, "eng-001"))
+    assert text.splitlines()[1].split()[-4:] == ["1", "1", "1", "18422"]
+
+
+def test_per_id_post_seam_window_stops_at_the_next_seam(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    second = dict(seam_record(), ts="2026-09-20T13:00:00Z")
+    write_stream(instance, "eng-001", [
+        seam_record(), _tool("Grep", pattern="a"), _tool("Grep", pattern="b"),
+        second, _tool("Edit", ts="2026-09-20T13:01:00Z", file_path="/x/a.py"),
+    ])
+    first, last = per_id(instance, "eng-001")["seams"]
+    assert first["searches_before_first_edit"] == 2
+    assert last["searches_before_first_edit"] == 0
+
+
+def _commands_fixture(instance):
+    write_tasks(instance, {
+        "eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED},
+        "qa-002": {"goal": "## Goal\n\nCheck it.", "dispatched": DISPATCHED},
+    })
+    write_stream(instance, "eng-001", [
+        _tool("Bash", ts="2026-09-20T11:00:00Z", command="hx task"),  # before dispatch
+        _tool("Bash", command="hx task"),
+        _tool("Bash", ts="2026-09-20T12:40:00Z",
+              command=".venv/bin/hx code search pull && hx complete done --summary s"),
+        _tool("exec_command", ts="2026-09-20T12:45:00Z",
+              cmd=["bash", "-lc", "hx memory search 'flaky test'"]),
+        _tool("Bash", command="hx frobnicate now; ls ~/workspace/hx/src"),  # not an hx command
+        _tool("Read", file_path="/x/hx task.md"),                           # not a shell tool
+    ])
+    write_stream(instance, "qa-002", [
+        _tool("Bash", ts="2026-09-20T12:30:00Z", command="hx task"),
+        _tool("Bash", ts="2026-09-20T12:55:00Z", command="hx discipline pull --repo . --expect fresh"),
+    ])
+
+
+def test_commands_counts_five_commands_across_two_ids(instance):
+    from hx.metrics import command_counts
+
+    _commands_fixture(instance)
+    counts = command_counts(instance)
+    assert counts == {
+        "task": {"calls": 2, "agents": {"eng-001": 1, "qa-002": 1}},
+        "code search": {"calls": 1, "agents": {"eng-001": 1}},
+        "complete": {"calls": 1, "agents": {"eng-001": 1}},
+        "discipline pull": {"calls": 1, "agents": {"qa-002": 1}},
+        "memory search": {"calls": 1, "agents": {"eng-001": 1}},
+    }
+    assert list(counts)[0] == "task"  # most calls first
+
+
+def test_commands_since_overrides_the_dispatch_floor(instance):
+    from hx.metrics import command_counts
+
+    _commands_fixture(instance)
+    assert set(command_counts(instance, since="2026-09-20T12:44:00Z")) == {
+        "memory search", "discipline pull", "task"}
+    every = command_counts(instance, since="2026-09-20T00:00:00Z")
+    assert every["task"] == {"calls": 3, "agents": {"eng-001": 2, "qa-002": 1}}
+
+
+def test_commands_cli_json_text_and_usage(instance, capsys):
+    from hx.metrics import main
+
+    _commands_fixture(instance)
+    assert main(["--commands", "--json"], instance) == 0
+    assert json.loads(capsys.readouterr().out)["task"]["calls"] == 2
+    assert main(["--commands"], instance) == 0
+    text = capsys.readouterr().out
+    assert text.splitlines()[-1] == "HX-METRICS-COMMANDS commands=5 calls=6"
+    assert "eng-001=1 qa-002=1" in text
+    for argv in (["eng-001", "--commands"], ["--since", DISPATCHED], ["--commands", "--since", "soon"]):
+        with pytest.raises(SystemExit) as raised:
+            main(argv, instance)
+        assert raised.value.code == 2
+
+
+def test_commands_with_no_streams_is_empty(instance, capsys):
+    from hx.metrics import command_counts, main
+
+    assert command_counts(instance) == {}
+    assert main(["--commands"], instance) == 0
+    assert capsys.readouterr().out == "HX-METRICS-COMMANDS commands=0 calls=0\n"
+
+
+# --- packet_bytes per seam (TOOL_SKILL_PLAN step 6) -------------------------------------------
+
+
+def test_per_id_packet_bytes_prefers_the_seam_records_own_field(instance, work_item):
+    work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    legacy = dict(seam_record())
+    packet = dict(seam_record(), ts="2026-09-20T13:00:00Z", packet_bytes=3900)
+    bare = {key: value for key, value in seam_record().items() if key != "context_file_bytes"}
+    bare["ts"] = "2026-09-20T13:10:00Z"
+    write_stream(instance, "eng-001", [legacy, packet, bare])
+    assert [seam["packet_bytes"] for seam in per_id(instance, "eng-001")["seams"]] == [18422, 3900, None]
+
+
+# --- edits_before_definition_of_done ----------------------------------------------
+
+
+def _edit(path, ts, tool="Edit", **data):
+    return _tool(tool, ts=ts, file_path=str(path), **data)
+
+
+def _dod_case(instance, work_item):
+    item = work_item("eng-001", "working", dispatched=DISPATCHED)
+    write_tasks(instance, {"eng-001": {"goal": "## Goal\n\nDo it.", "dispatched": DISPATCHED}})
+    return item, instance / "wt" / "eng-001"
+
+
+def test_edits_before_definition_of_done_counts_workdir_edits_until_it_is_written(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    item, workdir = _dod_case(instance, work_item)
+    write_stream(instance, "eng-001", [
+        _edit(workdir / "a.py", "2026-09-20T11:00:00Z"),  # before this dispatch: not counted
+        _edit(workdir / "a.py", "2026-09-20T12:01:00Z"),
+        _edit(item, "2026-09-20T12:02:00Z", old_string="## Tasks", new_string="## Tasks\n- [ ] two"),
+        _edit(instance / "elsewhere.txt", "2026-09-20T12:03:00Z"),  # outside the workdir
+        _edit(workdir / "b.py", "2026-09-20T12:04:00Z", tool="Write"),
+        _edit(item, "2026-09-20T12:05:00Z", old_string="<yours, before your first edit: what "
+              "makes this goal done>", new_string="- the importer streams"),
+        _edit(workdir / "c.py", "2026-09-20T12:06:00Z"),  # after: not counted
+    ])
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) == 2
+    assert per_id(instance, "eng-001")["edits_before_definition_of_done"] == 2
+    assert "edits_before_definition_of_done=2" in render_per_id_text(per_id(instance, "eng-001"))
+
+
+def test_subagent_streams_count_and_the_order_is_by_timestamp(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    item, workdir = _dod_case(instance, work_item)
+    write_stream(instance, "eng-001", [
+        _edit(item, "2026-09-20T12:05:00Z", content="## Definition of done\n- streams\n"),
+    ])
+    sub = streams.log_dir(instance, "eng-001") / "eng-001-s001-closed.jsonl"
+    sub.write_text(json.dumps(_edit(workdir / "x.py", "2026-09-20T12:01:00Z")) + "\n")
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) == 1
+
+
+def test_an_unwritten_definition_counts_every_edit_so_far(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    _, workdir = _dod_case(instance, work_item)
+    write_stream(instance, "eng-001", [_edit(workdir / "a.py", "2026-09-20T12:01:00Z"),
+                                       _edit(workdir / "b.py", "2026-09-20T12:02:00Z")])
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) == 2
+
+
+def test_null_when_there_is_no_stream_or_the_write_cannot_be_placed(instance, work_item):
+    from hx.metrics import edits_before_definition_of_done
+
+    item, workdir = _dod_case(instance, work_item)
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) is None
+    item.write_text(item.read_text() + "\n## Definition of done\n- written from a shell\n")
+    write_stream(instance, "eng-001", [_edit(workdir / "a.py", "2026-09-20T12:01:00Z")])
+    assert edits_before_definition_of_done(instance, "eng-001", DISPATCHED) is None

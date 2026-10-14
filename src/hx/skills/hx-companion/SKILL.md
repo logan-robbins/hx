@@ -1,6 +1,10 @@
 ---
 name: hx-companion
 description: Operating manual for an hx Companion session — read the pass file, read the state and the log from from_seq, write one JSON object to the write path with the Write tool, and touch nothing else. Use on every Companion pass, including a retry carrying a retry_reason.
+metadata:
+  hx-audience: companion
+  hx-roles: "*"
+  hx-loads-when: every Companion pass, reading the pass file and writing the step state
 ---
 
 # hx-companion
@@ -120,6 +124,16 @@ pass file asks you to write the work item's `## Digest` section. That is the sin
 Companion writes an agent's file, it is safe because the agent has stopped, and it happens only
 when the pass says so.
 
+## A planned pass, when the unit came from the ledger
+
+For a unit assigned through `hx plan`, the pass does not arrive as a file. The runtime starts
+you once, in a temporary private home, with the same compiled instructions and exactly two MCP
+tools: `read_evidence` (event ids from the frozen pass or its selected records; at most eight
+requests of 2 KiB, 8 KiB in all) and `submit_patch` (the structured state change; at most two
+submissions of 16 KiB, optionally carrying one `map_patch`). The rules above hold unchanged:
+read what the pass froze, produce one structured object, touch nothing else, say one line.
+Prose outside `submit_patch` updates nothing, and a late event waits for the next pass.
+
 ## Why the shape is like this
 
 Worth knowing, because it explains the rules that look fussy:
@@ -127,8 +141,8 @@ Worth knowing, because it explains the rules that look fussy:
 - **Stateless passes** mean your system prompt is an identical prefix every time, which is what
   makes the caching pay. Anything you smuggle into a pass that was not in the files breaks the
   one property the design depends on.
-- **The agent never reads your output directly.** hx composes it into a single context file the
-  agent reads once after its conversation is cut. Your `open_steps[].next` is the sentence that
+- **The agent never reads your output directly.** hx renders it into the `## Status` of the
+  work item the agent reads once after its conversation is cut. Your `open_steps[].next` is the sentence that
   tells it where to put its hands, and `working_set.files` notes are the Reads it does not have
   to repeat. Those two fields are most of the value you produce.
 - **Your output is measured.** The metric is what the agent does in the ten turns after a seam:

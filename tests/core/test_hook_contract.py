@@ -49,6 +49,8 @@ def test_installed_hook_survives_cleared_environment_and_worker_reuse(instance, 
     configure(instance, adapter)
     hook = instance / "bin" / "hx-hook"
     hook.parent.mkdir(exist_ok=True)
+    # The installed entry point is a symlink; replace the scratch link, not its target.
+    hook.unlink(missing_ok=True)
     hook.write_text(f"#!{sys.executable}\nimport sys\nsys.path.insert(0, {str(SRC)!r})\nfrom hx.hooks import main\nraise SystemExit(main())\n")
     hook.chmod(0o755)
     for flavor in ("codex", "grok", "meta", "pi"):
@@ -136,6 +138,8 @@ def test_installed_pi_loader_delivers_with_frozen_contract(instance, child_env, 
     configure(instance, "pi")
     hook = instance / "bin" / "hx-hook"
     hook.parent.mkdir(exist_ok=True)
+    # The installed entry point is a symlink; replace the scratch link, not its target.
+    hook.unlink(missing_ok=True)
     hook.write_text(f"#!{sys.executable}\nimport sys, io\nsys.path.insert(0, {str(SRC)!r})\nfrom hx.hooks import main\nraw = sys.stdin.read()\nassert 'PRIVATE' not in raw, 'private fields reached hook pipe'\nsys.stdin = io.StringIO(raw)\nraise SystemExit(main())\n")
     hook.chmod(0o755)
     extension = tmp_path / "native-extension" / "index.ts"
@@ -213,6 +217,8 @@ def test_installed_muse_failure_reaches_ledger_through_generated_hooks(instance,
     configure(instance, 'meta')
     hook = instance / 'bin/hx-hook'
     hook.parent.mkdir(exist_ok=True)
+    # The installed entry point is a symlink; replace the scratch link, not its target.
+    hook.unlink(missing_ok=True)
     hook.write_text(f'#!{sys.executable}\nimport sys\nsys.path.insert(0, {str(SRC)!r})\nfrom hx.hooks import main\nraise SystemExit(main())\n')
     hook.chmod(0o700)
     token = instance / 'seed/meta-token'

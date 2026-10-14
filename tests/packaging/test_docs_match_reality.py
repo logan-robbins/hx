@@ -88,8 +88,8 @@ def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
 
     `HX_CLAUDE_BIN` is the fake `claude`, so `hx install` step 6 launches a fake Partner rather
     than a real agent, and `HX_TMUX` keeps that session on a private server this test kills.
-    The version check in step 1 needs a *real* binary, so the real one is pinned with `--claude`
-    and never launched.
+    Step 1 records the real `claude` on PATH (any version; nothing is refused) and never
+    launches it.
     """
     fake = scratch / "bin" / "claude"
     fake.parent.mkdir(parents=True, exist_ok=True)
@@ -107,6 +107,12 @@ def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
     env.pop("HARNESS_ROOT", None)
     env.pop("HARNESS_ID", None)
     (scratch / "home").mkdir(parents=True, exist_ok=True)
+    # The scratch HOME shares the operator's embedding-model cache, as the core conftest does:
+    # `hx doctor`'s `memory-model` row is `ok` on a warmed machine and nothing downloads.
+    real_cache = pathlib.Path(os.environ.get("HOME", "")) / ".cache" / "chroma"
+    if real_cache.is_dir():
+        (scratch / "home" / ".cache").mkdir(parents=True, exist_ok=True)
+        (scratch / "home" / ".cache" / "chroma").symlink_to(real_cache)
 
     # Step 3 stops with exit 4 until the token exists; that is asserted properly by
     # packaging/e2e-deploy.sh, so here it is just the first half of the install.
@@ -333,13 +339,13 @@ def test_getting_started_matches_what_install_really_prints():
     )
 
 
-def test_getting_started_pins_the_versions_the_package_really_carries():
+def test_getting_started_names_the_live_verified_versions():
     text = GETTING_STARTED_MD.read_text()
     tested = json.loads(
         (REPO / "src" / "hx" / "packaging" / "tested-claude-versions.json").read_text()
     )["versions"]
     for version in tested:
-        assert version in text, f"getting-started does not name the tested claude {version}"
+        assert version in text, f"getting-started does not name the live-verified claude {version}"
     pyproject = (REPO / "pyproject.toml").read_text()
     wheel_version = re.search(r'^version = "([^"]+)"', pyproject, re.M).group(1)
     assert f"hx_harness-{wheel_version}-py3-none-any.whl" in text, (
@@ -360,12 +366,12 @@ def test_every_shipped_role_has_both_halves():
     keeps. `hx launch` refuses a role with no role file, so a persona shipped without one is a
     worker that cannot start."""
     for role in (*SHIPPED_ROLES, "partner"):
-        assert (PERSONAS / role / "AGENTS.md").is_file(), f"no persona for {role}"
+        assert (PERSONAS / f"{role}.md").is_file(), f"no persona for {role}"
         assert (ROLES / f"{role}.md").is_file(), f"no companion role file for {role}"
 
 
 def test_no_persona_is_shipped_without_a_role_file_or_the_other_way_round():
-    personas = sorted(p.name for p in PERSONAS.iterdir() if p.is_dir())
+    personas = sorted(p.stem for p in PERSONAS.glob("*.md"))
     roles = sorted(p.stem for p in ROLES.glob("*.md"))
     assert personas == roles, (personas, roles)
 
@@ -375,14 +381,11 @@ def test_the_worker_template_defaults_to_a_role_that_ships():
         (REPO / "src" / "hx" / "skeleton" / "templates" / "worker" / "harness.json").read_text()
     )
     assert worker["role"] in SHIPPED_ROLES, worker["role"]
-    assert (PERSONAS / worker["role"] / "AGENTS.md").is_file()
+    assert (PERSONAS / f"{worker['role']}.md").is_file()
 
 
-def test_the_partner_config_is_the_partner_persona():
-    """`config/partner/AGENTS.md` is what the Partner launches with; `personas/partner/AGENTS.md`
-    is what the Partner would copy to rebuild it. Two texts would mean two Partners."""
-    config = (REPO / "src" / "hx" / "skeleton" / "config" / "partner" / "AGENTS.md").read_text()
-    persona = (PERSONAS / "partner" / "AGENTS.md").read_text()
-    assert config == persona, (
-        "config/partner/AGENTS.md has drifted from personas/partner/AGENTS.md"
-    )
+def test_the_partner_has_one_persona():
+    """`personas/partner.md` is the Partner's persona, the one the `context` hook hands it; a
+    second copy under `config/partner/` would mean two Partners."""
+    assert (PERSONAS / "partner.md").is_file()
+    assert not (REPO / "src" / "hx" / "skeleton" / "config" / "partner" / "AGENTS.md").exists()

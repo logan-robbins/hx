@@ -74,14 +74,14 @@ def pytest_collection_modifyitems(config, items):
 
 
 MODELS = {
-    "claude-haiku-4-5-20251001": {"window": 200000, "seam_threshold": 100000},
-    "claude-sonnet-5": {"window": 1000000, "seam_threshold": 500000},
-    "claude-opus-5": {"window": 1000000, "seam_threshold": 500000},
+    "claude-haiku-5-5": {"window": 200000, "seam_threshold": 100000},
+    "claude-sonnet-5-5": {"window": 1000000, "seam_threshold": 500000},
+    "claude-opus-5-5": {"window": 1000000, "seam_threshold": 500000},
 }
 
 #: Every live test here is about the harness, never about the model's answer. The user's
 #: standing rule (2026-09-21): tests run Sonnet at medium effort, for agents and Companions.
-LIVE_MODEL = "claude-sonnet-5"
+LIVE_MODEL = "claude-sonnet-5-5"
 LIVE_EFFORT = "medium"
 
 
@@ -142,15 +142,11 @@ def worker(live_root, live_env):
         config.mkdir(parents=True, exist_ok=True)
         (config / "harness.json").write_text(json.dumps({
             "id": item_id, "pod": pod, "role": role, "model": LIVE_MODEL, "effort": effort,
-            "workdir": str(workdir),
+            "workdir": str(workdir), "purpose": f"You are {item_id}, a backend engineer.",
             "companion": {"provider": "claude-cli", "model": LIVE_MODEL, "batch_records": 5,
                           "state_budget_tokens": 4000, "seam_min_context_tokens": 1,
                           "seam_min_interval_s": 0},
         }, indent=2) + "\n")
-        (config / "AGENTS.md").write_text(
-            f"You are {item_id}, a backend engineer.\n\n## UPDATES BELOW ONLY\n\nnothing yet.\n"
-        )
-        (config / "SUBAGENTS.md").write_text(f"You are a subagent of {item_id}.\n")
         (live_root / "pods" / pod).mkdir(parents=True, exist_ok=True)
         return item_id, workdir
 

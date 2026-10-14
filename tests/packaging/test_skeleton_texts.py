@@ -8,7 +8,8 @@ Constraints checked here, with the section each comes from:
 * goal-shaped examples: `## Goal`, `## Definition of done`, and a non-empty fenced ``bash``
   block under `### Checks` — spec 06, `CONTRACTS.md` "Goals", and what `hx dispatch` refuses
 * `templates/work-item.md`: the frontmatter keys and every body section of spec 06
-* every `AGENTS.md`: exactly one `## UPDATES BELOW ONLY` — spec 03, 04, guard rule 1
+* every `AGENTS.md`: a persona, and no `## UPDATES BELOW ONLY` — the memory header is retired;
+  a lesson is a learnings proposal (docs/learnings.md)
 * both `SKILL.md` files: valid frontmatter with `name` and `description` — spec 17.5 and
   code.claude.com/docs/en/skills
 
@@ -33,9 +34,11 @@ GOAL_EXAMPLES = [SKELETON / "templates" / "goal.md"]
 #: Every skill that ships, for the checks that apply to any skill.
 SKILL_FILES = [
     SKILLS / "hx-companion" / "SKILL.md",
+    SKILLS / "hx-conversion" / "SKILL.md",
     SKILLS / "hx-memory" / "SKILL.md",
     SKILLS / "hx-partner" / "SKILL.md",
     SKILLS / "hx-setup" / "SKILL.md",
+    SKILLS / "hx-signoff" / "SKILL.md",
     SKILLS / "hx-worker" / "SKILL.md",
 ]
 
@@ -59,43 +62,31 @@ def _ids(paths):
 # --------------------------------------------------------------------------- goals
 
 
-def _checks_bash_blocks(text: str) -> list[str]:
-    """Fenced ```bash blocks that appear under a `### Checks` heading."""
-    after = text.split("### Checks", 1)
-    if len(after) == 1:
-        return []
-    # Stop at the next heading of the same or higher level, so a later section's bash
-    # block cannot stand in for a missing one here.
-    tail = re.split(r"^#{1,3} ", after[1], maxsplit=1, flags=re.MULTILINE)[0]
-    return re.findall(r"^```bash\n(.*?)^```", tail, flags=re.MULTILINE | re.DOTALL)
-
-
 @pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_the_sections_dispatch_requires(path):
+def test_goal_example_is_what_dispatch_accepts(path):
+    """CONTRACTS.md "Goals": one `## Goal` section. The definition of done is the worker's
+    and `hx complete done` requires its `## Evidence`, so neither appears in a goal."""
+    from hx.goals import parse_goal
+
     text = path.read_text()
     assert re.search(r"^## Goal$", text, re.MULTILINE), f"{path}: no `## Goal` section"
-    assert re.search(r"^## Definition of done$", text, re.MULTILINE), (
-        f"{path}: no `## Definition of done` section"
-    )
-    assert re.search(r"^### Checks$", text, re.MULTILINE), f"{path}: no `### Checks` heading"
+    assert "## Definition of done" not in text, f"{path}: a goal carries no definition of done"
+    assert "### Checks" not in text, f"{path}: a goal carries no checks"
+    assert parse_goal(path).goal.strip()
 
 
 @pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_a_non_empty_checks_bash_block(path):
-    blocks = _checks_bash_blocks(path.read_text())
-    assert blocks, f"{path}: no fenced ```bash block under `### Checks`"
-    commands = [
-        line for b in blocks for line in b.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
-    assert commands, f"{path}: the `### Checks` bash block has no commands"
+def test_goal_example_is_one_paragraph(path):
+    from hx.goals import parse_goal
+
+    paragraphs = [p for p in re.split(r"\n\s*\n", parse_goal(path).goal.strip()) if p.strip()]
+    assert len(paragraphs) == 1, f"{path}: {len(paragraphs)} paragraphs; the example is one"
 
 
 @pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_only_the_two_top_level_sections(path):
-    # Spec 06: "contains exactly two sections, `## Goal` and `## Definition of done`".
-    headings = re.findall(r"^## (.+)$", path.read_text(), re.MULTILINE)
-    assert headings == ["Goal", "Definition of done"], f"{path}: {headings}"
+def test_goal_example_has_only_the_goal_section(path):
+    headings = re.findall(r"^#{1,6} (.+)$", path.read_text(), re.MULTILINE)
+    assert headings == ["Goal"], f"{path}: {headings}"
 
 
 def test_goal_example_has_no_frontmatter():
@@ -134,8 +125,12 @@ def test_work_item_template_frontmatter_keys():
 def test_work_item_template_has_every_section_spec_06_names():
     text = (SKELETON / "templates" / "work-item.md").read_text()
     expected = [
+        "Definition of done",  # the worker's, before its first edit
+        "Orientation",  # the explorer's cited starting points
         "Standing instructions",
         "Tasks",
+        "Status",  # hx's half of session memory, rewritten at every boundary
+        "Evidence",  # what `hx complete done` requires
         "Deliverables",
         "Commands",
         "Open decision",
@@ -154,7 +149,8 @@ def test_work_item_template_standing_instructions_use_current_task_state():
         "Read only missing or changed source ranges",
         "dependencies, write ownership and available resources",
         "Do not write personal worker memory",
-        "`hx complete done` runs `### Checks`",
+        "Write `## Definition of done` before your first edit",
+        "`hx complete done` requires a clean workdir, no open subagent, and a `## Evidence` line",
         "Your last action is `hx complete <outcome>`",
     ):
         assert fragment in text, f"work-item.md standing instructions lost: {fragment!r}"
@@ -173,56 +169,44 @@ def agents_files() -> list[pathlib.Path]:
     return sorted(SKELETON.rglob("AGENTS.md"))
 
 
-def test_the_skeleton_ships_agents_files():
-    found = agents_files()
-    assert found, "no AGENTS.md in the skeleton"
-    names = {p.parent.name for p in found}
-    assert "partner" in names, f"no config/partner/AGENTS.md; found {sorted(names)}"
+def test_the_skeleton_ships_no_agents_files():
+    """Personas are `personas/<role>.md`; nothing per id and no `AGENTS.md` anywhere."""
+    assert agents_files() == [], [str(p.relative_to(SKELETON)) for p in agents_files()]
 
 
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_exactly_one_mutable_header(path):
+def persona_files() -> list[pathlib.Path]:
+    return sorted((SKELETON / "personas").glob("*.md"))
+
+
+@pytest.mark.parametrize("path", persona_files(), ids=_ids(persona_files()))
+def test_persona_file_carries_no_memory_header(path):
+    """The whole file is persona: the `context` hook prints it whole. There is no memory below
+    a header any more — a lesson is a learnings proposal."""
     lines = path.read_text().splitlines()
     hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-    assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected exactly 1"
+    assert hits == [], f"{path}: the retired `{MUTABLE_HEADER}` header on line(s) {hits}"
+    assert path.read_text().strip(), f"{path}: empty, so the role would have no persona"
 
 
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_a_persona_above_and_room_below(path):
-    """Above the header is the persona `start.sh` copies to run/<id>/persona.md (spec 11);
-    below it is the agent's own memory, which travels in the context file (spec 03)."""
-    text = path.read_text()
-    above, header, _ = text.partition(MUTABLE_HEADER)
-    assert header, f"{path}: no `{MUTABLE_HEADER}` line"
-    assert above.strip(), f"{path}: nothing above the header, so persona.md would be empty"
-    # Below the header may be empty: it is the agent's own memory, and a freshly installed
-    # persona has none yet. What matters is that the header is there to divide the two.
-
-
-def test_every_shipped_persona_has_exactly_one_mutable_header():
-    """`personas/<role>/AGENTS.md` are the texts the Partner copies over `config/<id>/AGENTS.md`
-    when it creates a worker. `start.sh` refuses an AGENTS.md with no header, so a persona
-    missing one would be a worker that cannot launch."""
+def test_every_shipped_persona_is_persona_only():
+    """`personas/<role>.md` is what the `context` hook hands every agent of the role, whole.
+    Nothing in one is about any single agent, and no role ships rules of its own."""
     personas = sorted((SKELETON / "personas").iterdir())
     assert [p.name for p in personas] == [
-        "backend-engineer", "frontend-engineer", "partner", "qa-engineer", "release-engineer",
+        "backend-engineer.md", "frontend-engineer.md", "partner.md", "qa-engineer.md",
+        "release-engineer.md",
     ], [p.name for p in personas]
-    for directory in personas:
-        path = directory / "AGENTS.md"
-        assert path.is_file(), f"{directory.name} has no AGENTS.md"
-        lines = path.read_text().splitlines()
-        hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-        assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected 1"
+    for path in personas:
+        assert path.is_file(), f"{path.name} is not a file"
+        text = path.read_text()
+        assert MUTABLE_HEADER not in text, f"{path}: carries the retired memory header"
+        assert "below the header" not in text, f"{path}: still points at a memory section"
 
 
-def test_the_installed_partner_persona_is_the_shipped_one():
-    """`config/partner/AGENTS.md` is what the Partner actually launches with; it must not drift
-    from `personas/partner/AGENTS.md`, which is the text under review."""
-    installed = (SKELETON / "config" / "partner" / "AGENTS.md").read_text()
-    source = (SKELETON / "personas" / "partner" / "AGENTS.md").read_text()
-    assert installed == source, (
-        "config/partner/AGENTS.md differs from personas/partner/AGENTS.md; copy the persona"
-    )
+def test_the_partner_persona_has_one_copy():
+    """`personas/partner.md` is the Partner's persona; nothing under `config/partner/` repeats it."""
+    assert (SKELETON / "personas" / "partner.md").is_file()
+    assert not (SKELETON / "config" / "partner" / "AGENTS.md").exists()
 
 
 def test_a_fresh_instance_installs_only_the_partner():
@@ -233,27 +217,30 @@ def test_a_fresh_instance_installs_only_the_partner():
     assert id_dirs == ["partner"], f"config/ installs worker ids: {id_dirs}"
 
 
-def test_every_config_id_dir_has_agents_subagents_and_harness_json():
+def test_every_config_id_dir_has_subagents_and_harness_json_only():
     config = SKELETON / "config"
     id_dirs = sorted(p for p in config.iterdir() if p.is_dir())
     assert id_dirs, "no config/<id>/ directories in the skeleton"
     for d in id_dirs:
-        for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
-            assert (d / name).is_file(), f"{d.relative_to(REPO)}: missing {name}"
+        assert sorted(p.name for p in d.iterdir()) == ["SUBAGENTS.md", "harness.json"], \
+            f"{d.relative_to(REPO)}: {sorted(p.name for p in d.iterdir())}"
 
 
-def test_worker_template_ships_all_three_identity_files():
-    worker = SKELETON / "templates" / "worker"
-    assert sorted(p.name for p in worker.iterdir()) == [
-        "AGENTS.md", "SUBAGENTS.md", "harness.json",
-    ], sorted(p.name for p in worker.iterdir())
+@pytest.mark.parametrize("kind", ["worker", "contributor"])
+def test_worker_template_is_a_config_and_the_shared_subagents_text(kind):
+    """A worker is its `harness.json`; its persona is the role's and its identity line carries
+    its `purpose`, and SUBAGENTS.md is shared and rendered at delivery. No per-id AGENTS.md."""
+    template = SKELETON / "templates" / kind
+    assert sorted(p.name for p in template.iterdir()) == [
+        "SUBAGENTS.md", "harness.json",
+    ], sorted(p.name for p in template.iterdir())
 
 
 def test_worker_template_is_templated_on_id_and_pod():
     """The Partner copies this to config/<id>/ and substitutes. A leftover placeholder must
     fail validation loudly rather than install a worker named `{{id}}`."""
     worker = SKELETON / "templates" / "worker"
-    for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
+    for name in ("SUBAGENTS.md", "harness.json"):
         text = (worker / name).read_text()
         assert "{{id}}" in text, f"templates/worker/{name}: nothing templated on the id"
     cfg = json.loads((worker / "harness.json").read_text())
@@ -358,16 +345,26 @@ def test_skill_body_is_present_and_within_the_recommended_length(path):
 
 
 def test_the_skills_that_ship_are_the_ones_the_spec_names():
-    assert sorted(p.name for p in SKILLS.iterdir()) == [
-        "hx-companion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup", "hx-worker",
+    # `manifest.json` beside them says who gets each one (TOOL_SKILL_PLAN step 1).
+    assert sorted(p.name for p in SKILLS.iterdir() if p.is_dir() and p.name != "__pycache__") == [
+        "hx-companion", "hx-conversion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup",
+        "hx-signoff", "hx-worker",
     ], (
         "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
         "spec 10 adds hx-companion for the Companion's home; hx-fleet is the Partner's manual "
         "for making and retiring agents, and is the Partner's alone; hx-memory is how either "
         "kind of HarnessAgent searches the instance's episode store (docs/memory.md); "
         "hx-setup is for the coding agent or harness that installs hx, and is never copied "
-        "into an agent home"
+        "into an agent home; hx-signoff is the release and QA engineers' sign-off loop, and "
+        "hx-conversion is optional, on only where config/hx.json lists it (TOOL_SKILL_PLAN "
+        "step 7)"
     )
+    assert sorted(p.name for p in SKILLS.iterdir() if p.is_file()) == ["manifest.json"]
+    manifest = json.loads((SKILLS / "manifest.json").read_text())
+    assert manifest["hx-signoff"] == {"audiences": ["worker"],
+                                     "roles": ["release-engineer", "qa-engineer"], "optional": False}
+    assert manifest["hx-conversion"] == {"audiences": ["partner", "worker"], "roles": ["*"],
+                                        "optional": True}
 
 
 def test_the_setup_skill_is_not_installed_into_any_home():
@@ -407,8 +404,8 @@ def test_the_fleet_skill_names_only_paths_that_exist():
     will actually copy. A path that does not exist is a worker that cannot be made."""
     text = FLEET_SKILL.read_text()
     for relative in (
-        "templates/worker", "personas/backend-engineer/AGENTS.md",
-        "personas/frontend-engineer/AGENTS.md", "personas/release-engineer/AGENTS.md",
+        "templates/worker", "personas/backend-engineer.md",
+        "personas/frontend-engineer.md", "personas/release-engineer.md", "personas/qa-engineer.md",
         "companion/roles/backend-engineer.md", "config/CLAUDE.md",
     ):
         assert relative in text, f"hx-fleet does not mention {relative}"
@@ -417,20 +414,19 @@ def test_the_fleet_skill_names_only_paths_that_exist():
 
 def test_the_fleet_skill_roles_match_the_personas_and_the_role_files():
     text = FLEET_SKILL.read_text()
-    roles = sorted(p.name for p in (SKELETON / "personas").iterdir() if p.name != "partner")
+    roles = sorted(p.stem for p in (SKELETON / "personas").glob("*.md") if p.stem != "partner")
     for role in roles:
         assert role in text, f"hx-fleet does not name the {role} role"
         assert (SKELETON / "companion" / "roles" / f"{role}.md").is_file()
 
 
-def test_the_fleet_skill_protects_the_agents_own_memory():
-    """Below the header is the worker's memory. Editing it, or copying one worker's into
-    another, writes false memories into a running agent — the one irreversible mistake
-    available here."""
+def test_the_fleet_skill_sends_lessons_to_the_learnings():
+    """No worker keeps a memory file. What one learned is a proposal the Partner reviews into
+    the learnings of its role; the skill must say so, and must not send anyone to a header."""
     text = FLEET_SKILL.read_text()
-    assert "## UPDATES BELOW ONLY" in text
-    assert "below the header" in text
-    assert "memory" in text
+    assert "## UPDATES BELOW ONLY" not in text
+    assert "below the header" not in text
+    assert "hx learn pending" in text and "purpose" in text
 
 
 # --------------------------------------------------------------- the Companion skill
@@ -521,7 +517,7 @@ def test_companion_prompts_exist_for_every_role_that_ships():
     base = SKELETON / "companion" / "BASE.md"
     assert base.is_file() and base.read_text().strip(), "companion/BASE.md is missing or empty"
     roles = sorted(p.stem for p in (SKELETON / "companion" / "roles").glob("*.md"))
-    personas = sorted(p.name for p in (SKELETON / "personas").iterdir())
+    personas = sorted(p.stem for p in (SKELETON / "personas").glob("*.md"))
     assert roles == personas, (
         f"every shipped persona needs a companion role file of the same name: "
         f"roles {roles}, personas {personas}"

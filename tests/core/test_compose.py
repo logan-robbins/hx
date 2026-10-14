@@ -1,9 +1,9 @@
 """`hx compose` and the `context` hook — milestone M2 (spec 02, 07.3, 09.1, 13).
 
-M2 pass criteria: on `startup`, `resume`, `clear` and `compact` the hook prints one path line;
-the file holds memory, task, `## Tasks`, step state and open handles, in that order, and no
-persona on flavors whose CLI injects one (the persona rides section 0 everywhere else);
-the Partner's file holds `PARTNER.md` and a live board pointer.
+The main stream has no context file: `hx compose <id>` rewrites the work item's `## Status`
+(`PARTNER.md`'s for the Partner) and the `context` hook hands the agent its chain — persona,
+identity line, rules — ending in one pointer to that file (`hx.persona.boundary`, whose order
+and channels tests/core/test_persona.py covers). A subagent stream still gets one context file.
 """
 
 from __future__ import annotations
@@ -14,15 +14,17 @@ import sys
 
 import pytest
 
+from hx.hook_context import CONTEXT_LINE
+from hx.persona import IDLE_LINE
+
 from .conftest import PERSONA, clean_env, wait_for
 
-SECTION_GOAL = [
-    "## Invariants",
-    "## Memory",
+STATUS_PARTS = ["### Step state", "### Memory episodes", "### Open subagent handles"]
+
+SUBAGENT_SECTIONS = [
+    "## Who your subagents are",
     "## Task",
-    "## Tasks",
     "## Step state",
-    # Episode memory (docs/memory.md), between the agent's own state and its open handles.
     "## Memory episodes",
     "## Open subagent handles",
 ]
@@ -52,206 +54,112 @@ def run_hook(instance, item_id, event, payload=None, *, tmux=None, harness_id=No
     )
 
 
-def context_file(instance, item_id):
+def work_item(instance, item_id="eng-001"):
+    return instance / "pods" / "engineers" / f"{item_id}-working.md"
+
+
+def old_context_file(instance, item_id):
     return instance / "run" / item_id / f"{item_id}-main.context.md"
 
 
+def subagent_file(instance, stream, item_id="eng-001"):
+    return instance / "run" / item_id / f"{stream}.context.md"
+
+
+def status_of(path):
+    """The `## Status` section of a work item or PARTNER.md, up to the next `##`."""
+    body = path.read_text()
+    assert "\n## Status\n" in body, f"no ## Status in {path.name}"
+    section = body.split("\n## Status\n", 1)[1]
+    following = section.find("\n## ")
+    return section if following < 0 else section[:following]
+
+
+def part(status, title):
+    """One `###` part of a status section."""
+    start = status.index(f"### {title}\n")
+    following = status.find("\n### ", start + 1)
+    return status[start:] if following < 0 else status[start:following]
+
+
 def section_index(text, heading):
-    assert heading in text, f"{heading} missing from the context file"
+    assert heading in text, f"{heading} missing"
     return text.index(heading)
 
 
-# --- hx compose --------------------------------------------------------------------------------
+# --- hx compose: the main stream -----------------------------------------------------------------
 
 
-def test_the_sections_are_in_the_order_spec_07_3_fixes(instance, hx, launched, goals):
+def test_compose_writes_the_status_into_the_working_item_and_names_it(instance, hx, launched, goals):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
     dispatch_working(instance, hx, goals, goal="Stream the importer.")
     result = hx("compose", "eng-001")
     assert result.returncode == 0, result.stderr
-    path = context_file(instance, "eng-001")
-    assert result.stdout.strip() == str(path)
-
-    text = path.read_text()
-    # Headings match with their newline: `## Task` is a prefix of `## Tasks`, which the
-    # Invariants prose mentions, so a bare substring finds the mention, not the section.
-    positions = [section_index(text, heading + "\n") for heading in SECTION_GOAL]
-    assert positions == sorted(positions), f"sections out of order: {positions}"
+    assert result.stdout.strip() == str(work_item(instance))
+    assert not old_context_file(instance, "eng-001").exists(), "the main stream has no context file"
+    status = status_of(work_item(instance))
+    positions = [section_index(status, heading + "\n") for heading in STATUS_PARTS]
+    assert positions == sorted(positions), f"status parts out of order: {positions}"
 
 
-def test_the_invariants_ride_first_from_the_single_file(instance, hx, launched, goals):
-    """One copy of the global rules (`config/CLAUDE.md`), read on every stream."""
+def test_the_main_stream_has_no_context_text(instance, launched):
+    from hx import compose
+    from hx.errors import ValidationError
+
+    launched("eng-001")
+    with pytest.raises(ValidationError, match="main stream has no context file"):
+        compose.compose_text(instance, "eng-001", "eng-001-main")
+
+
+def test_status_is_written_into_the_working_item_after_tasks(instance, hx, launched, goals):
+    """Session memory is the work item: the agent keeps `## Tasks`, hx rewrites `## Status`
+    at every boundary."""
     from .test_transitions import dispatch_working
 
     launched("eng-001")
     dispatch_working(instance, hx, goals)
-    assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    source = (instance / "config" / "CLAUDE.md").read_text().strip("\n")
-    assert source in text, "the invariants file is not carried whole"
-    assert "_source: `config/CLAUDE.md`_" in text
-
-
-def test_the_persona_is_never_in_the_context_file(instance, hx, launched, goals):
-    """spec 02 Identity: the persona is system prompt, not context."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-
-    persona_first_line = PERSONA.strip().split("\n")[0]
-    assert persona_first_line not in text, "the persona leaked into the context file"
-    assert "## UPDATES BELOW ONLY" not in text
-    assert "Things I learned: nothing yet." in text, "the memory below the header is carried"
-
-
-@pytest.mark.parametrize("flavor", ["meta", "codex"])
-def test_the_persona_rides_the_context_file_without_system_prompt_injection(
-    instance, hx, launched, goals, flavor
-):
-    """spec 02 Identity: flavors whose CLI takes no system prompt get the persona as
-    section 0, recomposed at every boundary like everything else in the file."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    _set_flavor(instance, "eng-001", flavor)
-    assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    assert "\n## Persona\n" in text
-    assert "_source: `config/eng-001/AGENTS.md`_" in text
-    assert PERSONA.strip().split("\n")[0] in text
-    assert "Things I learned: nothing yet." in text, "memory still rides below it"
-    assert text.index("## Persona\n") < text.index("## Memory\n"), "persona reads first"
-
-
-def test_no_persona_section_where_the_cli_injects_it(instance, hx, launched, goals):
-    """The default flavor injects at launch: carrying it here too would spend context."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    assert hx("compose", "eng-001").returncode == 0
-    assert "\n## Persona\n" not in context_file(instance, "eng-001").read_text()
-
-
-def test_persona_section_strips_the_stamped_globals(instance, hx, launched, goals):
-    """The Invariants section already carries config/CLAUDE.md from source: loading
-    the stamped copy too would spend the same tokens twice per boundary."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    _set_flavor(instance, "eng-001", "meta")
-    (instance / "config" / "eng-001" / "AGENTS.md").write_text(
-        "<!-- hx:global begin (from config/CLAUDE.md — edit the source, not this copy) -->\n"
-        "GLOBAL BODY\n"
-        "<!-- hx:global end -->\n"
-        "\n"
-        "<!-- hx:role begin (from personas/engineer/AGENTS.md — edit the source, not this copy) -->\n"
-        "ROLE BODY\n"
-        "<!-- hx:role end -->\n"
-        "\n"
-        "Per-id line.\n"
-        "\n"
-        "## UPDATES BELOW ONLY\n"
-        "\n"
-        "Things I learned: nothing yet.\n"
-    )
-    assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    persona = text.split("## Persona\n", 1)[1].split("## Memory\n", 1)[0]
-    assert "GLOBAL BODY" not in persona
-    assert "ROLE BODY" in persona
-    assert "Per-id line." in persona
-    assert "## UPDATES BELOW ONLY" not in persona
-
-
-def test_no_persona_text_without_the_header(instance, hx, launched, goals):
-    """Without the header hx cannot tell persona from memory: carry neither text.
-
-    The heading still renders (every section does when its source is missing),
-    with the `_none yet_` body.
-    """
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    _set_flavor(instance, "eng-001", "meta")
-    (instance / "config" / "eng-001" / "AGENTS.md").write_text("You are eng-001.\n")
-    assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    assert "You are eng-001." not in text
-    assert "## UPDATES BELOW ONLY" not in text
-
-
-def test_no_persona_section_on_a_subagent_stream(instance, hx, launched, goals):
-    """Subagent streams already carry SUBAGENTS.md whole as their identity."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    _set_flavor(instance, "eng-001", "codex")
-    (instance / "config" / "eng-001" / "SUBAGENTS.md").write_text("You are a subagent of eng-001.\n")
-    assert hx("compose", "eng-001", "eng-001-s001").returncode == 0
-    text = (instance / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
-    assert "\n## Persona\n" not in text
-    assert "You are a subagent of eng-001." in text
-
-
-def test_the_partner_file_carries_the_persona_on_codex(instance, hx, launched):
-    """The Codex Partner has no system prompt either: same section 0."""
-    launched("partner")
-    _set_flavor(instance, "partner", "codex")
-    assert hx("compose", "partner").returncode == 0
-    text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
-    assert "\n## Persona\n" in text
-    assert "You are the Partner." in text
-
-
-def test_each_section_names_the_file_it_came_from(instance, hx, launched, goals):
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    assert "_source: `config/eng-001/AGENTS.md`_" in text
-    assert "_source: `pods/engineers/eng-001-working.md`_" in text
-
-
-def test_the_task_section_carries_the_order_and_its_addenda(instance, hx, launched, goals):
-    from .test_transitions import dispatch_working, write_addendum
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals, goal="The original order.")
-    assert hx("complete", "decision", harness_id="eng-001").returncode == 0
-    write_addendum(instance, "eng-001", "And also handle the empty case.")
-    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
+    item = work_item(instance)
+    item.write_text(item.read_text().replace("- [ ] …", "- [x] read it\n- [ ] rewrite it"))
+    state = instance / "state" / "eng-001"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "eng-001-main.json").write_text(json.dumps({"seq": 7, "goal": "stream the importer"}))
+    logs = instance / "logs" / "eng-001"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "eng-001-s001-open.jsonl").write_text("")
 
     assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    task = text[section_index(text, "## Task\n"):section_index(text, "## Tasks\n")]
-    assert "The original order." in task
-    assert "And also handle the empty case." in task
+    body = item.read_text()
+    assert body.count("\n## Status\n") == 1
+    assert body.index("## Tasks") < body.index("## Status") < body.index("## Deliverables")
+    status = body[body.index("## Status"):body.index("## Deliverables")]
+    assert "<rewritten by hx" not in status, "the template's placeholder is replaced"
+    assert "### Step state\n\ngoal: stream the importer" in status
+    assert "### Memory episodes" in status and "`eng-001-s001`" in status
+    assert "- [x] read it\n- [ ] rewrite it" in body, "the agent's half is untouched"
 
-
-def test_the_tasks_section_is_the_agents_own_list(instance, hx, launched, goals):
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    work_item = instance / "pods" / "engineers" / "eng-001-working.md"
-    work_item.write_text(work_item.read_text().replace("- [ ] …", "- [x] read it\n- [ ] rewrite it"))
-
+    before = item.stat().st_mtime_ns
     assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    tasks = text[section_index(text, "## Tasks"):section_index(text, "## Step state")]
-    assert "- [x] read it" in tasks and "- [ ] rewrite it" in tasks
+    assert item.read_text() == body and item.stat().st_mtime_ns == before, \
+        "an unchanged status is not rewritten"
+    (state / "eng-001-main.json").write_text(json.dumps({"seq": 8, "goal": "stream it in chunks"}))
+    assert hx("compose", "eng-001").returncode == 0
+    body = item.read_text()
+    assert body.count("\n## Status\n") == 1 and "stream it in chunks" in body
+    assert "stream the importer" not in body.split("## Status", 1)[1]
+
+
+def test_status_is_only_written_into_a_working_item(instance, hx, launched, goals):
+    """An idle item has no task to remember, and a completed item is a record."""
+    launched("eng-001")
+    idle = instance / "pods" / "engineers" / "eng-001-idle.md"
+    before = idle.read_text() if idle.exists() else None
+    result = hx("compose", "eng-001")
+    assert result.returncode == 0, result.stderr
+    assert "no task in progress" in result.stdout
+    assert (idle.read_text() if idle.exists() else None) == before
+    assert not old_context_file(instance, "eng-001").exists()
 
 
 def test_step_state_is_rendered_not_dumped(instance, hx, launched, goals):
@@ -273,8 +181,7 @@ def test_step_state_is_rendered_not_dumped(instance, hx, launched, goals):
     }))
 
     assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    rendered = text[section_index(text, "## Step state"):section_index(text, "## Open subagent handles")]
+    rendered = part(status_of(work_item(instance)), "Step state")
     # One tagged line per fact: the section is read by a model at every boundary and every
     # heading, bullet and blank line in it is paid for again (tests/core/test_density.py).
     assert "goal: stream the importer" in rendered
@@ -295,9 +202,7 @@ def test_step_state_says_none_yet_before_the_companion_lands(instance, hx, launc
     launched("eng-001")
     dispatch_working(instance, hx, goals)
     assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    rendered = text[section_index(text, "## Step state"):section_index(text, "## Open subagent handles")]
-    assert "_none yet_" in rendered
+    assert "_none yet_" in part(status_of(work_item(instance)), "Step state")
 
 
 def test_open_handles_list_the_running_subagents(instance, hx, launched, goals):
@@ -312,10 +217,148 @@ def test_open_handles_list_the_running_subagents(instance, hx, launched, goals):
     (instance / "run" / "eng-001" / "subagents.json").write_text(json.dumps({"agent-abc": "eng-001-s001"}))
 
     assert hx("compose", "eng-001").returncode == 0
-    text = context_file(instance, "eng-001").read_text()
-    handles = text[section_index(text, "## Open subagent handles"):]
+    handles = part(status_of(work_item(instance)), "Open subagent handles")
     assert "`eng-001-s001`" in handles and "agent-abc" in handles
     assert "s002" not in handles, "a closed stream is not an open handle"
+
+
+def test_the_memory_episodes_part_is_there_before_a_single_episode_exists(
+    instance, hx, launched, goals
+):
+    """It is composed on an instance with no chroma store at all, and says so like any other
+    empty part — the agent must never have to wonder whether hx failed to compose it."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals, goal="Stream the importer.")
+    assert hx("compose", "eng-001").returncode == 0
+    assert "_none yet_" in part(status_of(work_item(instance)), "Memory episodes")
+    assert not (instance / "state" / "memory" / "chroma").exists(), (
+        "an empty store costs no chroma open at all"
+    )
+
+
+def test_the_goal_memory_asks_about_carries_the_order_and_its_addenda(instance, hx, launched, goals):
+    from hx import compose
+
+    from .test_transitions import dispatch_working, write_addendum
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals, goal="The original order.")
+    assert hx("complete", "decision", harness_id="eng-001").returncode == 0
+    write_addendum(instance, "eng-001", "And also handle the empty case.")
+    assert hx("resume", "eng-001", "run/addendum-eng-001.md", cwd=instance).returncode == 0
+    _source, text = compose.task(instance, "eng-001")
+    assert "The original order." in text and "And also handle the empty case." in text
+
+
+def test_a_legacy_memory_file_never_leaks(instance, hx, launched, goals):
+    """No agent keeps a memory file: a lesson is a learnings proposal. A `config/<id>/AGENTS.md`
+    an older hx left (before `hx launch` migrates it) reaches nothing."""
+    from hx import persona
+
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    (instance / "config" / "eng-001" / "AGENTS.md").write_text(
+        "persona\n\n## UPDATES BELOW ONLY\n\nOLD PRIVATE NOTE\n")
+    assert hx("compose", "eng-001").returncode == 0
+    assert "OLD PRIVATE NOTE" not in work_item(instance).read_text()
+    assert "OLD PRIVATE NOTE" not in persona.boundary(instance, "eng-001")["text"]
+
+
+def test_the_partner_status_goes_into_partner_md(instance, hx, launched):
+    launched("partner")
+    partner_md = instance / "PARTNER.md"
+    partner_md.write_text("# Partner state\n\n## Notes\n\n- two workers idle\n")
+    state = instance / "state" / "partner"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "partner-main.json").write_text(json.dumps({"seq": 3, "goal": "ship the importer"}))
+    result = hx("compose", "partner")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(partner_md)
+    body = partner_md.read_text()
+    assert body.index("## Notes") < body.index("## Status")
+    assert "### Step state\n\ngoal: ship the importer" in body
+    assert "### Memory episodes" not in body, "the Partner gets no episodes"
+    assert not old_context_file(instance, "partner").exists()
+
+
+def test_compose_of_an_unknown_id_is_not_found(instance, hx):
+    result = hx("compose", "eng-404")
+    assert result.returncode == 2 and "unknown id" in result.stderr
+
+
+def test_with_status_places_replaces_and_keeps_everything_else():
+    from hx.compose import with_status
+
+    item = "---\nid: eng-001\n---\nGoal.\n\n## Tasks\n- [ ] a\n```\n## Status\n```\n\n## Commands\n"
+    once = with_status(item, "first")
+    assert once.startswith("---\nid: eng-001\n---\n")
+    assert once.index("- [ ] a") < once.index("\n## Status\n\nfirst\n") < once.index("## Commands")
+    assert "```\n## Status\n```" in once, "a heading inside a fence is not the section"
+    assert with_status(once, "first") == once
+    twice = with_status(once, "second")
+    assert "first" not in twice and twice.count("\n## Status\n\n") == 1
+    assert with_status("No sections.\n", "s") == "No sections.\n\n## Status\n\ns\n"
+
+
+# --- hx compose: a subagent stream -----------------------------------------------------------------
+
+
+def test_a_subagent_stream_gets_its_sections_in_order(instance, hx, launched, goals):
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    result = hx("compose", "eng-001", "eng-001-s001")
+    assert result.returncode == 0, result.stderr
+    path = subagent_file(instance, "eng-001-s001")
+    assert result.stdout.strip() == str(path)
+    text = path.read_text()
+    # Headings match with their newline: `## Task` is a prefix of `## Tasks`.
+    positions = [section_index(text, heading + "\n") for heading in SUBAGENT_SECTIONS]
+    assert positions == sorted(positions), f"sections out of order: {positions}"
+
+
+@pytest.mark.parametrize("flavor,carried", [
+    ("claude", False), ("codex", False), ("pi", True), ("grok", True), ("meta", True),
+])
+def test_a_subagent_carries_the_invariants_only_where_its_parent_gets_them_from_the_hook(
+    instance, hx, launched, goals, flavor, carried
+):
+    """A subagent runs no `context` hook. Claude and Codex subagents load the same CLAUDE.md /
+    AGENTS.md their parent does; on Pi, Grok and Meta the hook is the invariants' channel, so
+    the subagent's file carries them, whole, first."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", flavor)
+    assert hx("compose", "eng-001", "eng-001-s001").returncode == 0
+    text = subagent_file(instance, "eng-001-s001").read_text()
+    source = (instance / "config" / "CLAUDE.md").read_text().strip("\n")
+    assert ("\n## Invariants\n" in text) is carried
+    assert (source in text) is carried
+    if carried:
+        assert "_source: `config/CLAUDE.md`_" in text
+        assert text.index("## Invariants\n") < text.index("## Who your subagents are\n")
+
+
+def test_no_persona_section_on_a_subagent_stream(instance, hx, launched, goals):
+    """Subagent streams carry SUBAGENTS.md whole as their identity."""
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    _set_flavor(instance, "eng-001", "codex")
+    (instance / "config" / "eng-001" / "SUBAGENTS.md").write_text("You are a subagent of eng-001.\n")
+    assert hx("compose", "eng-001", "eng-001-s001").returncode == 0
+    text = subagent_file(instance, "eng-001-s001").read_text()
+    assert "\n## Persona\n" not in text
+    assert PERSONA.strip().split("\n")[0] not in text
+    assert "You are a subagent of eng-001." in text
 
 
 def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched, goals):
@@ -328,60 +371,40 @@ def test_a_subagent_stream_gets_subagents_md_and_no_tasks(instance, hx, launched
 
     result = hx("compose", "eng-001", "eng-001-s001")
     assert result.returncode == 0, result.stderr
-    text = (instance / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
+    text = subagent_file(instance, "eng-001-s001").read_text()
     assert "You are a subagent of eng-001." in text
     assert "\n## Tasks\n" not in text, "`## Tasks` is main-stream only"
     assert "## Who your subagents are" in text
 
 
-def test_the_partner_file_uses_its_checkpoint_and_live_board_pointer(instance, hx, launched, goals):
-    launched("partner")
-    (instance / "PARTNER.md").write_text("# Partner state\n\nTwo workers idle.\n")
-    result = hx("compose", "partner")
-    assert result.returncode == 0, result.stderr
-    text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
-    assert "Two workers idle." in text
-    assert "## Board" in text
-    assert "Run `hx board`" in text
-    assert "## Memory episodes" not in text
-    assert "eng-001" not in text.split("## Board", 1)[1], "the board is queried live"
+def test_a_subagent_gets_the_shared_template_rendered_with_its_parents_id(instance, hx, launched, goals):
+    """Nothing is copied per id: the template is rendered at delivery, comments dropped; Meta
+    workers get the contributor template; an id's own SUBAGENTS.md replaces it."""
+    from .test_transitions import dispatch_working
 
-
-def test_compose_of_an_unknown_id_is_not_found(instance, hx):
-    result = hx("compose", "eng-404")
-    assert result.returncode == 2 and "unknown id" in result.stderr
-
-
-def test_the_partner_handover_bounds_the_journal_sections(instance, hx):
-    """spec 07.3: the handover is a resume pointer — tails plus omitted counts."""
-    rows = "\n".join(f"| 2026-09-23 | d{i:03d} | why{i} |" for i in range(100))
-    done = "\n".join(f"| 2026-09-23 | w{i:03d} | outcome{i} |" for i in range(30))
-    notes = "\n".join(f"- note line {i}" for i in range(100))
-    (instance / "PARTNER.md").write_text(
-        "# PARTNER.md\n\nIntro.\n\n## The human\n\nLogan.\n\n"
-        f"## Decisions made\n\n| date | id | why |\n|---|---|---|\n{rows}\n\n"
-        f"## Completed work\n\n| date | id | outcome |\n|---|---|---|\n{done}\n\n"
-        f"## Notes\n\n{notes}\n"
-    )
-    result = hx("compose", "partner")
-    assert result.returncode == 0, result.stderr
-    text = (instance / "run" / "partner" / "partner-main.context.md").read_text()
-    assert "Logan." in text, "small sections ride whole"
-    assert "d099" in text and "d000" not in text, "decisions keep the tail"
-    assert "85 older rows omitted" in text
-    assert "w029" in text and "w000" not in text, "completed keeps the tail"
-    assert "25 older rows omitted" in text
-    assert "note line 0" in text and "note line 99" not in text, "notes keep the head"
-    assert "42 further lines omitted" in text
-    bound = text.split("## PARTNER.md", 1)[1].split("## Board", 1)[0]
-    assert len(bound) < 20000, f"handover bounded, got {len(bound)}"
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    assert not (instance / "config" / "eng-001" / "SUBAGENTS.md").exists()
+    assert hx("compose", "eng-001", "eng-001-s001").returncode == 0
+    text = subagent_file(instance, "eng-001-s001").read_text()
+    assert "You are a subagent of `eng-001`, an engineer in the `engineers` pod." in text
+    assert "{{" not in text and "<!--" not in text
+    assert "_source: `templates/worker/SUBAGENTS.md`_" in text
+    template = instance / "templates" / "worker" / "SUBAGENTS.md"
+    template.write_text(template.read_text() + "\nSHARED EDIT for {{id}}.\n")
+    assert hx("compose", "eng-001", "eng-001-s002").returncode == 0
+    assert "SHARED EDIT for eng-001." in subagent_file(instance, "eng-001-s002").read_text()
+    _set_flavor(instance, "eng-001", "meta")
+    assert hx("compose", "eng-001", "eng-001-s003").returncode == 0
+    assert "_source: `templates/contributor/SUBAGENTS.md`_" in subagent_file(
+        instance, "eng-001-s003").read_text()
 
 
 # --- the context hook ----------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("source", SOURCES)
-def test_the_hook_prints_exactly_one_path_line(instance, hx, launched, goals, tmux_server, source):
+def test_the_hook_hands_the_chain_and_ends_with_one_pointer(instance, hx, launched, goals, tmux_server, source):
     from .test_transitions import dispatch_working
 
     launched("eng-001")
@@ -394,13 +417,26 @@ def test_the_hook_prints_exactly_one_path_line(instance, hx, launched, goals, tm
     )
     assert result.returncode == 0, result.stderr
     lines = [line for line in result.stdout.split("\n") if line.strip()]
-    assert len(lines) == 1, f"expected one line, got {lines}"
-    assert lines[0] == (
-        f"Use the Read tool once on {context_file(instance, 'eng-001')} before anything else; "
-        f"do not cat it and do not read it twice."
-    )
-    assert not lines[0].lstrip().startswith("{"), "never JSON, never a leading brace (spec 09.1)"
-    assert context_file(instance, "eng-001").is_file()
+    pointer = CONTEXT_LINE.format(path=work_item(instance).resolve())
+    assert lines[-1] == pointer
+    assert sum("Use the Read tool once on" in line for line in lines) == 1, "one pointer, one Read"
+    assert "You are eng-001 in pod engineers." in result.stdout
+    assert not result.stdout.lstrip().startswith("{"), "never JSON, never a leading brace (spec 09.1)"
+    assert not old_context_file(instance, "eng-001").exists()
+    assert "\n## Status\n" in work_item(instance).read_text(), "the status is written first"
+
+
+def test_the_hook_prints_what_hx_persona_prints(instance, hx, launched, goals, tmux_server):
+    from .test_transitions import dispatch_working
+
+    launched("eng-001")
+    dispatch_working(instance, hx, goals)
+    result = run_hook(instance, "eng-001", "context", {"source": "startup", "cwd": str(instance)},
+                      tmux=tmux_server)
+    assert result.returncode == 0, result.stderr
+    printed = hx("persona", "eng-001")
+    assert printed.returncode == 0, printed.stderr
+    assert result.stdout.strip("\n") == printed.stdout.strip("\n")
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "compact"])
@@ -445,10 +481,11 @@ def test_the_hook_records_a_boundary_on_the_main_stream(instance, hx, launched, 
 
     launched("eng-001")
     dispatch_working(instance, hx, goals)
-    run_hook(instance, "eng-001", "context",
-             {"source": "compact", "transcript_path": "/tmp/t.jsonl", "cwd": str(instance)},
-             tmux=tmux_server)
+    result = run_hook(instance, "eng-001", "context",
+                      {"source": "compact", "transcript_path": "/tmp/t.jsonl", "cwd": str(instance)},
+                      tmux=tmux_server)
 
+    from hx import persona
     from hx.streams import iter_records, main_stream
 
     records = list(iter_records(main_stream(instance, "eng-001")))
@@ -457,6 +494,21 @@ def test_the_hook_records_a_boundary_on_the_main_stream(instance, hx, launched, 
     assert last["event"] == "boundary" and last["source"] == "compact"
     assert last["stream"] == "eng-001-main" and last["seq"] >= 1
     assert last["ref"]["transcript"] == "/tmp/t.jsonl"
+    assert last["context_file"] == str(work_item(instance)), "the file the pointer names"
+    assert last["hook_bytes"] == persona.boundary(instance, "eng-001")["bytes"]
+    assert result.stdout.startswith(persona.boundary(instance, "eng-001")["text"])
+
+
+def test_the_partner_is_pointed_at_partner_md(instance, hx, launched, tmux_server):
+    launched("partner")
+    (instance / "PARTNER.md").write_text("# Partner state\n\nTwo workers idle.\n")
+    result = run_hook(instance, "partner", "context", {"source": "startup", "cwd": str(instance)},
+                      tmux=tmux_server)
+    assert result.returncode == 0, result.stderr
+    lines = [line for line in result.stdout.split("\n") if line.strip()]
+    assert lines[0] == "You are the Partner.", "the persona reads first"
+    assert lines[-1] == CONTEXT_LINE.format(path=(instance / "PARTNER.md").resolve())
+    assert "Two workers idle." not in result.stdout, "PARTNER.md is read once, not printed"
 
 
 def test_the_partner_socket_file_is_written_from_the_environment(instance, hx, launched, tmux_server):
@@ -540,7 +592,9 @@ def test_a_matching_harness_id_is_fine(instance, hx, launched, tmux_server):
     launched("eng-001")
     result = run_hook(instance, "eng-001", "context", {"source": "startup", "cwd": str(instance)},
                       tmux=tmux_server, harness_id="eng-001")
-    assert result.returncode == 0 and result.stdout.startswith("Use the Read tool once on ")
+    assert result.returncode == 0, result.stderr
+    assert "You are eng-001 in pod engineers." in result.stdout
+    assert result.stdout.strip("\n").endswith(IDLE_LINE), "no task in progress: no file to read"
 
 
 def test_every_spec_09_event_is_implemented(instance, hx, launched):
@@ -553,27 +607,3 @@ def test_every_spec_09_event_is_implemented(instance, hx, launched):
     result = run_hook(instance, "eng-001", "precompact", {})
     assert result.returncode == 0
     assert "not implemented" not in result.stderr
-
-
-# --- the Memory episodes section (docs/memory.md) --------------------------------------------
-
-
-def test_the_memory_episodes_section_is_there_before_a_single_episode_exists(
-    instance, hx, launched, goals
-):
-    """It is composed on an instance with no chroma store at all, and says so like any other
-    empty section — the agent must never have to wonder whether hx failed to compose it."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals, goal="Stream the importer.")
-    assert hx("compose", "eng-001").returncode == 0
-
-    text = context_file(instance, "eng-001").read_text()
-    section = text[section_index(text, "## Memory episodes"):
-                   section_index(text, "## Open subagent handles")]
-    assert "_source: `state/memory/chroma`_" in section
-    assert "_none yet_" in section
-    assert not (instance / "state" / "memory" / "chroma").exists(), (
-        "an empty store costs no chroma open at all"
-    )

@@ -104,7 +104,7 @@ def start(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, st
         "agent_type": payload.get("agent_type"),
     })
 
-    # The subagent's own context file: SUBAGENTS.md as memory, its prompt as the task (07.3).
+    # The subagent's own context file: SUBAGENTS.md as who it is, its prompt as the task (07.3).
     path = compose_mod.compose(root, item_id, stream, subagent_prompt=prompt, env=env)
 
     # JSON, because plain stdout is not injected for this event.

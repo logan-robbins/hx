@@ -22,8 +22,6 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCENARIOS = pathlib.Path(__file__).resolve().parent
 
-MUTABLE_HEADER = "## UPDATES BELOW ONLY"
-
 #: A fixed instant, written into every marker so `hx board` prints something deterministic.
 #: Normalised back to `<ts>` before comparing, so no checked-in file carries a fake timestamp.
 FIXED_TS = "2026-09-20T12:00:00Z"
@@ -53,8 +51,11 @@ def pod_of(item_id: str, worker_pod: str) -> str:
     return "partner" if item_id == "partner" else worker_pod
 
 
-def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: str) -> None:
-    """Write the instance exactly as hx would have left it at this observation point."""
+def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: str,
+                   pack_config: pathlib.Path | None = None) -> None:
+    """Write the instance exactly as hx would have left it at this observation point.
+    `pack_config` is a pack's `config/`: an id with a `harness.json` there gets that one (its
+    role and purpose), with `{{workdir}}` filled in, instead of the template's."""
     subprocess.run(
         [sys.executable, "-m", "hx", "install", "--skeleton-only", "--root", str(root)],
         check=True, capture_output=True, text=True, env=hx_env(),
@@ -75,18 +76,22 @@ def build_instance(root: pathlib.Path, states: dict[str, State], *, worker_pod: 
         config_dir.mkdir(parents=True, exist_ok=True)
         workdir = root / "work" / item_id
         workdir.mkdir(parents=True, exist_ok=True)
-        for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
-            text = (worker_template / name).read_text()
-            text = text.replace("{{id}}", item_id).replace("{{pod}}", worker_pod)
-            text = text.replace("{{workdir}}", str(workdir))
-            (config_dir / name).write_text(text)
+        # A worker is its harness.json; SUBAGENTS.md is the shared template, rendered at
+        # delivery, so nothing else is written per id.
+        source = worker_template / "harness.json"
+        if pack_config is not None and (pack_config / item_id / "harness.json").is_file():
+            source = pack_config / item_id / "harness.json"
+        text = source.read_text()
+        text = text.replace("{{id}}", item_id).replace("{{pod}}", worker_pod)
+        text = text.replace("{{workdir}}", str(workdir))
+        (config_dir / "harness.json").write_text(text)
 
         body = (root / "templates" / "work-item.md").read_text()
         body = (
             body.replace("{{id}}", item_id)
             .replace("{{pod}}", worker_pod)
             .replace("{{dispatched}}", FIXED_TS)
-            .replace("{{goal}}", "## Goal\n\nscenario fixture\n\n## Definition of done\n\n1. n/a")
+            .replace("{{goal}}", "## Goal\n\nscenario fixture")
         )
         # Only a `complete` item carries an outcome in its frontmatter (spec 06).
         if outcome and state == "complete":
@@ -128,21 +133,40 @@ def real_board(root: pathlib.Path, states: dict[str, State]) -> tuple[list[str],
     return lines, r.stderr
 
 
-def checks_commands(checks: str) -> list[str]:
-    return [
-        line for line in checks.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
+def assert_goal_is_a_paragraph(path: pathlib.Path):
+    """A pack goal is what the Partner writes (CONTRACTS.md "Goals"): it parses with the
+    function `hx dispatch` validates with, and it is one paragraph plus, when it depends on
+    other work, one to three sentences saying on what. The worker writes its own
+    `## Definition of done`, so nothing here may pre-write one."""
+    sys.path.insert(0, str(REPO / "src"))
+    from hx.goals import parse_goal
+
+    goal = parse_goal(path)
+    paragraphs = [part for part in re.split(r"\n\s*\n", goal.goal.strip()) if part.strip()]
+    assert 1 <= len(paragraphs) <= 2, f"{path}: {len(paragraphs)} paragraphs; a goal is one"
+    if len(paragraphs) == 2:
+        sentences = re.findall(r"[.!?](?:\s|$)", paragraphs[1])
+        assert 1 <= len(sentences) <= 3, f"{path}: the dependency note is not 1-3 sentences"
+        assert "depends on" in paragraphs[1], f"{path}: a second paragraph is a dependency note"
+    return goal
 
 
-def assert_mutable_header(path: pathlib.Path) -> None:
-    lines = path.read_text().splitlines()
-    hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-    assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected exactly 1"
-    above, _, _ = path.read_text().partition(MUTABLE_HEADER)
-    assert above.strip(), f"{path}: nothing above the header, so persona.md would be empty"
-    assert path.parent.name in above, f"{path}: the persona does not name its own id"
-    # Below the header may be empty: it is the agent's own memory, written as it works.
+def assert_pack_config(path: pathlib.Path, workdir: pathlib.Path) -> dict:
+    """A pack's `config/<id>/harness.json` is a worker exactly as the Partner writes one: the
+    template with its id, pod, role and `purpose` filled in and `{{workdir}}` left for the run.
+    It must validate once the workdir is filled, and its purpose must be real."""
+    sys.path.insert(0, str(REPO / "src"))
+    from hx.config_harness import PURPOSE_PLACEHOLDER, validate_harness
+
+    text = path.read_text()
+    assert "{{workdir}}" in text, f"{path}: the workdir is the run's to fill"
+    data = json.loads(text.replace("{{workdir}}", str(workdir)))
+    assert data["id"] == path.parent.name, f"{path}: id is not its directory"
+    validate_harness(data, path, dir_name=path.parent.name)
+    purpose = data.get("purpose") or ""
+    assert purpose.strip() and PURPOSE_PLACEHOLDER not in purpose, f"{path}: no purpose"
+    assert not (path.parent / "AGENTS.md").exists(), f"{path.parent}: a per-id AGENTS.md"
+    return data
 
 
 def assert_addendum_is_prose(path: pathlib.Path) -> None:

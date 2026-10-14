@@ -9,8 +9,6 @@ set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
-HEADER='## UPDATES BELOW ONLY'
-
 mode=session
 while :; do
   case "${1:-}" in
@@ -40,15 +38,12 @@ fi
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 home=$root/run/$id/home
-agents=$root/config/$id/AGENTS.md
 harness=$root/config/$id/harness.json
+# A planned launch's compiled system prompt (`native_launch`); nothing else writes it.
 persona=$root/run/$id/persona.md
 extension=$home/extensions/hx/index.ts
 
 [ -f "$harness" ] || die "refuse: no $harness"
-[ -f "$agents" ] || die "refuse: no $agents"
-grep -qxF "$HEADER" "$agents" || die \
-  "refuse: $agents has no \`$HEADER\` line; the persona is the part above it"
 [ -f "$home/settings.json" ] || die "refuse: no $home/settings.json; run adapters/pi/install.sh $id first"
 [ -f "$extension" ] || die "refuse: no $extension; run adapters/pi/install.sh $id first"
 [ -f "$home/auth.json" ] || die "refuse: no $home/auth.json; run adapters/pi/install.sh $id first"
@@ -76,6 +71,10 @@ fi
 [ -n "$bin" ] || die "refuse: no pi binary; record {bin, version} in config/pi.json"
 [ -x "$bin" ] || die "refuse: pinned pi binary $bin is not executable"
 
+role=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["role"])' "$harness")
+# The role persona, passed as it is (`config_harness.PERSONA_CHANNEL`): nothing is rendered
+# or copied per id. A role without one launches without it.
+role_persona=$root/personas/$role.md
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
 [ -n "$model" ] || die "refuse: $harness has no \`model\`"
@@ -106,8 +105,17 @@ pi_args+=(
 if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/sessions"
-  awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
-  cp "$persona" "$home/APPEND_SYSTEM.md"
+  system_args=()
+  if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
+    # A planned launch's persona is the compiled planned system prompt, prepared in its
+    # private root and verified by the controller (`native_launch`).
+    [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
+    system_args=(--append-system-prompt "$persona")
+  elif [ -f "$role_persona" ]; then
+    system_args=(--append-system-prompt "$role_persona")
+  fi
+  # An older hx copied the persona here; Pi would discover it when no flag is passed.
+  rm -f "$home/APPEND_SYSTEM.md"
 
   cd "$cwd"
   export HARNESS_ID="$id"
@@ -119,9 +127,9 @@ if [ "$mode" = exec ]; then
   export PATH="$root/bin:$PATH"
 
   # No prompt argument. --append-system-prompt reads the persona file when the path exists
-  # (Pi 0.84 resolvePromptInput). APPEND_SYSTEM.md is the same text for inspection;
-  # the flag suppresses Pi's own discovery of that file, so it is not appended twice.
-  exec "$bin" "${pi_args[@]}" --append-system-prompt "$persona"
+  # (Pi 0.84 resolvePromptInput). The invariants, the identity line and the learnings arrive
+  # through the extension's `context` hook at every boundary.
+  exec "$bin" "${pi_args[@]}" ${system_args[@]+"${system_args[@]}"}
 fi
 
 read -r -a TMUX_CMD <<< "${HX_TMUX:-tmux}"

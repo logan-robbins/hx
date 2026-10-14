@@ -394,14 +394,30 @@ export default function (pi: {
   });
 }
 
+// What a subagent is told: the id's own config/<id>/SUBAGENTS.md, else the shared
+// templates/worker/SUBAGENTS.md with {{id}} and {{pod}} filled in and its comments dropped —
+// the same text hx.persona.render_subagents puts in the child's context file.
+function subagentIdentity(root: string, id: string, harness: { pod?: unknown }): string {
+  const own = join(root, "config", id, "SUBAGENTS.md");
+  if (existsSync(own)) return readFileSync(own, "utf8");
+  const shared = join(root, "templates", "worker", "SUBAGENTS.md");
+  if (!existsSync(shared)) return "";
+  const pod = typeof harness.pod === "string" ? harness.pod : "";
+  return readFileSync(shared, "utf8")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .split("{{id}}").join(id)
+    .split("{{pod}}").join(pod)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function runChild(prompt: string, contextLine: string, agentId: string, signal?: AbortSignal): Promise<string> {
   const root = nativeHook ? required("HX_CONTINUITY_CAPSULE") : required("HARNESS_ROOT");
   const id = required("HARNESS_ID");
   const home = join(root, "run", id, "home");
-  const subagents = join(root, "config", id, "SUBAGENTS.md");
-  const identity = existsSync(subagents) ? readFileSync(subagents, "utf8") : "";
   const bin = process.env.HX_PI_BIN || "pi";
   const harness = JSON.parse(readFileSync(join(root, "config", id, "harness.json"), "utf8"));
+  const identity = subagentIdentity(root, id, harness);
   const workdir = typeof harness.workdir === "string" && harness.workdir
     ? (isAbsolute(harness.workdir) ? harness.workdir : join(root, harness.workdir))
     : root;

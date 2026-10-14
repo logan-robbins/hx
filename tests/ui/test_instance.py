@@ -31,8 +31,8 @@ def build_root(root):
         "run/eng-001/turn",
         "run/eng-001/goal",
         # Not watched: spec 16.1 names `run/*/turn` and `run/*/goal` only.
-        "run/eng-001/persona.md",
-        "run/eng-001/eng-001-main.context.md",
+        "personas/engineer.md",
+        "run/eng-001/eng-001-s001.context.md",
         "run/ui-token",
         "config/ui.json",
         "PARTNER.md",
@@ -127,7 +127,7 @@ def test_a_touched_path_moves_its_scope(tmp_path, name, scope):
 
 @pytest.mark.parametrize(
     "name",
-    ["run/eng-001/persona.md", "run/eng-001/eng-001-main.context.md", "run/ui-token", "config/ui.json", "PARTNER.md"],
+    ["personas/engineer.md", "run/eng-001/eng-001-s001.context.md", "run/ui-token", "config/ui.json", "PARTNER.md"],
 )
 def test_unwatched_paths_do_not_move_anything(tmp_path, name):
     source = InstanceSource(build_root(tmp_path))

@@ -71,17 +71,13 @@ def build_step(root: Path, pack: str, states: dict, worker_pod: str) -> Path:
     """An instance in that step's shape, with the pack's real goals and personas."""
     from tests.scenario import packlib
 
-    packlib.build_instance(root, states, worker_pod=worker_pod)
     source = SCENARIOS / pack
+    packlib.build_instance(root, states, worker_pod=worker_pod, pack_config=source / "config")
 
     goals = root / "goals"
     goals.mkdir(parents=True, exist_ok=True)
     for order_file in sorted((source / "goals").glob("*.md")):
         shutil.copy(order_file, goals / order_file.name)
-    for agents in sorted((source / "config").glob("*/AGENTS.md")):
-        target = root / "config" / agents.parent.name
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy(agents, target / "AGENTS.md")
 
     # `packlib` writes `tasks.json` in the v1 shape itself now, so nothing here
     # rewrites it. The order text it records is a placeholder rather than the
@@ -267,9 +263,9 @@ def test_the_pack_is_placed(m8_root):
     assert placed == sorted(p.name for p in (PACK_M8 / "goals").glob("*.md"))
     assert "partner.md" not in placed
     for item_id in ("eng-001", "eng-002"):
-        agents = m8_root / "config" / item_id / "AGENTS.md"
-        assert agents.is_file()
-        assert "## UPDATES BELOW ONLY" in agents.read_text()
+        config = json.loads((m8_root / "config" / item_id / "harness.json").read_text())
+        assert config["purpose"].strip() and "{{" not in config["purpose"]
+        assert not (m8_root / "config" / item_id / "AGENTS.md").exists(), "no per-id persona"
 
 
 def test_show_eng_002_carries_the_decision(m8):

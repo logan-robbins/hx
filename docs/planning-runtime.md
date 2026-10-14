@@ -161,3 +161,30 @@ worker ownership, task version changes, worktree isolation, scoped writes, resta
 and concurrent prefix-reservation writers. Native transport and lifecycle fixtures
 cover launch, reset, tool expansion, drain, checks, publication, and recovery; they do
 not establish general model extraction accuracy or certify untracked remote jobs.
+
+## Parallelism, interface-first, and graph building
+
+`hx plan validate` reports `waves`, `level_widths`, `max_parallelism`
+(worktree-disjoint groups), and `interface_warnings`. Max useful parallelism
+is the smallest of: ready units in the current wave, worktree-disjoint
+groups, free write leases, and host capacity. The Partner dispatches to that
+bound and no further; fan-out beyond it queues on leases and dilutes review.
+
+Interface-first is a validation warning, not a refusal: when a consumer
+depends on another unit's source output, the plan names the coupling and
+recommends splitting an interface/stub unit ahead of the producer, so the
+contract is committed, searchable (`hx code search`, map interface records),
+and stub-able before the implementation exists. Across instances this is
+the contract-goal-first wave rule of docs/multi-instance.md; duties between
+Partners are mapped by instance area in each Partner persona, the contract
+branch, and the shared learnings directory — there is no cross-instance
+ledger, by design.
+
+For existing codebases the graph is built in two layers. `hx code index`
+derives it mechanically (on hx itself: 401 of 415 tracked files, 3,384
+symbols, 766 resolvable candidate import edges) — Python symbols are exact
+from the AST, other languages are best-effort definitions, callers are
+mention-based, and there is no call graph or dynamic-dispatch resolution.
+That layer is candidate knowledge. The curated application map remains the
+validated layer: only anchored, versioned records promote an edge to
+validated, and planning traverses validated edges only.

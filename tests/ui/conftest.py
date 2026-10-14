@@ -176,14 +176,6 @@ HX = Path(sys.executable).parent / "hx"
 
 GOAL = """## Goal
 Stand in for a dispatched goal while the ui lane runs against a real instance.
-
-## Definition of done
-- The board renders this item.
-
-### Checks
-```bash
-true
-```
 """
 
 WORK_ITEM = """---
@@ -198,14 +190,11 @@ Stand in for a dispatched goal while the ui lane runs against a real instance.
 ## Definition of done
 - The board renders this item.
 
-### Checks
-```bash
-true
-```
-
 ## Tasks
 - [x] Exist on the board.
 - [ ] Be opened in the Agent view.
+
+## Evidence
 
 ## Deliverables
 
@@ -232,7 +221,7 @@ def build_instance(root: Path) -> Path:
     for agent_id, pod in (("partner", "partner"), ("eng-001", "engineers")):
         config = root / "config" / agent_id
         config.mkdir(parents=True, exist_ok=True)
-        for name in ("AGENTS.md", "SUBAGENTS.md", "harness.json"):
+        for name in ("harness.json",):
             target = config / name
             if not target.exists():
                 # The skeleton ships templates; `hx launch` renders them. It is

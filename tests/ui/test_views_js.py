@@ -380,7 +380,7 @@ def test_the_agent_page_is_the_work_item_file_plus_the_companion(rendered):
     for name in ("Companion", "Persona"):
         assert name in labels, name
     for gone in ("Frontmatter", "Order", "Work item", "Step state", "Step state (raw)",
-                 "Context file", "Streams", "Subagents", "Metrics"):
+                 "Boundary context", "Streams", "Subagents", "Metrics"):
         assert gone not in labels, f"{gone} belongs to the Session page, not the drawer"
     assert not any(label.startswith("Pane") for label in labels)
     assert "Open session" in agent["text"]
@@ -391,7 +391,7 @@ def test_the_session_page_has_the_pane_and_the_event_stream(rendered):
     assert session["drawerHidden"] is True, "the Session page is a page, not the drawer"
     assert session["hash"] == "#session?agent=eng-001"
     labels = labels_of(session)
-    for name in ("Companion", "Step state", "Context file", "Streams", "Subagents", "Metrics"):
+    for name in ("Companion", "Step state", "Boundary context", "Streams", "Subagents", "Metrics"):
         assert name in labels, name
     assert any(label.startswith("Pane · eng-001") for label in labels)
     for name in ("open steps", "closed steps", "working set", "blockers", "dead ends", "tail"):
@@ -508,16 +508,17 @@ def test_the_budget_bar_reads_against_the_default(rendered):
     )
 
 
-def test_the_session_page_renders_the_context_file_with_its_seam(rendered):
+def test_the_session_page_renders_the_boundary_context_with_its_time(rendered):
+    """What the `context` hook hands the agent (`hx persona <id>`), and the file it points at."""
     show = show_json()
     text = rendered["views"]["session"]["text"]
     assert show["context_file"]["path"] in text
-    assert "seam 12:50:00Z" in text
+    assert "boundary 12:50:00Z" in text
     plain = text.replace("`", "")
     for line in (
-        "Prefer same-directory renames; spec 08 forbids timeouts anywhere.",
-        "Also refuse an id with no config/<id>/ directory; exit 1 and name it.",
-        "open: st7 refuse an id with no config/<id>/",
+        "You are eng-001 in pod engineers.",
+        "Rule L1",
+        "Use the Read tool once on /srv/hx/pods/engineers/eng-001-working.md",
     ):
         assert line in plain, line
 
@@ -918,7 +919,7 @@ def test_every_view_renders_against_a_real_instance(instance_root, tmp_path):
     for name in ("Goal", "Companion"):
         assert name in labels, name
     session = rendered["views"]["session"]
-    for name in ("Context file", "Streams", "Subagents"):
+    for name in ("Boundary context", "Streams", "Subagents"):
         assert name in labels_of(session), name
     assert any(label.startswith("Pane · eng-001") for label in labels_of(session))
     assert session["metrics"] is None, "a fresh instance has no seams yet"
@@ -1216,7 +1217,7 @@ def test_full_file_bodies_render_folded_shut(rendered):
     assert "Full text" in [f["label"] for f in rendered["views"]["partner"]["folds"]]
     assert "PARTNER.md" in [f["label"] for f in rendered["views"]["agents"]["partner"]["folds"]]
     assert "Goal" in [f["label"] for f in rendered["views"]["agent"]["folds"]]
-    assert "Context file" in [f["label"] for f in rendered["views"]["session"]["folds"]]
+    assert "Boundary context" in [f["label"] for f in rendered["views"]["session"]["folds"]]
     assert "Goal text" in [f["label"] for f in rendered["views"]["goals"]["folds"]]
 
 

@@ -7,9 +7,10 @@ entirely in being *true* — an goal that `hx dispatch` would refuse, or an expe
 So this module does two kinds of check:
 
 * **Structural**, always: every goal parses with `hx.goals.parse_goal` (the same function
-  `hx dispatch` uses), the `after` graph is acyclic and names real ids, every `AGENTS.md` has
-  its mutable header, the fixture repo's tripwires are intact, and `expected/` covers exactly
-  the steps the README's sequence table names — no more, no fewer.
+  `hx dispatch` uses) and is one paragraph plus an optional dependency note, no goal declares
+  a dependency hx would read, every worker's `harness.json` validates with a real `purpose`,
+  the fixture repo's tripwires are intact, and `expected/` covers exactly the steps the
+  README's sequence table names — no more, no fewer.
 * **Live**, when tmux is available: for each of the eight steps, build a scratch instance in
   exactly the state the README says that step reaches, run the real `hx board`, and compare its
   text to the checked-in `expected/` file. Timestamps are normalised to `<ts>`.
@@ -44,7 +45,6 @@ FIXTURE_REPO = PACK / "repo"
 
 sys.path.insert(0, str(REPO / "src"))
 
-MUTABLE_HEADER = "## UPDATES BELOW ONLY"
 WORKERS = ("eng-001", "eng-002")
 POD = "engineers"
 
@@ -91,8 +91,8 @@ def order_files() -> list[pathlib.Path]:
     return sorted(p for p in GOALS.glob("*.md") if not p.name.endswith(".addendum.md"))
 
 
-def agents_files() -> list[pathlib.Path]:
-    return sorted(CONFIG.rglob("AGENTS.md"))
+def config_files() -> list[pathlib.Path]:
+    return sorted(CONFIG.glob("*/harness.json"))
 
 
 def _ids(paths):
@@ -109,33 +109,26 @@ def test_the_pack_has_every_file_gtm_3_names():
         "eng-001.md", "eng-002.addendum.md", "eng-002.md",
     ], "the Partner has no goal file of its own (spec 12, D25)"
     assert sorted(p.name for p in CONFIG.iterdir()) == list(WORKERS)
-    assert FIXTURE_REPO.is_dir(), "the goals' checks run against tests/scenario/m8/repo/"
+    assert FIXTURE_REPO.is_dir(), "the goals are worked in a copy of tests/scenario/m8/repo/"
 
 
 # ----------------------------------------------------------------------- the goals
 
 
 @pytest.mark.parametrize("path", order_files(), ids=_ids(order_files()))
-def test_order_parses_with_the_function_dispatch_uses(path):
+def test_goal_is_a_paragraph_dispatch_accepts(path):
     """`hx.goals.parse_goal` is what `hx dispatch` validates with. If it refuses one of
-    these, M8 stops at its first command."""
+    these, M8 stops at its first command. The worker writes its own definition of done."""
+    packlib.assert_goal_is_a_paragraph(path)
+
+
+def test_only_eng_002_carries_a_dependency_note():
+    """`eng-002` builds on `eng-001`'s `--upper`; the Partner keeps that ordering, and the goal
+    says so in its one-to-three-sentence note."""
     from hx import goals
 
-    goal = goals.parse_goal(path)
-    assert goal.checks.strip(), f"{path}: empty `### Checks` block; dispatch refuses it"
-
-
-@pytest.mark.parametrize("path", order_files(), ids=_ids(order_files()))
-def test_order_checks_are_runnable_commands(path):
-    from hx import goals
-
-    commands = [
-        line for line in goals.parse_goal(path).checks.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
-    assert commands, f"{path}: `### Checks` has no commands"
-    for line in commands:
-        assert not line.startswith(" "), f"{path}: indented check line {line!r}"
+    assert "depends on `eng-001`" in goals.parse_goal(GOALS / "eng-002.md").goal
+    assert "depends on" not in goals.parse_goal(GOALS / "eng-001.md").goal
 
 
 def test_the_addendum_is_prose_that_lands_under_the_order_heading():
@@ -160,36 +153,29 @@ def test_the_addendum_answers_the_question_eng_002_is_told_to_ask():
     assert "stderr" in addendum and "exits 0" in addendum
 
 
-def test_the_orders_checks_dont_pre_decide_the_open_question():
-    """If `### Checks` already encoded the fallback behaviour, the worker could read the answer
-    off its own definition of done instead of asking."""
+def test_the_goal_does_not_pre_decide_the_open_question():
+    """If the goal already described the fallback behaviour the addendum settles, the worker
+    could write it into its own definition of done instead of asking."""
     from hx import goals
 
-    checks = goals.parse_goal(GOALS / "eng-002.md").checks
-    assert "--lang xx" not in checks, checks
-    assert "unknown language" not in checks, checks
+    goal = goals.parse_goal(GOALS / "eng-002.md").goal
+    for answer in ("unknown language", "stderr", "exits 0", "warn"):
+        assert answer not in goal, f"the goal already carries the answer: {answer!r}"
 
 
 # ------------------------------------------------------------------- the identities
 
 
-def test_the_pack_ships_a_persona_for_each_worker():
-    assert [p.parent.name for p in agents_files()] == list(WORKERS)
+def test_the_pack_ships_a_config_for_each_worker():
+    assert [p.parent.name for p in config_files()] == list(WORKERS)
 
 
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_exactly_one_mutable_header(path):
-    lines = path.read_text().splitlines()
-    hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-    assert len(hits) == 1, f"{path}: {len(hits)} `{MUTABLE_HEADER}` lines, expected exactly 1"
-
-
-@pytest.mark.parametrize("path", agents_files(), ids=_ids(agents_files()))
-def test_agents_file_has_a_persona_above_and_room_below(path):
-    above, _, below = path.read_text().partition(MUTABLE_HEADER)
-    assert above.strip(), f"{path}: nothing above the header, so persona.md would be empty"
-    assert below.strip(), f"{path}: nothing below the header"
-    assert path.parent.name in above, f"{path}: the persona does not name its own id"
+@pytest.mark.parametrize("path", config_files(), ids=_ids(config_files()))
+def test_pack_config_is_a_worker_the_partner_would_write(path, tmp_path):
+    """Role, purpose and a workdir to fill: the persona is rendered from the role's persona
+    and this purpose at launch, so the pack carries no AGENTS.md of its own."""
+    data = packlib.assert_pack_config(path, tmp_path)
+    assert data["role"] == "backend-engineer"
 
 
 # ------------------------------------------------------------------ the fixture repo
@@ -208,8 +194,8 @@ def test_the_fixture_repo_runs_and_starts_where_the_orders_assume():
 
 
 def test_the_fixture_repo_does_not_already_do_the_work():
-    """If `--upper` or `--lang` already worked, both goals would pass their checks on arrival
-    and M8 would prove nothing."""
+    """If `--upper` or `--lang` already worked, both goals would be done on arrival and M8
+    would prove nothing."""
     for flag in ("--upper", "--lang"):
         r = subprocess.run(
             ["python3", "greet.py", flag, "World"],
@@ -281,7 +267,7 @@ def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path)
         pytest.skip("tmux is not on PATH; `hx board` cannot tell which sessions are live")
 
     root = tmp_path / "hx"
-    packlib.build_instance(root, states, worker_pod=POD)
+    packlib.build_instance(root, states, worker_pod=POD, pack_config=CONFIG)
     lines, stderr = packlib.real_board(root, states)
     expected = (EXPECTED / f"{stem}.txt").read_text().strip().splitlines()
     assert lines == expected, (

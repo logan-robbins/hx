@@ -11,21 +11,21 @@
       "outcome": null,
       "dispatched": "2026-09-20T08:40:00Z"
     },
-    "body": "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n\n## Tasks\n- [x] Read the hook documentation for SessionStart.\n- [ ] Run one live session and capture the payload.\n- [ ] Write `notes/sessionstart.md` with the fields observed.\n\n## Deliverables\n\n\n## Commands\n```bash\ntest -s notes/sessionstart.md\n```\n\n## Open decision\n\n\n## Digest\n\n"
+    "body": "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads.\n\n## Definition of done\n- A note naming the fields observed live.\n\n## Tasks\n- [x] Read the hook documentation for SessionStart.\n- [ ] Run one live session and capture the payload.\n- [ ] Write `notes/sessionstart.md` with the fields observed.\n\n## Evidence\n\n\n## Deliverables\n\n\n## Commands\n```bash\ntest -s notes/sessionstart.md\n```\n\n## Open decision\n\n\n## Digest\n\n"
   },
   "task": {
-    "goal": "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and record what you verified.\n\n## Definition of done\n- A note naming the fields observed live.\n\n### Checks\n```bash\ntest -s notes/sessionstart.md\n```\n",
+    "goal": "## Goal\nSurvey how the pinned Claude Code writes `SessionStart` hook payloads, and record what you verified.\n",
     "addenda": [],
     "outcome": null,
     "dispatched": "2026-09-20T08:40:00Z",
     "completed": null
   },
-  "persona_path": "run/res-001/persona.md",
+  "persona_path": "personas/researcher.md",
   "step_state": {},
   "context_file": {
-    "path": "run/res-001/res-001-main.context.md",
-    "text": null,
-    "seam_ts": null
+    "path": null,
+    "seam_ts": null,
+    "text": "# Engineer\n\nYou are an engineer in this hx instance: one goal at a time, in your own workdir, committing as you go, finishing with `hx complete`.\n\nYou are res-001 in pod research. Reads the hooks documentation.\n\n# Build\n\n**Rule L1** \u00b7 Signal: a rename across directories broke an import \u00b7 Check: `git diff --name-status` shows R only within one directory \u00b7 Evidence: eng-000, 2026-09-19\n\nYou have no task in progress. When you get one, a `/goal` pointer names your work item; until then there is no file to read.\n"
   },
   "streams": [
     {

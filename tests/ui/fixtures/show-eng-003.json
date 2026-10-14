@@ -11,16 +11,16 @@
       "outcome": "decision",
       "dispatched": "2026-09-20T10:30:00Z"
     },
-    "body": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n\n## Tasks\n- [x] Read spec 05 and spec 10 for where configuration lives.\n- [x] Write the recommendation and the cost of the option not taken.\n\n## Deliverables\n- The recommendation, in `## Open decision` below.\n\n## Commands\n\n\n## Open decision\n**Per model, in `config/models.json`.** The seam threshold is a share of the context window, and the window is a property of the model, not of the agent.\n\nCost of the option not taken: per agent in `config/<id>/harness.json` would let one agent seam earlier than its podmates, which is occasionally wanted \u2014 but it puts a number that has to track the model in a file nobody rewrites when the model changes.\n\n## Digest\nRecommended per model in `config/models.json`; the per-agent cost is written above.\n"
+    "body": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n## Tasks\n- [x] Read spec 05 and spec 10 for where configuration lives.\n- [x] Write the recommendation and the cost of the option not taken.\n\n## Evidence\n\n\n## Deliverables\n- The recommendation, in `## Open decision` below.\n\n## Commands\n\n\n## Open decision\n**Per model, in `config/models.json`.** The seam threshold is a share of the context window, and the window is a property of the model, not of the agent.\n\nCost of the option not taken: per agent in `config/<id>/harness.json` would let one agent seam earlier than its podmates, which is occasionally wanted \u2014 but it puts a number that has to track the model in a file nobody rewrites when the model changes.\n\n## Digest\nRecommended per model in `config/models.json`; the per-agent cost is written above.\n"
   },
   "task": {
-    "goal": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n\n## Definition of done\n- A recommendation with the cost of the option not taken.\n\n### Checks\n```bash\ntest -s /srv/hx/pods/engineers/eng-003-complete.md\n```\n",
+    "goal": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n",
     "addenda": [],
     "outcome": "decision",
     "dispatched": "2026-09-20T10:30:00Z",
     "completed": "2026-09-20T12:47:31Z"
   },
-  "persona_path": "run/eng-003/persona.md",
+  "persona_path": "personas/engineer.md",
   "step_state": {
     "eng-003-main": {
       "goal": "decide where the seam threshold lives and write the recommendation",
@@ -88,8 +88,8 @@
     }
   },
   "context_file": {
-    "path": "run/eng-003/eng-003-main.context.md",
-    "text": "# Context\n\n_source: state/eng-003/eng-003-main.json_\n\n## Goal\ndecide where the seam threshold lives\n\n## Decisions\n- per model in `config/models.json` \u2014 the threshold is a share of the context window\n",
+    "path": null,
+    "text": "# Engineer\n\nYou are an engineer in this hx instance: one goal at a time, in your own workdir, committing as you go, finishing with `hx complete`.\n\nYou are eng-003 in pod engineers. Owns the seam policy and its thresholds.\n\n# Build\n\n**Rule L1** \u00b7 Signal: a rename across directories broke an import \u00b7 Check: `git diff --name-status` shows R only within one directory \u00b7 Evidence: eng-000, 2026-09-19\n\nYou have no task in progress. When you get one, a `/goal` pointer names your work item; until then there is no file to read.\n",
     "seam_ts": "2026-09-20T12:46:02Z"
   },
   "streams": [
@@ -119,7 +119,7 @@
           "stream": "eng-003-main",
           "event": "seam",
           "source": "compact",
-          "context_file": "/srv/hx/run/eng-003/eng-003-main.context.md",
+          "context_file": "/srv/hx/pods/engineers/eng-003-working.md",
           "context_file_bytes": 1980,
           "ref": {
             "transcript": null

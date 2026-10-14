@@ -1,9 +1,13 @@
-"""The pinned Claude Code binary and its tested-version list (spec 17.1, 17.2 step 1, 17.6).
+"""The recorded Claude Code binary and the versions the live suite has passed on (spec 17.1,
+17.2 step 1, 17.6).
 
 `config/claude.json` is `{"bin": "<abs path>", "version": "2.1.278"}`, the version bare — the
 output of `claude --version` with the ` (Claude Code)` suffix stripped (CONTRACTS.md). The
-package ships the list of versions its live suite has passed on, and neither `hx install` nor
-`hx install` will pin a version that is not in it.
+version is a record, not a gate: `hx install` pins whatever `claude` it finds, and every launch
+boundary (`hx launch`, `hx restart`, `hx up`) re-records the version the binary reports now, so
+a fleet runs the latest release from its next launch and never changes mid-session
+(`DISABLE_AUTOUPDATER=1` in `start.sh`). The package still ships the list of versions its live
+suite last passed on; `hx doctor` says `tested` or `untested` against it, and nothing refuses.
 """
 
 from __future__ import annotations
@@ -45,8 +49,8 @@ def bare_version(output: str) -> str:
     return output.strip().splitlines()[0].removesuffix(VERSION_SUFFIX).strip() if output.strip() else ""
 
 
-def probe(binary: str) -> str:
-    result = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False)
+def probe(binary: str, env=None) -> str:
+    result = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False, env=env)
     if result.returncode != 0:
         raise HxError(f"{binary} --version failed: {result.stdout}{result.stderr}".rstrip())
     version = bare_version(result.stdout or result.stderr)
@@ -77,16 +81,49 @@ def find_binary(explicit: str | None = None) -> str:
     return str(Path(found).absolute())
 
 
-def require_tested(version: str) -> None:
+def tested_status(version: str) -> dict:
+    """`{"tested": bool, "newest_tested": str | None}` against the shipped live-verified list.
+
+    Informational only. The gate that refused an unlisted version is gone: a fleet runs the
+    latest release, picked up at launch boundaries, and the live suite is what gets run
+    against a new one. `hx doctor` and `hx install` print this; nothing acts on it.
+    """
     versions = tested_versions()
-    if version not in versions:
-        newest = versions[0] if versions else "(none)"
-        raise HxError(
-            f"claude {version} is not in this package's tested list ({', '.join(versions) or 'empty'}). "
-            f"Install {newest} and run this again, or move to an hx package that has been "
-            f"tested on {version} (spec 17.2 step 1, 17.6)",
-            exit_code=5,
-        )
+    return {"tested": version in versions, "newest_tested": versions[0] if versions else None}
+
+
+def status_text(version: str) -> str:
+    """`tested`, or `untested; the live suite last passed on 2.1.296`."""
+    status = tested_status(version)
+    if status["tested"]:
+        return "tested"
+    newest = status["newest_tested"]
+    return f"untested; the live suite last passed on {newest}" if newest else "untested"
+
+
+def describe(version: str) -> str:
+    """`2.1.296 (tested)`, or `2.1.300 (untested; the live suite last passed on 2.1.296)`."""
+    return f"{version} ({status_text(version)})"
+
+
+def refresh_pin(root: Path, env=None) -> dict | None:
+    """Re-record the version the pinned binary reports now; run at every launch boundary.
+
+    Returns the pin, with `previous` added when the version moved, or `None` when there is no
+    pin or the binary cannot be probed — the launcher's own refusal then says why, with the
+    path, and a launch never fails over a version record.
+    """
+    pin = load_pin(root)
+    if not pin or not isinstance(pin.get("bin"), str) or not Path(pin["bin"]).is_file():
+        return None
+    try:
+        version = probe(pin["bin"], env=env)
+    except HxError:
+        return None
+    if version == pin.get("version"):
+        return pin
+    previous = pin.get("version")
+    return write_pin(root, pin["bin"], version) | {"previous": previous}
 
 
 def load_pin(root: Path) -> dict | None:

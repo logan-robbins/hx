@@ -37,7 +37,7 @@
       "context_tokens": 48211,
       "seams": 2,
       "turn_ts": "2026-09-20T13:09:40Z",
-      "scope": "Add `--require-done` to `hx board` so the Partner's own `### Checks` block can assert that a",
+      "scope": "Add `--require-done` to `hx board` so the Partner can assert that a set of ids finished with",
       "companion_pass": true,
       "companion_ts": "2026-09-20T13:09:35Z",
       "needs_input": false

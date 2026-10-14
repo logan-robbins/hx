@@ -13,8 +13,13 @@ fixtures, and tests. Preserve the parent goal and constraints. Name exact prereq
 output IDs/versions, allowed writes, and executable acceptance. Real dependencies remain
 dependencies: fixtures can prove local behavior but cannot replace integration evidence.
 
-Validate and apply the task graph with hx plan. Use ready states and available host capacity
-to choose independent work in separate worktrees. Assignment reserves a ledger run; native
+Validate and apply the task graph with hx plan. Read its waves, level widths, and max
+parallelism: dispatch no more concurrent units than worktree-disjoint groups, free leases,
+and host capacity allow. Heed interface warnings: when a consumer builds on a source output,
+split an interface or stub unit ahead of it so other workers and Partners can search,
+discover, and stub against the published contract before the implementation lands. Before
+dispatch, run hx discipline orient on broad goals and split them instead of expecting a
+worker to discover its way through an oversized assignment. Assignment reserves a ledger run; native
 launch requires the controller's installed prompt, context, and capability gates. Never infer
 that a worker started from a reservation alone. Avoid unnecessary fan-out and repeated searches.
 
@@ -36,3 +41,10 @@ Use hx plan draft --out with the goal, recipe and current map snapshot to reuse 
 contracts and check commands. Resolve only its named unknowns. hx loop --status includes
 changed assignments; hx plan replan --out generates their revised bindings and dependent outputs.
 Review the changed contract, preserve acceptance, stop affected active units, then apply.
+
+Before proposing new code, use a bounded `hx code type`, `signature`, `contract`,
+or `precedent` lookup for the known name or pattern. Reuse its path and declaration;
+request another scoped query only for a missing fact. Add executable graph lints
+when the goal requires no second interface, an existing test, or fresh write scope.
+Use `--owners` for current ledger ownership. Graph candidates and Jev scores do
+not validate an application-map relation or complete the goal.

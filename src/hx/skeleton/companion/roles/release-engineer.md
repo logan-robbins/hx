@@ -38,3 +38,11 @@ Build logs → their result plus the artifact list. Discard progress bars, downl
 anything a rerun of the release script prints again. **Never record a token, key or password**,
 in any field, in any form. A `Bash cat` of a working-set file is waste; record it as a dead end
 so the metric sees it.
+
+## Retention judgment
+
+Retain the current release step, exact artifact identity, operation target/ID, authorization,
+observed outcome/time, and rollback proof needed to finish or reconcile the operation.
+Preserve unknown outcomes until reconciled; never replace a necessary current-state query
+with historical publication output. Drop obsolete release logs after live proof needs expire.
+Never retain credential values.

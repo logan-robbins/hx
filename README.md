@@ -52,6 +52,14 @@ anchors, and checks. Stable IDs survive stack changes when responsibilities rema
 same. Planning uses a bounded slice of that map to define assignments and avoid asking
 workers to rediscover known paths, contracts, and checks.
 
+A shared derived code graph provides bounded symbol, signature, caller, test, parity,
+and precedent queries across repository namespaces. It supports Python, C#,
+TypeScript/JavaScript, Go, Rust, and Software AG Natural without building the repository, with optional
+external extractors and imported graphs. `hx code fresh PATH --expect fresh` and the
+planning gate enforce current scope; `--owners` reads the existing ledger leases.
+See [search and retrieval](docs/search-and-retrieval.md) for commands, provenance,
+external formats, and measured coverage.
+
 The companion is a Claude Code session of its own with Read and Write — two tools and nothing else;
 it processes new captured events and submits structured changes to current
 task state and the application map. Jev is required for its bounded judgments about
@@ -93,6 +101,8 @@ for verified behavior and boundaries.
 - [Operating hx](docs/operating.md) — daily use
 - [Several instances on one host](docs/multi-instance.md) — a fleet of Partners: private tmux servers, credentials, go-gate, clean product repository, bound evidence, serialized merges
 - [System design](docs/system-design.md) — current architecture and remaining integration
+- [Search and retrieval](docs/search-and-retrieval.md) — code/graph/content search, isolated execution, Jev sifting
+- [Provider model registry](docs/models.md) — latest model IDs per provider, pinned defaults
 - [Application map](docs/application-map.md) — semantic records, validation, and updates
 - [Continuity runtime](docs/continuity-runtime.md) — capture, state, checks, and reset contracts
 - [Planning runtime](docs/planning-runtime.md) — assignments, ownership, and completion

@@ -1,8 +1,10 @@
 """The `context` hook: `SessionStart`, matcher `startup|resume|clear|compact` (spec 09.1).
 
-At every conversation boundary hx composes current state. A bounded Claude Partner reset
-attaches it through SessionStart additionalContext. Other cases return one file pointer.
-Stable persona instructions remain in the existing system prompt.
+At every conversation boundary hx writes the agent's `## Status` into its work item
+(`PARTNER.md` for the Partner; `hx.compose`), then prints what the agent is handed: the
+invariants and the persona where the hook is their channel, the identity line, the rules, and
+one pointer to the work item (`hx.persona.boundary`, bounded; `hx persona <id>` prints the same).
+Plain stdout is what `SessionStart` injects as context, on every flavor that runs this hook.
 
 On `source=clear` and a `working` item the hook also sends the goal, which is what finishes a
 seam: `Stop` → `/clear` → `SessionStart(clear)` → `/goal` → one Read (spec 09.3). On `startup`
@@ -20,7 +22,7 @@ import json
 import os
 from pathlib import Path
 
-from . import compose as compose_mod, goal as goal_mod, store, streams, timestamps
+from . import compose as compose_mod, goal as goal_mod, persona as persona_mod, store, streams, timestamps
 from .ids import PARTNER
 from .workitems import find_work_item
 
@@ -56,16 +58,18 @@ def write_socket_file(root: Path, payload: dict, env) -> Path | None:
 
 
 def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """Return a bounded native context object or a single context-file pointer."""
+    """Write `## Status`, record the boundary, and return what the agent is handed."""
     source = payload.get("source") or "startup"
 
     if item_id == PARTNER:
         write_socket_file(root, payload, env)
 
     stream = compose_mod.main_stream_name(item_id)
-    path = compose_mod.compose(root, item_id, stream, env=env)
+    compose_mod.compose(root, item_id, stream, env=env)
+    handed = persona_mod.boundary(root, item_id, env=env)
 
     # A boundary record, so the Companion sees where the conversation restarted (spec 07.1).
+    # `context_file` is the file the pointer names: the work item (PARTNER.md), or null.
     streams.append_record(
         root,
         item_id,
@@ -73,7 +77,8 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         {
             "event": "boundary",
             "source": source,
-            "context_file": str(path),
+            "context_file": str(handed["file"]) if handed["file"] else None,
+            "hook_bytes": handed["bytes"],
             "ref": {"transcript": payload.get("transcript_path")},
         },
     )
@@ -84,12 +89,4 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
             # This completes a seam: the item is working, so the pointer goes in now (spec 09.3).
             goal_mod.send_goal(root, item_id, now=True, env=env)
 
-    if item_id == PARTNER and source in {'clear', 'compact', 'resume'}:
-        from .config_harness import flavor_of
-        from .compaction_policy import claude_boundary_context
-        from .runtime_policy import CONTEXT_BYTES
-        if flavor_of(root, item_id) == 'claude' and path.stat().st_size <= CONTEXT_BYTES:
-            inline = claude_boundary_context(path.read_text())
-            if inline is not None:
-                return 0, inline
-    return 0, CONTEXT_LINE.format(path=path)
+    return 0, handed["text"]

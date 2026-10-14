@@ -37,3 +37,10 @@ the count of attempts. Discard raw output, stack traces once the failing frame i
 (keep that frame's `file:line` verbatim), and anything `git log --oneline` or `git diff --stat`
 recovers. A `Bash cat` of a working-set file is waste; record it as a dead end so the metric
 sees it.
+
+## Retention judgment
+
+Retain current data/schema versions, contracts and callers, configuration applicability,
+unresolved diagnostics, exact verification recipes, and resource teardown still required by
+this goal. Edited-source observations remain eligible facts. Replace obsolete backend states
+and repaired failure detail with the current result and still-needed proof.

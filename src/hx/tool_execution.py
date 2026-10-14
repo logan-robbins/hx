@@ -65,7 +65,8 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
 
 
 def main(argv, root, *, env=None):
-    parser = argparse.ArgumentParser(prog='hx tool-exec')
+    parser = argparse.ArgumentParser(prog='hx tool-exec',
+                                     epilog='example: hx tool-exec --request tests-1 -- python3 -m pytest -q')
     parser.add_argument('--run')
     parser.add_argument('--request', required=True)
     parser.add_argument('--cwd')

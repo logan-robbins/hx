@@ -1,10 +1,12 @@
 """`adapters/claude/start.sh` — the entire launch (spec 11, 17.4).
 
-M0 pass criteria: "`start.sh` argv is exactly `--dangerously-skip-permissions --effort …
---model … --append-system-prompt-file run/<id>/persona.md` with no prompt argument;
-`persona.md` equals `AGENTS.md` above the header", plus `--setting-sources user` (build-8
-item 0: the workdir is a checkout hx does not own, and its `.claude/settings.json` must
-never load).
+M0 pass criteria: `start.sh` argv is exactly `--dangerously-skip-permissions --setting-sources
+user --effort … --model …` with no prompt argument and no system-prompt flag: the persona, the
+identity line and the learnings arrive through the SessionStart `context` hook at every
+boundary (`hx persona <id>`), and the invariants through the home's `CLAUDE.md`, refreshed
+here at every launch. `--setting-sources user` is build-8 item 0: the workdir is a checkout hx
+does not own, and its `.claude/settings.json` must never load. Only a planned launch passes
+`--append-system-prompt-file`, with the persona its capsule prepared.
 
 The tmux tests run a real tmux server on a private socket and a fake `claude` that records
 its argv, env and cwd (ORCHESTRATION.md "Fake claude for M0-M5").
@@ -18,7 +20,7 @@ import subprocess
 
 import pytest
 
-from .conftest import AGENTS_MD, FAKE_CLAUDE, PERSONA, clean_env, wait_for
+from .conftest import FAKE_CLAUDE, PERSONA, clean_env, wait_for
 
 EXPECTED_FLAGS = [
     "--dangerously-skip-permissions",
@@ -30,7 +32,6 @@ EXPECTED_FLAGS = [
     "xhigh",
     "--model",
     "claude-opus-5",
-    "--append-system-prompt-file",
 ]
 
 #: Flags spec 11 and 17.4 say are never passed.
@@ -92,18 +93,14 @@ def test_refuses_a_token_readable_by_anyone_else(ready):
     assert "refuse" in result.stderr and "0600" in result.stderr
 
 
-def test_refuses_an_agents_md_without_the_mutable_header(ready):
-    """Without the header hx cannot tell the persona from the agent's own memory (spec 03)."""
-    (ready / "config" / "eng-001" / "AGENTS.md").write_text("no header here\n")
-    result = start(ready, "eng-001")
-    assert result.returncode != 0
-    assert "refuse" in result.stderr and "UPDATES BELOW ONLY" in result.stderr
-
-
-def test_refuses_a_missing_agents_md(ready):
-    (ready / "config" / "eng-001" / "AGENTS.md").unlink()
-    result = start(ready, "eng-001")
-    assert result.returncode != 0 and "refuse" in result.stderr
+def test_the_planned_capsule_persona_is_used_as_prepared(ready, tmp_path):
+    """Inside a planned launch's capsule the verified planned prompt is the persona; start.sh
+    must not render a different one from the instance sources."""
+    persona = ready / "run" / "eng-001" / "persona.md"
+    persona.unlink(missing_ok=True)
+    result = start(ready, "eng-001", "--exec", HX_CONTINUITY_CAPSULE=str(tmp_path))
+    assert result.returncode != 0 and "a planned launch prepares it" in result.stderr
+    assert not persona.exists()
 
 
 def test_refuses_a_missing_workdir(ready):
@@ -151,8 +148,8 @@ def launch_and_record(instance, item_id, tmux_server):
 
 def test_argv_is_exactly_spec_17_4(ready, tmux_server):
     record = launch_and_record(ready, "eng-001", tmux_server)
-    persona = str(ready / "run" / "eng-001" / "persona.md")
-    assert record["argv"] == EXPECTED_FLAGS + [persona]
+    assert record["argv"] == EXPECTED_FLAGS
+    assert "--append-system-prompt-file" not in record["argv"], "the persona comes from the hook"
 
 
 def test_no_prompt_argument_ever(ready, tmux_server):
@@ -226,23 +223,23 @@ def test_the_session_is_named_by_the_id_with_a_main_window(ready, tmux_server):
     assert "main" in windows
 
 
-def test_persona_equals_agents_md_above_the_header(ready, tmux_server):
+def test_no_persona_file_is_rendered(ready, tmux_server):
+    """Nothing is rendered into a file: `hx persona eng-001` is what the `context` hook prints."""
     launch_and_record(ready, "eng-001", tmux_server)
-    persona = (ready / "run" / "eng-001" / "persona.md").read_text()
-    assert persona == AGENTS_MD.split("## UPDATES BELOW ONLY")[0]
-    assert persona == PERSONA + "\n"
-    assert "UPDATES BELOW ONLY" not in persona
-    assert "Things I learned" not in persona, "the agent's own memory is not system prompt"
+    assert not (ready / "run" / "eng-001" / "persona.md").exists()
 
 
-def test_persona_is_regenerated_at_every_launch(ready, tmux_server):
+def test_the_home_claude_md_is_refreshed_at_every_launch(ready, tmux_server):
+    """The invariants' one channel on Claude (`config_harness.INVARIANTS_CHANNEL`)."""
     launch_and_record(ready, "eng-001", tmux_server)
-    (ready / "config" / "eng-001" / "AGENTS.md").write_text(
-        "You are eng-001, now a reviewer.\n\n## UPDATES BELOW ONLY\n\nold memory\n"
-    )
+    home = ready / "run" / "eng-001" / "home" / "CLAUDE.md"
+    clauses = ready / "config" / "CLAUDE.md"
+    assert home.read_text() == clauses.read_text()
+    clauses.write_text(clauses.read_text() + "\nAn edited invariant.\n")
     (ready / "run" / "eng-001" / "fake-argv.json").unlink()
     launch_and_record(ready, "eng-001", tmux_server)
-    assert (ready / "run" / "eng-001" / "persona.md").read_text() == "You are eng-001, now a reviewer.\n\n"
+    assert home.read_text().endswith("An edited invariant.\n")
+    assert PERSONA.strip("\n") not in home.read_text(), "the purpose is the hook's, not the home's"
 
 
 def test_relaunching_respawns_the_main_window(ready, tmux_server):

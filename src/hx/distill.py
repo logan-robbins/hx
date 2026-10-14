@@ -1,43 +1,40 @@
-"""`hx distill <id> <distilled-file> [--memory]` — shrink what the agent carries.
+"""`hx distill <id> <distilled-file>` — shrink what the agent carries.
 
 Addenda accumulate without bound: every `hx resume` and `hx amend` appends a
 `### Goal addendum <ts>` to the Work Item's `## Goal` plus `{ts, text}` in
 `tasks.json[<id>].addenda`, and both ride every context file the agent reads
-after a boundary. Below-header memory in `config/<id>/AGENTS.md` grows the same
-way. Distilling is the Partner's periodic correction: it reads the accumulation,
-writes what is still true into `<distilled-file>`, and hx swaps the accumulation
-for the distillation.
+after a boundary. Distilling is the Partner's periodic correction: it reads the
+accumulation, writes what is still true into `<distilled-file>`, and hx swaps the
+accumulation for the distillation.
 
 What one invocation does, in order, writing nothing until everything validates:
 
 1. The distilled file must exist and be non-empty; an empty distillation says
    nothing is still true, which is `hx bench`, not this.
-2. Above the header of `config/<id>/AGENTS.md`, a fenced `## Distilled
-   directives` section is created or replaced whole. The fence markers are
-   `hx:distilled`, which `compile`'s region regex does not match, so the next
-   `hx compile` keeps them: promoted invariants are per-agent persona now.
+2. The distilled directives become one pending learnings text proposal
+   (`hx.learn.propose_text`), authored as the agent they came from. A directive
+   that outlives a goal is a lesson, and a lesson is owed to every agent of the
+   role, not to one per-id file: a reviewer turns it into rules
+   (`hx learn pending`, `hx learn accept ID --signal … --check …`), and the next
+   launch carries them in every persona.
 3. Every `### Goal addendum <ts>` subsection is removed from the Work Item's
-   `## Goal`, and the matching `tasks.json` entries are dropped. The goal and
-   its current `### Checks` are never touched: a checks replacement an addendum
-   once carried already lives in both, so removing the prose removes nothing
-   the gate runs.
-4. With `--memory`, the below-header memory is replaced whole with a second
-   heading in the distilled file (`## Memory`, split off before step 2).
-   Without it, below-header memory is left alone.
+   `## Goal`, and the matching `tasks.json` entries are dropped. The goal
+   paragraph itself is never touched.
 
-Only the Partner calls this (spec 08): it rewrites what the agent remembers.
+Only the Partner calls this (spec 08): it rewrites what the agent carries.
 A refusal names the first thing wrong and writes nothing.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
-from . import amend as amend_mod, compose as compose_mod, store, tasks as tasks_mod
+from . import amend as amend_mod, learn, store, tasks as tasks_mod
 from .caller import require_partner_caller
-from .errors import NotFound, Refused, ValidationError
+from .errors import NotFound, Refused
 from .workitems import (
     SECTION_GOAL,
     find_work_item,
@@ -46,14 +43,6 @@ from .workitems import (
 )
 
 DISTILL = "HX-DISTILL"
-
-#: The promoted section above the header. The fence kind is deliberately not
-#: `global` or `role`: `compile` replaces those regions whole and would eat
-#: what was promoted.
-SECTION_DISTILLED = "## Distilled directives"
-FENCE_BEGIN = "<!-- hx:distilled begin (promoted by `hx distill` — edit via distill, not by hand) -->"
-FENCE_END = "<!-- hx:distilled end -->"
-MEMORY_HEADING = "## Memory"
 
 
 def read_distilled(distilled_file: str | Path) -> tuple[Path, str]:
@@ -64,31 +53,6 @@ def read_distilled(distilled_file: str | Path) -> tuple[Path, str]:
     if not text.strip():
         raise Refused(f"refuse: {path} is empty; nothing still true is `hx bench`, not distill")
     return path, text
-
-
-def split_memory(text: str) -> tuple[str, str | None]:
-    """Split off a trailing `## Memory` section for `--memory`; otherwise (directives, None)."""
-    bounds = section_bounds(text, MEMORY_HEADING)
-    if bounds is None:
-        return text, None
-    lines = text.split("\n")
-    start, end = bounds
-    memory = "\n".join(lines[start + 1 : end]).strip("\n")
-    rest = "\n".join(lines[:start] + lines[end:]).strip("\n")
-    return rest, (memory or None)
-
-
-def distill_upper(upper: str, directives: str) -> tuple[str, bool]:
-    """`upper` with the fenced distilled section created or replaced. Returns (text, replaced)."""
-    block = f"{SECTION_DISTILLED}\n\n{FENCE_BEGIN}\n{directives.strip(chr(10))}\n{FENCE_END}"
-    pattern = re.compile(
-        rf"^{re.escape(SECTION_DISTILLED)}\s*\n\n{re.escape(FENCE_BEGIN)}\n.*?\n{re.escape(FENCE_END)}",
-        re.S | re.M,
-    )
-    if pattern.search(upper):
-        return pattern.sub(block, upper), True
-    stripped = upper.strip("\n")
-    return (f"{stripped}\n\n{block}\n" if stripped else f"{block}\n"), False
 
 
 def strip_addenda(body: str) -> tuple[str, int]:
@@ -123,31 +87,12 @@ def strip_addenda(body: str) -> tuple[str, int]:
     return "\n".join(out), removed
 
 
-def distill(root: Path, item_id: str, distilled_file: str | Path, *, memory: bool = False,
-            env=None) -> dict:
+def distill(root: Path, item_id: str, distilled_file: str | Path, *, env=None) -> dict:
     require_partner_caller("distill", env)
-    agents = root / "config" / item_id / "AGENTS.md"
-    if not agents.is_file():
-        raise NotFound(f"{agents}: no AGENTS.md to distill into")
-    text = agents.read_text()
-    if compose_mod.HEADER not in text:
-        raise ValidationError(
-            f"{agents}: no `{compose_mod.HEADER}` line; hx cannot tell persona from memory"
-        )
-    upper, _, lower = text.partition(compose_mod.HEADER)
-
+    harness = root / "config" / item_id / "harness.json"
+    if not harness.is_file():
+        raise NotFound(f"{harness}: no config for {item_id}")
     distilled_path, distilled = read_distilled(distilled_file)
-    directives, new_memory = split_memory(distilled)
-    if memory and new_memory is None:
-        raise Refused(
-            f"refuse: {distilled_path} has no `{MEMORY_HEADING}` section; "
-            "`--memory` replaces below-header memory whole and needs one"
-        )
-    if not directives.strip():
-        raise Refused(
-            f"refuse: {distilled_path} has nothing outside `{MEMORY_HEADING}`; "
-            "the distilled directives are the point of this command"
-        )
 
     work_item = find_work_item(root, item_id)
     goal_addenda = 0
@@ -161,15 +106,16 @@ def distill(root: Path, item_id: str, distilled_file: str | Path, *, memory: boo
     entry = entries.get(item_id) or {}
     recorded = len(entry.get("addenda") or [])
 
-    # Everything validated: write. AGENTS.md first, then the Work Item, then tasks.json.
-    before = len(text.encode())
-    new_upper, replaced = distill_upper(upper, directives)
-    if memory:
-        assert new_memory is not None
-        new_text = new_upper + compose_mod.HEADER + "\n" + new_memory.strip("\n") + "\n"
-    else:
-        new_text = new_upper + compose_mod.HEADER + lower if lower else new_upper + compose_mod.HEADER + "\n"
-    store.atomic_write_text(agents, new_text)
+    # Everything validated: write. The proposal first, then the Work Item, then tasks.json.
+    try:
+        role = json.loads(harness.read_text()).get("role")
+    except (OSError, ValueError, AttributeError):
+        role = None
+    proposal = learn.propose_text(
+        root, text=distilled, author=item_id,
+        role=role if isinstance(role, str) and learn.ROLE_NAME_RE.match(role) else None,
+        source=f"distilled from {item_id}'s goal addenda by hx distill", env=env,
+    )
     if work_item is not None and new_body is not None:
         store.atomic_write_text(work_item, front + new_body)
     if recorded:
@@ -180,21 +126,16 @@ def distill(root: Path, item_id: str, distilled_file: str | Path, *, memory: boo
     distilled_path.unlink(missing_ok=True)
     return {
         "id": item_id,
-        "directives_replaced": replaced,
+        "proposal": proposal["id"],
         "goal_addenda_removed": goal_addenda,
         "recorded_addenda_dropped": recorded,
-        "memory_replaced": memory,
-        "bytes_before": before,
-        "bytes_after": len(new_text.encode()),
     }
 
 
 def line(result: dict) -> str:
     return (
-        f"{DISTILL} {result['id']} directives={'replaced' if result['directives_replaced'] else 'created'} "
-        f"goal_addenda={result['goal_addenda_removed']} recorded={result['recorded_addenda_dropped']} "
-        f"memory={'replaced' if result['memory_replaced'] else 'kept'} "
-        f"bytes={result['bytes_before']}->{result['bytes_after']}"
+        f"{DISTILL} {result['id']} proposal={result['proposal']} "
+        f"goal_addenda={result['goal_addenda_removed']} recorded={result['recorded_addenda_dropped']}"
     )
 
 
@@ -202,9 +143,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx distill", add_help=True)
     parser.add_argument("id")
     parser.add_argument("distilled_file", metavar="DISTILLED-FILE")
-    parser.add_argument("--memory", action="store_true",
-                        help="also replace below-header memory with the file's ## Memory section")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    print(line(distill(root, args.id, args.distilled_file, memory=args.memory, env=env)))
+    print(line(distill(root, args.id, args.distilled_file, env=env)))
     return 0

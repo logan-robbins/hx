@@ -9,8 +9,6 @@ set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
-HEADER='## UPDATES BELOW ONLY'
-
 mode=session
 while :; do
   case "${1:-}" in
@@ -40,14 +38,11 @@ fi
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 home=$root/run/$id/home
-agents=$root/config/$id/AGENTS.md
 harness=$root/config/$id/harness.json
+# A planned launch's compiled system prompt (`native_launch`); nothing else writes it.
 persona=$root/run/$id/persona.md
 
 [ -f "$harness" ] || die "refuse: no $harness"
-[ -f "$agents" ] || die "refuse: no $agents"
-grep -qxF "$HEADER" "$agents" || die \
-  "refuse: $agents has no \`$HEADER\` line; the persona is the part above it"
 [ -f "$home/muse/settings.json" ] || die "refuse: no $home/muse/settings.json; run adapters/meta/install.sh $id first"
 
 token_file=$root/seed/meta-token
@@ -81,7 +76,11 @@ effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effor
 if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id" "$home/data"
-  awk -v header="$HEADER" '$0 == header {exit} {print}' "$agents" > "$persona"
+  if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
+    # A planned launch's persona is the compiled planned system prompt, prepared in its
+    # private root and verified by the controller (`native_launch`).
+    [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
+  fi
 
   cd "$cwd"
   export HARNESS_ID="$id"
@@ -92,7 +91,8 @@ if [ "$mode" = exec ]; then
   export PATH="$root/bin:$PATH"
 
   # No prompt argument. --yolo disables approval and sandboxing and trusts the
-  # workspace for this run; the persona file is derived above for inspection.
+  # workspace for this run. Muse takes no system prompt: the invariants, the persona, the
+  # identity line and the learnings arrive through the `context` hook at every boundary.
   exec "$bin" --yolo --model "$model" --reasoning-effort "$effort"
 fi
 

@@ -367,3 +367,21 @@ def test_plan_execution_cli_round_trip(fleet, tmp_path, run_hx):
     assert wrong.returncode != 0 and "only its own assignment" in wrong.stderr
     command("finish", run, "--file", str(receipts), env_extra=worker)
     assert command("ready", "continuation")["units"][0]["status"] == "completed"
+
+
+def test_completion_refreshes_changed_paths_and_replays_after_derived_failure(fleet,monkeypatch):
+    from hx import code_index,code_freshness
+    store,repo=fleet[:2]
+    planning.apply(store,plan(fleet,[source_unit(repo,'producer')]))
+    run=units.assign(store,'producer',1,'eng-001')['run_id']
+    (repo/'feature.py').write_text('def fresh_feature():\n return 42\n')
+    commit(repo)
+    original=code_freshness.refresh_completion
+    def interrupted(*args,**kwargs): raise OSError('derived index interrupted')
+    monkeypatch.setattr(code_freshness,'refresh_completion',interrupted)
+    with pytest.raises(OSError,match='interrupted'): finish(store,run)
+    accepted=json.loads(store.db.execute('SELECT payload FROM unit_completions WHERE run_id=?',(run,)).fetchone()[0])
+    assert accepted['changed_paths']==['feature.py']
+    monkeypatch.setattr(code_freshness,'refresh_completion',original)
+    assert units.complete(store,run,accepted['checks'])==accepted
+    assert code_index.symbols_for(store.root,'fresh_feature')[0]['signature']=='def fresh_feature()'

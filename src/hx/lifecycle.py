@@ -117,6 +117,20 @@ def run_adapter(
 _run_adapter = run_adapter
 
 
+def prepare_persona(root: Path, item_id: str, *, env=None) -> dict:
+    """Move the instance onto the current persona layout (`hx.persona.migrate_layout`) and a
+    pre-redesign `config/<id>/AGENTS.md` into its sources (`hx.persona.migrate`), remove the
+    `run/<id>/persona.md` an older hx rendered, and build what the `context` hook will print
+    (`hx.persona.boundary`), so a missing source fails the launch, not the first boundary."""
+    from . import persona as persona_mod
+
+    for migrated in [*persona_mod.migrate_layout(root, env=env), persona_mod.migrate(root, item_id, env=env)]:
+        if migrated is not None:
+            print(f"hx: {persona_mod.describe_migration(migrated)}", file=sys.stderr)
+    (root / "run" / item_id / "persona.md").unlink(missing_ok=True)
+    return persona_mod.boundary(root, item_id, env=env)
+
+
 def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dict:
     """Idempotent: a live session is left alone, but a `working` item still gets its goal.
 
@@ -126,15 +140,15 @@ def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dic
     """
     require_partner_caller("launch", env)
     _guard_planned(root, item_id)
-    from . import envfile
+    from . import claude_bin, envfile
 
     envfile.sync_seed(root)
+    # Every launch boundary re-records the version the pinned binary reports now, so the
+    # fleet runs the latest release from here and `hx doctor` has the current record.
+    claude_bin.refresh_pin(root, env)
     path = ensure_work_item(root, item_id)
     ensure_workdir(root, item_id)
-
-    from . import compile as compile_mod
-
-    compile_mod.compile_agent(root, item_id)
+    prepare_persona(root, item_id, env=env)
 
     already = tmux.has_session(item_id, env)
     result = {"id": item_id, "session": "existing" if already else "started", "goal": None}
@@ -234,11 +248,12 @@ def restart(root: Path, item_id: str, *, env=None) -> dict:
     """The fallback seam (spec 08, 02): flush, compose, relaunch bare, then the pointer."""
     require_partner_caller("restart", env)
     _guard_planned(root, item_id)
+    from . import claude_bin
+
+    # A restart is a launch boundary too: re-record the version the binary reports now.
+    claude_bin.refresh_pin(root, env)
     path = find_work_item(root, item_id)
-
-    from . import compile as compile_mod
-
-    compile_mod.compile_agent(root, item_id)
+    prepare_persona(root, item_id, env=env)
 
     flush_mod.flush(root, item_id, env=env)
     compose.compose(root, item_id, f"{item_id}-main", env=env)

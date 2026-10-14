@@ -1,0 +1,23 @@
+{
+  "id": "{{id}}",
+  "pod": "{{pod}}",
+  "role": "backend-engineer",
+  "model": "muse-wonder-1.0-contributor",
+  "effort": "high",
+  "workdir": "{{workdir}}",
+  "purpose": "{{purpose}}",
+  "harness": {
+    "args": []
+  },
+  "companion": {
+    "provider": "claude-cli",
+    "model": "claude-haiku-5-5",
+    "effort": "low",
+    "batch_records": 20,
+    "cache_ttl": "1h",
+    "state_budget_tokens": 10000,
+    "seam_min_context_tokens": 60000,
+    "seam_min_interval_s": 600
+  },
+  "flavor": "meta"
+}

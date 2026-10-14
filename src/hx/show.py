@@ -97,14 +97,25 @@ def _compactions(root: Path, item_id: str, step_state: dict) -> dict:
 
 
 def _context_file(root: Path, item_id: str) -> dict:
-    path = compose.context_path(root, item_id, f"{item_id}-main")
-    if not path.is_file():
-        return {"path": str(path.relative_to(root)), "text": None, "seam_ts": None}
-    return {
-        "path": str(path.relative_to(root)),
-        "text": path.read_text(),
-        "seam_ts": timestamps.from_mtime(path),
-    }
+    """What the `context` hook hands the agent at a boundary (`hx persona <id>`): `path` is the
+    file its pointer names (the work item, `PARTNER.md`; null with no task in progress),
+    `text` the hook's output now, `seam_ts` the last boundary's time."""
+    from . import persona as persona_mod
+    from .errors import HxError
+
+    try:
+        handed = persona_mod.boundary(root, item_id)
+    except (HxError, OSError, ValueError):
+        return {"path": None, "text": None, "seam_ts": None}
+    seam_ts = None
+    stream = streams.main_stream(root, item_id)
+    if stream.is_file():
+        for record in streams.iter_records(stream):
+            if record.get("event") == "boundary" and isinstance(record.get("ts"), str):
+                seam_ts = record["ts"]
+    path = handed["file"]
+    return {"path": str(path.relative_to(root)) if path else None, "text": handed["text"],
+            "seam_ts": seam_ts}
 
 
 def _pane(root: Path, item_id: str, env) -> dict:
@@ -203,7 +214,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         except json.JSONDecodeError:
             subagents = {}
 
-    persona = root / "run" / item_id / "persona.md"
+    persona = root / "personas" / f"{role}.md" if isinstance(role, str) and role else None
 
     step_state = _step_state(root, item_id)
     document = {
@@ -214,7 +225,7 @@ def collect(root: Path, item_id: str, *, env=None) -> dict:
         "file": str(path.relative_to(root)) if path else None,
         "work_item": work_item,
         "task": task,
-        "persona_path": str(persona.relative_to(root)) if persona.is_file() else None,
+        "persona_path": str(persona.relative_to(root)) if persona and persona.is_file() else None,
         "step_state": step_state,
         "compactions": _compactions(root, item_id, step_state),
         "context_file": _context_file(root, item_id),

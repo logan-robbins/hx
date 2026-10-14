@@ -2,14 +2,19 @@
   "id": "{{id}}",
   "pod": "{{pod}}",
   "role": "backend-engineer",
-  "model": "claude-opus-5",
+  "model": "claude-opus-5-5",
   "effort": "xhigh",
   "workdir": "{{workdir}}",
+  "purpose": "{{purpose}}",
+  "explorer": {
+    "model": "claude-sonnet-5-5",
+    "effort": "high"
+  },
   "harness": {
     "args": []
   },
   "companion": {
-    "model": "claude-haiku-4-5-20251001",
+    "model": "claude-haiku-5-5",
     "effort": "low",
     "batch_records": 20,
     "cache_ttl": "1h",

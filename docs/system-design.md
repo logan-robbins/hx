@@ -114,8 +114,46 @@ state authorities/projections and retention of the minimal state needed to resum
 cancelled assignment. Optional QA triage and test selection remain follow-on features.
 The current status document tracks these boundaries and verification details.
 
+## Search, retrieval, and execution
+
+Code search, graph search, content retrieval, and isolated execution follow
+the context-economy contract in [search and retrieval](search-and-retrieval.md):
+analysis is programmed (`hx exec`) so only stdout returns, exact content is
+retrieved on demand from FTS5 indexes (`hx code`, `hx content`), graph
+traversal stays on validated map edges with code-derived candidate edges as
+input, and Jev (`hx sift`) only sifts deterministic candidates — it never
+establishes absence, validates an edge, or completes a task. These indexes
+are rebuildable derived state beside the ledger, not a second authority.
+
+The code graph shares one SQLite store across repository namespaces. Content hashes
+refresh source bodies and declaration spans; Python, C#, TypeScript/JavaScript, Go,
+Rust, and Software AG Natural have build-free structural extraction. Optional tree-sitter/Universal Ctags
+and batch SCIP indexers enrich those facts. Every answer carries its lane, extractor,
+source anchor and staleness; ownership is a live join against ledger leases. External
+JSONL graphs and published interface contracts share the namespace model. Bounded
+`type`, `signature`, `callers`, `register`, `tests-for`, `conform`, and `precedent`
+queries let a worker establish reuse and exact source locations before proposing code.
+Natural extraction follows exported object types, public function/subroutine names,
+parameter declarations, and literal call/dependency targets. Dynamic operands remain
+reference sites without static call edges. Source spans preserve physical listing
+lines for application-map anchors; see
+[Natural source support](search-and-retrieval.md#natural-source-support)
+for supported formats and query examples.
+
+Plan validation and admission check the indexed base and hashes for allowed writes.
+A missing derived cache is built automatically; when an assignment uses another
+checkout of the same repository, the single cache is rebound to that checkout. A
+changed scope in the indexed checkout refuses admission and names the rebuild command.
+Completion publishes changed paths in its durable result and refreshes those paths;
+replaying publication retries the same refresh after interruption. Scoped refresh
+invalidates dependent candidates. The installed `bin/code-index-post-merge` performs
+the full post-merge rebuild. No graph state is written into a product checkout.
+PageRank orientation and Louvain decomposition remain deterministic candidate output;
+only the existing application-map validation path can promote a proposal.
+
 ## Related contracts
 
+- [Search and retrieval](search-and-retrieval.md)
 - [Application map](application-map.md)
 - [Continuity runtime](continuity-runtime.md)
 - [Planning runtime](planning-runtime.md)
