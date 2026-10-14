@@ -1,0 +1,46 @@
+name: fixed validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: Immutable candidate ID from hx change candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# A new main commit cannot cancel a coherent candidate already being checked.
+concurrency:
+  group: hx-fixed-${{ inputs.batch }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: self-hosted
+    environment: validation
+    env:
+      HX_BATCH: ${{ inputs.batch }}
+      HX_DELIVERY_ROOT: ${{ vars.HX_DELIVERY_ROOT }}
+      HX_VALIDATION_ACTOR: ${{ vars.HX_VALIDATION_ACTOR }}
+      HX_SNAPSHOT: ${{ runner.temp }}/hx-fixed-${{ inputs.batch }}-${{ github.run_attempt }}
+    steps:
+      - name: Verify configured local validation authority
+        run: |
+          test -n "$HX_VALIDATION_ACTOR"
+          test -d "$HX_DELIVERY_ROOT/state"
+          command -v hx
+      - name: Validate the prepared immutable source and policy
+        env:
+          HARNESS_ID: ${{ env.HX_VALIDATION_ACTOR }}
+        run: |
+          hx change run-validation "$HX_BATCH" --root "$HX_DELIVERY_ROOT" \
+            --snapshot "$HX_SNAPSHOT" > "$RUNNER_TEMP/hx-validation.json"
+      - name: Retain the exact source, check and tested build identities
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hx-validation-${{ inputs.batch }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hx-validation.json
+          if-no-files-found: error

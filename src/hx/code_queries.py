@@ -1,9 +1,11 @@
 """Bounded deterministic retrieval over the structural and text lanes."""
 
 from __future__ import annotations
+
 import posixpath
 import re
 from pathlib import Path
+
 from . import code_store as store
 
 LANES = {"resolved": 0, "syntax": 1, "text": 2, "imported": 3}
@@ -14,6 +16,21 @@ def symbols(conn, name, *, repo=None, limit=CAP, path=None):
     key = (name, repo, limit, path)
     if key in conn.symbol_cache:
         return [dict(r) for r in conn.symbol_cache[key]]
+    if conn.snapshot is not None:
+        from .code_snapshot import matching_facts
+
+        rows = matching_facts(
+            conn,
+            "symbols",
+            "name_folded=? OR qualified_folded=?",
+            (name.casefold(), name.casefold()),
+            repo=repo,
+            path=path,
+            limit=min(CAP, limit),
+        )
+        result = [store.decorate(conn, r) for r in rows]
+        conn.symbol_cache[key] = result
+        return [dict(r) for r in result]
     rows = conn.execute(
         """SELECT * FROM symbols WHERE (name_folded=? OR qualified_folded=?)
         AND (? IS NULL OR repo=?) AND (? IS NULL OR path=?)
@@ -81,14 +98,41 @@ def search(conn, query, *, repo=None, limit=10, fuzzy=True):
                     },
                 ),
             )
-    if not ranking and fuzzy:
-        names = [
-            r[0]
-            for r in conn.execute(
-                "SELECT DISTINCT name FROM symbols WHERE (? IS NULL OR repo=?) ORDER BY name LIMIT 5000",
-                (repo, repo),
+    if conn.snapshot is not None:
+        from .code_snapshot import matching_files, source_search_tables
+
+        for table in source_search_tables(conn):
+            rows = matching_files(
+                conn, table, match, repo=repo, limit=max(50, min(CAP, limit) * 4)
             )
-        ]
+            for i, row in enumerate(rows, 1):
+                key = (row["repo"], row["path"])
+                ranking[key] = ranking.get(key, 0) + 1 / (60 + i)
+                files.setdefault(
+                    key,
+                    store.decorate(
+                        conn,
+                        dict(row)
+                        | dict(
+                            lane="text",
+                            extractor="snapshot-fts5",
+                            anchor_sha=row["sha256"],
+                        ),
+                    ),
+                )
+    if not ranking and fuzzy:
+        if conn.snapshot is not None:
+            from .code_snapshot import names_for
+
+            names = list(names_for(conn, repo=repo))
+        else:
+            names = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT name FROM symbols WHERE (? IS NULL OR repo=?) ORDER BY name LIMIT 5000",
+                    (repo, repo),
+                )
+            ]
         corrected = query
         for term in terms:
             if len(term) < 5:
@@ -110,10 +154,16 @@ def search(conn, query, *, repo=None, limit=10, fuzzy=True):
     result = []
     for key, score in ranking.items():
         row = files[key]
-        body = conn.execute(
-            "SELECT body FROM files WHERE repo=? AND path=?", key
-        ).fetchone()
-        body = body[0] if body else row.get("signature", "")
+        if conn.snapshot is not None:
+            from .code_snapshot import body_for
+
+            body = body_for(conn, *key)
+            body = body if body is not None else row.get("signature", "")
+        else:
+            body = conn.execute(
+                "SELECT body FROM files WHERE repo=? AND path=?", key
+            ).fetchone()
+            body = body[0] if body else row.get("signature", "")
         if len(terms) > 1:
             locations = [body.casefold().find(t.casefold()) for t in terms]
             if all(p >= 0 for p in locations):
@@ -121,7 +171,16 @@ def search(conn, query, *, repo=None, limit=10, fuzzy=True):
         result.append(
             {
                 k: row.get(k)
-                for k in ("repo", "path", "lane", "extractor", "anchor_sha", "stale")
+                for k in (
+                    "repo",
+                    "path",
+                    "lane",
+                    "extractor",
+                    "anchor_sha",
+                    "stale",
+                    "snapshot",
+                    "source_proof",
+                )
             }
             | dict(
                 title=row.get("qualified", Path(row["path"]).name),
@@ -139,15 +198,40 @@ def search(conn, query, *, repo=None, limit=10, fuzzy=True):
 def callers(conn, name, *, repo=None, limit=CAP, count=False):
     # A Natural prototype declares an interface in the caller, not an executable
     # definition. Its file must still be eligible as a real call site.
-    definitions = [
-        r for r in symbols(conn, name, repo=repo) if r["kind"] != "prototype"
-    ]
+    if conn.snapshot is not None:
+        from .code_snapshot import matching_facts
+
+        definitions = [
+            store.decorate(conn, r)
+            for r in matching_facts(
+                conn,
+                "symbols",
+                "name_folded=? OR qualified_folded=?",
+                (name.casefold(), name.casefold()),
+                repo=repo,
+            )
+            if r["kind"] != "prototype"
+        ]
+    else:
+        definitions = [
+            r for r in symbols(conn, name, repo=repo) if r["kind"] != "prototype"
+        ]
     defining = {(r["repo"], r["path"]) for r in definitions}
-    rows = conn.execute(
-        """SELECT * FROM refs WHERE (lower(name)=? OR lower(qualified)=?)
-        AND (? IS NULL OR repo=?) ORDER BY repo,path,line""",
-        (name.casefold().rsplit(".", 1)[-1], name.casefold(), repo, repo),
-    )
+    if conn.snapshot is not None:
+        from .code_snapshot import matching_facts
+
+        rows = matching_facts(
+            conn,
+            "refs",
+            "name_folded=? OR qualified_folded=?",
+            (name.casefold().rsplit(".", 1)[-1], name.casefold()),
+            repo=repo,
+        )
+    else:
+        rows = conn.execute(
+            "SELECT * FROM refs WHERE (lower(name)=? OR lower(qualified)=?) AND (? IS NULL OR repo=?) ORDER BY repo,path,line",
+            (name.casefold().rsplit(".", 1)[-1], name.casefold(), repo, repo),
+        )
     result = []
     seen = set()
     for row in rows:
@@ -167,11 +251,19 @@ def callers(conn, name, *, repo=None, limit=CAP, count=False):
             d["stale"] for d in definitions if d["repo"] == row["repo"]
         )
         result.append(value)
-    imported = conn.execute(
-        """SELECT * FROM edges WHERE lane='imported' AND (lower(dst_text)=? OR lower(dst_text)=?)
-        AND (? IS NULL OR repo=?) ORDER BY repo,src_path,kind""",
-        (name.casefold(), name.casefold().rsplit(".", 1)[-1], repo, repo),
-    )
+    if conn.snapshot is not None:
+        imported = matching_facts(
+            conn,
+            "edges",
+            "lane='imported' AND (dst_folded=? OR dst_folded=?)",
+            (name.casefold(), name.casefold().rsplit(".", 1)[-1]),
+            repo=repo,
+        )
+    else:
+        imported = conn.execute(
+            "SELECT * FROM edges WHERE lane='imported' AND (lower(dst_text)=? OR lower(dst_text)=?) AND (? IS NULL OR repo=?) ORDER BY repo,src_path,kind",
+            (name.casefold(), name.casefold().rsplit(".", 1)[-1], repo, repo),
+        )
     for row in imported:
         result.append(
             store.decorate(conn, row) | dict(path=row["src_path"], reference="imported")

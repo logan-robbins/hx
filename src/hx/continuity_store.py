@@ -23,13 +23,14 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
 EVENT_KINDS = {
     "request", "correction", "assistant_message", "tool_result", "progress",
     "source_change", "check_result", "spawn", "finish", "boundary",
+    "contract_published", "packet_covered", "integration_verified", "deployable",
 }
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -462,7 +463,7 @@ class ContinuityStore:
                 self.db.execute("PRAGMA foreign_keys=OFF")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (*range(19), SCHEMA_VERSION):
+            if version not in (*range(SCHEMA_VERSION), SCHEMA_VERSION):
                 raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
             if version == 0:
                 # executescript commits implicitly; individual statements preserve the lock.
@@ -567,6 +568,11 @@ class ContinuityStore:
             if version < 19 and self.db.execute("PRAGMA foreign_key_check").fetchone():
                 raise ValidationError("continuity migration has invalid foreign keys")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            from . import dependency_packets, check_artifacts, change_delivery, dotnet_build
+            dependency_packets.initialize(self.db)
+            check_artifacts.initialize(self.db)
+            change_delivery.initialize(self.db)
+            dotnet_build.initialize(self.db)
             self.db.commit()
             self.db.execute("PRAGMA foreign_keys=ON")
         except BaseException:
@@ -609,7 +615,10 @@ class ContinuityStore:
         with self.transaction() as tx:
             live = {row[0] for row in self.db.execute(
                 "SELECT hash FROM artifact_refs UNION SELECT artifact_hash FROM receipts "
-                "UNION SELECT packet_hash FROM checkpoints"
+                "UNION SELECT packet_hash FROM checkpoints "
+                "UNION SELECT artifact_hash FROM check_artifacts WHERE artifact_hash IS NOT NULL "
+                "UNION SELECT artifact_hash FROM dotnet_build_artifacts "
+                "UNION SELECT artifact_hash FROM dotnet_receipts WHERE artifact_hash IS NOT NULL"
             )}
             removed = []
             for path in self.artifacts.iterdir():
@@ -737,6 +746,7 @@ class Transaction:
         self._change()
         self.db.execute("UPDATE runs SET outcome=?,ended_at=? WHERE run_id=?", (outcome, time.time(), run_id))
         self.db.execute("DELETE FROM leases WHERE run_id=?", (run_id,))
+        self.db.execute("DELETE FROM unit_resources WHERE run_id=?", (run_id,))
         if outcome == 'completed':
             from .task_retention import close
             task_id = self.db.execute('SELECT task_id FROM runs WHERE run_id=?', (run_id,)).fetchone()[0]

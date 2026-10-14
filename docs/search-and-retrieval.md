@@ -31,6 +31,13 @@ scope freshness and asset assignments. Excluded oversize bodies cannot certify
 an absence lint. Porter and optional trigram FTS reference one
 stored body; `--porter-only` and SQLite without trigram remain supported.
 
+Immutable snapshots bind repository, commit, overlay and extractor generation. Queries
+accept `--at COMMIT` without checking out that revision; dirty overlays remain separate.
+Content/extraction objects and persistent path maps reuse unchanged data. Named lookups
+select indexed postings and snapshot membership before result caps. A host repository
+service can share the same objects across instances behind the CLI; ownership and early
+published-contract proof still come from the requesting instance's ledger.
+
 Python AST and structural brace extraction for C#, TypeScript/JavaScript, Go,
 and Rust capture qualified declarations, attributes, spans and source headers.
 Software AG Natural has a separate stdlib extractor for object/routine declarations,
@@ -50,6 +57,7 @@ are labelled by their extractor. Syntax references remain candidates.
 hx code index --repo /path/to/repo
 hx code type IOrderRepository --expect exists
 hx code signature Namespace.OrderRepository.Add
+hx code signature Namespace.OrderRepository.Add --at COMMIT
 hx code callers Add --count
 hx code register IOrderRepository
 hx code tests-for src/OrderRepository.cs --expect exists
@@ -82,11 +90,11 @@ a failed expectation 3, usage errors 2. `clean` is the conform audit. A bounded
 query's fresh rows cannot prove an entire scope fresh: use `fresh PATH...` for
 that gate. Stale facts remain visible. Plan validation and admission compare the
 indexed head's ancestry, committed scope diff and current file hashes. Missing
-caches bootstrap; admission from another checkout rebinds the single namespace
-cache there. A stale scope in the indexed checkout refuses with its rebuild
+caches bootstrap; other checkouts and revisions retain independent immutable views.
+A stale scope in the indexed checkout refuses with its rebuild
 command. Completion refreshes durable `changed_paths` and retries that refresh
 on publication replay; scoped refresh invalidates dependents. The installed
-`bin/code-index-post-merge` is the operator's one full rebuild trigger:
+`bin/code-index-post-merge` is the operator's post-merge refresh trigger:
 
 ```sh
 HARNESS_ROOT=/path/to/instance HX_BIN=/path/to/hx \
@@ -95,6 +103,10 @@ HARNESS_ROOT=/path/to/instance HX_BIN=/path/to/hx \
 
 Run it from the post-merge job/hook in the repository, or set `HX_CODE_REPO`.
 It does not install hooks or write index files into the repository.
+Prepared changesets record exact changed paths/modes/blobs/deletions; publication and
+replay are durable. `hx code journal --namespace REPO_ID --replay CHANGESET` reconciles
+interrupted derived publication. See [agent-scale runtime](agent-scale-runtime.md) for
+shared metadata, sparse assignment provisioning and reusable check/build artifacts.
 
 Resolved indexing is optional and explicit:
 `index --resolved --indexer-checkout /isolated/checkout`. The checkout must be

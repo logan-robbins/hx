@@ -1,11 +1,13 @@
 """Atomic, idempotent external graph ingestion with explicit provenance."""
 
 from __future__ import annotations
+
 import hashlib
 import json
 from pathlib import Path
+
 from . import code_store as store
-from .code_build import insert_symbol, insert_edge
+from .code_build import insert_edge, insert_symbol
 
 
 def relative(path):
@@ -152,9 +154,13 @@ def import_graph(
                 evidence=row["evidence"],
             )
             edges += 1
+        from .code_snapshot import capture_external
+
+        snapshot = capture_external(conn, identity, str(repo) if repo else "")
         conn.commit()
         return dict(
             repo=identity,
+            snapshot=snapshot,
             symbols=symbols,
             edges=edges,
             lane="imported",

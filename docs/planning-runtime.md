@@ -7,6 +7,12 @@ and output evidence. Planned assignments use the continuity ledger and are conne
 to native dispatch, resume, capture, companion processing, and completion through the
 root service. Legacy state consumers still need coordinated migration.
 
+The default draft path produces version-2 dependency packets. The Partner defines the
+behavior, scope, dependencies and output obligations; the harness worker defines and
+binds its own executable checks before edits. A separately configured reviewer approves
+the binding. Version-1 plans retain compatibility for existing explicit-check plans.
+See [agent-scale runtime](agent-scale-runtime.md) for the version-2 lifecycle.
+
 ## Assignment brief
 
 ```sh
@@ -46,7 +52,7 @@ The top-level JSON object has exactly these fields:
 
 | Field | Contract |
 |---|---|
-| `schema_version` | `1` |
+| `schema_version` | `1` (explicit checks) or `2` (worker-bound packet) |
 | `plan_id` | Stable plan ID |
 | `expected_revision` | `0` for creation; current revision for an amendment |
 | `repository` | UUID from `.hx/map/manifest.json` |
@@ -54,7 +60,7 @@ The top-level JSON object has exactly these fields:
 | `constraints` | Up to 32 complete statements |
 | `tasks` | 1–32 behavior units |
 
-Each unit has exactly `id`, `expected_revision`, `behavior`, `acceptance`, `workdir`,
+Each version-1 unit has exactly `id`, `expected_revision`, `behavior`, `acceptance`, `workdir`,
 `write_paths`, `map_inputs`, `checks`, `outputs`, and `prerequisites`.
 
 - `acceptance` has 1–32 statements describing observable results.
@@ -72,6 +78,13 @@ Each unit has exactly `id`, `expected_revision`, `behavior`, `acceptance`, `work
   outputs declared by other units in the same plan.
 
 The plan is at most 256 KiB, and an individual assignment body at most 16,000 bytes.
+Version-2 units replace `checks` with `check_policy: {reviewer, required_checks}` and
+`resources: [{id, mode}]` (`shared` or `exclusive`). Outputs add an observable `obligation`;
+receipt outputs omit `check_id`. Contract outputs use `kind: "contract"` and exact `paths`.
+Every prerequisite adds `need: "hard"|"contract"|"substitutable"`. Early prerequisites
+also name `provider_output`, `provider_version`, and boolean `stand_in` permission.
+Worker coverage maps each acceptance/output/integration obligation to exact check IDs.
+
 These are structural bounds, not a complete native prompt/token budget. Validation
 rejects cycles, missing checks/outputs, mismatched versions, invalid source scope,
 and unordered units with equal or ancestor/descendant write paths. Ordered units
@@ -117,7 +130,7 @@ inputs. Detection remains limited to registered sources and observable repositor
 state.
 
 Completion requires a clean committed worktree, current passing receipts for all
-assigned checks, unchanged prerequisite proofs, and explicit source outputs covering
+checks assigned to local packet coverage, unchanged prerequisite proofs, and explicit source outputs covering
 all committed changed paths. It rechecks source/environment identities and declared
 ignored inputs at the final boundary. Source proofs contain the commit/tree and
 exact per-path Git mode/object identity, including verified deletions. Receipt
@@ -132,7 +145,10 @@ the same environment: changing environment values invalidates reusable receipts.
 
 ## Installing prerequisites
 
-A producer's completed source output does not mean the consumer has its files.
+A producer's completed source output does not mean the consumer has its files. This
+section describes hard source dependencies. Early version-2 contract dependencies use
+immutable publication/acquisition and defer real-provider verification as described in
+[agent-scale runtime](agent-scale-runtime.md#worker-bindings-and-early-interfaces).
 An explicit integration unit installs and commits those exact files in the consumer
 worktree, then records a materialization receipt:
 
@@ -166,9 +182,10 @@ not establish general model extraction accuracy or certify untracked remote jobs
 
 `hx plan validate` reports `waves`, `level_widths`, `max_parallelism`
 (worktree-disjoint groups), and `interface_warnings`. Max useful parallelism
-is the smallest of: ready units in the current wave, worktree-disjoint
-groups, free write leases, and host capacity. The Partner dispatches to that
-bound and no further; fan-out beyond it queues on leases and dilutes review.
+depends on current readiness, worktree-disjoint groups, free write/resource leases,
+and host capacity. Static waves summarize the publication graph; early contracts
+can unlock consumers while providers are still active. Admission rechecks actual
+readiness rather than enforcing a wait for an entire static wave.
 
 Interface-first is a validation warning, not a refusal: when a consumer
 depends on another unit's source output, the plan names the coupling and

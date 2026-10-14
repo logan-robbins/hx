@@ -56,7 +56,9 @@ def test_identical_inputs_reuse_without_running_the_command(setup, monkeypatch):
     first = checks.run_check(store, run, "unit", recipe=recipe, env=env)
     monkeypatch.setattr(checks, "execute", lambda *_: pytest.fail("identical check ran again"))
     second = checks.run_check(store, run, "unit", recipe=recipe, env=env)
-    assert second["receipt_id"] == first["receipt_id"] and second["reused"]
+    assert second["receipt_id"] != first["receipt_id"] and second["reused"]
+    assert second["execution_id"] == first["execution_id"]
+    assert second["event_id"] != first["event_id"]
 
 
 @pytest.mark.parametrize("change", ["source", "untracked", "environment", "recipe", "external", "ignored", "executable"])
@@ -156,7 +158,7 @@ def test_uncertain_request_retries_do_not_execute_twice(setup, monkeypatch):
 def test_unresolved_execution_is_not_automatically_restarted(setup, monkeypatch):
     store, run, _, env = setup
     recipe = definition()
-    def interrupted(*args):
+    def interrupted(*args, **kwargs):
         raise RuntimeError("interrupted before receipt commit")
     monkeypatch.setattr(checks, "execute", interrupted)
     with pytest.raises(RuntimeError):
@@ -248,8 +250,8 @@ def test_environment_input_changed_during_check_invalidates_receipt(setup):
 def test_task_amended_while_check_runs_keeps_evidence_but_invalidates_result(setup, monkeypatch):
     store, run, repo, env = setup
     original = checks.execute
-    def execute(*args):
-        result = original(*args)
+    def execute(*args, **kwargs):
+        result = original(*args, **kwargs)
         with store.transaction() as tx:
             tx.put_task("T", {"goal": "Changed acceptance.", "workdir": str(repo)}, expected_revision=1)
         return result

@@ -1,9 +1,11 @@
 """Source freshness admission and recoverable completion-time graph refresh."""
 
 from __future__ import annotations
+
 import hashlib
 import subprocess
 from pathlib import Path
+
 from . import code_store as store
 
 
@@ -13,7 +15,22 @@ def in_scope(path, scopes):
     )
 
 
-def scope(root, repository, paths, *, bootstrap=False):
+def scope(root, repository, paths, *, bootstrap=False, local=False):
+    paths = list(paths)
+    if not local:
+        from .repo_service import configured_socket, request
+
+        socket = configured_socket(root)
+        if socket is not None:
+            return request(
+                socket,
+                dict(
+                    method="scope",
+                    repository=str(Path(repository).resolve()),
+                    paths=paths,
+                    bootstrap=bootstrap,
+                ),
+            )
     repo = Path(repository).resolve()
     identity = store.namespace(repo)
     paths = list(paths)
@@ -25,7 +42,15 @@ def scope(root, repository, paths, *, bootstrap=False):
         if conn
         else None
     )
-    if bootstrap and (record is None or Path(record["root"]).resolve() != repo):
+    checkout = (
+        conn.execute(
+            "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
+            (str(repo), identity),
+        ).fetchone()
+        if conn
+        else None
+    )
+    if bootstrap and (record is None or checkout is None):
         if conn:
             conn.close()
         from .code_build import index_repo
@@ -35,6 +60,18 @@ def scope(root, repository, paths, *, bootstrap=False):
         record = conn.execute(
             "SELECT * FROM repos WHERE repo=?", (identity,)
         ).fetchone()
+    selected = None
+    if conn:
+        from .code_snapshot import activate
+
+        selected = conn.execute(
+            "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
+            (str(repo), identity),
+        ).fetchone()
+        if selected:
+            snap = activate(conn, selected[0], identity, historical=False, paths=paths)
+            record = dict(record) if record else {}
+            record.update(root=str(repo), head=snap["head"])
     reasons = []
     changed = []
     try:
@@ -77,14 +114,21 @@ def scope(root, repository, paths, *, bootstrap=False):
             elif diff:
                 changed.extend(diff.splitlines())
                 reasons.append("scope changed since indexed HEAD")
+        predicates = " OR ".join(
+            "(path=? OR substr(path,1,length(?)+1)=? || '/' OR ?='.')" for _ in paths
+        )
+        bindings = tuple(v for p in paths for v in (p.rstrip("/") or ".",) * 4)
         rows = conn.execute(
-            "SELECT path,sha256,generation FROM files WHERE repo=? ORDER BY path",
-            (identity,),
+            "SELECT path,sha256,generation FROM files WHERE repo=? AND ("
+            + predicates
+            + ") ORDER BY path",
+            (identity, *bindings),
         )
         from .code_exclusions import fingerprint
 
         excluded = conn.execute(
-            "SELECT path,sha256 FROM exclusions WHERE repo=?", (identity,)
+            "SELECT path,sha256 FROM exclusions WHERE repo=? AND (" + predicates + ")",
+            (identity, *bindings),
         ).fetchall()
         indexed = {r["path"] for r in excluded if in_scope(r["path"], paths)}
         for row in excluded:
@@ -97,24 +141,44 @@ def scope(root, repository, paths, *, bootstrap=False):
                 actual = None
             if actual != row["sha256"]:
                 changed.append(row["path"])
-        generation = conn.execute(
-            "SELECT value FROM metadata WHERE key=?", ("extractors:" + identity,)
-        ).fetchone()
+        from .code_adapters import detect
+        from .code_build import _context, extractor_generation
+
+        generation = extractor_generation(detect(), _context(repo))
+        modes = (
+            {
+                r["path"]: r["mode"]
+                for r in conn.execute(
+                    "SELECT path,json_extract(data,'$.mode') AS mode FROM snapshot_paths"
+                )
+            }
+            if selected
+            else {}
+        )
         for row in rows:
             if not in_scope(row["path"], paths):
                 continue
             indexed.add(row["path"])
             try:
-                target = (repo / row["path"]).resolve()
-                if not target.is_relative_to(repo):
+                target = repo / row["path"]
+                if not target.parent.resolve().is_relative_to(repo):
                     raise OSError("path escapes repository")
-                actual = hashlib.sha256(target.read_bytes()).hexdigest()
+                actual = hashlib.sha256(store.source_bytes(target)).hexdigest()
+                stat = target.lstat()
+                mode = (
+                    "120000"
+                    if target.is_symlink()
+                    else "100755"
+                    if stat.st_mode & 0o111
+                    else "100644"
+                )
             except OSError:
                 actual = None
+                mode = None
             if (
                 actual != row["sha256"]
-                or generation
-                and row["generation"] != generation[0]
+                or row["generation"] != generation
+                or modes.get(row["path"]) not in {None, mode}
             ):
                 changed.append(row["path"])
         for table, key in [
@@ -126,11 +190,11 @@ def scope(root, repository, paths, *, bootstrap=False):
                 f"SELECT {key} FROM {table} WHERE repo=? AND stale=1", (identity,)
             )
             changed.extend(row[0] for row in rows if in_scope(row[0], paths))
-        from .code_build import discover
+        from .code_build import scoped_names
 
         missing = [
             p
-            for p in discover(repo)
+            for p in scoped_names(repo, paths)
             if in_scope(p, paths) and p not in indexed and (repo / p).is_file()
         ]
         # Binary/oversize files deliberately stay in the degraded coverage lane;
@@ -174,5 +238,46 @@ def refresh_completion(store_obj, workdir, paths):
     from .code_build import index_repo
 
     if paths:
+        from .repo_service import code_request
+
+        shared = code_request(
+            store_obj.root,
+            ["index", "--repo", str(workdir), "--paths", *(str(p) for p in paths)],
+        )
+        if shared is not None:
+            if shared["exit_code"]:
+                raise ValueError(
+                    "shared scope refresh failed: " + str(shared["result"])
+                )
+            return shared["result"]
         return index_repo(store_obj.root, workdir, paths=paths)
     return dict(changed=0)
+
+
+def snapshot_scope(conn, selected, paths):
+    """Freshness of the captured derived facts, independent of a live checkout."""
+    changed = set()
+    for row in conn.execute(
+        "SELECT path,generation FROM files WHERE repo=?", (selected["repo"],)
+    ):
+        if in_scope(row["path"], paths) and row["generation"] != selected["generation"]:
+            changed.add(row["path"])
+    for table, key in (("symbols", "path"), ("refs", "path"), ("edges", "src_path")):
+        for row in conn.execute(
+            f"SELECT {key} FROM {table} WHERE repo=? AND stale=1", (selected["repo"],)
+        ):
+            if in_scope(row[0], paths):
+                changed.add(row[0])
+    reasons = []
+    if not selected["complete"]:
+        reasons.append("snapshot coverage is incomplete")
+    if changed:
+        reasons.append("snapshot scope has stale derived rows")
+    return dict(
+        fresh=not reasons,
+        repo=selected["repo"],
+        snapshot=selected["identity"],
+        paths=sorted(changed),
+        reasons=reasons,
+        source_proof="immutable-snapshot",
+    )

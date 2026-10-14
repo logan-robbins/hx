@@ -175,11 +175,15 @@ def test_a_fresh_instance_has_no_mirror_worktrees_or_orders_dir(
     assert collect(root)["items"] == [], "the Partner is not an item (spec 14 D25)"
 
 
-def test_there_is_no_repo_push_or_upgrade_command(run_hx, tmp_path):
-    for command in ("repo", "push", "upgrade"):
+def test_there_is_no_implicit_repository_creation_push_or_upgrade_command(run_hx, tmp_path):
+    for command in ("push", "upgrade"):
         result = run_hx(command, env_extra={"HARNESS_ROOT": str(tmp_path / "instance")})
         assert result.returncode == 2
         assert "unknown command" in result.stderr
+    for action in ('init', 'create'):
+        result = run_hx('repo', action, env_extra={'HARNESS_ROOT': str(tmp_path / 'instance')})
+        assert result.returncode == 2 and 'invalid choice' in result.stderr
+    assert not (tmp_path / 'instance' / '.git').exists()
 
 
 def test_doctor_warns_when_the_binary_moved_past_its_record(instance, hx, tmp_path):

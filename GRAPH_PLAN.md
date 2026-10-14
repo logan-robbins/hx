@@ -27,7 +27,7 @@ before it was adopted. Secondary blog restatements were ignored.
 
 | Technique or claim | Primary source and what it actually says | Verdict for hx |
 |---|---|---|
-| Tree-sitter knowledge graph in SQLite with content-hash refresh (codebase-memory-mcp) | README: Linux kernel 28M LOC / 75K files in ~3 min on an Apple M3 Pro, self-benchmarked; grammars vendored into one binary; optional LSP layer refines call edges. Paper arXiv 2603.27277 (31 repos): ~10× fewer tokens, 2.1× fewer tool calls, 83% answer quality vs 92% for a file-exploring agent. The "99% fewer tokens" is the README's marketing line. | **Adopt the architecture, not the figures.** Expect ~10× and a measurable quality drop on open questions; step 9 measures both. LSP refinement rejected (a long-running server per language per worktree). |
+| Tree-sitter knowledge graph in SQLite with content-hash refresh (codebase-memory-mcp) | README: Linux kernel 28M LOC / 75K files in ~3 min on an Apple M3 Pro, self-benchmarked; grammars vendored into one binary; optional LSP layer refines call edges. Paper arXiv 2603.27277 (31 repos): ~10× fewer tokens, 2.1× fewer tool calls, 83% answer quality vs 92% for a file-exploring agent. The "99% fewer tokens" is the README's marketing line. | **Adopt the architecture, not the figures.** Verify correctness and bounded work in step 9; published figures are not hx claims. LSP refinement rejected (a long-running server per language per worktree). |
 | Build-centred graph (RIG + SPADE, arXiv 2601.10112) | 8 repos × 30 questions × 3 agents: +12.2% accuracy, −53.9% completion time, +17.7% accuracy on multilingual repos. SPADE's only automatic extractor is CMake; other build systems were hand-written. | **No tool to adopt.** The cheap equivalent — project manifests (`.csproj`/`.sln`, `package.json`) parsed with stdlib — joins the syntax lane (step 1). Declared checks already cover the test side. |
 | Tree-sitter CLI as the extractor | Docs for `tree-sitter tags`: emits name, role (definition or reference), kind, location, first line, docstring per match of each grammar's `queries/tags.scm`; output layout undocumented; needs grammar checkouts the CLI can find and a C compiler to build them. `tree-sitter-c-sharp/queries/tags.scm` captures class/interface/method/namespace definitions and call, base-type, object-creation and variable-type references. | **Use it when all three prerequisites are present; never depend on it.** Parse tag lines behind a pinned-version fixture. On this host the CLI is absent, so the stdlib extractor is the default lane, not a fallback. |
 | universal-ctags as an extractor | docs.ctags.io: JSON Lines output when built with jansson; `--fields=+S` adds `signature` only where the language parser supplies it. macOS ships BSD ctags, which rejects `--version`. | **Second tier of the syntax lane.** Signatures are sliced from source so the parser-dependent field is a bonus. Detect by the `--version` banner. |
@@ -35,7 +35,7 @@ before it was adopted. Secondary blog restatements were ignored.
 | Ranked repo map (Aider) | tree-sitter tags → file reference graph → personalised PageRank with focus files weighted → binary search to a token budget → definitions rendered with enclosing scope headers. | **Adopt for orientation** as `hx code map` (step 2), with fixed node order so output is deterministic. |
 | Community detection for module boundaries | codebase-memory and Graphify ship it; Leiden is the current algorithm, Louvain its simpler predecessor whose defect is disconnected communities. | **Louvain plus a connected-components refinement**, fixed order and seed, directory layout as the baseline a proposal must beat (step 8). |
 | Graphify, Graft, code-graph-rag as drop-in backbones | code-graph-rag: Memgraph via Docker, Python 3.12+, optional compiler frontends. Graphify: a skill writing `graph.json`/`graph.html`/`GRAPH_REPORT.md` into the repo, ~36 languages by AST. Graft (`@nanonets/graft`): tree-sitter, ~23 languages, graph stored as a `graft/` markdown folder in the repo. | **None adopted.** All write into the checkout or need a database service. Their shared design points are what this plan implements inside hx's existing SQLite store. |
-| Hybrid vector + graph as "the frontier" | Every surveyed system that offers it makes embeddings optional; none measures reuse-question recall against lexical search. | **Not in scope until measured.** Lexical FTS + Jev sift is the intent substitute; step 9's fuzzy question decides whether the optional chroma dependency is ever used for code. |
+| Hybrid vector + graph as "the frontier" | Every surveyed system that offers it makes embeddings optional; none measures reuse-question recall against lexical search. | **Keep lexical FTS + Jev sift.** Ship the agreed lookup design with correctness fixtures; optional embeddings remain outside this implementation. |
 
 Host observation, same date (macOS, this checkout): `tree-sitter`,
 universal-ctags, `scip`, every `scip-*` indexer, `rust-analyzer`, `go` and
@@ -51,7 +51,7 @@ element it shapes.
 1. **Reuse questions are name-keyed.** Almost every "does this exist?" in
    the fleet was an exact lookup (type, handler, test class, contract); the
    fuzzy "is there already a service for X?" was rare. → Exact lanes first
-   and bounded; the fuzzy case is one benchmark question (step 9), not the
+   and bounded; the fuzzy case is one correctness fixture (step 9), not the
    design centre.
 2. **Over-exploration is the failure mode, not missing code.** Lane reads
    consumed most of lane wall time; the root session ran thousands of
@@ -73,9 +73,8 @@ element it shapes.
 5. **Agent-appended layers go unused.** The hand-appended `## Learned`
    section stayed at zero lines in all thirteen maps; the regenerated
    tables were what agents used. → Derived, regenerated facts are the
-   product. Candidate promotion through the companion path is kept but
-   measured (§Validation); if it yields nothing after the first wave, the
-   derived tables stand alone.
+   product. Candidate promotion uses the existing anchored application-map validation
+   path; derived tables remain available independently of promotion.
 6. **Freshness is a gate on the merge SHA, not a timer.** A ten-minute
    cron plus a snapshot regenerated by hand meant a scout goal re-derived
    claims every wave. → Index rows carry the indexed head SHA; dispatch
@@ -153,7 +152,7 @@ element it shapes.
 - Decomposition proposals come from measured coupling (community detection
   over the import/call graph) as candidate feature submaps, identical on
   repeated runs; only the existing map validation path promotes them.
-- Every performance claim used to justify the design is measured locally
+- Published performance figures are not claims about hx; operation-count fixtures verify bounded work
   on at least two real repos before it is relied on; §Verdicts figures
   are hypotheses, not inputs.
 
@@ -280,7 +279,7 @@ instead of a wave of greps.
   invalidate consumers → dispatch refuses stale scope; post-merge rebuild
   plus completion-time incremental index of the changed paths the ledger
   already knows.
-- **Derived facts are the product; promotion is measured** (Lesson 5).
+- **Derived facts are the product; promotion requires anchored validation** (Lesson 5).
   Regenerated tables are always current; candidate promotion through the
   companion path is kept and counted, never relied on.
 - **Decomposition is proposed, never asserted; ranking is deterministic.**
@@ -410,27 +409,23 @@ instead of a wave of greps.
    Validation: fixture repo with two known clusters must recover both,
    identically on repeated runs; on hx itself, output is reviewed by hand
    once and recorded.
-9. **Benchmark gate.** Before any step is declared the default, measure
-   on two real repos (hx: 440 tracked files, about 56k lines of Python;
-   plus one polyglot repo containing a C# project): index time, index
-   size on disk, query latency, coverage (% files, % symbols with
-   signatures, % references resolved), and token cost of graph answers vs
-   grep answers for a fixed question set drawn from the fleet's recorded
-   grep failures — existing type (case-folded), its signature, its
-   callers, its tests, interface/implementation/test parity, an existing
-   precedent for a pattern, contract existence across namespaces, current
-   owner, and one fuzzy "is there already a service for X" question so
-   the lexical + sift substitute for embeddings is tested rather than
-   assumed. Record results in `docs/search-and-retrieval.md`; §Verdicts
-   figures are not quoted as hx results.
+9. **Correctness and bounded-work verification.** Implement directly without an
+   A/B rollout or research deliverable. Verify the shipped question set: case-folded
+   type/signature, callers, tests, parity, precedent, contract existence across
+   namespaces and current ownership. Fixtures cover supported languages including
+   Natural, historical snapshots, stale/uncertain facts, parallel cold requests,
+   changed-path updates, shared extraction and restart/replay. Operation-count
+   assertions prove bounded work and deduplication; published performance figures
+   are not hx claims.
 10. **Rollout, lints and docs.** Update `docs/search-and-retrieval.md`,
-    `docs/application-map.md`, the goal templates (a `### Checks` line
-    per lint: no second interface, test class present, scope fresh), and
+    `docs/application-map.md`, worker-bound checks (no second interface,
+    test class present, scope fresh), and
     Partner/worker prompts: search the graph (type/signature/contract/
     precedent) before proposing new code, with the same
-    redirect-not-block wording as other routing. Ship per-step commits on
-    a new branch `feat/code-graph-sota`, each step green on its focused
-    tests before the next begins.
+    redirect-not-block wording as other routing. The Partner writes one paragraph
+    describing behavior/dependencies; the harness writes its definition of done
+    and checks. Work on the requested current branch, with focused checks followed
+    by the configured full parallel suite and installed-package verification.
 
 ## Validation Plan
 
@@ -442,15 +437,13 @@ instead of a wave of greps.
   stdlib extractor's fixtures always run.
 - Lint mode: every `--expect` value has a passing and a failing fixture
   asserting exit 0 and exit 3; usage errors stay exit 2.
-- Promotion is counted: after the first live wave on any instance, the
-  number of candidate rows promoted into the curated map is recorded
-  beside the benchmark; zero means the derived tables stand alone
-  (Lesson 5) and the promotion path is not expanded.
+- Promotion remains the existing anchored application-map validation path;
+  derived candidates do not authorize work or prove absence.
 - End to end: index hx itself and one polyglot repo; answer the fixed
   question set of step 9 using only `hx code` output; any question
   requiring a raw grep is a failed criterion and is recorded.
-- Regression: full core suite in chunks (core, packaging, UI) before
-  the branch is proposed for merge, per `tools/milestone-check.sh`.
+- Regression: the full configured parallel suite before final sign-off,
+  per `tools/milestone-check.sh`, with skipped optional adapters reported as skipped.
 
 ## Risks / Open Questions
 
@@ -463,7 +456,7 @@ instead of a wave of greps.
   fleet already performs in its build checks; it runs only in the
   post-merge indexer job and failure degrades to syntax rows.
 - Index size at 3–5M lines: the trigram FTS table is several times the
-  source size; step 9 measures it before the trigram table is mandatory,
+  source size. Bounded extraction/query fixtures verify the implementation,
   and a Porter-only mode exists if the budget demands it.
 - `conform` compares signatures textually after normalisation; overloads,
   generic constraints and default values can produce false mismatches.
@@ -475,10 +468,9 @@ instead of a wave of greps.
 - Community detection can propose plausible-but-wrong boundaries;
   candidate-only status, the directory-layout baseline, and machine/
   Partner promotion are the mitigation.
-- Fuzzy intent search: if step 9's fuzzy question fails under lexical +
-  sift, the evidence-gated fallback is embeddings through the optional
-  chroma dependency episode memory already uses, never a required vector
-  service.
+- Fuzzy intent search remains lexical + sift in this implementation.
+  Ambiguous results stay explicit; optional episode-memory embeddings are
+  separate from the shipped code graph.
 - Imported graphs carry whatever their producer got wrong; `lane=
   'imported'` keeps them below resolved and syntax rows in ranking and
   out of freshness guarantees when unanchored.

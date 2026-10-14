@@ -42,6 +42,56 @@ def source_unit(repo, name, path="feature.py", prerequisites=None):
     return task
 
 
+def test_cold_admission_parser_leaves_continuity_writer_available(fleet,monkeypatch):
+    import shutil
+    import sqlite3
+    from hx import code_build,code_store
+    store,repo=fleet[:2]
+    planning.apply(store,plan(fleet,[unit(repo,paths=['compiler.py'])]))
+    shutil.rmtree(code_store.db_path(store.root).parent)
+    original=code_build.code_extract.extract
+    parsed=[]
+    def extract(text,path):
+        assert not store.db.in_transaction
+        with sqlite3.connect(store.path,timeout=.1,isolation_level=None) as probe:
+            probe.execute('BEGIN IMMEDIATE')
+            probe.rollback()
+        parsed.append(path)
+        return original(text,path)
+    monkeypatch.setattr(code_build.code_extract,'extract',extract)
+    run=units.assign(store,'implement',1,'eng-001')['run_id']
+    assert parsed and store.db.execute('SELECT 1 FROM unit_runs WHERE run_id=?',(run,)).fetchone()
+
+
+def test_readiness_does_not_bootstrap_cold_graph_inside_writer(fleet,monkeypatch):
+    import shutil
+    from hx import code_build,code_store
+    store,repo=fleet[:2]
+    planning.apply(store,plan(fleet,[unit(repo,paths=['compiler.py'])]))
+    shutil.rmtree(code_store.db_path(store.root).parent)
+    def unexpected_parser(*args,**kwargs):
+        pytest.fail('readiness must not parse a cold repository while holding the writer')
+    monkeypatch.setattr(code_build.code_extract,'extract',unexpected_parser)
+    state=statuses(store)['implement']
+    assert state['status']=='blocked' and 'scope index is missing' in state['reason']
+
+
+def test_admission_final_scope_check_refuses_source_changed_after_preparation(fleet,monkeypatch):
+    from hx import code_freshness
+    store,repo=fleet[:2]
+    planning.apply(store,plan(fleet,[unit(repo,paths=['compiler.py'])]))
+    original=code_freshness.require
+    def require(root,payload,*,bootstrap=True):
+        result=original(root,payload,bootstrap=bootstrap)
+        if bootstrap:
+            (repo/'compiler.py').write_text('def changed_after_prepare(): pass\n')
+        return result
+    monkeypatch.setattr(code_freshness,'require',require)
+    with pytest.raises(Conflict,match='stale code scope'):
+        units.assign(store,'implement',1,'eng-001')
+    assert not store.db.execute('SELECT 1 FROM unit_runs').fetchone()
+
+
 def test_ready_and_completion_unlock_receipt_dependency(fleet):
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet, [unit(repo, "a"), unit(repo, "b", prerequisites=[dependency("a")])]))

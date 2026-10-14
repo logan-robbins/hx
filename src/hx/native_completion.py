@@ -14,6 +14,8 @@ def request(store, run_id, worker):
     scope = 'finish:' + run_id
     with store.transaction() as tx:
         run, task, _ = unit_execution._run(tx, run_id)
+        from .dependency_packets import require_bound
+        require_bound(task)
         if run['worker_id'] != worker:
             raise Conflict('completion belongs to another worker')
         launch = native_launch._row(tx, run_id)
@@ -89,7 +91,8 @@ def advance_one(store, *, env=None):
     if intent['status'] in {'requested', 'checking'}:
         intent['status'] = 'checking'
         _save(store, scope, intent)
-        for check_id in task['payload']['checks']:
+        from .dependency_packets import completion_checks
+        for check_id in sorted(completion_checks(task['payload'])):
             if check_id in intent['receipts']:
                 continue
             checked = checks.run_check(store, run_id, check_id,

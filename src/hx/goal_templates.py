@@ -18,6 +18,29 @@ RECIPES = {
 }
 
 
+def check_policy(store):
+    """Resolve configured check authority without asking the Partner for scripts."""
+    path = store.root / 'config' / 'planning.json'
+    if path.is_file():
+        body = appmap.read_json(path,16000)
+        if not isinstance(body,dict) or body.keys() != {'schema_version','reviewer','required_checks'} or type(body['schema_version']) is not int or body['schema_version'] != 1:
+            raise ValidationError('config/planning.json requires schema_version=1, reviewer, required_checks')
+        return {'reviewer':body['reviewer'],'required_checks':body['required_checks']}
+    config = store.root / 'config'
+    reviewers = []
+    if config.is_dir():
+        paths = sorted(config.glob('*/harness.json'))
+        if len(paths)>128:
+            raise ValidationError('planning reviewer discovery exceeds 128 configured harnesses')
+        for path in paths:
+            body = appmap.read_json(path,16000)
+            if body.get('role') in {'qa-engineer','qa'} and body.get('id') == path.parent.name and body['id'] != 'partner':
+                reviewers.append(body['id'])
+    if reviewers:
+        return {'reviewer':reviewers[0],'required_checks':['unit']}
+    return None
+
+
 def draft(store, repository, snapshot, request):
     """Return a usable plan plus precise unknowns; never invent commands or paths."""
     if not isinstance(request, dict) or request.keys() - {'plan_id', 'task_id', 'goal', 'constraints', 'recipe', 'require', 'write_paths', 'acceptance'}:
@@ -35,6 +58,7 @@ def draft(store, repository, snapshot, request):
         raise Conflict('draft task already exists; use plan replan for amendments')
     brief = retrieval.plan_context(store, Path(repository), snapshot, request['goal'], required=request.get('require', ()))
     checks, paths, acceptance = {}, set(), list(request.get('acceptance', []))
+    policy = check_policy(store)
     owners = set(request.get('require') or brief['coverage']['seed_ids'][:1])
     # Dependency/consumer context is read scope, not permission to edit every
     # neighboring component. Expand only implementation and declared check edges.
@@ -63,27 +87,28 @@ def draft(store, repository, snapshot, request):
     acceptance = list(dict.fromkeys(acceptance))
     unit = dict(id=task_id, expected_revision=0, behavior=request['goal'], acceptance=acceptance,
                 workdir=str(Path(repository).resolve()), write_paths=writes, map_inputs=refs,
-                checks=checks, outputs=[dict(id='check.' + name, version=1, kind='receipt', check_id=name) for name in checks],
-                prerequisites=[])
+                outputs=[dict(id='proof',version=1,kind='receipt',obligation='Prove the requested behavior and applicable invariants.')],
+                prerequisites=[],resources=[],check_policy=policy)
     if writes:
-        unit['outputs'].append(dict(id='source', version=1, kind='source', paths=writes))
-    plan = dict(schema_version=1, plan_id=request['plan_id'], expected_revision=0, repository=brief['repo_id'],
+        unit['outputs'].append(dict(id='source', version=1, kind='source', paths=writes,obligation='Publish exact source implementing the requested behavior.'))
+    plan = dict(schema_version=2, plan_id=request['plan_id'], expected_revision=0, repository=brief['repo_id'],
                 goal=request['goal'], constraints=request.get('constraints', []), tasks=[unit])
-    unknowns = list(brief['discovery'])
-    if not checks:
-        unknowns.append('Select a declared check for this implementation boundary.')
+    # Exact check authoring belongs to the worker; missing mapped recipes are advisory.
+    unknowns = [item for item in brief['discovery'] if item != 'Identify a check that asserts the requested behavior; no current declared check was selected.']
+    if policy is None:
+        unknowns.append('Configure config/planning.json or a QA harness to approve worker check bindings.')
     if not writes and recipe != 'qa':
         unknowns.append('Name the exact implementation and test paths; no current source anchors were selected.')
     if len(refs) > 8:
         unknowns.append('Split this behavior: its required map context exceeds eight records.')
-    valid = bool(checks) and len(refs) <= 8 and (bool(writes) or recipe == 'qa')
+    valid = policy is not None and len(refs) <= 8 and (bool(writes) or recipe == 'qa')
     if valid:
         planning.validate(store, plan)
     commands = [{'id': name, 'argv': value['argv'], 'cwd': value['cwd']} for name, value in checks.items()]
     return {'plan': plan, 'ready': valid and not unknowns, 'unknowns': unknowns,
             'known': [{'id': node['id'], 'summary': node['summary']} for node in brief['nodes']],
-            'commands': commands, 'first_action': ('Run the supplied reproduction/check command.' if recipe in {'repair', 'qa'} and commands
-                else 'Inspect the supplied source anchors for the requested edit.' if paths else 'Resolve the named unknowns.'),
+            'commands': commands, 'recipe_suggestions':checks, 'binding_required':True,
+            'first_action': ('Apply and assign this packet; its worker binds exact checks and Definition of done before edits.' if valid and not unknowns else 'Resolve the named dependency and policy unknowns.'),
             'input_hash': brief['input_hash']}
 
 
@@ -136,7 +161,7 @@ def replan(store, plan_id):
                 unknowns.append('Refresh the changed application record: ' + ref['id'])
                 continue
             ref['version'] = current['record']['version']
-            if current['record']['kind'] == 'check' and ref['id'] in unit['checks']:
+            if current['record']['kind'] == 'check' and ref['id'] in unit.get('checks',{}):
                 unit['checks'][ref['id']] = current['record']['data']['recipe']
         # Facts may have introduced dependencies not originally pinned by the unit.
         pinned = {(r['repository'], r['snapshot'], r['id']) for r in unit['map_inputs']}
@@ -164,13 +189,15 @@ def replan(store, plan_id):
         if active:
             unknowns.append('Checkpoint and stop active run before applying its revised assignment: ' + active[0])
         for output in unit['outputs']:
-            published = store.db.execute('SELECT max(version) FROM unit_outputs WHERE task_id=? AND output_id=?', (unit['id'], output['id'])).fetchone()[0]
+            published = store.db.execute('SELECT max(version) FROM (SELECT version FROM unit_outputs WHERE task_id=? AND output_id=? UNION ALL SELECT version FROM unit_contracts WHERE task_id=? AND output_id=?)', (unit['id'],output['id'],unit['id'],output['id'])).fetchone()[0]
             if published is not None:
                 output['version'] = max(output['version'], published + 1)
             changed_outputs[(unit['id'], output['id'])] = output['version']
     for unit in body['tasks']:
         for dep in unit['prerequisites']:
             dep['version'] = changed_outputs.get((dep['task_id'], dep['output_id']), dep['version'])
+            if dep.get('need','hard') != 'hard':
+                dep['provider_version'] = changed_outputs.get((dep['task_id'],dep['provider_output']),dep['provider_version'])
     if not unknowns:
         planning.validate(store, body)
     return {'plan': body, 'changes': impacted, 'affected_tasks': sorted(affected),

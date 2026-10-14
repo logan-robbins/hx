@@ -85,16 +85,18 @@ def publication_records(directory: str) -> list[tuple[str, dict | None, str | No
 
 
 def check_summary(pr: dict) -> dict:
-    """`{total, success, pending, failed}` over a captured `statusCheckRollup`."""
-    counts = {"total": 0, "success": 0, "pending": 0, "failed": 0}
+    """Captured outcomes; skipped/neutral results never prove a passing check."""
+    counts = {"total": 0, "success": 0, "pending": 0, "failed": 0, "skipped": 0}
     for item in pr.get("statusCheckRollup") or []:
         counts["total"] += 1
         state = (item.get("conclusion") or item.get("state") or "").upper()
         status = (item.get("status") or "").upper()
         if status and status != "COMPLETED" and not state:
             counts["pending"] += 1
-        elif state in ("SUCCESS", "SKIPPED", "NEUTRAL"):
+        elif state == "SUCCESS":
             counts["success"] += 1
+        elif state in ("SKIPPED", "NEUTRAL"):
+            counts['skipped'] += 1
         elif state in ("PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", ""):
             counts["pending"] += 1
         else:
@@ -197,18 +199,20 @@ def cmd_check(args: argparse.Namespace) -> int:
             fails.append("S90 captured PRs absent from the handoff rows: "
                          + ", ".join(f"#{n}" for n in missing))
         # S93: the delivery status agrees with the captured checks.
-        totals = {"total": 0, "success": 0, "pending": 0, "failed": 0}
+        totals = {"total": 0, "success": 0, "pending": 0, "failed": 0, "skipped": 0}
         for pr in heads.values():
             for key, value in check_summary(pr).items():
                 totals[key] += value
         infos.append(f"captured checks: {totals['success']} success, {totals['pending']} pending, "
-                     f"{totals['failed']} failed")
+                     f"{totals['failed']} failed, {totals['skipped']} skipped/neutral")
         if status == "CI_GREEN":
             if totals["failed"] or totals["pending"]:
                 fails.append(f"S93 Delivery status CI_GREEN but the capture has {totals['failed']} failed "
                              f"and {totals['pending']} pending check(s)")
             elif totals["total"] == 0:
                 fails.append("S93 Delivery status CI_GREEN with no captured checks: nothing proves it")
+            elif totals['skipped']:
+                fails.append('S93 Delivery status CI_GREEN includes skipped/neutral checks; their declared coverage remains unverified')
         elif status in ("LOCAL_GATE_PASSED", "CI_PENDING") and totals["failed"]:
             fails.append(f"S93 Delivery status {status} but the capture has {totals['failed']} failed "
                          "check(s): say CI_FAILED and name them")
@@ -361,7 +365,14 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("delivery", help="capture packet, review, landing and fixed candidate boundaries")
+    p.epilog = 'example: hx handoff delivery evidence-dir --change CHANGE --batch BATCH'
+    p.add_argument("--root", help=argparse.SUPPRESS)
+    p.add_argument("dir")
+    p.add_argument("--change", required=True)
+    p.add_argument("--batch")
     p = sub.add_parser("check")
+    p.epilog = 'example: hx handoff check evidence-dir --live'
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("dir")
     p.add_argument("--handoff")
@@ -384,10 +395,22 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     p.add_argument("--exclude", nargs="*")
     p.set_defaults(fn=cmd_pushed)
     p = sub.add_parser("sums")
+    p.epilog = 'example: hx handoff sums evidence-dir'
     p.add_argument("--root", help=argparse.SUPPRESS)
     p.add_argument("dir")
     p.set_defaults(fn=cmd_sums)
     args = parser.parse_args(argv)
+    from .delivery_handoff import MANIFEST
+    if args.command == 'delivery' or (args.command == 'check' and (Path(args.dir) / MANIFEST).exists()):
+        from .continuity_store import ContinuityStore
+        from . import delivery_handoff
+        with ContinuityStore(root) as store:
+            if args.command == 'delivery':
+                result = delivery_handoff.capture(store, args.dir, args.change, args.batch)
+            else:
+                result = delivery_handoff.check(store, args.dir, live=args.live)
+        print(json.dumps(result))
+        return 0 if result.get('valid', True) else 1
     try:
         return args.fn(args)
     except RuntimeError as exc:

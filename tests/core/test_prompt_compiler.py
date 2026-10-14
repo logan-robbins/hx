@@ -78,7 +78,7 @@ def test_partner_is_compiled_from_its_audience_and_role_instead_of_exempted(inst
     result = prompts.build(instance, "partner")
     rendered = text(result)
     assert "Real dependencies remain\ndependencies" in rendered
-    assert "Pass current contracts and relevant findings into assignments" in rendered, \
+    assert "Understand the application/code graph, dependencies, and resource contention" in rendered, \
         "the domain judgment of personas/partner.md"
     assert "No blockers by construction" not in rendered, "its live mechanics stay live"
     assert "runtime's completion and readiness results" in rendered

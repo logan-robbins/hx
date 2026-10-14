@@ -17,6 +17,9 @@ from pathlib import Path
 from . import tool_execution as tool_execution_cmd
 from . import tool_catalog as tool_catalog_cmd
 from . import code_index as code_cmd
+from . import repo_service as repo_cmd
+from . import change_delivery as change_cmd
+from . import dotnet_build as build_cmd
 from . import content_store as content_cmd
 from . import search_exec as exec_cmd
 from . import search_sift as sift_cmd
@@ -62,8 +65,9 @@ from . import wake as wake_cmd
 from .errors import HxError, ValidationError
 
 #: Every command of spec 08, plus `install`, `up`, `doctor`, `ui` and `show`. The v1 cut
-#: (spec 14 D25) removed `repo`, `push` and `upgrade`: hx does not manage git or its own
-#: version. The value is the build-lane goal that delivers each remaining command.
+#: The original install cut removed repository creation, push and self-upgrade.
+#: Repository queries and explicitly requested local landing are separate features;
+#: installation still creates no product repository or remote publication.
 NOT_IMPLEMENTED: dict[str, int] = {}
 
 IMPLEMENTED = {
@@ -92,6 +96,9 @@ IMPLEMENTED = {
     "tool-exec": tool_execution_cmd.main,
     "tools": tool_catalog_cmd.main,
     "code": code_cmd.main,
+    "repo": repo_cmd.main,
+    "change": change_cmd.main,
+    "build": build_cmd.main,
     "content": content_cmd.main,
     "exec": exec_cmd.main,
     "sift": sift_cmd.main,
@@ -168,6 +175,10 @@ the control plane:
   observe register/drain/serve/status  incremental continuity source capture
   evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
   code index --repo PATH       index symbols, imports, and source text for code search
+  repo serve/status/file/diff  shared host source queries; code --at pins an immutable snapshot
+  repo materialize             materialize exact dependency paths outside the source checkout
+  build graph/build/test       evaluated .NET graph, shared immutable builds and test shards
+  change submit/review/land    intent approval and optimistic publication with durable evidence
   code search QUERY            exact-symbol and FTS code search (porter + trigram, RRF)
   code type/signature NAME     case-folded structural definitions and exact source signatures
   code callers/tests-for/conform NAME  bounded reuse, tests and signature parity
@@ -233,6 +244,12 @@ AUDIENCES: dict[str, set[str]] = {
         "models",
         "metrics --commands",
         "cache report",
+        "repo serve", "repo register", "repo status",
+        "change status", "change land", "change validate", "change reconcile",
+        "change candidate", "change run-validation", "change fail", "change revert",
+        "handoff delivery",
+        "build status", "build reconcile",
+        "code journal",
     },
     "partner": {
         "launch", "dispatch", "goal", "resume", "amend", "bench", "distill", "restart", "read",
@@ -244,14 +261,22 @@ AUDIENCES: dict[str, set[str]] = {
         "learn pending", "learn accept", "learn reject", "learn list",
         "tools index", "persona",
         "handoff check", "handoff capture", "handoff pushed", "handoff sums",
+        "handoff delivery",
         "discipline profile", "discipline orient",
         "memory search --all-roles", "memory stats", "memory list",
         "content index", "content stats",
         # GRAPH_PLAN steps 2-8 (the graph lane builds them; the gate covers them already).
         "code contracts", "code submaps", "code stats", "code import",
+        "code journal",
         "models",
         "metrics --commands",
         "cache report",
+        "repo status", "repo register", "repo diff", "repo merge-base", "repo history", "repo file",
+        "repo materialize",
+        "repo assignment",
+        "repo expand",
+        "change status",
+        "build graph", "build status",
     },
     "worker": {
         "task", "complete", "progress",
@@ -267,10 +292,19 @@ AUDIENCES: dict[str, set[str]] = {
         "code conform", "code precedent", "code contract", "code map", "code fresh",
         # TOOL_SKILL_PLAN step 5.
         "discipline pull",
+        "repo diff", "repo merge-base", "repo history", "repo file",
+        "repo materialize",
+        "change submit", "change review", "change status", "change land", "change validate", "change reconcile",
+        "repo expand",
+        "change candidate", "change run-validation", "change fail", "change revert",
+        "handoff delivery", "handoff check", "handoff sums",
+        "plan bind", "plan binding", "plan approve-binding", "plan publish-contract", "plan acquire-contract", "plan verify-integration",
+        "build graph", "build build", "build test", "build status", "build materialize",
     },
     "subagent": {
         "code search", "code type", "code signature", "code callers",
         "content search", "content fetch", "exec", "memory search", "evidence",
+        "repo diff", "repo history", "repo file",
     },
     # The Companion is a Read + Write session: no `hx` command at all.
     "companion": set(),
@@ -453,6 +487,12 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
+        if command == "code" and not any(a in {"-h", "--help"} for a in rest):
+            shared = repo_cmd.code_request(root, rest, env)
+            if shared is not None:
+                import json
+                print(json.dumps(shared["result"]))
+                return shared["exit_code"]
         return IMPLEMENTED[command](rest, root, env=env)
     except HxError as exc:
         print(f"hx: {exc.message}", file=sys.stderr)

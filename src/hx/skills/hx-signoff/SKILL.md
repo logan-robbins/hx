@@ -17,6 +17,21 @@ time, so each sign-off is small and cheap.
 Your persona's rules still apply. Never push, tag or publish unless the goal says so in words.
 Never weaken a check to make it pass.
 
+## Name the boundary first
+
+For planned dependency packets, local packet coverage, independent intent review, landing,
+post-merge integration and deployment eligibility are distinct. Bind your own definition of
+done and exact recipes before edits; obtain the configured independent binding approval.
+Complete the packet's local checks and outputs, preserving deferred real-provider checks.
+Do not keep a worker occupied waiting for a broad release check assigned to a later boundary.
+Policy-required checks at the boundary you are proving must all pass.
+
+Use `hx change submit/review/land` for intent and local landing. QA/release prepares a fixed
+`hx change candidate`, executes `run-validation`, and records the exact source/artifact.
+Prepare/build outside publication locks; publish with the expected-head check. A fixed
+candidate stays fixed while main advances. Required forge checks remain required for any
+remote merge whose policy names them; hx does not silently change branch protection.
+
 ## The loop, once per behaviour unit
 
 ### 1. Focused tests first
@@ -61,6 +76,10 @@ the drift is small, re-run step 1, and resolve any conflict in this small pull. 
 for one large merge at sign-off. Do this at assignment start, before each new unit and before
 sign-off.
 
+For a fixed post-merge or pre-deploy task, keep the named candidate instead of pulling
+newer main into it. The following development synchronization rule applies to ordinary
+source work, not to candidate validation.
+
 ### 5. Push and open the PR, only when the goal says so
 
 If the goal does not say "push", "open a PR" or "release" in words, skip to step 7. The focused
@@ -80,8 +99,9 @@ gh pr checks 42 --required --json bucket,name,link
 ```
 
 - Exit 0 with every `bucket` `pass`: the receipt exists for this head.
-- Exit 8 means checks are still pending. Wait, then run the same command again. Never complete
-  while a required check is pending.
+- Exit 8 means checks are still pending. Wait when those checks are required at this task's
+  boundary. Local packet coverage can complete with later integration/release obligations
+  explicitly pending; remote merge or deployment cannot claim those obligations passed.
 - Any `bucket` of `fail` is a stop. Open its `link`, fix the cause in a new commit, and go back
   to step 1. Do not re-run a failed check in the hope that it flips. A flaky check is a finding:
   write it in `## Deliverables`.
@@ -95,6 +115,11 @@ Before you finish, check that the PR's head is your last commit:
 test "$(gh pr view 42 --json headRefOid --jq .headRefOid)" = "$(git rev-parse HEAD)"
 ```
 
+For fixed candidate evidence, use `hx handoff delivery DIR --change CHANGE --batch BATCH`.
+It records coverage, review, landing, integration/deployment status, candidate identity and
+tested build manifest separately. `hx handoff check DIR --live` rechecks those identities.
+An older capture remains historical evidence; it is never upgraded to current release proof.
+
 ### 7. Finish
 
 Write `## Evidence` first: one line per line of your `## Definition of done`, each naming the
@@ -105,7 +130,9 @@ required checks at its head SHA, the commit. Then complete:
 hx complete done
 ```
 
-`HX-COMPLETE <id> done` is the only proof that counts. It refuses a dirty tree, an open subagent
+`HX-COMPLETE <id> done` records local task or packet completion. Integration, review and
+release eligibility require their separate current receipts and tested artifact proof.
+Completion refuses a dirty tree, an open subagent
 and an empty `## Evidence`; on `HX-CHECK-FAILED`, fix the cause and run it again. The Partner captures the receipt (PR numbers, head SHA and required checks) after
 you complete. Your part is that the PR exists, its head is your last commit, its required checks
 are green, and `## Deliverables` names all three.

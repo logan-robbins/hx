@@ -1,9 +1,12 @@
 """Registration, test, parity and exact precedent questions."""
 
 from __future__ import annotations
+
 import re
 from pathlib import Path
-from . import code_queries as query, code_store as store
+
+from . import code_queries as query
+from . import code_store as store
 from .code_extract import LANGUAGES, mask
 
 
@@ -14,10 +17,26 @@ def _members(conn, row, seen=None):
         return []
     seen.add(identity)
     prefix = row["qualified"] + "."
-    rows = conn.execute(
-        "SELECT * FROM symbols WHERE repo=? AND path=? AND qualified LIKE ? ORDER BY CASE lane WHEN 'resolved' THEN 0 WHEN 'syntax' THEN 1 ELSE 2 END,qualified,line LIMIT 101",
-        (row["repo"], row["path"], prefix + "%"),
-    )
+    if conn.snapshot is not None:
+        from .code_snapshot import facts_in_path
+
+        rows = sorted(
+            (
+                r
+                for r in facts_in_path(conn, "symbols", row["path"], repo=row["repo"])
+                if r["qualified"].casefold().startswith(prefix.casefold())
+            ),
+            key=lambda r: (
+                0 if r["lane"] == "resolved" else 1 if r["lane"] == "syntax" else 2,
+                r["qualified"],
+                r["line"],
+            ),
+        )[:101]
+    else:
+        rows = conn.execute(
+            "SELECT * FROM symbols WHERE repo=? AND path=? AND qualified LIKE ? ORDER BY CASE lane WHEN 'resolved' THEN 0 WHEN 'syntax' THEN 1 ELSE 2 END,qualified,line LIMIT 101",
+            (row["repo"], row["path"], prefix + "%"),
+        )
     result = []
     identities = set()
     for r in rows:
@@ -141,10 +160,15 @@ def conform(conn, name, *, repo=None, limit=100):
                     reason="generic interface binding requires resolution",
                 )
             )
-        possible = conn.execute(
-            "SELECT * FROM symbols WHERE repo=? AND kind IN ('class','struct','impl') ORDER BY path,line",
-            (interface["repo"],),
-        )
+        if conn.snapshot is not None:
+            from .code_snapshot import implementations_for
+
+            possible = implementations_for(conn, interface)
+        else:
+            possible = conn.execute(
+                "SELECT * FROM symbols WHERE repo=? AND kind IN ('class','struct','impl') ORDER BY path,line",
+                (interface["repo"],),
+            )
         candidates = []
         for row in possible:
             if row["qualified"] == interface["qualified"]:
@@ -155,17 +179,29 @@ def conform(conn, name, *, repo=None, limit=100):
                 )
             )
             if not related:
-                related = bool(
-                    conn.execute(
-                        "SELECT 1 FROM edges WHERE repo=? AND src_path=? AND kind='implements' AND dst_text IN (?,?) AND lane='resolved'",
-                        (
-                            interface["repo"],
-                            row["path"],
-                            interface["name"],
-                            interface["qualified"],
-                        ),
-                    ).fetchone()
-                )
+                if conn.snapshot is not None:
+                    from .code_snapshot import facts_in_path
+
+                    related = any(
+                        r["kind"] == "implements"
+                        and r["lane"] == "resolved"
+                        and r["dst_text"] in {interface["name"], interface["qualified"]}
+                        for r in facts_in_path(
+                            conn, "edges", row["path"], repo=interface["repo"]
+                        )
+                    )
+                else:
+                    related = bool(
+                        conn.execute(
+                            "SELECT 1 FROM edges WHERE repo=? AND src_path=? AND kind='implements' AND dst_text IN (?,?) AND lane='resolved'",
+                            (
+                                interface["repo"],
+                                row["path"],
+                                interface["name"],
+                                interface["qualified"],
+                            ),
+                        ).fetchone()
+                    )
             if related:
                 candidates.append(store.decorate(conn, row))
         for implementation in candidates[:limit]:
@@ -245,22 +281,41 @@ def conform(conn, name, *, repo=None, limit=100):
 def tests_for(conn, name, *, repo=None, limit=100):
     target = query.symbols(conn, name, repo=repo)
     if not target:
-        target = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT name,repo,path FROM symbols WHERE path=? AND (? IS NULL OR repo=?) LIMIT 100",
-                (name, repo, repo),
-            )
-        ]
+        if conn.snapshot is not None:
+            from .code_snapshot import facts_in_path
+
+            target = list(facts_in_path(conn, "symbols", name, repo=repo))[:100]
+        else:
+            target = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT name,repo,path FROM symbols WHERE path=? AND (? IS NULL OR repo=?) LIMIT 100",
+                    (name, repo, repo),
+                )
+            ]
     implementation_targets = list(target)
     for symbol in target:
-        bases = conn.execute(
-            "SELECT dst_text FROM edges WHERE repo=? AND src_path=? AND kind='implements'",
-            (symbol["repo"], symbol["path"]),
-        )
+        if conn.snapshot is not None:
+            from .code_snapshot import facts_in_path
+
+            bases = [
+                r["dst_text"]
+                for r in facts_in_path(
+                    conn, "edges", symbol["path"], repo=symbol["repo"]
+                )
+                if r["kind"] == "implements"
+            ]
+        else:
+            bases = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT dst_text FROM edges WHERE repo=? AND src_path=? AND kind='implements'",
+                    (symbol["repo"], symbol["path"]),
+                )
+            ]
         for base in bases:
             implementation_targets.extend(
-                query.symbols(conn, base[0], repo=symbol["repo"])
+                query.symbols(conn, base, repo=symbol["repo"])
             )
     target = implementation_targets
     references = {
@@ -270,10 +325,15 @@ def tests_for(conn, name, *, repo=None, limit=100):
     }
     names = {r["name"].casefold() for r in target} or {Path(name).stem.casefold()}
     result = []
-    rows = conn.execute(
-        "SELECT * FROM symbols WHERE (? IS NULL OR repo=?) ORDER BY repo,path,line",
-        (repo, repo),
-    )
+    if conn.snapshot is not None:
+        from .code_snapshot import test_candidates
+
+        rows = test_candidates(conn, names, references, repo=repo)
+    else:
+        rows = conn.execute(
+            "SELECT * FROM symbols WHERE (? IS NULL OR repo=?) ORDER BY repo,path,line",
+            (repo, repo),
+        )
     candidates = []
     for row in rows:
         labels = row["attributes"].casefold()
@@ -306,28 +366,46 @@ def run(conn, command, name, *, repo=None, limit=100, language=None):
     if command == "tests-for":
         return tests_for(conn, name, repo=repo, limit=limit)
     if command == "register":
-        rows = conn.execute(
-            "SELECT * FROM refs WHERE kind='registers' AND (lower(name) LIKE ? OR lower(qualified) LIKE ?) AND (? IS NULL OR repo=?) ORDER BY repo,path,line LIMIT ?",
-            (
-                "%" + name.casefold() + "%",
-                "%" + name.casefold() + "%",
-                repo,
-                repo,
-                limit,
-            ),
-        )
+        if conn.snapshot is not None:
+            from .code_snapshot import matching_facts
+
+            rows = matching_facts(
+                conn,
+                "refs",
+                "kind='registers' AND (name_folded LIKE ? OR qualified_folded LIKE ?)",
+                ("%" + name.casefold() + "%", "%" + name.casefold() + "%"),
+                repo=repo,
+                limit=limit,
+            )
+        else:
+            rows = conn.execute(
+                "SELECT * FROM refs WHERE kind='registers' AND (lower(name) LIKE ? OR lower(qualified) LIKE ?) AND (? IS NULL OR repo=?) ORDER BY repo,path,line LIMIT ?",
+                (
+                    "%" + name.casefold() + "%",
+                    "%" + name.casefold() + "%",
+                    repo,
+                    repo,
+                    limit,
+                ),
+            )
         return [store.decorate(conn, row) for row in rows]
     results = []
     # FTS nominates a bounded candidate set; returned snippets remain verbatim source.
     for hit in query.search(conn, name, repo=repo, limit=100):
         if language and LANGUAGES.get(Path(hit["path"]).suffix.lower()) != language:
             continue
-        file = conn.execute(
-            "SELECT body FROM files WHERE repo=? AND path=?", (hit["repo"], hit["path"])
-        ).fetchone()
-        if not file or name.casefold() not in file[0].casefold():
+        if conn.snapshot is not None:
+            from .code_snapshot import body_for
+
+            text = body_for(conn, hit["repo"], hit["path"])
+        else:
+            file = conn.execute(
+                "SELECT body FROM files WHERE repo=? AND path=?",
+                (hit["repo"], hit["path"]),
+            ).fetchone()
+            text = file[0] if file else None
+        if text is None or name.casefold() not in text.casefold():
             continue
-        text = file[0]
         position = text.casefold().find(name.casefold())
         hit.update(
             snippet=text[max(0, position - 100) : max(0, position - 100) + 300],

@@ -1,60 +1,89 @@
 """CLI facade for the shared, rebuildable structural code graph."""
 
 from __future__ import annotations
+
 import argparse
 import json
-import sys
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
-from . import code_queries as query, code_store as store
-from .code_store import db_path as db_path
+
+from . import code_queries as query
+from . import code_store as store
 from .code_build import index_repo
+from .code_store import db_path as db_path
+from .errors import HxError
 
 
-def _read(root, method, *args, **kwargs):
+def _read(root, method, *args, at=None, **kwargs):
     conn = store.connect(root, existing=True)
     if conn is None:
         return []
     try:
+        if at is not None:
+            from .code_snapshot import activate_query
+
+            activate_query(conn, at, kwargs.get("repo"))
+        else:
+            from .code_snapshot import activate_latest
+
+            activate_latest(conn, kwargs.get("repo"))
         return method(conn, *args, **kwargs)
     finally:
         conn.close()
 
 
-def symbols_for(root, name, *, repo=None, limit=100, path=None):
-    return _read(root, query.symbols, name, repo=repo, limit=limit, path=path)
+def symbols_for(root, name, *, repo=None, limit=100, path=None, at=None):
+    return _read(root, query.symbols, name, repo=repo, limit=limit, path=path, at=at)
 
 
-def search(root, name, *, repo=None, limit=10):
-    return _read(root, query.search, name, repo=repo, limit=limit)
+def search(root, name, *, repo=None, limit=10, at=None):
+    return _read(root, query.search, name, repo=repo, limit=limit, at=at)
 
 
-def callers(root, name, *, repo=None, limit=100, count=False):
-    return _read(root, query.callers, name, repo=repo, limit=limit, count=count)
+def callers(root, name, *, repo=None, limit=100, count=False, at=None):
+    return _read(root, query.callers, name, repo=repo, limit=limit, count=count, at=at)
 
 
-def graph_edges(root, *, repo=None, path=None, limit=100):
-    return _read(root, query.edges, repo=repo, path=path, limit=limit)
+def graph_edges(root, *, repo=None, path=None, limit=100, at=None):
+    return _read(root, query.edges, repo=repo, path=path, limit=limit, at=at)
 
 
-def impact(root, paths, *, repo=None, limit=100):
+def impact(root, paths, *, repo=None, limit=100, at=None):
     conn = store.connect(root, existing=True)
     symbols = []
     if conn:
         try:
+            if at is not None:
+                from .code_snapshot import activate_query
+
+                activate_query(conn, at, repo)
+            else:
+                from .code_snapshot import activate_latest
+
+                activate_latest(conn, repo)
             for path in paths:
-                rows = conn.execute(
-                    "SELECT * FROM symbols WHERE path=? AND (? IS NULL OR repo=?) ORDER BY repo,line LIMIT ?",
-                    (str(path), repo, repo, limit),
-                )
+                if conn.snapshot is not None:
+                    from .code_snapshot import facts_in_path
+
+                    rows = sorted(
+                        facts_in_path(conn, "symbols", str(path), repo=repo),
+                        key=lambda r: (r["repo"], r["line"]),
+                    )[:limit]
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM symbols WHERE path=? AND (? IS NULL OR repo=?) ORDER BY repo,line LIMIT ?",
+                        (str(path), repo, repo, limit),
+                    )
                 symbols.extend(store.decorate(conn, r) for r in rows)
         finally:
             conn.close()
     references = set()
     for row in symbols[:limit]:
         references.update(
-            r["path"] for r in callers(root, row["name"], repo=row["repo"], limit=limit)
+            r["path"]
+            for r in callers(root, row["name"], repo=row["repo"], limit=limit, at=at)
         )
     references = sorted(references - set(paths))[:limit]
     tests = [p for p in references if "test" in p.lower() or "spec" in p.lower()]
@@ -122,10 +151,13 @@ def _parser():
         "contracts",
         "contract",
         "submaps",
+        "journal",
     ):
         p = sub.add_parser(name)
         p.add_argument("--root", help=argparse.SUPPRESS)
         p.add_argument("--namespace")
+        if name != "import":
+            p.add_argument("--at", help="indexed commit, ref or immutable snapshot ID")
         if name == "index":
             p.add_argument("--repo", required=True)
             p.add_argument("--paths", nargs="+")
@@ -175,6 +207,13 @@ def _parser():
                 p.add_argument("--language")
             if name == "contracts":
                 p.add_argument("--register", metavar="FILE")
+            if name in {"contract", "contracts"}:
+                p.add_argument(
+                    "--task",
+                    help="consumer task for exact publication permission metadata",
+                )
+            if name == "journal":
+                p.add_argument("--replay", metavar="CHANGESET")
     return parser
 
 
@@ -197,7 +236,7 @@ def expectation(result, expect):
     )
 
 
-def main(argv, root, *, env=None):
+def main(argv, root, *, env=None, _emit=print, read_ledger=True):
     parser = _parser()
     args = parser.parse_args(argv)
     root = Path(root)
@@ -208,15 +247,30 @@ def main(argv, root, *, env=None):
         if name is not None and not name.strip():
             raise ValueError("name must not be empty")
         if args.command == "index":
-            result = index_repo(
-                root,
-                args.repo,
-                paths=args.paths,
-                max_file_bytes=args.max_file_bytes,
-                trigram=not args.porter_only,
-                resolve=args.resolved,
-                indexer_checkout=args.indexer_checkout,
-            )
+            if args.at:
+                from .code_build import index_revision
+
+                if args.paths or args.resolved:
+                    raise ValueError(
+                        "revision indexing captures a complete bounded commit; --paths/--resolved require a live checkout"
+                    )
+                result = index_revision(
+                    root,
+                    args.repo,
+                    args.at,
+                    max_file_bytes=args.max_file_bytes,
+                    trigram=not args.porter_only,
+                )
+            else:
+                result = index_repo(
+                    root,
+                    args.repo,
+                    paths=args.paths,
+                    max_file_bytes=args.max_file_bytes,
+                    trigram=not args.porter_only,
+                    resolve=args.resolved,
+                    indexer_checkout=args.indexer_checkout,
+                )
         elif args.command == "import":
             from .code_import import import_graph
 
@@ -229,6 +283,18 @@ def main(argv, root, *, env=None):
                 args.edges,
                 repo_path=args.repo,
                 extractor=args.extractor,
+            )
+        elif args.command == "journal":
+            from .code_journal import list_changesets, replay
+
+            if args.at:
+                raise ValueError(
+                    "journal uses changeset identities; --at is for graph revisions"
+                )
+            result = (
+                replay(root, args.replay, repo=args.namespace)
+                if args.replay
+                else list_changesets(root, repo=args.namespace, limit=args.limit)
             )
         elif args.command == "fresh":
             from .code_freshness import scope
@@ -247,17 +313,37 @@ def main(argv, root, *, env=None):
                     raise ValueError(
                         "fresh requires exactly one namespace; index it or pass --namespace"
                     )
-                result = scope(root, repos[0]["root"], args.paths)
+                if args.at:
+                    from .code_snapshot import activate_query
+
+                    selected = activate_query(conn, args.at, args.namespace)
+                    from .code_freshness import snapshot_scope
+
+                    result = snapshot_scope(conn, selected, args.paths)
+                else:
+                    result = scope(root, repos[0]["root"], args.paths, local=True)
             finally:
                 if conn:
                     conn.close()
         elif args.command == "impact":
-            result = impact(root, args.paths, repo=args.namespace, limit=args.limit)
+            result = impact(
+                root, args.paths, repo=args.namespace, limit=args.limit, at=args.at
+            )
         else:
             conn = store.connect(
                 root, existing=args.command != "contracts" or not args.register
             )
             try:
+                if conn is not None and args.at:
+                    if getattr(args, "register", None):
+                        raise ValueError("--at is read-only")
+                    from .code_snapshot import activate_query
+
+                    activate_query(conn, args.at, args.namespace)
+                elif conn is not None and not getattr(args, "register", None):
+                    from .code_snapshot import activate_latest
+
+                    activate_latest(conn, args.namespace)
                 if conn is None:
                     result = []
                 elif args.command in {"symbols", "signature", "type"}:
@@ -335,28 +421,67 @@ def main(argv, root, *, env=None):
                     conn.close()
             if getattr(args, "sift", None):
                 result = sift_results(root, result, args.sift, env)
+        if read_ledger and args.command in {"contract", "contracts"}:
+            from .code_metadata import join_publications
+
+            result = join_publications(
+                root,
+                result,
+                name,
+                repo=args.namespace,
+                limit=args.limit,
+                task=args.task,
+            )
         if getattr(args, "owners", False):
             from .code_metadata import owners
 
             owners(root, result)
-        print(json.dumps(result))
+        _emit(json.dumps(result))
         if getattr(args, "expect", None) and not db_path(root).is_file():
-            return 3
-        if getattr(args, "expect", None) == "absent" and not result:
+            if not (args.command in {"contract", "contracts"} and result):
+                return 3
+        if getattr(args, "expect", None) == "absent" and expectation(result, "absent"):
             conn = store.connect(root, existing=True)
             try:
-                if (
-                    conn
-                    and conn.execute(
+                if conn and getattr(args, "at", None):
+                    from .code_snapshot import activate_query
+
+                    activate_query(conn, args.at, args.namespace)
+                elif conn:
+                    from .code_snapshot import activate_latest
+
+                    activate_latest(conn, args.namespace)
+                if conn and (
+                    conn.snapshot is None
+                    or not conn.snapshot["complete"]
+                    or conn.execute(
                         "SELECT 1 FROM exclusions WHERE reason='oversize' AND (? IS NULL OR repo=?) LIMIT 1",
                         (args.namespace, args.namespace),
                     ).fetchone()
                 ):
-                    print(
-                        "hx: code: absence unverified: excluded oversize bodies; raise --max-file-bytes",
+                    _emit(
+                        "hx: code: absence unverified: incomplete snapshot or excluded oversize bodies; index the complete scope or raise --max-file-bytes",
                         file=sys.stderr,
                     )
                     return 3
+                if conn and not getattr(args, "at", None):
+                    from .code_freshness import scope
+
+                    for identity in conn.snapshot_maps:
+                        record = conn.execute(
+                            "SELECT root FROM repos WHERE repo=?", (identity,)
+                        ).fetchone()
+                        if (
+                            record is None
+                            or not scope(root, record["root"], ["."], local=True)[
+                                "fresh"
+                            ]
+                        ):
+                            _emit(
+                                "hx: code: absence unverified: stale live source scope; refresh with hx code index",
+                                file=sys.stderr,
+                            )
+                            return 3
             finally:
                 if conn:
                     conn.close()
@@ -368,6 +493,23 @@ def main(argv, root, *, env=None):
         TypeError,
         sqlite3.Error,
         subprocess.SubprocessError,
+        HxError,
     ) as exc:
-        print(f"hx: code: {exc}", file=sys.stderr)
+        _emit(f"hx: code: {exc}", file=sys.stderr)
         return 2
+
+
+def execute(argv, root, *, env=None, read_ledger=True):
+    """Return a command result without process-global stdout redirection."""
+    captured = []
+    errors = []
+
+    def emit(value, **kwargs):
+        if kwargs.get("file") is sys.stderr:
+            errors.append(str(value))
+        else:
+            captured.append(json.loads(value))
+
+    status = main(argv, root, env=env, _emit=emit, read_ledger=read_ledger)
+    result = captured[-1] if captured else {"error": "; ".join(errors)}
+    return status, result

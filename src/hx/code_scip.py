@@ -1,12 +1,14 @@
 """Optional batch SCIP ingestion. Indexers run only in an explicit isolated checkout."""
 
 from __future__ import annotations
+
 import json
 import os
 import re
 from pathlib import Path
+
 from . import code_store as store
-from .code_build import insert_symbol, insert_ref, insert_edge
+from .code_build import insert_edge, insert_ref, insert_symbol
 
 
 def field(row, snake, default=None):
@@ -202,10 +204,19 @@ def _ingest(conn, identity, data, *, extractor="scip"):
     )
 
 
-def ingest(conn, identity, data, *, extractor="scip"):
+def ingest(conn, identity, data, *, extractor="scip", snapshot=True):
     conn.execute("SAVEPOINT scip_ingestion")
     try:
         result = _ingest(conn, identity, data, extractor=extractor)
+        if snapshot:
+            from .code_snapshot import capture_external
+
+            repository = conn.execute(
+                "SELECT root FROM repos WHERE repo=?", (identity,)
+            ).fetchone()
+            result["snapshot"] = capture_external(
+                conn, identity, repository[0] if repository else ""
+            )
         conn.execute("RELEASE scip_ingestion")
         conn.symbol_cache.clear()
         conn.source_cache.clear()
@@ -216,7 +227,7 @@ def ingest(conn, identity, data, *, extractor="scip"):
         raise
 
 
-def index(conn, identity, repo, checkout):
+def index(conn, identity, repo, checkout, *, prepare_only=False, suffixes=None):
     from .code_adapters import detect, run
 
     detected = detect()
@@ -243,10 +254,14 @@ def index(conn, identity, repo, checkout):
     ):
         raise ValueError("indexer checkout must be clean at the same committed HEAD")
     commands = json.loads(os.environ.get("HX_SCIP_COMMANDS", "{}"))
-    suffixes = {
-        Path(r[0]).suffix
-        for r in conn.execute("SELECT path FROM files WHERE repo=?", (identity,))
-    }
+    suffixes = (
+        suffixes
+        if suffixes is not None
+        else {
+            Path(r[0]).suffix
+            for r in conn.execute("SELECT path FROM files WHERE repo=?", (identity,))
+        }
+    )
     defaults = {
         ".py": ("scip-python", ["index", "--project-name", "hx"]),
         ".ts": ("scip-typescript", ["index"]),
@@ -297,14 +312,18 @@ def index(conn, identity, repo, checkout):
                 target, "diff", "--name-only", "HEAD"
             ):
                 raise ValueError("indexer changed committed source")
-            results.append(ingest(conn, identity, data, extractor=binary))
+            results.append(
+                dict(status="prepared", extractor=binary, data=data)
+                if prepare_only
+                else ingest(conn, identity, data, extractor=binary)
+            )
         except (OSError, ValueError) as exc:
             results.append(dict(status="degraded", extractor=binary, reason=str(exc)))
         finally:
             output.unlink(missing_ok=True)
     return dict(
         status="indexed"
-        if any(r["status"] == "indexed" for r in results)
+        if any(r["status"] in {"indexed", "prepared"} for r in results)
         else "skipped",
         results=results,
     )

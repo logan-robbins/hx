@@ -105,6 +105,9 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                            "instructions": instructions, "tokenizer": tokenizer_id})
     with store.transaction() as tx:
         run, task, admission = _run(tx, run_id)
+        if task['payload'].get('dependency_packet'):
+            from .dependency_packets import effective_task
+            task = effective_task(tx, task)
         prompt_bundle = None
         if prompt_manifest:
             if instructions:
@@ -133,6 +136,11 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                  f"Assignment phase: {canonical(run['phase'])}."]
         lines.extend("Constraint: " + _text(value) for value in payload["constraints"])
         lines.extend("Acceptance: " + _text(value) for value in payload["acceptance"])
+        if payload.get('dependency_packet'):
+            lines.append("Packet binding: " + payload.get('binding_status', 'unbound') + ". Bind your Definition of done and exact checks, obtain configured policy approval before edits, and publish interfaces early.")
+            for need in payload.get('prerequisites', []):
+                if need.get('need', 'hard') != 'hard':
+                    lines.append("Contract input: " + canonical(need) + "; a permitted stand-in proves local coverage only. Real-provider integration remains a separate deployment obligation.")
         if run["phase"] == "paused":
             lines.append("This assignment is paused. Do not mutate files; ask the Partner to reconcile its scope.")
         if instructions:

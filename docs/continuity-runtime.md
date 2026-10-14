@@ -450,14 +450,24 @@ must explicitly name its shell and arguments. Preserve executable invocation pat
 including virtual-environment symlinks. Recipe content determines its check version.
 
 Source identity includes tracked contents and nonignored untracked inputs across the
-repository. `inputs` adds declared ignored fixtures or other required files/directories;
-relative paths resolve from the check cwd. A non-Git workdir needs explicit inputs.
+repository when the source closure is unknown. Optional `source: {complete, inputs,
+dependencies}` uses a declared complete closure for scoped identity; recipe `inputs` still
+adds ignored fixtures or other required files/directories. Relative paths resolve from the
+check cwd. A non-Git workdir requires a complete declared source closure.
 Environment identity hashes the passed environment, OS identity, resolved executables,
 and declared environment files. Include runtime/dependency manifests and other actual
 environment inputs; a lockfile alone does not establish the installed environment.
 `external_versions` maps each external dependency to its authoritative version file,
 or `null` when no version is observable. Only a complete declared environment with
 known external versions permits reuse. Environment values are not stored in receipts.
+
+Matching executions are reusable across runs through immutable execution artifacts, with
+a new receipt bound to the requesting run and exact recipe/source/environment identities.
+Equal in-flight requests deduplicate. Corrupt artifacts reject reuse; interrupted claims
+require authoritative process/group quiescence before release. Version-2 planned workers
+must have independently approved worker bindings before checks or completion. Deferred
+real-provider recipes are required at integration/deployment rather than local packet
+coverage. See [agent-scale runtime](agent-scale-runtime.md).
 
 Fingerprinting streams file contents in 64 KiB chunks. Before/after content and metadata
 identities reject source/environment changes, including writes that restore original

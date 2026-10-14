@@ -2,16 +2,28 @@
 
 Current system behavior and remaining integration work.
 
+hx coordinates parallel agents for general software development: new features, existing
+applications, maintenance, integrations, and codebase conversions. Conversion is one use
+case. Its additional requirement is source-first understanding: graph the existing codebase
+before decomposing conversion work, then keep the source and target repositories in separate
+graph namespaces. The Partner concentrates on the existing application's behavior and
+dependency structure, traces source responsibilities to target packets, and identifies shared
+callees/contracts to implement once and reuse. Harness workers own implementation and proof.
+Unknown or dynamic source relationships stay explicit until investigated or validated.
+
 ## Runtime path
 
 ```mermaid
 flowchart LR
     U[User goal and corrections] --> P[Partner]
     M[Portable semantic map] --> P
-    P --> G[Goal and behavior-unit assignments]
+    P --> G[Behavior and dependency packets]
     G --> L[Admission and write leases]
     L --> C[Bounded task context]
     C --> W[Native worker session]
+    W --> B[Worker binds DoD and checks]
+    B --> A[Independent policy approval]
+    A --> W
     W --> R[Tools and repository]
     R --> O[Incremental capture and artifacts]
     O --> J[Jev judgments on bounded deltas]
@@ -19,16 +31,31 @@ flowchart LR
     N --> S[Validated task state]
     N --> M
     S --> C
-    W --> D[Drain, declared checks, publish outputs]
+    W --> I[Publish immutable contract early]
+    I --> P
+    W --> D[Drain, scoped checks, packet coverage]
     D --> P
+    D --> V[Intent review and short landing]
+    V --> Q[Fixed post-merge validation]
+    Q --> F[Pre-deploy checks and tested artifact]
 ```
 
-The Partner owns goal decomposition and assignment. A plan describes behavior units,
-acceptance, repository scope, map inputs, prerequisites, checks, and versioned outputs.
-Admission validates current inputs and acquires write leases before work starts. The
+The Partner understands the application/code graph, owns dependency decomposition,
+and schedules work that can overlap. Its goal is one paragraph describing the result
+and why, with explicit dependency and substitution language. It does not design the
+implementation or write the worker's definition of done. Version-2 plans represent
+that packet as behavior, acceptance obligations, source scope, map inputs, exact
+contract/provider versions, shared resources, output obligations, and inherited policy.
+The harness worker binds its definition of done and executable checks before editing;
+a separately configured reviewer approves the exact binding. Version-1 plans retain
+their existing explicit-check contract. Admission validates current inputs and acquires
+write and resource leases before work starts. The
 runtime starts the native worker and root service, captures tool and lifecycle events,
 and schedules bounded companion passes. Completion drains managed work, validates
 receipts and outputs, publishes results, releases leases, and notifies the Partner.
+Early contract publication can unlock consumers before the provider packet completes.
+Packet coverage retains explicit real-provider obligations; it does not imply deployment
+eligibility. [Agent-scale runtime](agent-scale-runtime.md) gives commands and configuration.
 
 ## State and application learning
 
@@ -37,7 +64,8 @@ represent responsibilities, observable behaviors, interfaces, files, resources, 
 checks. Their stable semantic IDs are independent of language, framework, directory,
 and worker. Records include evidence anchors and source fingerprints; a changed source
 invalidates affected records and consumers. Task planning compiles a bounded map slice
-into assignment paths, invariants, outputs, and checks.
+into assignment paths, invariants, dependencies, and output obligations. Known check
+recipes are suggestions for the worker; inherited verification policy remains required.
 
 Workers do not write a shared map file directly. Runtime discoveries enter scoped
 proposals and worktree overlays. Record versions are compared when patches are applied:
@@ -103,13 +131,28 @@ assignment's checks and source outputs to match the current worktree, managed pr
 to be drained, and publication to commit before ownership is released. A failed check
 keeps the assignment active for repair. Publication replay is idempotent after a crash.
 
+Complete source closures permit scoped fingerprints; unknown closures retain the broad
+repository identity. Matching check execution artifacts can be reused across runs, with
+a new receipt for the requesting run. Recipe, source, environment, toolchain, fixture,
+and external-state identities must all match. Concurrent identical requests share one
+execution; recovery verifies process quiescence before releasing the claim.
+
+Review and landing use first-class intent records, independently configured approval
+authority, and policy based on the actual change. Merge preparation occurs outside the
+publication transaction; moving the local integration ref uses an expected-head check.
+Broad integration validation follows landing at a fixed source snapshot. Release checks
+name an immutable candidate and the tested build manifest. New commits on main can land
+while that validation finishes. Failure evidence names the candidate and implicated
+changes so repair or revert can be scheduled without turning the Partner into a reviewer.
+No remote push or deployment is implied by local landing.
+
 The implementation does not certify untracked remote jobs or work outside observed
 process descendants. Native tool-schema reduction depends on each adapter's public
 support. CI, fixtures, and installed SDK checks exercise transport and lifecycle
 contracts, but they do not establish general model extraction accuracy. No live native
 engineering-to-QA fleet has been run yet.
 
-The remaining functional integration gaps are the coordinated migration of legacy
+The remaining legacy integration gaps are the coordinated migration of legacy
 state authorities/projections and retention of the minimal state needed to resume a
 cancelled assignment. Optional QA triage and test selection remain follow-on features.
 The current status document tracks these boundaries and verification details.
@@ -141,15 +184,32 @@ lines for application-map anchors; see
 for supported formats and query examples.
 
 Plan validation and admission check the indexed base and hashes for allowed writes.
-A missing derived cache is built automatically; when an assignment uses another
-checkout of the same repository, the single cache is rebound to that checkout. A
+A missing derived cache is built automatically. Immutable snapshots bind repository,
+commit, overlay, and extractor generation; different checkouts and revisions coexist.
+Compressed source and extraction objects are shared by content identity, with persistent
+path maps and indexed postings for named queries. `--at COMMIT` selects an immutable
+revision; dirty overlays never claim clean-commit identity. A
 changed scope in the indexed checkout refuses admission and names the rebuild command.
 Completion publishes changed paths in its durable result and refreshes those paths;
 replaying publication retries the same refresh after interruption. Scoped refresh
 invalidates dependent candidates. The installed `bin/code-index-post-merge` performs
-the full post-merge rebuild. No graph state is written into a product checkout.
+the post-merge refresh. Durable changesets contain parent/new identities, exact changed
+paths, modes, blobs, and deletions. Parsing precedes short publication transactions;
+replay resumes interrupted publication. No graph state is written into a product checkout.
 PageRank orientation and Louvain decomposition remain deterministic candidate output;
 only the existing application-map validation path can promote a proposal.
+
+Instances can configure one host repository service over a Unix socket. The existing
+CLI then shares immutable graph/source objects and bounded metadata queries across
+instances. Diff, ancestry, history, and file-range jobs need no client checkout. Ownership
+continues to come from the requesting instance's live ledger. Sparse materialization
+shares Git objects while writing only selected source paths in a fresh directory.
+
+For .NET, `hx build` evaluates projects and dependencies with MSBuild, fingerprints
+SDK/package/import/build configuration, deduplicates matching requests, and bounds host
+build concurrency. Immutable build artifacts are copied into private writable test
+state; shards use the build without compiling again. Unsupported or incomplete build
+closures are reported explicitly and do not qualify for reusable proof.
 
 ## Related contracts
 
@@ -157,6 +217,7 @@ only the existing application-map validation path can promote a proposal.
 - [Application map](application-map.md)
 - [Continuity runtime](continuity-runtime.md)
 - [Planning runtime](planning-runtime.md)
+- [Agent-scale runtime](agent-scale-runtime.md)
 - [Prompt runtime](prompt-runtime.md)
 - [Build status and verification](continuity-build-status.md)
 - [Native interface verification](native-interface-verification.md)

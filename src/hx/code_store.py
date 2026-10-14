@@ -1,8 +1,10 @@
 """Repository-scoped derived graph storage; never an ownership authority."""
 
 from __future__ import annotations
+
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -11,6 +13,14 @@ from pathlib import Path
 class GraphConnection(sqlite3.Connection):
     source_cache = None
     symbol_cache = None
+    snapshot = None
+    historical = False
+    snapshot_maps = None
+    snapshot_scopes = None
+    membership_cache = None
+    graph_cache = None
+    body_cache = None
+    path_tree = None
 
 
 SCHEMA = """
@@ -49,7 +59,7 @@ def db_path(root):
     return Path(root) / "state" / "code-index" / "index.db"
 
 
-def connect(root, *, existing=False, trigram=None):
+def _connect(root, *, existing=False, trigram=None):
     path = db_path(root)
     if existing and not path.is_file():
         return None
@@ -65,6 +75,47 @@ def connect(root, *, existing=False, trigram=None):
         for table in ("files", "symbols", "edges", "code_search", "code_trigram"):
             conn.execute("DROP TABLE IF EXISTS " + table)
     conn.executescript(SCHEMA)
+    from . import code_journal, code_snapshot
+
+    conn.executescript(code_snapshot.SCHEMA + code_journal.SCHEMA)
+    if "kind" not in {
+        r[1] for r in conn.execute("PRAGMA table_info(snapshot_ref_postings)")
+    }:
+        conn.execute(
+            "ALTER TABLE snapshot_ref_postings ADD COLUMN kind TEXT NOT NULL DEFAULT ''"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS snapshot_ref_kind ON snapshot_ref_postings(kind,repo,path,artifact)"
+    )
+    version = conn.execute(
+        "SELECT value FROM metadata WHERE key='snapshot_postings_version'"
+    ).fetchone()
+    if not version or version[0] != "4":
+        for row in conn.execute("SELECT identity,data FROM graph_objects").fetchall():
+            code_snapshot.put_postings(
+                conn, row["identity"], code_snapshot.unpacked(row["data"])
+            )
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata VALUES('snapshot_postings_version','4')"
+        )
+    for column in ("files_count", "symbols_count"):
+        if column not in {
+            r[1] for r in conn.execute("PRAGMA table_info(code_snapshots)")
+        }:
+            conn.execute(
+                f"ALTER TABLE code_snapshots ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+            )
+    if not conn.execute(
+        "SELECT 1 FROM metadata WHERE key='snapshot_counts_version'"
+    ).fetchone():
+        code_snapshot.backfill_counts(conn)
+        conn.execute("INSERT INTO metadata VALUES('snapshot_counts_version','1')")
+    if "dirty" not in {
+        r[1] for r in conn.execute("PRAGMA table_info(code_changesets)")
+    }:
+        conn.execute(
+            "ALTER TABLE code_changesets ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0"
+        )
     symbol_schema = conn.execute(
         "SELECT sql FROM sqlite_master WHERE name='symbols'"
     ).fetchone()[0]
@@ -94,6 +145,14 @@ def connect(root, *, existing=False, trigram=None):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS symbol_qualified_folded ON symbols(repo,qualified_folded)"
     )
+    if "resolved" not in {
+        r[1] for r in conn.execute("PRAGMA table_info(code_changesets)")
+    }:
+        conn.execute("ALTER TABLE code_changesets ADD COLUMN resolved BLOB")
+    if "snapshot_base" not in {
+        r[1] for r in conn.execute("PRAGMA table_info(code_changesets)")
+    }:
+        conn.execute("ALTER TABLE code_changesets ADD COLUMN snapshot_base TEXT")
     if "generation" not in {r[1] for r in conn.execute("PRAGMA table_info(files)")}:
         conn.execute("ALTER TABLE files ADD COLUMN generation TEXT NOT NULL DEFAULT ''")
     if trigram is None:
@@ -130,8 +189,55 @@ def connect(root, *, existing=False, trigram=None):
         except sqlite3.OperationalError:
             if table != "code_trigram":
                 raise
+    import zlib
+
+    conn.create_function(
+        "hx_source",
+        1,
+        lambda data: zlib.decompress(data).decode("utf-8", errors="replace"),
+        deterministic=True,
+    )
+    if not conn.execute(
+        "SELECT 1 FROM metadata WHERE key='source_search_version'"
+    ).fetchone():
+        conn.execute(
+            "INSERT INTO source_search(rowid,body) SELECT rowid,hx_source(data) FROM source_objects"
+        )
+        conn.execute("INSERT INTO metadata VALUES('source_search_version','1')")
+    if trigram:
+        present = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='source_trigram'"
+        ).fetchone()
+        try:
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS source_trigram USING fts5(body,content='',tokenize='trigram')"
+            )
+            if not present:
+                conn.execute(
+                    "INSERT INTO source_trigram(rowid,body) SELECT rowid,hx_source(data) FROM source_objects"
+                )
+        except sqlite3.OperationalError:
+            pass
+    else:
+        conn.execute("DROP TABLE IF EXISTS source_trigram")
     conn.commit()
     return conn
+
+
+def connect(root, *, existing=False, trigram=None):
+    """Serialize migrations only; independent graph readers remain concurrent."""
+    path = db_path(root)
+    if existing and not path.is_file():
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import fcntl
+
+    with (path.parent / ".schema.lock").open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            return _connect(root, existing=existing, trigram=trigram)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def git(repo, *args):
@@ -162,6 +268,11 @@ def namespace(repo):
     return remotes or str(repo)
 
 
+def source_bytes(path):
+    """Git stores a symlink target as its content, independently of its referent."""
+    return os.fsencode(os.readlink(path)) if path.is_symlink() else path.read_bytes()
+
+
 def span_sha(text, line, end_line):
     return hashlib.sha256(
         "".join(text.splitlines(keepends=True)[line - 1 : end_line]).encode()
@@ -169,6 +280,8 @@ def span_sha(text, line, end_line):
 
 
 def fts_tables(conn):
+    if conn.snapshot is not None:
+        return []
     return [
         r[0]
         for r in conn.execute(
@@ -220,38 +333,86 @@ def decorate(conn, row):
     ):
         result["unanchored"] = True
     identity, path = result["repo"], result.get("path", result.get("src_path"))
+    graph = None
+    if conn.snapshot is not None:
+        from .code_snapshot import graph_for
+
+        graph = graph_for(conn, identity, path)
+    if conn.snapshot is not None and conn.historical:
+        generation = (
+            graph["files"][0]["generation"] if graph and graph["files"] else None
+        )
+        result["stale"] = bool(result.get("stale")) or bool(
+            generation
+            and generation != conn.snapshot["generation"]
+            and result.get("lane") != "imported"
+        )
+        result["snapshot"] = conn.snapshot["identity"]
+        result["source_proof"] = "immutable-snapshot"
+        return result
     stale = bool(result.get("stale"))
     key = (identity, path)
     if key not in conn.source_cache:
         repo = conn.execute(
             "SELECT root FROM repos WHERE repo=?", (identity,)
         ).fetchone()
-        file = conn.execute(
-            "SELECT sha256,generation FROM files WHERE repo=? AND path=? UNION ALL SELECT sha256,NULL AS generation FROM exclusions WHERE repo=? AND path=?",
-            (*key, *key),
-        ).fetchone()
+        if conn.snapshot is not None:
+            file = (
+                graph["files"][0]
+                if graph and graph["files"]
+                else dict(graph["exclusions"][0], generation=None)
+                if graph and graph["exclusions"]
+                else None
+            )
+        else:
+            file = conn.execute(
+                "SELECT sha256,generation FROM files WHERE repo=? AND path=? UNION ALL SELECT sha256,NULL AS generation FROM exclusions WHERE repo=? AND path=?",
+                (*key, *key),
+            ).fetchone()
         actual = None
         if repo and repo[0] and path:
-            target = (Path(repo[0]) / path).resolve()
-            if target.is_relative_to(Path(repo[0]).resolve()):
+            target = Path(repo[0]) / path
+            if target.parent.resolve().is_relative_to(Path(repo[0]).resolve()):
                 try:
-                    actual = hashlib.sha256(target.read_bytes()).hexdigest()
+                    actual = hashlib.sha256(source_bytes(target)).hexdigest()
                 except OSError:
                     pass
-        marked = conn.execute(
-            "SELECT 1 FROM symbols WHERE repo=? AND path=? AND stale=1 UNION SELECT 1 FROM refs WHERE repo=? AND path=? AND stale=1 UNION SELECT 1 FROM edges WHERE repo=? AND src_path=? AND stale=1 LIMIT 1",
-            (*key, *key, *key),
-        ).fetchone()
+        if conn.snapshot is not None:
+            marked = graph and any(
+                r.get("stale")
+                for table in ("symbols", "refs", "edges")
+                for r in graph[table]
+            )
+        else:
+            marked = conn.execute(
+                "SELECT 1 FROM symbols WHERE repo=? AND path=? AND stale=1 UNION SELECT 1 FROM refs WHERE repo=? AND path=? AND stale=1 UNION SELECT 1 FROM edges WHERE repo=? AND src_path=? AND stale=1 LIMIT 1",
+                (*key, *key, *key),
+            ).fetchone()
         generation = conn.execute(
             "SELECT value FROM metadata WHERE key=?", ("extractors:" + identity,)
         ).fetchone()
         old_generation = bool(
             file and generation and file["generation"] != generation[0]
         )
+        mode_changed = False
+        if conn.snapshot is not None and repo and path:
+            mode = graph.get("mode") if graph else None
+            try:
+                stat = (Path(repo[0]) / path).lstat()
+                actual_mode = (
+                    "120000"
+                    if (Path(repo[0]) / path).is_symlink()
+                    else "100755"
+                    if stat.st_mode & 0o111
+                    else "100644"
+                )
+                mode_changed = bool(mode and mode != actual_mode)
+            except OSError:
+                mode_changed = bool(mode)
         conn.source_cache[key] = (
             actual,
-            file[0] if file else None,
-            bool(marked) or old_generation,
+            file["sha256"] if file else None,
+            bool(marked) or old_generation or mode_changed,
         )
     actual, indexed, marked = conn.source_cache[key]
     if not result.get("unanchored"):

@@ -13,12 +13,20 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 
 ## What you do with an ask
 
+hx serves general software development, maintenance, integrations and conversions. For a
+conversion, graph the existing codebase first, before decomposition or target dispatch.
+Use its separate source namespace to trace actual behavior, shared callees, contracts and
+dependencies into the target graph. Your emphasis is understanding that application deeply
+enough to schedule conversion packets and shared providers once. Imported analyzer facts
+may enrich legacy languages; dynamic/unknown relationships remain discovery obligations.
+
 1. **Decompose** into Work Items a single persona can finish inside one context window. One
    goal file per item. Prefer two small goals over one large one. Each item must be
-   self-sufficient: if it needs data, a service, or another worker's output that does not
-   exist yet, simulate it (seed fixtures, stub responses) inside the goal rather than
-   leaving a blocker. A goal that waits on the outside world is two goals: build the
-   stand-in, then the unit. No blockers by construction.
+   self-sufficient within its declared boundary. Use the code/application graph to
+   distinguish a required contract from a required implementation. When a published
+   contract permits substitution, say that the worker may use a conforming stand-in
+   and retain real-provider integration as an explicit later obligation. Hard dependencies
+   stay hard; missing contract knowledge calls for bounded discovery or publication work.
 2. **Write each goal** to a temporary file (any path; hx deletes it after dispatch): one
    `## Goal` paragraph — what the result is and why — and, when it depends on other work, one
    to three sentences saying on what. Nothing else: no definition of done, no checks, no task
@@ -36,10 +44,13 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
    share a repository); never two sessions in one checkout.
 4. **Dispatch**: `hx dispatch <id> <goal-file>` for one, or several id/file pairs in one call
    for parallel work. Independent work always goes out in ONE call — one stream per dispatch
-   is how parallel capacity sits idle. If B must wait for A, record `B waits on A` in the
-   `PARTNER.md` fleet notes and dispatch B when A's completion wakes you. Nothing
-   in hx sequences work for you; you do.
-5. **Wait.** `hx complete` wakes you with `<id> done` or `<id> blocked` — status, not prose.
+   is how parallel capacity sits idle. Record which exact output/version B needs from A.
+   Published contracts can unlock permitted consumers before A completes; hard outputs
+   require completion. Planned readiness enforces those distinctions, write ownership,
+   and shared resource constraints. Read readiness and dispatch what can proceed.
+5. **Wait.** Completion and typed contract/packet/integration milestones wake you with
+   compact status and operation identity. Deduplicate repeated operation IDs and query
+   current readiness before scheduling; a notification is never the proof itself.
    Between wakes you have nothing to do; do not poll panes.
    Before writing a goal, check what the fleet already knows:
    `hx memory search "<the area>" --all-roles` searches every step state every agent here has
@@ -97,7 +108,11 @@ into `PARTNER.md` under "Open questions for the human", finish what you can, and
 
 ## Domain judgment
 
-Use the application map to locate responsibility and coupling, not to invent work. Prefer
-units with a clear externally observable result and a concrete completion check. Preserve
-the human's priorities and constraints through decomposition, integration, and reporting.
-Pass current contracts and relevant findings into assignments so workers can start directly.
+Understand the application/code graph, dependencies, and resource contention deeply enough
+to find every justified overlap. Prefer packets with a clear observable result and output
+obligations. Pass exact published contracts, permitted substitutions, and remaining real
+bindings into the paragraph. The harness owns the how, definition of done and execution
+checks; the independently configured reviewer owns adequacy and review. You consume
+contract availability, packet coverage, landing and integration consequences to schedule.
+  Packet coverage releases capacity; it does not prove deployability. Preserve the human's
+priorities and constraints, and dispatch discovery for missing dependency facts.

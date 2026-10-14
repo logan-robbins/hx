@@ -1,10 +1,12 @@
 """Coverage, shared published contracts, and read-through lease ownership."""
 
 from __future__ import annotations
+
 import json
-import sqlite3
 import re
+import sqlite3
 from pathlib import Path
+
 from . import code_store as store
 from .code_extract import LANGUAGES
 
@@ -107,16 +109,27 @@ def register_contracts(conn, file):
                 for k in ("repo", "name", "path", "version", "producer", "sha")
             ),
         )
+    from .code_snapshot import capture_external
+
+    for identity in sorted({str(record["repo"]) for record in records}):
+        repository = conn.execute(
+            "SELECT root FROM repos WHERE repo=?", (identity,)
+        ).fetchone()[0]
+        capture_external(conn, identity, repository)
     conn.commit()
     return len(records)
 
 
 def contracts(conn, name=None, *, repo=None, limit=100):
-    rows = conn.execute(
-        """SELECT * FROM contracts WHERE (? IS NULL OR lower(name)=?) AND (? IS NULL OR repo=?)
-        ORDER BY repo,name,path,version LIMIT ?""",
-        (name, name.casefold() if name else None, repo, repo, limit),
-    )
+    if conn.snapshot is not None:
+        from .code_snapshot import metadata_facts
+
+        rows = metadata_facts(conn, "contracts", name, repo=repo, limit=limit)
+    else:
+        rows = conn.execute(
+            "SELECT * FROM contracts WHERE (? IS NULL OR lower(name)=?) AND (? IS NULL OR repo=?) ORDER BY repo,name,path,version LIMIT ?",
+            (name, name.casefold() if name else None, repo, repo, limit),
+        )
     result = []
     for row in rows:
         value = store.decorate(conn, row)
@@ -124,7 +137,13 @@ def contracts(conn, name=None, *, repo=None, limit=100):
             "SELECT root FROM repos WHERE repo=?", (row["repo"],)
         ).fetchone()[0]
         difference = store.git(
-            root, "diff", "--name-only", row["sha"], "HEAD", "--", row["path"]
+            root,
+            "diff",
+            "--name-only",
+            row["sha"],
+            conn.snapshot["head"] if conn.historical else "HEAD",
+            "--",
+            row["path"],
         )
         value.update(
             lane="imported",
@@ -143,28 +162,43 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
             register_contracts(conn, register)
         return contracts(conn, name, repo=repo, limit=limit)
     if command == "projects":
-        rows = conn.execute(
-            """SELECT * FROM projects WHERE (? IS NULL OR name LIKE ? OR path LIKE ?) AND (? IS NULL OR repo=?)
-            ORDER BY repo,path LIMIT ?""",
-            (
-                name,
-                "%" + name + "%" if name else None,
-                "%" + name + "%" if name else None,
-                repo,
-                repo,
-                limit,
-            ),
-        )
+        if conn.snapshot is not None:
+            from .code_snapshot import (
+                facts_in_path,
+                metadata_facts,
+                path_info,
+                project_paths,
+            )
+
+            rows = metadata_facts(conn, "projects", name, repo=repo, limit=limit)
+        else:
+            rows = conn.execute(
+                "SELECT * FROM projects WHERE (? IS NULL OR name LIKE ? OR path LIKE ?) AND (? IS NULL OR repo=?) ORDER BY repo,path LIMIT ?",
+                (
+                    name,
+                    "%" + name + "%" if name else None,
+                    "%" + name + "%" if name else None,
+                    repo,
+                    repo,
+                    limit,
+                ),
+            )
         result = []
         for row in rows:
             data = json.loads(row["data"])
-            deps = [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT * FROM project_edges WHERE repo=? AND src_path=? ORDER BY dst_text LIMIT 100",
-                    (row["repo"], row["path"]),
-                )
-            ]
+            if conn.snapshot is not None:
+                deps = sorted(
+                    facts_in_path(conn, "project_edges", row["path"], repo=row["repo"]),
+                    key=lambda r: r["dst_text"],
+                )[:100]
+            else:
+                deps = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT * FROM project_edges WHERE repo=? AND src_path=? ORDER BY dst_text LIMIT 100",
+                        (row["repo"], row["path"]),
+                    )
+                ]
             workspaces = data.get("workspaces", [])
             for pattern in workspaces:
                 import fnmatch
@@ -172,16 +206,23 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
                 prefix = (
                     Path(row["path"]).parent / pattern / "package.json"
                 ).as_posix()
-                for target in conn.execute(
-                    "SELECT path FROM projects WHERE repo=? ORDER BY path",
-                    (row["repo"],),
-                ):
-                    if fnmatch.fnmatch(target[0], prefix):
+                if conn.snapshot is not None:
+                    targets = project_paths(conn, row["repo"])
+                else:
+                    targets = (
+                        r[0]
+                        for r in conn.execute(
+                            "SELECT path FROM projects WHERE repo=? ORDER BY path",
+                            (row["repo"],),
+                        )
+                    )
+                for target in targets:
+                    if fnmatch.fnmatch(target, prefix):
                         deps.append(
                             dict(
                                 repo=row["repo"],
                                 src_path=row["path"],
-                                dst_text=target[0],
+                                dst_text=target,
                                 kind="project_depends_on",
                             )
                         )
@@ -192,7 +233,9 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
                     dependencies=deps[:100],
                     lane="syntax",
                     extractor="manifest",
-                    anchor_sha=conn.execute(
+                    anchor_sha=path_info(conn, row["repo"], row["path"])["sha"]
+                    if conn.snapshot is not None
+                    else conn.execute(
                         "SELECT sha256 FROM files WHERE repo=? AND path=?",
                         (row["repo"], row["path"]),
                     ).fetchone()[0],
@@ -210,9 +253,18 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
 
     for entry in namespaces:
         entry["unanchored"] = not bool(entry["root"])
-        entry["stale"] = (
-            entry["unanchored"] or not scope(root, entry["root"], ["."])["fresh"]
-        )
+        if conn.historical:
+            entry.update(
+                head=conn.snapshot["head"],
+                snapshot=conn.snapshot["identity"],
+                stale=not bool(conn.snapshot["complete"]),
+                source_proof="immutable-snapshot",
+            )
+        else:
+            entry["stale"] = (
+                entry["unanchored"]
+                or not scope(root, entry["root"], ["."], local=True)["fresh"]
+            )
     coverage = {}
     for row in conn.execute(
         "SELECT repo,path FROM files WHERE (? IS NULL OR repo=?)", (repo, repo)
@@ -283,3 +335,152 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
         ],
         ownership="continuity leases (read-through)",
     )
+
+
+def published_contracts(root, name=None, *, repo=None, limit=100, task=None):
+    """Read current immutable publications using the authoritative ledger proof.
+
+    The existing ledger is opened read-only; source graph storage receives no
+    records or permissions. Exact consumer edges alone describe allowed use.
+    """
+    from types import SimpleNamespace
+
+    from .continuity_store import Conflict, Transaction, digest
+    from .dependency_packets import contract_proof
+    from .errors import Refused, ValidationError
+
+    root = Path(root).resolve()
+    path = root / "state/continuity.sqlite"
+    if not path.is_file():
+        return []
+    conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    tx = None
+    try:
+        if not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='unit_contracts'"
+        ).fetchone():
+            return []
+        conn.execute("BEGIN")
+        tx = Transaction(
+            SimpleNamespace(
+                root=root, path=path, db=conn, artifacts=root / "state/artifacts"
+            )
+        )
+        consumer = tx.task(task) if task is not None else None
+        if task is not None and consumer is None:
+            raise ValidationError("unknown consumer task")
+        rows = conn.execute(
+            """SELECT c.*,json_extract(t.payload,'$.repository') AS repository
+            FROM unit_contracts c JOIN task_heads h ON h.task_id=c.task_id AND h.revision=c.task_revision
+            JOIN tasks t ON t.task_id=c.task_id AND t.revision=c.task_revision
+            WHERE (? IS NULL OR lower(c.output_id)=? OR lower(c.task_id || '/' || c.output_id)=?)
+            AND (? IS NULL OR json_extract(t.payload,'$.repository')=?)
+            ORDER BY c.task_id,c.output_id,c.version DESC LIMIT ?""",
+            (
+                name,
+                name.casefold() if name else None,
+                name.casefold() if name else None,
+                repo,
+                repo,
+                min(100, max(1, limit)),
+            ),
+        )
+        result = []
+        for row in rows:
+            proof = json.loads(row["payload"])
+            need = (
+                next(
+                    (
+                        edge
+                        for edge in consumer["payload"].get("prerequisites", [])
+                        if edge["task_id"] == row["task_id"]
+                        and edge["output_id"] == row["output_id"]
+                        and edge["version"] == row["version"]
+                        and edge.get("need", "hard") in {"contract", "substitutable"}
+                    ),
+                    None,
+                )
+                if consumer
+                else None
+            )
+            dependency = need or dict(
+                task_id=row["task_id"],
+                output_id=row["output_id"],
+                version=row["version"],
+            )
+            reason = None
+            try:
+                proof = contract_proof(tx, dependency)
+            except (
+                Conflict,
+                Refused,
+                ValidationError,
+                OSError,
+                ValueError,
+                TypeError,
+                KeyError,
+            ) as exc:
+                reason = str(exc)[:300]
+            files = proof.get("files", {})
+            selected = dict(list(sorted(files.items()))[:100])
+            metadata = dict(
+                repo=row["repository"],
+                name=row["output_id"],
+                producer=row["task_id"],
+                producer_revision=row["task_revision"],
+                version=row["version"],
+                path=next(iter(selected), ""),
+                paths=proof.get("paths", []),
+                commit=proof.get("commit"),
+                sha=proof.get("commit"),
+                tree=proof.get("tree"),
+                contract_hash=digest(proof),
+                files=selected,
+                file_count=len(files),
+                file_refs_truncated=len(files) > 100,
+                artifact_refs={p: proof.get("artifacts", {}).get(p) for p in selected},
+                lane="published-contract",
+                extractor="continuity-ledger",
+                source_proof="immutable-ledger-publication",
+                authority="continuity-ledger",
+                ledger_scope="current",
+                stale=reason is not None,
+                unanchored=False,
+                publication_status="unavailable" if reason else "verified",
+            )
+            if reason:
+                metadata["reason"] = reason
+            if consumer:
+                metadata["consumer"] = consumer["task_id"]
+                metadata["permission"] = dict(
+                    declared=need is not None,
+                    available=need is not None and reason is None,
+                    need=need.get("need") if need else None,
+                    stand_in=bool(need and need.get("stand_in") and reason is None),
+                )
+                if need and need.get("need") == "substitutable":
+                    metadata["real_provider_ref"] = dict(
+                        task_id=need["task_id"],
+                        output_id=need["provider_output"],
+                        version=need["provider_version"],
+                    )
+            result.append(metadata)
+        return result
+    finally:
+        if tx is not None:
+            tx.active = False
+        if conn.in_transaction:
+            conn.rollback()
+        conn.close()
+
+
+def join_publications(root, result, name=None, *, repo=None, limit=100, task=None):
+    """Client-side ledger join for local or shared graph contract results."""
+    publications = published_contracts(root, name, repo=repo, limit=limit, task=task)
+    if not publications:
+        return result
+    candidates = result if isinstance(result, list) else []
+    # Verified ledger identities precede derived registry candidates, while both
+    # remain visibly identified by their own source and freshness evidence.
+    return [*publications, *candidates][: min(100, limit)]

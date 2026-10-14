@@ -230,3 +230,37 @@ def test_graph_freshness_ignores_unrelated_commit_and_rejects_dirty_scope(active
     (repo / 'compiler.py').write_text('changed\n')
     with pytest.raises(Conflict, match='stale code scope'):
         planning.validate(store, body)
+
+
+@pytest.mark.parametrize('operation',['validate','apply'])
+def test_cold_plan_parser_leaves_continuity_writer_available(active,monkeypatch,operation):
+    import sqlite3
+    from hx import code_build
+    store,repo=active[:2]
+    original=code_build.code_extract.extract
+    parsed=[]
+    def extract(text,path):
+        assert not store.db.in_transaction
+        with sqlite3.connect(store.path,timeout=.1,isolation_level=None) as probe:
+            probe.execute('BEGIN IMMEDIATE')
+            probe.rollback()
+        parsed.append(path)
+        return original(text,path)
+    monkeypatch.setattr(code_build.code_extract,'extract',extract)
+    getattr(planning,operation)(store,plan(active,[unit(repo,paths=['compiler.py'])]))
+    assert parsed
+
+
+def test_plan_final_scope_check_refuses_source_changed_after_cold_preparation(active,monkeypatch):
+    from hx import code_freshness
+    store,repo=active[:2]
+    original=code_freshness.require
+    def require(root,payload,*,bootstrap=True):
+        result=original(root,payload,bootstrap=bootstrap)
+        if bootstrap:
+            (repo/'compiler.py').write_text('def changed_after_prepare(): pass\n')
+        return result
+    monkeypatch.setattr(code_freshness,'require',require)
+    with pytest.raises(Conflict,match='stale code scope'):
+        planning.apply(store,plan(active,[unit(repo,paths=['compiler.py'])]))
+    assert not store.db.execute('SELECT 1 FROM plan_heads').fetchone()

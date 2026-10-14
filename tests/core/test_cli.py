@@ -39,6 +39,7 @@ SPEC_08_COMMANDS = {
     "code", "content", "exec", "sift", "discipline", "cache",
     # Provider model lists against the registry (TOOL_SKILL_PLAN step 3).
     "models",
+    "repo", "change", "build",
 }
 
 
@@ -167,7 +168,7 @@ def test_the_capability_resolver_reads_subcommands_and_flags():
     assert resolve("memory", ["search", "q"]) == "memory search"
     assert resolve("map", ["--root", "/tmp/x", "publish", "--file", "f"]) == "map publish"
     assert resolve("plan", ["frobnicate"]) is None
-    assert cli_mod.worker_may_run("plan", None) is False, "every plan entry is the Partner's"
+    assert cli_mod.worker_may_run("plan", None) is True, "packet binding and proof actions are worker-scoped; modules enforce identity"
     assert cli_mod.worker_may_run("code", None) is True, "code has worker entries; argparse decides"
 
 
@@ -202,8 +203,9 @@ def test_a_workers_help_names_no_partner_or_operator_command(run_hx, instance):
     assert result.returncode == 0 and "the worker view" in result.stdout
     listed = {line.split()[0] for line in result.stdout.splitlines()[1:] if line.strip()}
     assert listed == {entry.split()[0] for entry in cli_mod.AUDIENCES["worker"]}
-    for word in ("dispatch", "bench", "doctor", "compile", "handoff", "publish", "accept"):
-        assert word not in result.stdout, word
+    for word in ("dispatch", "bench", "doctor", "compile"):
+        assert word not in listed, word
+    assert "map publish" not in result.stdout and "learn accept" not in result.stdout
     # `hx --help` under a worker is the same filtered view, never the whole list.
     dashed = run_hx("--help", env_extra={"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001"})
     assert dashed.returncode == 0 and dashed.stdout == result.stdout

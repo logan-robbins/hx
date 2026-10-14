@@ -70,6 +70,17 @@ def test_schema_one_migrates_without_losing_existing_tasks(ledger):
         assert upgraded.db.execute("SELECT count(*) FROM event_origins").fetchone()[0] == 0
 
 
+def test_agent_scale_schema_preserves_existing_authority_and_advances_version(ledger):
+    store, _ = ledger
+    store.db.execute('DROP TABLE delivery_validations')
+    store.db.execute('PRAGMA user_version=19')
+    with ContinuityStore(store.root) as upgraded:
+        assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
+        with upgraded.transaction() as tx:
+            assert tx.task('T1')['payload']['goal'] == 'preserve late events'
+        assert upgraded.db.execute('SELECT count(*) FROM delivery_validations').fetchone()[0] == 0
+
+
 def test_schema_fourteen_indexes_existing_capture_without_resetting_offsets(ledger, tmp_path):
     from hx import observer
     store, run = ledger

@@ -20,12 +20,14 @@ Rules:
 
 - A task is not done when its unit tests pass if its tier table row requires
   more. `hx complete` runs the declared checks; the plan must declare the
-  tier-appropriate checks, and the Partner rejects a plan whose checks stop
-  below the required tier.
+  tier-appropriate obligations. For version-2 packets the harness worker binds exact
+  checks and coverage before editing; an independent configured reviewer approves
+  adequacy. The Partner schedules dependencies and does not author test procedures.
 - Full-suite green (`tools/milestone-check.sh` with no lane, the CI form) is
-  required before sign-off of anything touching shared infrastructure
+  required at the configured integration/release boundary for anything touching shared infrastructure
   (store, CLI dispatch, hooks, runtime policy). Lane-scoped green is enough
-  for a change contained in one lane.
+  for local packet coverage of a change contained in one lane. Broad required checks
+  remain pending until that boundary passes; local coverage can release worker capacity.
 - A skipped live test is reported as skipped, never as passed.
 
 ## Search before build
@@ -90,10 +92,17 @@ often keeps that base close, so what sign-off measures is the unit's own
 change. Conflicts are resolved in small pulls by the worker, never in one
 large merge at the end.
 
+Fixed post-merge/pre-deploy validation is a different source boundary: it retains the
+named candidate while main advances. Do not pull into that snapshot or restart it merely
+because another change landed. Complete scoped input identities preserve unrelated proof;
+an unknown closure retains the broad repository fingerprint.
+
 ## Push, test, sign-off — more frequently
 
 The loop per behaviour unit is: implement slice → focused tests → commit →
-push → CI → receipt. Sign-off consumes receipts (check results bound to
+packet coverage → reviewed landing → fixed integration/pre-deploy CI → receipt.
+When remote PR publication is explicitly requested, push and its required forge checks
+also apply at their configured boundary. Sign-off consumes receipts (check results bound to
 current inputs), not claims. Shortening this loop is the point of the
 granularity rules above: small units make frequent sign-off cheap, and
 frequent sign-off is what makes small units safe.

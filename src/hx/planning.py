@@ -52,7 +52,7 @@ def overlaps(a, b):
 
 
 def _definition(body):
-    if not isinstance(body, dict) or body.keys() != {"schema_version", "plan_id", "expected_revision", "repository", "goal", "constraints", "tasks"} or type(body["schema_version"]) is not int or body["schema_version"] != 1:
+    if not isinstance(body, dict) or body.keys() != {"schema_version", "plan_id", "expected_revision", "repository", "goal", "constraints", "tasks"} or type(body["schema_version"]) is not int or body["schema_version"] not in {1, 2}:
         raise ValidationError("plan has missing or unknown fields/schema")
     if len(canonical(body).encode()) > PLAN_BYTES:
         raise ValidationError("plan exceeds 256 KiB; decompose the goal into smaller planning scopes")
@@ -67,6 +67,9 @@ def _definition(body):
     tasks, parents, outputs = {}, {}, {}
     for unit in body["tasks"]:
         fields = {"id", "expected_revision", "behavior", "acceptance", "workdir", "write_paths", "map_inputs", "checks", "outputs", "prerequisites"}
+        packet = body["schema_version"] == 2
+        if packet:
+            fields = (fields - {"checks"}) | {"resources", "check_policy"}
         if not isinstance(unit, dict) or unit.keys() != fields:
             raise ValidationError("each unit needs identity, behavior, acceptance, workdir, scope, map inputs, checks, outputs, and prerequisites")
         _id(unit["id"])
@@ -82,9 +85,33 @@ def _definition(body):
         if not isinstance(unit["write_paths"], list) or len(unit["write_paths"]) > 64:
             raise ValidationError("unit write paths must contain at most 64 files/reserved prefixes")
         scope = sorted(set(write_scope(workdir, path) for path in unit["write_paths"]))
-        if not isinstance(unit["checks"], dict) or not 1 <= len(unit["checks"]) <= 16:
+        recipes = {} if packet else unit["checks"]
+        if packet:
+            policy = unit["check_policy"]
+            if not isinstance(policy, dict) or policy.keys() != {"reviewer", "required_checks"}:
+                raise ValidationError("packet check policy needs independent reviewer and required check IDs")
+            _id(policy["reviewer"])
+            if policy["reviewer"] == "partner":
+                raise ValidationError("packet policy reviewer must be an independent worker")
+            if not isinstance(policy["required_checks"], list) or not 1 <= len(policy["required_checks"]) <= 16:
+                raise ValidationError("packet policy requires 1–16 standard check IDs")
+            for check_id in policy["required_checks"]:
+                _id(check_id)
+            if len(set(policy["required_checks"])) != len(policy["required_checks"]):
+                raise ValidationError("policy check IDs must be unique")
+            if not isinstance(unit["resources"], list) or len(unit["resources"]) > 32:
+                raise ValidationError("packet requires at most 32 shared resources")
+            resources = set()
+            for resource in unit["resources"]:
+                if not isinstance(resource, dict) or resource.keys() != {"id", "mode"} or resource["mode"] not in ("shared", "exclusive"):
+                    raise ValidationError("resource requires identity and shared or exclusive ownership")
+                _id(resource["id"])
+                if resource["id"] in resources:
+                    raise ValidationError("resource IDs must be unique")
+                resources.add(resource["id"])
+        if not packet and (not isinstance(recipes, dict) or not 1 <= len(recipes) <= 16):
             raise ValidationError("every behavior unit requires 1–16 explicit acceptance checks")
-        for check_id, recipe in unit["checks"].items():
+        for check_id, recipe in recipes.items():
             checks.validate(recipe)
             if check_id != recipe["id"]:
                 raise ValidationError("acceptance check key must match its recipe ID")
@@ -92,16 +119,19 @@ def _definition(body):
             raise ValidationError("every unit requires explicit versioned outputs")
         declared = {}
         for output in unit["outputs"]:
-            if not isinstance(output, dict) or output.get("kind") not in {"source", "receipt"}:
+            if not isinstance(output, dict) or output.get("kind") not in ({"source", "receipt", "contract"} if packet else {"source", "receipt"}):
                 raise ValidationError("output kind must be source or receipt")
-            fields = {"id", "version", "kind", "paths" if output["kind"] == "source" else "check_id"}
+            fields = {"id", "version", "kind", "paths" if output["kind"] in {"source", "contract"} else "check_id"}
+            if packet:
+                fields = (fields - {"check_id"}) | {"obligation"}
+                _text(output.get("obligation"), "output obligation")
             if output.keys() != fields:
                 raise ValidationError("output has missing or unknown fields")
             _id(output["id"])
             if output["id"] in declared or type(output["version"]) is not int or output["version"] < 1:
                 raise ValidationError("output IDs must be unique and versions positive")
             if output["kind"] == "receipt":
-                if output["check_id"] not in unit["checks"]:
+                if not packet and output["check_id"] not in recipes:
                     raise ValidationError("receipt output must identify an assigned acceptance check")
             else:
                 if not isinstance(output["paths"], list) or not 1 <= len(output["paths"]) <= 64:
@@ -116,21 +146,37 @@ def _definition(body):
         payload = {"plan_id": body["plan_id"], "repository": body["repository"], "goal": unit["behavior"],
                    "parent_goal": body["goal"], "constraints": body["constraints"], "acceptance": unit["acceptance"],
                    "workdir": str(workdir), "write_paths": unit["write_paths"], "write_scope": scope,
-                   "map_inputs": unit["map_inputs"], "checks": unit["checks"], "outputs": unit["outputs"],
+                   "map_inputs": unit["map_inputs"], "checks": recipes, "outputs": unit["outputs"],
                    "prerequisites": unit["prerequisites"]}
+        if packet:
+            payload.update(dependency_packet=True, resources=unit["resources"], check_policy=unit["check_policy"])
         if len(canonical(payload).encode()) > 16000:
             raise ValidationError("unit assignment exceeds 16 KiB; split its behavior before assignment")
         tasks[unit["id"]], outputs[unit["id"]], parents[unit["id"]] = payload, declared, set()
     for unit in body["tasks"]:
         seen = set()
         for dependency in unit["prerequisites"]:
-            if not isinstance(dependency, dict) or dependency.keys() != {"task_id", "output_id", "version"}:
+            base_fields = {"task_id", "output_id", "version"}
+            early = isinstance(dependency, dict) and dependency.get("need") in ("contract", "substitutable")
+            if body["schema_version"] == 2:
+                base_fields |= {"need"}
+                if early:
+                    base_fields |= {"provider_output", "provider_version", "stand_in"}
+            if not isinstance(dependency, dict) or dependency.keys() != base_fields:
                 raise ValidationError("prerequisite requires task_id, output_id, version")
             _id(dependency["task_id"])
             _id(dependency["output_id"])
             output = outputs.get(dependency["task_id"], {}).get(dependency["output_id"])
             if output is None or type(dependency["version"]) is not int or output["version"] != dependency["version"]:
                 raise ValidationError("prerequisite output is absent or has a different version")
+            if body["schema_version"] == 2 and dependency["need"] not in ("hard", "contract", "substitutable"):
+                raise ValidationError("dependency need must be hard, contract, or substitutable")
+            if early:
+                provider = outputs.get(dependency["task_id"], {}).get(dependency["provider_output"])
+                if output["kind"] != "contract" or not provider or provider["kind"] != "source" or type(dependency["provider_version"]) is not int or provider["version"] != dependency["provider_version"]:
+                    raise ValidationError("early dependency needs an exact contract and real source provider output")
+                if type(dependency["stand_in"]) is not bool or (dependency["need"] == "substitutable" and not dependency["stand_in"]):
+                    raise ValidationError("substitutable dependency requires explicit stand-in permission")
             identity = (dependency["task_id"], dependency["output_id"])
             if identity in seen:
                 raise ValidationError("prerequisite output is repeated")
@@ -152,12 +198,25 @@ def _definition(body):
                 continue
             if any(overlaps(a, b) for a in tasks[left]["write_scope"] for b in tasks[right]["write_scope"]):
                 raise ValidationError(f"independent units {left} and {right} have overlapping write scopes; establish ownership or an explicit prerequisite")
+    start_levels = levels
+    early_dependencies = [{"consumer": unit["id"], **need} for unit in body["tasks"] for need in unit["prerequisites"] if need.get("need", "hard") != "hard"]
+    if early_dependencies:
+        # Ordering here is the publication graph; hard starts also require completion.
+        pending = set(tasks)
+        hard_parents = {name: {need["task_id"] for need in task["prerequisites"] if need.get("need", "hard") == "hard"} for name, task in tasks.items()}
+        start_levels = []
+        while pending:
+            wave = sorted(name for name in pending if not hard_parents[name] & pending)
+            start_levels.append(wave)
+            pending.difference_update(wave)
     groups = []
-    for level in levels:
+    for level in start_levels:
         buckets = []
         for task in level:
             for bucket in buckets:
-                if all(tasks[other]["workdir"] != tasks[task]["workdir"] for other in bucket):
+                if all(tasks[other]["workdir"] != tasks[task]["workdir"]
+                       and not any(overlaps(a,b) for a in tasks[other]["write_scope"] for b in tasks[task]["write_scope"])
+                       and not any(a["id"] == b["id"] and "exclusive" in {a["mode"],b["mode"]} for a in tasks[other].get("resources",[]) for b in tasks[task].get("resources",[])) for other in bucket):
                     bucket.append(task)
                     break
             else:
@@ -175,13 +234,13 @@ def _definition(body):
     for unit in body["tasks"]:
         for dependency in unit["prerequisites"]:
             produced = outputs.get(dependency["task_id"], {}).get(dependency["output_id"])
-            if produced and produced["kind"] == "source":
+            if produced and produced["kind"] == "source" and dependency.get("need", "hard") == "hard":
                 interface_warnings.append(
                     f"consumer {unit['id']} builds on source output of {dependency['task_id']} "
                     "without an interface published first; split an interface/stub unit ahead "
                     "of it so consumers can be discovered, searched, and stubbed early")
     return tasks, {"valid": True, "plan_id": body["plan_id"], "dependency_levels": levels,
-                   "potential_parallel_groups": groups,
+                   "potential_parallel_groups": groups, "hard_dependency_levels": start_levels, "early_start_dependencies": early_dependencies,
                    "waves": len(levels),
                    "level_widths": [len(level) for level in levels],
                    "max_parallelism": max((len(group) for group in groups), default=0),
@@ -192,10 +251,11 @@ def _definition(body):
 
 def validate(store, body):
     tasks, result = _definition(body)
+    _prepare_code(store,tasks)
     with store.transaction() as tx:
         for task_id, payload in tasks.items():
             from .code_freshness import require
-            require(store.root, payload)
+            require(store.root, payload,bootstrap=False)
             current = tx.task(task_id)
             if current and current["payload"] == payload:
                 active = tx.db.execute("SELECT run_id FROM runs WHERE task_id=? AND ended_at IS NULL", (current["task_id"],)).fetchone()
@@ -208,6 +268,10 @@ def validate(store, body):
 def apply(store, body):
     tasks, result = _definition(body)
     request_hash = digest(body)
+    previous=store.db.execute("SELECT p.* FROM plans p JOIN plan_heads h USING(plan_id,revision) WHERE plan_id=?",(body['plan_id'],)).fetchone()
+    if previous and previous['request_hash']==request_hash:
+        return json.loads(previous['payload'])['result']
+    _prepare_code(store,tasks)
     with store.transaction() as tx:
         previous = tx.db.execute("SELECT p.* FROM plans p JOIN plan_heads h USING(plan_id,revision) WHERE plan_id=?", (body["plan_id"],)).fetchone()
         if previous and previous["request_hash"] == request_hash:
@@ -223,7 +287,7 @@ def apply(store, body):
         for unit in body["tasks"]:
             task_id, payload = unit["id"], tasks[unit["id"]]
             from .code_freshness import require
-            require(store.root, payload)
+            require(store.root, payload,bootstrap=False)
             current = tx.task(task_id)
             if current and current["payload"].get("plan_id") != body["plan_id"]:
                 raise Conflict("task ID belongs to a different assignment/plan")
@@ -248,57 +312,102 @@ def apply(store, body):
     return result
 
 
+def _prepare_code(store,tasks):
+    """Cold source extraction belongs outside the fleet ledger writer."""
+    from .code_freshness import require
+    if store.db.in_transaction:
+        raise Conflict('code scope preparation requires an unheld continuity writer')
+    for payload in tasks.values():
+        require(store.root,payload,bootstrap=True)
+
+
 def assignment(store, task_id):
     with store.transaction() as tx:
         task = tx.task(task_id)
         if task is None or "plan_id" not in task["payload"]:
             raise ValidationError("unknown planned unit")
         validate_task(tx, task)
-        return {"task_id": task_id, "revision": task["revision"], **task["payload"]}
+        from .dependency_packets import effective_task, summary
+        task = effective_task(tx, task)
+        return {"task_id": task_id, "revision": task["revision"], **task["payload"], "readiness": summary(tx, task)}
 
 
 def main(argv, root, *, env=None):
     parser = argparse.ArgumentParser(prog="hx plan")
     parser.add_argument("--root")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "assign", "audit", "finish", "materialize", "stop"):
-        command = subcommands.add_parser(action)
+    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "assign", "audit", "finish", "materialize", "stop", "bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration"):
+        examples = {
+            "bind": "hx plan bind RUN_ID --file worker-checks.json",
+            "binding": "hx plan binding RUN_ID",
+            "approve-binding": "hx plan approve-binding RUN_ID --binding SHA256",
+            "publish-contract": "hx plan publish-contract RUN_ID --output api --file receipts.json",
+            "acquire-contract": "hx plan acquire-contract consumer --producer provider --output api --out /tmp/api-v1",
+            "verify-integration": "hx plan verify-integration consumer --integration-run RUN_ID --producer provider --output api",
+        }
+        command = subcommands.add_parser(action, epilog="example: " + examples[action] if action in examples else None)
         command.add_argument("--root", default=argparse.SUPPRESS)
-        if action in {"unit", "assign", "materialize"}:
+        if action in {"unit", "assign", "materialize", "acquire-contract", "verify-integration"}:
             command.add_argument("task_id")
         if action in {"ready", "replan"}:
             command.add_argument("plan_id")
         if action == "assign":
             command.add_argument("--revision", required=True, type=int)
             command.add_argument("--worker", required=True)
-        if action in {"audit", "finish", "stop"}:
+        if action in {"audit", "finish", "stop", "bind", "binding", "approve-binding", "publish-contract"}:
             command.add_argument("run_id")
-        if action in {"validate", "apply", "finish", "draft"}:
+        if action in {"validate", "apply", "finish", "draft", "bind", "publish-contract"}:
             command.add_argument("--file", required=True)
         if action == "changes":
             command.add_argument("--plan", dest="plan_id")
             command.add_argument("--detail", action="store_true")
-        if action in {"draft", "replan"}:
-            command.add_argument("--out")
+        if action in {"draft", "replan", "acquire-contract"}:
+            command.add_argument("--out", required=action == "acquire-contract")
         if action == "draft":
             command.add_argument("--repo", required=True)
             command.add_argument("--snapshot", required=True)
-        if action == "materialize":
+        if action == "approve-binding":
+            command.add_argument("--binding", required=True)
+        if action == "publish-contract":
+            command.add_argument("--output", required=True)
+        if action in {"materialize", "verify-integration"}:
             command.add_argument("--integration-run", required=True)
+            command.add_argument("--producer", required=True)
+            command.add_argument("--output", required=True)
+        if action == "acquire-contract":
             command.add_argument("--producer", required=True)
             command.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     who = caller(env)
-    worker_action = args.command in {"audit", "finish", "materialize"} and who not in {None, "partner"}
+    worker_action = args.command in {"audit", "finish", "materialize", "bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration"} and who not in {None, "partner"}
     if not worker_action:
         require_partner_caller("plan", env)
     from . import unit_execution
     with ContinuityStore(root) as store:
-        if worker_action:
-            run_id = args.integration_run if args.command == "materialize" else args.run_id
+        if args.command in {"bind", "approve-binding", "publish-contract"} and not worker_action:
+            raise Refused("packet check bindings, approval, and contract proof require a worker caller")
+        if worker_action and args.command == "acquire-contract":
+            if not store.db.execute("SELECT 1 FROM runs WHERE task_id=? AND worker_id=? AND ended_at IS NULL", (args.task_id,who)).fetchone():
+                raise Refused("worker may acquire contracts only for its active assignment")
+        elif worker_action and args.command not in {"approve-binding", "binding"}:
+            run_id = args.integration_run if args.command in {"materialize", "verify-integration"} else args.run_id
             if not store.db.execute("SELECT 1 FROM runs WHERE run_id=? AND worker_id=?", (run_id, who)).fetchone():
                 raise Refused("worker may audit, finish, or materialize only its own assignment")
-        if args.command in {'draft', 'replan', 'changes'}:
+        if args.command in {"bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration"}:
+            from . import dependency_packets as packets
+            if args.command == "bind":
+                result = packets.bind_checks(store,args.run_id,appmap.read_json(Path(args.file),16000))
+            elif args.command == "binding":
+                result = packets.binding_view(store,args.run_id,who)
+            elif args.command == "approve-binding":
+                result = packets.approve_binding(store,args.run_id,args.binding,who)
+            elif args.command == "publish-contract":
+                result = packets.publish_contract(store,args.run_id,args.output,appmap.read_json(Path(args.file),16000),env=env)
+            elif args.command == "acquire-contract":
+                result = packets.acquire_contract(store,args.task_id,args.producer,args.output,args.out)
+            else:
+                result = packets.verify_integration(store,args.task_id,args.integration_run,args.producer,args.output)
+        elif args.command in {'draft', 'replan', 'changes'}:
             from . import goal_templates
             if args.command == 'draft':
                 result = goal_templates.draft(store, Path(args.repo).resolve(), args.snapshot, appmap.read_json(Path(args.file), 16000))

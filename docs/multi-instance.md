@@ -117,11 +117,19 @@ reader can tell an edited handoff from the one that was reviewed.
 
 ## 7. Merges across instances
 
-Instances merge into one branch. Serialize the merges with a host-wide lock
-(`flock /data/<fleet>-merge-lock/<repo>.lock`) held by the release goal from "merge base in" to
-"push", so two instances never race the same integration branch, and let the release
-persona's standard set require the exact merge result to have been tested (`git merge-base --is-ancestor
-origin/<base> HEAD` plus a local gate line with the head SHA).
+Instances prepare reviewed changes concurrently. Use `hx change land` with a bare local
+integration repository and an expected principal-branch head: candidate preparation happens
+outside the publication transaction, and a brief compare-and-swap publishes it. A moved head
+refuses publication and requires a new candidate. Never hold the fleet merge lock through
+an expensive build or full suite. Remote push remains an explicitly authorized release
+operation and must reconcile uncertain outcomes before retrying.
+
+Post-merge validation freezes coherent source candidates and can coalesce landed changes.
+Those candidates keep running while newer changes land. Pre-deploy validation names the
+exact integrated source and tested artifact manifest, with real-provider obligations closed.
+Different instances may share repository caches and immutable build outputs; writable
+intermediates/test outputs stay private. Complete check identities permit reuse, while
+unknown dependency closures retain broader checks. See [agent-scale runtime](agent-scale-runtime.md).
 
 ## 8. Channels between instances
 

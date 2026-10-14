@@ -44,13 +44,17 @@ class Fingerprint:
         try:
             before = path.lstat()
             if stat.S_ISDIR(before.st_mode):
-                # Only one directory listing is resident at a time. Directory
-                # metadata is excluded: ignored build caches can change it.
+                # Declared directories include their listing observations. Git
+                # scope fingerprints files individually, avoiding ignored caches.
                 with os.scandir(path) as scan:
                     children = sorted(entry.name for entry in scan if entry.name != ".git")
                 _feed(self.content, [label, "directory"])
                 for name in children:
                     self.path(path / name, label + "/" + name)
+                after = path.lstat()
+                _feed(self.observation, [label, _stamp(before), _stamp(after)])
+                if _stamp(before) != _stamp(after):
+                    self.unknown("directory changed while fingerprinting")
                 return
             link = os.readlink(path) if stat.S_ISLNK(before.st_mode) else None
             if link is not None and not path.is_file():
@@ -114,28 +118,43 @@ def _git_paths(root: Path, env: dict):
             raise OSError("git file enumeration failed")
 
 
-def source(workdir: Path, extra_inputs: list[str], env: dict) -> dict:
+def source(workdir: Path, extra_inputs: list[str], env: dict, *, contract: dict | None = None) -> dict:
+    """Identify sources, using a declared dependency closure only when complete.
+
+    The caller asserts that inputs plus dependencies include every source the
+    command can observe. Legacy and incomplete contracts retain repository scope.
+    Absolute workspace identity is intentionally retained: programs may observe it.
+    """
     fingerprint = Fingerprint()
+    scoped = contract is not None and contract.get("complete") is True
+    names = set(extra_inputs)
+    if contract is not None:
+        names.update(contract.get("inputs", []))
+        names.update(contract.get("dependencies", []))
+    _feed(fingerprint.content, ["source_contract", "declared" if scoped else "repository", str(workdir.resolve())])
     try:
         found = subprocess.run(["git", "--no-optional-locks", "-C", str(workdir), "rev-parse", "--show-toplevel"],
                                env=env, capture_output=True, check=False)
         repository = Path(os.fsdecode(found.stdout).strip()) if found.returncode == 0 else None
     except OSError:
         repository = None
-    if repository:
+    if repository and not scoped:
         _feed(fingerprint.content, ["repository", str(repository.resolve())])
         try:
             for name in _git_paths(repository, env):
                 fingerprint.path(repository / name, "repo:" + name, missing_ok=True)
         except OSError:
             fingerprint.unknown("repository enumeration failed")
-    elif not extra_inputs:
-        fingerprint.unknown("non-repository check has no declared inputs")
-    for name in sorted(extra_inputs):
+    elif not repository and not scoped:
+        fingerprint.unknown("non-repository check needs a complete source closure")
+    for name in sorted(names):
         path = Path(name)
         fingerprint.path(path if path.is_absolute() else workdir / path, "declared:" + name)
     result = fingerprint.result()
     result["repository"] = str(repository) if repository else None
+    result["scope"] = "declared" if scoped else "repository"
+    result["declared_inputs"] = sorted(names)
+    result["closure_complete"] = scoped
     return result
 
 

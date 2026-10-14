@@ -242,4 +242,4 @@ def test_check_summary_reads_both_rollup_shapes():
         {"__typename": "StatusContext", "state": "PENDING"},
         {"__typename": "CheckRun", "status": "COMPLETED", "conclusion": "SKIPPED"},
     ]}
-    assert handoff.check_summary(pr) == {"total": 5, "success": 2, "pending": 2, "failed": 1}
+    assert handoff.check_summary(pr) == {"total": 5, "success": 1, "pending": 2, "failed": 1, "skipped": 1}

@@ -121,6 +121,8 @@ def _records(store, task_id):
 
 
 def tick(store, *, env=None):
+    from .runtime_notifications import drain
+    drain(store)
     from .task_retention import retire_closed
     retire_closed(store)
     observed = observer.reconcile(store)
@@ -195,7 +197,7 @@ def serve(root, *, env=None, stop=None, interval=5, idle_exit=False):
         with ContinuityStore(root) as store:
             _save(store, 'application-service', {'process': native_processes.probe(os.getpid())['identity'], 'ready': True})
             while stop is None or not stop.is_set():
-                if idle_exit and not store.db.execute('SELECT 1 FROM runs WHERE ended_at IS NULL LIMIT 1').fetchone():
+                if idle_exit and not store.db.execute('SELECT 1 FROM runs WHERE ended_at IS NULL LIMIT 1').fetchone() and not store.db.execute("SELECT 1 FROM outbox WHERE status IN ('pending','claimed') LIMIT 1").fetchone():
                     return
                 try:
                     result = tick(store, env=env)
@@ -269,7 +271,15 @@ def status(store, *, after=''):
     completed = [dict(row) for row in store.db.execute('''SELECT c.task_id,c.task_revision,c.run_id FROM unit_completions c
         JOIN runs r USING(run_id) ORDER BY r.ended_at DESC LIMIT 8''')]
     from .goal_templates import changes
+    milestones = [dict(row) for row in store.db.execute('''SELECT task_id,task_revision,kind,identity
+        FROM unit_milestones ORDER BY rowid DESC LIMIT 8''')]
+    builds = [dict(row) for row in store.db.execute('''SELECT job_id,kind,run_id,status
+        FROM dotnet_jobs ORDER BY rowid DESC LIMIT 8''')]
+    validations = [dict(row) for row in store.db.execute('''SELECT batch_id,head,boundary,status
+        FROM delivery_validations ORDER BY rowid DESC LIMIT 8''')]
     return {'active': units, 'replanning': changes(store, limit=4), 'recent_completions': completed, 'last_cycle': _state(store, 'last-cycle'),
+            'recent_milestones': milestones, 'build_jobs': builds, 'validation_snapshots': validations,
+            'proof_note': 'Recorded lifecycle headers; plan ready/change status revalidate current proof before scheduling or release.',
             'service_error': _state(store, 'service-error'), 'completion_error': _state(store, 'completion-error'),
             'next_after': rows[15]['run_id'] if len(rows)>16 else None}
 

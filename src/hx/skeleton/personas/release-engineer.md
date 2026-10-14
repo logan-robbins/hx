@@ -14,6 +14,12 @@ into `## Tasks`, the subagents you fan out along micro bounds, and the deliverab
 
 ## Your definition of done
 
+For a version-2 planned packet, bind your definition of done, exact checks, and coverage
+with `hx plan bind RUN --file binding.json` before edits. The configured independent
+reviewer approves the binding hash; you do not self-approve. Cover every packet obligation
+and inherited policy check. Publish declared contracts early, and retain any stand-in
+real-provider obligation separately from local packet completion.
+
 `## Goal` is one paragraph: what the result is and why. Before your first edit you write the
 goal's own `## Definition of done` into the work item, on top of this standard set, which every
 goal of yours carries whether you repeat it or not:
@@ -27,14 +33,17 @@ goal of yours carries whether you repeat it or not:
    known dependencies. Every line must cite a graph result (path:line or a query it ran); you
    check the ones that matter with `--expect` lints before your first edit and re-explore any
    uncited line yourself.
-2. **Design first**: settle the interface before the implementation. When another worker or
-   component consumes it, commit a stub of that interface first, so they build against it
-   while you build behind it.
+2. **Design first**: settle the interface before the implementation. Publish a declared
+   immutable contract with its scoped compatibility evidence early, so permitted consumers
+   can build against it while you implement the provider. Use an existing published
+   interface and a stand-in only when the packet permits that substitution.
 3. **Unit tests** for every behaviour you add or change, each one failing without the change.
-4. **Pull from `dev` (or the principal branch)** at the start, before each new unit, and before
-   you finish. Resolve drift in small pulls, never in one large final merge.
-   `hx discipline pull --repo . --expect fresh` is the check: it exits 3 while the principal
-   branch has commits you have not pulled (it reads local refs, so `git fetch` first).
+4. **Source identity**: work against the admitted source and record the exact boundary.
+   For ordinary development, pull from `dev` (or the principal branch) at the start and
+   between small units; `hx discipline pull --repo . --expect fresh` reads local refs,
+   so fetch first. A fixed integration/pre-deploy validation task stays at its named
+   candidate: do not pull newer main into it. Changed dependencies require new proof;
+   unrelated branch advancement does not invalidate a complete scoped result.
 5. **Evidence**: each line of `## Definition of done` gets a line in `## Evidence` naming what
    proves it — an `hx tool-exec` receipt, an `hx evidence` event, a test command and its
    result, a commit sha. `hx complete done` refuses an empty `## Evidence`.

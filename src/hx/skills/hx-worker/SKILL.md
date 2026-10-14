@@ -408,6 +408,16 @@ then carries the unit's `behavior` and `acceptance`, your `workdir`, the exact `
 you hold, the `checks` the runtime will run and the `outputs` you must commit. Three things
 differ from a goal-file dispatch:
 
+Version-2 packets initially carry obligations and inherited policy instead of executable
+checks. Before edits, write your own definition of done and use `hx plan bind RUN --file
+binding.json` to propose exact recipes and coverage of every acceptance/output/integration
+obligation. The configured independent reviewer inspects `hx plan binding RUN` and approves
+its hash. Do not edit or claim proof before approval. Version-1 assigned checks stay frozen.
+Publish a declared interface early with `hx plan publish-contract`; consume only an exact
+published contract and use a conforming stand-in only when your packet permits it. Local
+packet coverage leaves real-provider integration pending until its separate verified run.
+Fixed CI/release assignments stay at their named candidate while main advances.
+
 - **Progress is typed.** `hx progress --file /tmp/progress.json` submits a sparse update: the
   step you closed and the one now active (one active at a time), the exact `next` action, a
   `blocker` or `null`, the deliverable paths you declare, cited evidence ids — with the
@@ -431,11 +441,11 @@ differ from a goal-file dispatch:
 `state/`, `run/` and `archive/`; `tasks.json`; and every work item except your own `-working`
 file.
 
-**Nothing stops you.** There is no permission prompt and no guard hook: you run with bypass
-permissions, and the only thing between you and another agent's files is this paragraph. That
-is deliberate — a prompt nobody is there to answer is a hung agent — and it means the rule is
-yours to keep rather than the harness's to enforce. Writing into `state/` or another id's work
-item corrupts a running agent's memory, silently, and nothing will tell either of you.
+Native sessions use bypass permissions without interactive approval prompts. Planned runs
+enforce declared write ownership, binding approval and known tool boundaries; those controls
+do not sandbox arbitrary programs or cover every ignored/temporary write. Keep the file
+boundary yourself as well. Writing into `state/` or another id's work item can corrupt its
+authority and context even when a native tool permits the write.
 
 Your own files are your `workdir` and your `-working` work item (all of it but `## Status`,
 which is hx's). That is the whole list.

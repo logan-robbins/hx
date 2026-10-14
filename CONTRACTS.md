@@ -1090,3 +1090,172 @@ The versions come from three places, in this order: `data.supported` in the `ini
 error, `supportedVersions` in the discover result, then `data.supported` in a discover error.
 At most 16 are kept, each a printable string of at most 32 chars. When none of the three names
 a version, the message says `reported no supported versions`. No other MCP behaviour changed.
+
+## General development and source-first conversion
+
+hx coordinates parallel agent work for new features, maintenance, integrations, and
+codebase conversions. Conversion adds a source-first requirement: graph the existing
+codebase before decomposing target work. Source and target remain separate repository
+namespaces; imported analyzer facts and unresolved dynamic calls preserve provenance.
+The Partner understands behavior/dependencies, identifies shared providers and schedules
+packets. The harness worker owns implementation, definition of done, and execution proof.
+
+## Immutable graph snapshots and changesets
+
+Graph snapshots bind repository, commit, working-copy overlay and extractor generation.
+`hx code … --at COMMIT` selects immutable source at that revision. Historical Git capture
+does not check out files. Dirty overlays never replace clean-commit facts. Content-addressed
+compressed source/extraction/graph objects and persistent path bindings share unchanged
+data. Named lookup limits apply after snapshot membership, not to unrelated historical rows.
+
+`hx code journal [--namespace REPOSITORY] [--replay CHANGESET]` lists or replays durable
+prepared changesets. They retain parent/new identity, exact changed paths, modes, blobs,
+and deletions. Exact-path refresh does not enumerate the whole checkout. Extraction occurs
+outside the publication transaction; applied/superseded state is durable. Explicit historical
+capture is bounded by `HX_CODE_REVISION_MAX_BYTES` and `HX_CODE_REVISION_MAX_PATHS`.
+
+## Host repository protocol (`hx repo`)
+
+Configure `config/hx.json` `repository_service` or `HX_REPO_SERVICE_SOCKET` as a Unix socket
+path. `hx repo serve [--socket PATH] [--workers N]` owns one shared derived store outside
+product checkouts. Workers are bounded to 1–64; requests to 64 KiB and responses to 256 KiB.
+Metadata limits are 1–100 rows and source ranges 1–160 lines. Source blobs are bounded
+regular Git files. Register with `hx repo register --repo PATH`.
+
+The JSON protocol uses `method: register|status|code|scope|diff|merge-base|history|file|materialize|expand`.
+Source operations name `namespace` and `at`; answers carry exact resolved commit and
+`complete`. Code uses an `argv` array and returns `{exit_code,result}`. Client roots cannot
+override service state. Configured `hx code` and freshness calls route through this protocol.
+Ownership and authoritative early publication are read-through joins on the client ledger.
+
+`materialize` names exact `paths` and a fresh `out` outside the source checkout. Optional
+`working_copy: true` shares local Git objects and writes a clean sparse copy at `at`.
+Metadata jobs need no client checkout. Query failure is explicit; incomplete answers cannot
+establish absence or prove complete build inputs.
+
+`hx repo assignment TASK --out DIR [--at COMMIT]` derives sparse prefixes from a frozen
+planned task, map anchors, hard output files and bound check closure. The materialization
+answer includes task/revision, `closure_complete`, `gaps`, `early_contracts`, and
+`anticipated_paths`. Unknown closures remain explicit. Provisioning does not move task
+ownership or rewrite its workdir; replan to the new checkout before admission.
+`repo expand --namespace REPOSITORY --at COMMIT --out DIR --paths PATH…` extends the read
+set of an existing clean sparse copy at that exact source, preserving earlier paths.
+Dirty or different-source copies are refused before modification.
+
+## Dependency packet plan (`schema_version: 2`)
+
+Top-level plan fields remain `schema_version`, `plan_id`, `expected_revision`, `repository`,
+`goal`, `constraints`, `tasks`. Each version-2 task has exactly:
+
+```text
+id, expected_revision, behavior, acceptance, workdir, write_paths, map_inputs,
+outputs, prerequisites, resources, check_policy
+```
+
+`check_policy` is `{reviewer,required_checks}` with an independent configured worker and
+1–16 unique check IDs. `resources` has up to 32 unique `{id,mode}` entries (`shared` or
+`exclusive`). Outputs have `{id,version,kind,obligation}` plus `paths` for `source` and
+`contract`; `receipt` outputs have no `check_id`. A prerequisite is `{task_id,output_id,
+version,need}`. `need` is `hard`, `contract`, or `substitutable`. Early dependencies add
+`provider_output`, `provider_version`, and boolean `stand_in`; substitution requires true.
+Version-1 plans keep their original explicit-check schema.
+
+Before edits, the worker submits `hx plan bind RUN --file FILE` with exactly:
+
+```json
+{"definition_of_done":["Observable result"],"checks":{"CHECK":"exact check recipe"},
+ "coverage":{"acceptance.0":["CHECK"],"output.OUTPUT":["CHECK"],
+ "integration.PRODUCER/CONTRACT":["INTEGRATION_CHECK"]}}
+```
+
+Every acceptance/output/deferred-integration obligation must be covered. Inherited check
+IDs remain required. Binding occurs at the unchanged admission source and freezes recipes.
+`hx plan binding RUN` exposes the exact proposal; `approve-binding RUN --binding HASH`
+requires the independently named reviewer. Known mutating native tools and proof commands
+refuse unapproved bindings; this does not sandbox arbitrary shell programs.
+
+`publish-contract RUN --output ID --file RECEIPTS` publishes exact regular interface files
+and passing scoped proof while the provider is active. Published versions are immutable.
+`acquire-contract TASK --producer ID --output ID --out DIR` exports only a declared
+prerequisite and reports stand-in permission plus the pending real provider/version.
+`verify-integration TASK --integration-run RUN --producer ID --output ID` requires completed
+integration, exact installed consumer/provider source and the frozen integration recipes.
+
+Typed milestones are `contract_published`, `packet_covered`, `integration_verified`,
+and `deployable`. Packet coverage releases leases; deferred binding remains explicit.
+Current readiness revalidates proof rather than trusting historical milestone rows.
+The root loop delivers bounded at-least-once `HX-EVENT OPERATION KIND task=… identity=…`
+notifications. Deduplicate by operation ID and query readiness; a wake is not evidence.
+
+## Scoped check execution artifacts
+
+Recipes optionally add `source: {complete,inputs,dependencies}`. Complete declared closure
+uses scoped source identity; omitted/false closure retains repository-wide hashing. Recipe
+`inputs` remain included. Unknown external/environment dependencies disallow reusable proof.
+Graph candidates cannot assert completeness. Execution artifacts are keyed by complete
+recipe/source/environment identities, including tools, platform, cwd and external versions.
+Equal in-flight requests share an execution. Reuse creates a new requesting-run receipt.
+Corruption rejects reuse. Interrupted claims remain held until owned process/group death
+is proven; absent spawn identity remains unresolved.
+
+## .NET build broker (`hx build`)
+
+`graph` and `build` name a project/solution plus cwd, configuration, optional framework,
+runtime and source-contract JSON. MSBuild evaluated properties/items/imports, SDK, packages
+and source dependencies determine completeness and build identity. Unknown custom build
+closures do not qualify for cache reuse. `build` accepts run/request identity and a bounded
+job count; equal requests deduplicate across processes. Host slots limit simultaneous builds.
+Immutable restore/build artifacts coexist with private writable intermediate/test state.
+Optional `--platform` participates in evaluated identity. Ordinary SDK `.sln`/`.slnx`
+solutions obtain exact mapped project/global/reference contexts from the installed
+MSBuild ProjectGraph API. The offline reader bootstrap uses the same managed broker
+and immutable artifacts; known mappings qualify for solution reuse.
+
+`test BUILD` runs a selected test shard against materialized build outputs without another
+compilation; optional project/framework/filter/runner args enter identity. `status JOB`,
+`reconcile JOB`, and `materialize BUILD DESTINATION` expose lifecycle and artifacts.
+Managed queued/running build jobs block completion. Current proof verifies graph/toolchain
+and artifact provenance again at the final boundary.
+
+## Intent, landing and fixed CI (`hx change`)
+
+`submit --file FILE` takes exactly `{id,run_id,base,head,behavior}`. Intent preserves the
+assigned goal and completed packet source scope. Changes, review decisions and landing
+status are authoritative ledger records. Review names revision and intent hash; the author
+cannot self-approve. Approval policies classify actual interface/migration/sensitive changes.
+Reviewer roles/identities come from configuration, not caller claims.
+
+`config/delivery.json` accepts reviewer/sensitive lists, `post_merge_checks`,
+`pre_deploy_checks`, `check_definitions`, `build_checks`, `artifact_paths`, and
+`validation_resources`. Exact check definitions and complete fixed-source closures are
+required for candidate execution. Pre-deploy requires build checks and explicit tested
+artifact inputs. Required forge checks remain required until forge policy changes explicitly.
+
+`land CHANGE --repo BARE --expected-head COMMIT` prepares the merge before a brief local
+ref compare-and-swap. Main advancement refuses stale publication. `reconcile ID` checks
+actual publication after interruption. No remote push/deploy is implied.
+
+`candidate --repo BARE --expected-head COMMIT --boundary integration|deploy` freezes source,
+policy and coalesced intent membership. `run-validation BATCH --snapshot FRESH_DIR` executes
+those checks on immutable source while main advances. Candidate status does not chase main.
+Failure evidence creates scoped repair work. `fail BATCH --receipt ID [--baseline ID]`
+retains attribution; `revert CHANGE --batch BATCH --repo BARE --expected-head COMMIT`
+requires confirmed regression and publishes a surgical inverse, retaining later unrelated
+changes. Pre-deploy readiness requires exact-source integration, real-provider proof and
+an immutable manifest naming the tested artifacts/build identity.
+Verified checkpoint references retain earlier proof while coalescing only later pending
+intents. `candidate --historical` permits an authoritative ancestor; `--retry BATCH` creates
+a distinct attempt only after safe reconciliation. Readiness preserves checkpoint intent,
+approval, receipt and real-provider obligations. Sparse archives report `source_coverage`
+as `declared_closure` or `whole_tree`, plus external environment resources. Multi-change
+regressions retain bounded attribution; they do not authorize automatic batch rollback.
+
+## Scoped delivery handoff
+
+`hx handoff delivery DIR --change CHANGE [--batch BATCH]` writes `HANDOFF.md`,
+`delivery-boundaries.json`, and `EVIDENCE-SHA256SUMS.txt`. The capture is also an immutable
+ledger artifact. Fields distinguish coverage, review, landing, candidate source/tree,
+required recipe hashes, captured receipts, tested build/manifest and remaining obligations.
+`handoff check DIR` verifies captured evidence and seals; `--live` also requires current
+identities/readiness to match. Historical evidence retains its original scope. Missing,
+pending, failed or skipped validation cannot become deployment approval.

@@ -30,12 +30,18 @@ get built.
 
 ## The order of a conversion
 
-1. **Index both repositories, each under its own namespace.** The namespace is the repo's
+1. **Graph the existing source first, before conversion decomposition or target dispatch.**
+   The Partner explores its behavior, shared callees, dependencies and contract boundaries
+   to determine the packets that can overlap. Then index the target in its separate
+   namespace. hx also supports ordinary development and maintenance; this source/target
+   mapping applies specifically to conversion. The namespace is the repo's
    `.hx/map/manifest.json` `repo_id` when it has one, then its first git remote URL, then its
    resolved path. Indexing one repository never removes another's rows.
-2. **Contracts first.** The Partner registers the published interfaces (wave 1) before any
-   lane builds against them. Nobody implements a counterpart for an interface that is not
-   registered.
+2. **Contracts first.** The Partner names exact contract/provider dependencies and permitted
+   substitutions; harness workers publish declared immutable contracts with evidence early,
+   before provider completion (`hx plan publish-contract`). External source-side interface
+   records can be registered by the Partner. Missing contracts require publication work;
+   consumers do not invent competing interfaces.
 3. **Trace, then build, one capability at a time.** Look the capability up by name, read the
    source implementation at the path the record gives, build the target counterpart, and
    commit it as one behaviour unit with its tests.
@@ -66,7 +72,9 @@ path, version, producer unit, namespace and git SHA. Read the result as conversi
 
 - A source record and no target record: not converted yet. The source path is where you read
   the behaviour you must reproduce. Read it once, then build.
-- Records in both namespaces: converted. Extend the target counterpart. Do not write another.
+- Records in both namespaces: a target counterpart is known. Check its packet/parity proof
+  and outstanding integration obligations before calling it converted. Extend the existing
+  counterpart rather than writing another.
 - Two target records with the same name: a second interface already exists. Do not add a
   third. Report it (below), because the plan has to choose one.
 
@@ -79,8 +87,9 @@ has moved since then, re-read the path at its current head before you trust the 
 hx code contract LegacyInvoiceAdapter --expect absent
 ```
 
-`--expect absent` exits 0 when no record of that name exists and 3 when one does. Exit 2 is
-a usage error. The goal names the interface the unit must not create, because a
+`--expect absent` exits 0 only when no record of that name exists in a complete, current
+queried scope. It exits 3 when a record exists or absence cannot be verified, including a
+missing or incomplete index. Exit 2 is a usage error. The goal names the interface the unit must not create, because a
 counterpart already exists or belongs to another unit. The worker makes this line part of
 its `## Definition of done`, runs it before `hx complete done`, and names the run in
 `## Evidence`; it never drops or weakens it. If it fails, either you minted the duplicate
@@ -97,13 +106,16 @@ its `## Definition of done`, runs it before `hx complete done`, and names the ru
 - When the source behaviour is wrong (a bug you would be porting), do not silently fix or
   preserve it. Record the question and both options in `## Open decision`, then
   `hx complete decision`.
-- When a capability you need has no registered contract, you cannot register one yourself:
-  registration is the Partner's. Complete `blocked` and name the missing contract.
+- Publish only contracts declared as your own packet outputs. External registry promotion
+  belongs to the Partner. Report an undeclared/missing prerequisite with typed progress
+  under a planned run; the Partner schedules publication or revises dependencies.
 
 ## Partner only: register the contracts first
 
-A worker never runs the command in this section: it is refused for a worker caller. Workers
-ask through `hx complete blocked` or `hx complete decision` instead.
+A worker never runs the command in this section: it is refused for a worker caller. Planned
+workers report the missing prerequisite or decision through the typed `hx progress` blocker;
+the Partner schedules publication or revises the packet. Ordinary goal-file workers use
+`hx complete blocked` or `hx complete decision`.
 
 ```bash
 hx code contracts --register contracts/billing.jsonl
@@ -120,6 +132,8 @@ indexed, and register each target record as its producing unit lands. Then:
 - A worker's "second interface already exists" report is a planning defect, not a worker
   failure. Choose the surviving interface, and plan the migration of the other one's callers
   as its own unit.
-- Track progress with `hx code contract NAME` per capability, not with worker prose. A
-  capability is converted when its target record exists at a SHA whose unit completed `done`
-  with its lints in `## Evidence`.
+- Track contract availability with `hx code contract NAME` per capability. A capability
+  is converted when the exact target version has completed packet and source-behavior/parity
+  proof plus every required real-provider integration proof. Contract existence and local
+  packet coverage can unlock work while those obligations remain pending; neither alone
+  proves conversion completion or deployment eligibility.

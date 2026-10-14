@@ -14,7 +14,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import fingerprints
+from . import check_artifacts, fingerprints
 from .continuity_store import ContinuityStore, Conflict, _id, canonical, digest
 from .errors import ValidationError
 
@@ -23,7 +23,7 @@ MAX_RECIPE_BYTES = 16384
 
 def validate(recipe: dict) -> str:
     fields = {"schema_version", "id", "argv", "cwd", "inputs", "environment", "timeout_s", "max_output_bytes"}
-    if not isinstance(recipe, dict) or recipe.keys() != fields or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
+    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - {"source"} or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
         raise ValidationError("check recipe requires schema_version=1, id, argv, cwd, inputs, environment, timeout_s, max_output_bytes")
     if len(canonical(recipe).encode()) > MAX_RECIPE_BYTES:
         raise ValidationError("check recipe exceeds 16 KiB")
@@ -49,7 +49,19 @@ def validate(recipe: dict) -> str:
         _id(name)
         if path is not None and (not isinstance(path, str) or not path or "\0" in path):
             raise ValidationError("external version source must be a path or null")
+    if "source" in recipe:
+        source = recipe["source"]
+        if not isinstance(source, dict) or not {"complete", "inputs"} <= source.keys() or source.keys() - {"complete", "inputs", "dependencies"} or type(source["complete"]) is not bool:
+            raise ValidationError("source requires complete, inputs, and optional dependencies")
+        for field in ("inputs", "dependencies"):
+            values = source.get(field, [])
+            if not isinstance(values, list) or len(values) > 128 or any(not isinstance(x, str) or not x or "\0" in x for x in values):
+                raise ValidationError(f"source {field} must be a bounded string array")
     return digest(recipe)
+
+
+def source_identity(cwd: Path, recipe: dict, env: dict) -> dict:
+    return fingerprints.source(cwd, recipe["inputs"], env, contract=recipe.get("source"))
 
 
 def _assignment(tx, run_id, check_id, recipe, worker_id=None):
@@ -61,6 +73,9 @@ def _assignment(tx, run_id, check_id, recipe, worker_id=None):
         raise Conflict("check requires an active run pinned to the current task revision")
     from .map_dependencies import validate_task
     validate_task(tx, task, active_run=run_id)
+    from .dependency_packets import effective_task, require_bound
+    task = effective_task(tx, task)
+    require_bound(task)
     assigned = task["payload"].get("checks", {}).get(check_id)
     if recipe is None:
         if assigned is None:
@@ -79,10 +94,15 @@ def _assignment(tx, run_id, check_id, recipe, worker_id=None):
 
 
 def _stop(process):
+    if process.poll() is not None and not check_artifacts.group_present(process.pid):
+        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        if check_artifacts.group_present(process.pid):
+            raise
     try:
         process.wait(timeout=1)
     except subprocess.TimeoutExpired:
@@ -91,6 +111,9 @@ def _stop(process):
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        if check_artifacts.group_present(process.pid):
+            raise
     process.wait()
 
 
@@ -99,6 +122,8 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
     started = time.monotonic()
     reason = None
     size = 0
+    child_observation = None
+    group_absent = False
     with output.open("xb") as target:
         os.chmod(output, 0o600)
         try:
@@ -110,7 +135,7 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
             return {"exit_code": 127, "duration": time.monotonic() - started, "reason": "spawn_failed", "output_bytes": len(message)}
         try:
             if on_spawn is not None:
-                on_spawn(process)
+                child_observation = on_spawn(process)
             os.set_blocking(process.stdout.fileno(), False)
             with selectors.DefaultSelector() as selected:
                 selected.register(process.stdout, selectors.EVENT_READ)
@@ -141,10 +166,8 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
                     reason = "timeout"
                     _stop(process)
                 if reason is None:
-                    try:
-                        os.killpg(process.pid, 0)
-                    except ProcessLookupError:
-                        pass
+                    if not check_artifacts.group_present(process.pid):
+                        group_absent = True
                     else:
                         reason = "background_processes"
                         _stop(process)
@@ -156,7 +179,8 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
         target.flush()
         os.fsync(target.fileno())
     return {"exit_code": process.returncode, "duration": time.monotonic() - started,
-            "reason": reason, "output_bytes": size}
+            "reason": reason, "output_bytes": size, "child": child_observation,
+            "process_group_absent": group_absent}
 
 
 def _artifact_intact(store, sha):
@@ -170,16 +194,50 @@ def _artifact_intact(store, sha):
         return False
 
 
-def reusable(store, run_id, check_id, version, source, environment):
+def _install_output(tx, output, execution_id, max_bytes):
+    """Repair corrupt output only from a newly captured, identical digest.
+
+    Keep the damaged bytes for inspection; installation still uses the store's
+    bounded streaming and durable atomic artifact writer.
+    """
+    hasher = hashlib.sha256()
+    with output.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(fingerprints.CHUNK_BYTES), b""):
+            hasher.update(chunk)
+    sha = hasher.hexdigest()
+    artifact = tx.store.artifacts / sha
+    if artifact.exists() and not _artifact_intact(tx.store, sha):
+        quarantine = tx.store.root / "state" / "check-corrupt-output"
+        quarantine.mkdir(parents=True, exist_ok=True)
+        os.replace(artifact, quarantine / f"{sha}.{execution_id}")
+    return tx.put_artifact_file(output, owner_type="receipt", owner_id=execution_id,
+                               slot="output", max_bytes=max_bytes)
+
+
+def reusable(store, run_id, check_id, version, source, environment, *, allow_reuse=True):
     if not source["complete"] or not environment["complete"]:
         return None
-    rows = store.db.execute("SELECT receipt_id,artifact_hash,payload FROM receipts WHERE run_id=? AND check_id=? AND check_version=? AND inputs_hash=? AND environment_hash=? AND valid=1 ORDER BY rowid DESC",
-        (run_id, check_id, version, source["hash"], environment["hash"]))
-    for row in rows:
-        payload = json.loads(row["payload"])
-        if payload["reusable"] and _artifact_intact(store, row["artifact_hash"]):
-            return {**payload["result"], "reused": True}
+    found = check_artifacts.lookup(store, check_artifacts.identity(version, source, environment), allow_reuse=allow_reuse)
+    if found is not None and _artifact_intact(store, found["artifact_hash"]):
+        return found
     return None
+
+
+def receipt_intact(store, row):
+    """Check output/provenance at the caller's final ledger transaction boundary."""
+    if row is None or not row["valid"] or not _artifact_intact(store, row["artifact_hash"]):
+        return False
+    try:
+        payload = json.loads(row["payload"])
+        provenance = payload.get("provenance")
+        if payload.get("schema_version", 1) < 2 and provenance is None:
+            return True  # Existing receipts remain readable after an upgrade.
+        return (check_artifacts.intact(store, provenance)
+                and provenance["artifact_hash"] == row["artifact_hash"]
+                and provenance["identity_hash"] == check_artifacts.identity(row["check_version"],
+                    {"hash": row["inputs_hash"]}, {"hash": row["environment_hash"]}))
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return False
 
 
 def current(store: ContinuityStore, run_id: str, receipt_id: str, *,
@@ -198,7 +256,7 @@ def current(store: ContinuityStore, run_id: str, receipt_id: str, *,
     with store.transaction() as tx:
         _run, recipe, version, cwd = _assignment(tx, run_id, row["check_id"], payload["recipe"], worker_id)
     child = dict(os.environ if env is None else env)
-    source = fingerprints.source(cwd, recipe["inputs"], child)
+    source = source_identity(cwd, recipe, child)
     environment, _ = fingerprints.environment(cwd, recipe["argv"], recipe["environment"], child)
     reasons = []
     if not row["valid"] or not payload["reusable"]:
@@ -211,11 +269,20 @@ def current(store: ContinuityStore, run_id: str, receipt_id: str, *,
         reasons.append("check_version_changed")
     if not _artifact_intact(store, row["artifact_hash"]):
         reasons.append("output_missing_or_corrupt")
+    provenance = payload.get("provenance")
+    if (payload.get("schema_version", 1) >= 2 or provenance is not None) and (
+            not check_artifacts.intact(store, provenance)
+            or provenance["artifact_hash"] != row["artifact_hash"]
+            or provenance["identity_hash"] != check_artifacts.identity(row["check_version"],
+                {"hash": row["inputs_hash"]}, {"hash": row["environment_hash"]})):
+        reasons.append("execution_provenance_missing_or_corrupt")
     with store.transaction() as tx:
         _assignment(tx, run_id, row["check_id"], payload["recipe"], worker_id)
         if not tx.db.execute("SELECT valid FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()[0]:
             if "receipt_not_reusable" not in reasons:
                 reasons.append("receipt_not_reusable")
+        if not receipt_intact(store, tx.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()) and not reasons:
+            reasons.append("receipt_evidence_changed_during_revalidation")
     return {"receipt_id": receipt_id, "current": not reasons, "reasons": reasons,
             "inputs_hash": source["hash"], "environment_hash": environment["hash"]}
 
@@ -237,32 +304,45 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
             if existing["status"] != "finished":
                 raise Conflict("check request has an unresolved execution; inspect it before choosing a new request ID")
             result = json.loads(existing["payload"])["result"]
-            receipt = tx.db.execute("SELECT valid FROM receipts WHERE receipt_id=?", (result["receipt_id"],)).fetchone()
+            receipt = tx.db.execute("SELECT valid,payload FROM receipts WHERE receipt_id=?", (result["receipt_id"],)).fetchone()
             if result["valid"] and (receipt is None or not receipt[0]):
                 result = {**result, "valid": False, "reusable": False,
                           "reasons": list(dict.fromkeys([*result["reasons"], "receipt_invalidated"]))}
+            if result["valid"] and not _artifact_intact(store, result["artifact_hash"]):
+                result = {**result, "valid": False, "reusable": False,
+                          "reasons": [*result["reasons"], "output_missing_or_corrupt"]}
+            if result["valid"] and receipt is not None:
+                payload = json.loads(receipt["payload"])
+                if payload.get("schema_version", 1) >= 2 and not check_artifacts.intact(store, payload.get("provenance")):
+                    result = {**result, "valid": False, "reusable": False,
+                              "reasons": [*result["reasons"], "execution_provenance_missing_or_corrupt"]}
             return result
         run, recipe, version, cwd = _assignment(tx, run_id, check_id, recipe, worker_id)
+        check_artifacts.initialize(tx)
         execution_id = str(uuid.uuid4())
         output = store.root / "state" / "check-output" / execution_id
         tx._change()
         tx.db.execute("INSERT INTO check_executions VALUES(?,?,?,?,?,'running',?)", (execution_id, run_id, request_id, check_id, version,
             canonical({"started_at": time.time(), "owner_pid": os.getpid(), "output": str(output)})))
     # No ledger write lock is held while reading sources or executing the check.
-    before = fingerprints.source(cwd, recipe["inputs"], child_env)
+    before = source_identity(cwd, recipe, child_env)
     before_env, argv = fingerprints.environment(cwd, recipe["argv"], recipe["environment"], child_env)
-    if allow_reuse:
-        reuse = reusable(store, run_id, check_id, version, before, before_env)
-        if reuse is not None:
-            with store.transaction() as tx:
-                _assignment(tx, run_id, check_id, recipe, worker_id)
-                tx._change()
-                tx.db.execute("UPDATE check_executions SET status='finished',payload=? WHERE execution_id=?",
-                              (canonical({"result": reuse}), execution_id))
-            return reuse
-    output.parent.mkdir(parents=True, exist_ok=True)
-    observed = execute(argv, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"])
-    after = fingerprints.source(cwd, recipe["inputs"], child_env)
+    identity_hash = check_artifacts.identity(version, before, before_env)
+    reuse = None
+    with store.transaction() as tx:
+        _assignment(tx, run_id, check_id, recipe, worker_id)
+        reuse = reusable(store, run_id, check_id, version, before, before_env, allow_reuse=allow_reuse)
+        if reuse is None:
+            tx._change()
+            check_artifacts.reserve(tx, execution_id, identity_hash,
+                                    claim=before["complete"] and before_env["complete"])
+    if reuse is None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        observed = execute(argv, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"],
+                           on_spawn=lambda process: check_artifacts.spawned(store, execution_id, process))
+    else:
+        observed = reuse["payload"]["execution"]
+    after = source_identity(cwd, recipe, child_env)
     after_env, _ = fingerprints.environment(cwd, recipe["argv"], recipe["environment"], child_env)
     reasons = []
     if observed["exit_code"] != 0:
@@ -280,19 +360,32 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
             _assignment(tx, run_id, check_id, recipe, worker_id)
         except (Conflict, ValidationError):
             reasons.append("assignment_changed_during_check")
-        artifact = tx.put_artifact_file(output, owner_type="receipt", owner_id=execution_id,
-                                        slot="output", max_bytes=recipe["max_output_bytes"])
+        if reuse is None:
+            artifact = _install_output(tx, output, execution_id, recipe["max_output_bytes"])
+        else:
+            artifact = reuse["artifact_hash"]
+            if not _artifact_intact(store, artifact) or not check_artifacts.intact(store, reuse):
+                reasons.append("cached_execution_changed_during_binding")
+            tx.db.execute("INSERT INTO artifact_refs VALUES(?,?,?,?)", ("receipt", execution_id, "output", artifact))
         valid = not reasons
         result = {"receipt_id": execution_id, "check_id": check_id, "check_version": version,
-                  "exit_code": observed["exit_code"], "valid": valid, "reused": False,
+                  "exit_code": observed["exit_code"], "valid": valid, "reused": reuse is not None,
+                  "execution_id": reuse["execution_id"] if reuse else execution_id,
                   "reusable": valid and before_env["complete"] and after_env["complete"],
                   "reasons": reasons, "artifact_hash": artifact}
         event = tx.append_event(run_id, "checks", f"check:{execution_id}", "check_result", result)
         result["event_id"] = event["event_id"]
-        payload = {"schema_version": 1, "result": result, "reusable": result["reusable"],
+        payload = {"schema_version": 2, "result": result, "reusable": result["reusable"],
                    "argv": recipe["argv"], "resolved_argv": argv, "cwd": str(cwd), "recipe": recipe,
                    "source_before": before, "source_after": after, "environment_before": before_env,
                    "environment_after": after_env, "execution": observed, "completed_at": time.time()}
+        if reuse is None:
+            check_artifacts.finish(tx, execution_id, artifact, payload)
+            provenance = {"execution_id": execution_id, "identity_hash": identity_hash,
+                          "artifact_hash": artifact, "payload_hash": digest(payload)}
+        else:
+            provenance = {key: reuse[key] for key in ("execution_id", "identity_hash", "artifact_hash", "payload_hash")}
+        payload["provenance"] = provenance
         tx.db.execute("INSERT INTO receipts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (execution_id, run_id, check_id, version,
             canonical(payload), before["hash"], before_env["hash"], before["hash"], after["hash"],
             observed["exit_code"], artifact, observed["duration"], int(valid)))

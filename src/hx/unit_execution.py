@@ -51,7 +51,8 @@ def _task(tx, task_id, *, active_run=None):
     if task is None or "plan_id" not in task["payload"]:
         raise ValidationError("unknown planned unit")
     validate_task(tx, task, active_run=active_run)
-    return task
+    from .dependency_packets import effective_task
+    return effective_task(tx, task)
 
 
 def _run(tx, run_id):
@@ -78,6 +79,16 @@ def guard_revision(tx, previous, payload):
     # happens to remain identical after the new acceptance criteria are checked.
     published = {row["output_id"]: row["version"] for row in tx.db.execute(
         "SELECT output_id,max(version) AS version FROM unit_outputs WHERE task_id=? GROUP BY output_id", (previous["task_id"],))}
+    published.update({row["output_id"]: max(published.get(row["output_id"],0),row["version"]) for row in tx.db.execute(
+        "SELECT output_id,max(version) AS version FROM unit_contracts WHERE task_id=? GROUP BY output_id", (previous["task_id"],))})
+    if previous["payload"].get("dependency_packet"):
+        from .dependency_packets import effective_task, summary
+        pending = set(summary(tx,effective_task(tx,previous))["pending_integration"])
+        retained = {need["task_id"]+"/"+need["output_id"] for need in payload.get("prerequisites",[]) if need.get("need","hard") != "hard"}
+        if pending - retained:
+            raise Conflict("revised packet cannot discard pending real-provider integration obligations")
+        if set(published) - {output["id"] for output in payload.get("outputs",[])}:
+            raise Conflict("revised packet cannot discard published output obligations")
     for output in payload.get("outputs", []):
         if output["id"] in published and output["version"] <= published[output["id"]]:
             raise Conflict("revising a completed unit requires new output versions")
@@ -93,8 +104,8 @@ def _output(tx, dependency):
     from .native_producer import require_drained
     require_drained(tx, proof["run_id"])
     for receipt_id in proof["checks"].values():
-        receipt = tx.db.execute("SELECT valid,artifact_hash FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()
-        if receipt is None or not receipt["valid"] or not checks._artifact_intact(tx.store, receipt["artifact_hash"]):
+        receipt = tx.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()
+        if receipt is None or not checks.receipt_intact(tx.store, receipt):
             raise Conflict("prerequisite acceptance evidence is invalid or unavailable")
     return proof
 
@@ -117,9 +128,15 @@ def _entries(root, commit, paths):
 def _prerequisites(tx, task, state):
     proofs = {}
     for dependency in task["payload"]["prerequisites"]:
+        if dependency.get("need", "hard") != "hard":
+            from .dependency_packets import contract_proof
+            proof = contract_proof(tx, dependency)
+            identity = dependency["task_id"] + "/" + dependency["output_id"]
+            proofs[identity] = digest(proof)
+            continue
         proof = _output(tx, dependency)
         identity = dependency["task_id"] + "/" + dependency["output_id"]
-        if proof["kind"] == "source":
+        if proof["kind"] in {"source", "contract"}:
             row = tx.db.execute("SELECT payload,integration_run FROM unit_materializations WHERE task_id=? AND task_revision=? AND producer=? AND output_id=?",
                 (task["task_id"], task["revision"], dependency["task_id"], dependency["output_id"])).fetchone()
             if row is None or json.loads(row[0])["output_hash"] != digest(proof):
@@ -128,8 +145,8 @@ def _prerequisites(tx, task, state):
             if integrated is None or json.loads(integrated[0])["commit"] != json.loads(row["payload"])["commit"]:
                 raise Conflict("materialization requires successful integration completion at the attested commit")
             for receipt_id in json.loads(integrated[0])["checks"].values():
-                receipt = tx.db.execute("SELECT valid,artifact_hash FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()
-                if receipt is None or not receipt["valid"] or not checks._artifact_intact(tx.store, receipt["artifact_hash"]):
+                receipt = tx.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt_id,)).fetchone()
+                if receipt is None or not checks.receipt_intact(tx.store, receipt):
                     raise Conflict("integration acceptance evidence is invalid or unavailable")
             if _entries(task["payload"]["workdir"], state["commit"], list(proof["files"])) != proof["files"]:
                 raise Conflict(f"prerequisite {identity} is not present at the pinned output version")
@@ -183,13 +200,17 @@ def admit(tx, task):
         if any(overlaps(path, row[0]) for path in scopes):
             raise Conflict(f"write lease overlaps active owner: {row[0]}")
     from .code_freshness import require
-    require(tx.store.root, payload)
+    require(tx.store.root, payload,bootstrap=False)
+    from .dependency_packets import guard_resources
+    guard_resources(tx, task)
     state = workspace(payload, clean=True)
     return {"workspace": state, "prerequisites": _prerequisites(tx, task, state)}
 
 
 def bind(tx, task, run_id, admission):
     payload = task["payload"]
+    from .dependency_packets import acquire_resources
+    acquire_resources(tx, task, run_id)
     tx.db.execute("INSERT INTO unit_runs VALUES(?,?,?)", (run_id, payload["workdir"], canonical(admission)))
     tx.db.execute("DELETE FROM leases WHERE repository=? AND run_id IN (SELECT run_id FROM runs WHERE ended_at IS NOT NULL)", (payload["repository"],))
     for path in payload["write_scope"]:
@@ -207,23 +228,34 @@ def ready(store, plan_id):
         for row in rows:
             try:
                 task = _task(tx, row["task_id"])
+                from .dependency_packets import summary
+                packet_readiness = summary(tx, task)
                 if task["revision"] != row["task_revision"]:
                     raise Conflict("plan no longer names the current task revision")
                 if tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", tuple(row)).fetchone():
-                    result.append({"task_id": row["task_id"], "status": "completed"})
+                    result.append({"task_id": row["task_id"], "status": ("deployable" if packet_readiness["deployable"] else "packet_covered") if task["payload"].get("dependency_packet") else "completed", "readiness": packet_readiness})
                     continue
                 admit(tx, task)
-                result.append({"task_id": row["task_id"], "status": "ready"})
+                result.append({"task_id": row["task_id"], "status": "ready", "readiness": packet_readiness})
             except (Conflict, ValidationError) as exc:
                 result.append({"task_id": row["task_id"], "status": "blocked", "reason": str(exc)})
     return {"plan_id": plan_id, "units": result, "note": "Readiness is a snapshot; assignment atomically rechecks ownership and prerequisites."}
 
 
 def assign(store, task_id, revision, worker_id):
+    if store.db.in_transaction:
+        raise Conflict('unit source preparation requires an unheld continuity writer')
+    current=store.db.execute('SELECT t.* FROM tasks t JOIN task_heads h USING(task_id,revision) WHERE task_id=?',(task_id,)).fetchone()
+    if current is None or 'plan_id' not in json.loads(current['payload']):
+        raise ValidationError('unknown planned unit')
+    if current['revision']!=revision:
+        raise Conflict('planned assignment changed before source preparation')
+    from .code_freshness import require
+    require(store.root,json.loads(current['payload']),bootstrap=True)
     with store.transaction() as tx:
         _task(tx, task_id)
         run_id = tx.start_run(task_id, revision, worker_id)
-        task = tx.task(task_id)
+        task = _task(tx, task_id, active_run=run_id)
         return {"run_id": run_id, "task_id": task_id, "revision": revision, "worker_id": worker_id, "assignment": task["payload"]}
 
 
@@ -255,6 +287,8 @@ def audit(store, run_id):
                 if not any(candidate == scope or candidate.startswith(scope + "/") for scope in scopes):
                     unexpected.append(path)
             reason = "writes exceed the frozen assignment scope" if unexpected else None
+            if payload.get("dependency_packet") and payload.get("binding_status") != "approved" and (changed or state != admission["workspace"]):
+                reason = "worker must bind and independently approve checks before the first edit"
         except (Conflict, ValidationError) as exc:
             changed, unexpected, reason = [], [], str(exc)
         if reason:
@@ -283,12 +317,20 @@ def complete(store, run_id, receipt_ids, *, env=None):
     with store.transaction() as tx:
         _, task, admission = _run(tx, run_id)
         before = workspace(task["payload"], clean=True)
-    if not isinstance(receipt_ids, dict) or receipt_ids.keys() != task["payload"]["checks"].keys() or any(not isinstance(value, str) or not value for value in receipt_ids.values()):
+    from .dependency_packets import require_bound, completion_checks
+    require_bound(task)
+    if not isinstance(receipt_ids, dict) or set(receipt_ids) != completion_checks(task["payload"]) or any(not isinstance(value, str) or not value for value in receipt_ids.values()):
         raise ValidationError("completion must name exactly one receipt for every assigned check")
     for check_id, receipt_id in receipt_ids.items():
         result = checks.current(store, run_id, receipt_id, check_id=check_id, env=child)
         if not result["current"]:
             raise Conflict("acceptance receipt is no longer current: " + ", ".join(result["reasons"]))
+    if task["payload"].get("dependency_packet"):
+        from .dependency_packets import publish_contract
+        for output in task["payload"]["outputs"]:
+            if output["kind"] == "contract" and not store.db.execute("SELECT 1 FROM unit_contracts WHERE task_id=? AND output_id=? AND version=?", (task["task_id"],output["id"],output["version"])).fetchone():
+                names = task["payload"]["check_coverage"]["output."+output["id"]]
+                publish_contract(store,run_id,output["id"],{name:receipt_ids[name] for name in names},env=child)
     with store.transaction() as tx:
         run, task, admission = _run(tx, run_id)
         payload = task["payload"]
@@ -305,25 +347,31 @@ def complete(store, run_id, receipt_ids, *, env=None):
             row = tx.db.execute("SELECT * FROM receipts WHERE receipt_id=? AND run_id=? AND check_id=?", (receipt_id, run_id, check_id)).fetchone()
             recipe = payload["checks"][check_id]
             cwd = (Path(payload["workdir"]) / recipe["cwd"]).resolve()
-            source = fingerprints.source(cwd, recipe["inputs"], child)
+            source = checks.source_identity(cwd, recipe, child)
             environment, _ = fingerprints.environment(cwd, recipe["argv"], recipe["environment"], child)
-            if row is None or not row["valid"] or not source["complete"] or not environment["complete"] or source["hash"] != row["inputs_hash"] or environment["hash"] != row["environment_hash"]:
+            if row is None or not checks.receipt_intact(tx.store, row) or not source["complete"] or not environment["complete"] or source["hash"] != row["inputs_hash"] or environment["hash"] != row["environment_hash"]:
                 raise Conflict("acceptance inputs changed at completion")
         if _prerequisites(tx, task, admission["workspace"]) != admission["prerequisites"]:
             raise Conflict("prerequisite proof changed since admission")
         _scope(payload)
         changed = _changed(payload, admission, state)
-        declared_paths = {path for output in payload["outputs"] if output["kind"] == "source" for path in output["paths"]}
+        from .dependency_packets import guard_contract_files
+        guard_contract_files(tx, task, state)
+        declared_paths = {path for output in payload["outputs"] if output["kind"] in {"source", "contract"} for path in output["paths"]}
         if set(changed) - declared_paths:
             raise Conflict("committed changes must all belong to explicit source outputs")
         proofs = {}
         for output in payload["outputs"]:
             proof = {**output, "producer": task["task_id"], "task_revision": task["revision"], "run_id": run_id, "checks": receipt_ids}
-            if output["kind"] == "source":
+            if output["kind"] in {"source", "contract"}:
                 files = _entries(payload["workdir"], state["commit"], output["paths"])
                 if any(entry is None and path not in changed for path, entry in files.items()):
                     raise Conflict("absent output path is not a verified deletion")
                 proof.update(commit=state["commit"], tree=state["tree"], files=files)
+            elif payload.get("dependency_packet"):
+                from .dependency_packets import receipt_output
+                proof["obligation_checks"] = receipt_output(payload, output, receipt_ids)
+                proof["artifact_hashes"] = {name: tx.db.execute("SELECT artifact_hash FROM receipts WHERE receipt_id=?", (receipt,)).fetchone()[0] for name, receipt in proof["obligation_checks"].items()}
             else:
                 proof["artifact_hash"] = tx.db.execute("SELECT artifact_hash FROM receipts WHERE receipt_id=?", (receipt_ids[output["check_id"]],)).fetchone()[0]
             proofs[output["id"]] = proof
@@ -337,6 +385,12 @@ def complete(store, run_id, receipt_ids, *, env=None):
         tx.db.execute("INSERT INTO unit_completions VALUES(?,?,?,?)", (task["task_id"], task["revision"], run_id, canonical(result)))
         for output_id, proof in proofs.items():
             tx.db.execute("INSERT INTO unit_outputs VALUES(?,?,?,?,?)", (task["task_id"], task["revision"], output_id, proof["version"], canonical(proof)))
+        if payload.get("dependency_packet"):
+            from .dependency_packets import covered, summary
+            covered(tx, task, {"run_id":run_id,"checks":receipt_ids,"commit":state["commit"],"outputs":result["outputs"]})
+            result["state"] = "packet_covered"
+            result["readiness"] = summary(tx, task)
+            tx.db.execute("UPDATE unit_completions SET payload=? WHERE run_id=?", (canonical(result),run_id))
         tx.finish_run(run_id, "completed")
         tx.enqueue("unit_completed", f"complete:{run_id}", result)
     from .code_freshness import refresh_completion
@@ -364,7 +418,7 @@ the destination worktree while doing so. Consumers remain blocked until it stops
         if dependency is None:
             raise ValidationError("output is not an assigned consumer prerequisite")
         proof = _output(tx, dependency)
-        if proof["kind"] != "source":
+        if proof["kind"] not in {"source", "contract"}:
             raise ValidationError("receipt artifacts are already materialized in the shared ledger")
         state = workspace(task["payload"], clean=True)
         if _entries(task["payload"]["workdir"], state["commit"], list(proof["files"])) != proof["files"]:

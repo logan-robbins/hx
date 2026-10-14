@@ -150,13 +150,15 @@ Goal files are the simple path: one worker, one goal, and your judgement sequenc
 For a programme of units with real dependencies — several workers in worktrees of one
 repository, interfaces others must build against, integration steps — the ledger enforces the
 plan. The plan is a JSON task graph (`docs/planning-runtime.md` has the schema and bounds).
-Each unit names its `behavior`, `acceptance`, `workdir`, frozen `write_paths`, `map_inputs`
-from the application map, `checks` as exact recipes, versioned `outputs`, and `prerequisites`
-on other units' outputs.
+Version-2 units name `behavior`, observable `acceptance`, `workdir`, frozen `write_paths`,
+`map_inputs`, versioned output obligations, `prerequisites`, shared/exclusive `resources`,
+and inherited `check_policy`. The worker binds exact checks and its definition of done;
+the configured independent reviewer approves their adequacy. Version-1 explicit-check
+plans remain compatible. Do not design the worker's procedure to populate the packet.
 
 ```bash
 hx map plan-context --repo WT --snapshot SNAP --goal goal.md     # the brief: responsibilities, anchors, contracts, owners
-hx plan draft --file goal.md --repo WT --snapshot SNAP --out plan.json   # reuse known paths, contracts, check commands
+hx plan draft --file request.json --repo WT --snapshot SNAP --out plan.json   # reuse known paths and contracts
 hx plan validate --file plan.json     # waves, level_widths, max_parallelism, interface_warnings; refuses a stale scope
 hx plan apply --file plan.json        # records the revision
 hx plan ready PLAN                    # which units can be admitted now, and why the others cannot
@@ -166,6 +168,12 @@ hx plan finish RUN --file receipts.json             # or: hx plan stop RUN
 hx plan replan PLAN --out plan.json   # after a changed contract: revised bindings, then validate and apply
 ```
 
+`request.json` is JSON containing `plan_id` and the one-paragraph `goal`, for example
+`{"plan_id":"orders","goal":"Expose the order lookup behavior through the published API."}`.
+Resolve the returned unknowns into dependency packets before validation; the worker binds
+executable checks after admission. `goal.md` remains the text input for map context and
+ordinary goal-file dispatch.
+
 What the ledger does for you, and what it will not:
 
 - **Admission is a gate.** A unit is assigned only with current map inputs, a clean committed
@@ -174,15 +182,18 @@ What the ledger does for you, and what it will not:
 - **Leases are the ownership.** One active assignment per worktree; overlapping `write_paths`
   conflict across branches and plans; a write outside scope pauses the run until you stop or
   reconcile it. `--owners` on any graph query shows who holds what.
-- **Parallelism is read, not guessed.** Dispatch no more units than `max_parallelism`, free
-  leases and the host allow. Heed `interface_warnings`: when a consumer builds on another
-  unit's source, split an interface or stub unit ahead of it so the contract is committed and
-  searchable (`hx code contract`, and `hx code contracts --register FILE` once published)
-  before the implementation lands.
+- **Parallelism follows exact dependencies.** Read current `hx plan ready` and ownership.
+  Static levels are planning aids; contracts can publish while a provider is active.
+  Distinguish hard implementation outputs from exact `contract`/`substitutable` inputs.
+  Name stand-in permission and the remaining real-provider obligation in the paragraph.
+  Shared resources can constrain otherwise disjoint source work.
 - **Completion is receipts.** The worker commits its declared outputs and runs `hx complete
   done`; the runtime runs the assigned checks, publishes the outputs, refreshes the graph for
   the changed paths and releases the leases, atomically. A producer's output reaches a consumer
-  only through an explicit integration unit (`hx plan materialize`). Under a run a worker
+  through an explicit integration unit for hard source dependencies (`hx plan materialize`).
+  Early contracts use `hx plan publish-contract` and `acquire-contract`; separate real
+  binding uses `verify-integration`. Covered packets release worker capacity while their
+  outstanding integration/deployment obligations stay visible. Under a run a worker
   cannot complete `blocked` or `decision`: those arrive as `hx progress` blockers, and you
   stop or replan the unit.
 - **Planned workers have no episode memory.** `hx memory` and `hx recall` are refused under a
@@ -223,9 +234,15 @@ whether a worker oriented before it changed anything.
 
 Size it to finish inside one context window. Seams are backup, not plan: a goal that assumes
 five seams should have been two goals. Make each goal self-sufficient: if it needs data, a
-service, or another worker's output that does not exist yet, say so in a dependency sentence
-and make the stand-in its own goal first (seed fixtures, stub responses). No blockers by
-construction.
+service, or another worker's output that does not exist yet, identify whether an exact
+published interface permits a conforming stand-in. Permit it explicitly when appropriate
+and retain real-provider integration before deployment. A hard dependency waits; missing
+knowledge gets bounded discovery work. Do not invent an interface to eliminate a blocker.
+
+For a conversion, graph the existing codebase first, before decomposing target work.
+Keep source and target namespaces separate; trace existing behavior, shared callees,
+interface boundaries and consumer fan-in into target packets. hx is also for ordinary
+development, maintenance and new features; source/target conversion mapping is optional.
 
 ## Creating a worker
 

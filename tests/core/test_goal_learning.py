@@ -4,7 +4,7 @@ import json
 import pytest
 
 from hx import appmap, companion_map, goal_templates, map_learning, map_updates, passes, planning, retrieval
-from hx import checks, unit_execution
+from hx import checks, dependency_packets, unit_execution
 from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from .test_appmap import git, mapped, record
@@ -15,6 +15,9 @@ from .test_checks import definition
 
 def seed_check(active):
     store, repo, _, component, _, _, _, _, _ = active
+    policy=store.root/'config/planning.json'
+    policy.parent.mkdir(parents=True,exist_ok=True)
+    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['compiler-check']}))
     recipe = definition("print('compiler contract checked')")
     recipe.update(id='compiler-check', argv=['python3', '-c', "print('compiler contract checked')"], inputs=['compiler.py'])
     node = record('compiler-check', 'check', data={'recipe': recipe})
@@ -36,6 +39,10 @@ def complete_goal(active):
     assert draft['ready'], draft['unknowns']
     planning.apply(store, draft['plan'])
     run = unit_execution.assign(store, 'improve.work', 1, 'eng-001')['run_id']
+    from .test_dependency_packets import binding
+    task=planning.assignment(store,'improve.work')
+    proposed=dependency_packets.bind_checks(store,run,binding(task,recipes=draft['recipe_suggestions']))
+    dependency_packets.approve_binding(store,run,proposed['binding_hash'],'qa-001')
     receipt = checks.run_check(store, run, 'compiler-check')
     done = unit_execution.complete(store, run, {'compiler-check': receipt['receipt_id']})
     return draft, done
@@ -73,7 +80,9 @@ def test_completed_goal_teaches_next_goal_without_research(active, monkeypatch):
     followup = goal_templates.draft(store, repo, snapshot, dict(plan_id='next', goal='Verify Zephyr.', recipe='qa'))
     assert followup['ready'], followup['unknowns']
     assert followup['plan']['tasks'][0]['write_paths'] == []
-    assert followup['plan']['tasks'][0]['checks'] == draft['plan']['tasks'][0]['checks']
+    assert followup['recipe_suggestions'] == draft['recipe_suggestions']
+    assert 'checks' not in followup['plan']['tasks'][0]
+    assert draft['plan']['schema_version']==2
 
 
 def test_transfer_and_scoped_export_make_findings_portable(active, tmp_path):
@@ -135,7 +144,8 @@ def test_generated_replan_preserves_acceptance_and_refreshes_only_changed_units(
 def test_missing_knowledge_produces_specific_unknowns_not_invented_checks(active):
     result = goal_templates.draft(active[0], active[1], active[6], dict(plan_id='unknown', goal='Investigate totallymissing.'))
     assert not result['ready']
-    assert result['plan']['tasks'][0]['checks'] == {}
+    assert 'checks' not in result['plan']['tasks'][0]
+    assert result['recipe_suggestions']=={}
     assert result['commands'] == []
     assert result['unknowns']
 
