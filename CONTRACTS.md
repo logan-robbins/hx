@@ -758,6 +758,7 @@ Exactly those ten metadata keys, all flat scalars (chroma stores nothing else); 
 hx memory search QUERY [--role R] [--pod P] [--id ID] [--kind K] [--k N=5]
                        [--all-roles] [--half-life-h H=24] [--json]
 hx memory index
+hx memory warm
 hx memory list [--id ID] [--role R] [--kind K] [--limit N=20] [--json]
 hx memory stats [--json]
 ```
@@ -779,6 +780,9 @@ similarity, document}` — `id` is the episode id, `item` is the agent. No match
 `HX-MEMORY no episodes matched` and exits 0. `index` prints `HX-MEMORY indexed=<n> total=<count>`.
 `stats` prints `HX-MEMORY total=<n> queued=<n> path=<abs>` then indented `role|kind|id <name>: <n>`
 lines. `list` prints `<ts> <id> <role> <kind> seq=<n> <stream>[ <outcome>]`, newest first.
+`warm` (operator) downloads the embedding model into `~/.cache/chroma/onnx_models` if absent
+and prints `HX-MEMORY model=<dir>`. Every other open requires the model already on disk; a
+missing model is `MemoryUnavailable` naming `hx memory warm` — no agent process ever downloads.
 chromadb missing or unopenable: one `hx: memory: <reason>` line on stderr, exit 2.
 
 `hx compose` adds section **Memory episodes** after **Step state**, source

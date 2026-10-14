@@ -11,6 +11,15 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- `hx memory warm` (operator): the one-time download of the embedding model into
+  `~/.cache/chroma/onnx_models`. Every other chroma open now requires the model already on disk
+  and otherwise raises `MemoryUnavailable` naming the command — an agent at a boundary never
+  downloads. Before this, chroma's default embedder fetched the 80 MB archive from S3 under
+  whatever `HOME` the process had: in the test suite that was every scratch HOME, which is why
+  `hx resume` tests sat idle for minutes. `hx doctor` gained the `memory-model` row. The core
+  tests' scratch HOMEs share the operator's `~/.cache/chroma` by symlink.
+- The test suite runs on every core (`pytest-xdist`, `-n auto` in `pyproject.toml`; the `test`
+  extra installs it). The core lane went from 32 min serial to about 6 min on eight workers.
 
 - Search and retrieval (docs/search-and-retrieval.md): `hx code` indexes symbols, imports,
   and source text (Porter + trigram FTS5, reciprocal rank fusion, proximity rerank, fuzzy

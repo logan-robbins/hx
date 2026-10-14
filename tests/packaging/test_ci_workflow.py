@@ -182,7 +182,8 @@ def test_the_test_job_installs_tmux_and_uv_and_builds_the_venv():
     assert "tmux" in blob, "hx drives real tmux sessions; a runner without tmux proves nothing"
     assert "astral-sh/setup-uv" in blob, "uv is needed for the packaging path"
     assert "python -m venv .venv" in blob, "ORCHESTRATION.md: the shared venv is .venv"
-    assert "pip install -e ." in blob and "pip install pytest" in blob
+    # The `test` extra is pytest plus pytest-xdist: the suite runs on every core (pyproject).
+    assert 'pip install -e ".[test]"' in blob, "the venv needs hx editable and the test extra"
 
 
 def test_the_baseline_is_recorded_before_any_test_runs():

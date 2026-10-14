@@ -56,8 +56,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install pytest
-          .venv/bin/python -m pip install -e .
+          .venv/bin/python -m pip install -e ".[test]"
 
       - name: Show tool versions
         run: |
@@ -76,6 +75,11 @@ jobs:
           tools/claude-home-hash.sh "$HOME/.claude" > .baseline/claude-home.manifest
           shasum -a 256 .baseline/claude-home.manifest | cut -d' ' -f1 > .baseline/claude-home.sha256
           echo "baseline entries: $(wc -l < .baseline/claude-home.manifest)"
+
+      # The episode-memory embedding model, fetched once here and never by a test: hx refuses
+      # to download it from inside an agent or a scratch HOME (docs/memory.md).
+      - name: Warm the embedding model
+        run: .venv/bin/python -c "from hx import memory; print(memory.warm())"
 
       # Guard tests first and on their own, so a guard failure is never buried in suite output.
       - name: Guard tests

@@ -243,16 +243,15 @@ def test_fresh_scope_query_and_dependency_invalidation(tmp_path, capsys):
 
 def test_post_merge_trigger_uses_instance_state(tmp_path):
     import os
+    import sys
 
     script = Path(__file__).parents[2] / "src/hx/skeleton/bin/code-index-post-merge"
     repo = make_repo(tmp_path)
     root = tmp_path / "root"
     binary = tmp_path / "hx-wrapper"
-    binary.write_text(
-        "#!/bin/sh\nexec "
-        + str(Path(__file__).parents[2] / ".venv/bin/python")
-        + ' -m hx "$@"\n'
-    )
+    # The interpreter running the tests, not a `.venv` guessed from the checkout: a worktree
+    # has none of its own.
+    binary.write_text("#!/bin/sh\nexec " + sys.executable + ' -m hx "$@"\n')
     binary.chmod(0o755)
     result = subprocess.run(
         [str(script), "0"],

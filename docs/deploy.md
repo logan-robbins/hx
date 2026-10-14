@@ -221,6 +221,7 @@ ok    tmux             tmux 3.7c
 ok    git              git version 2.50.1 (Apple Git-155)
 ok    root             ~/hx
 ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe at 2.1.278 (tested)
+ok    memory-model     ~/.cache/chroma/onnx_models/onnx
 ok    skeleton         PARTNER.md
 ok    skeleton         LEARNINGS/orientation.md
 ok    skeleton         LEARNINGS/ownership.md

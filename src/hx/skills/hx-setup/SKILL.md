@@ -287,7 +287,7 @@ every audience's. Besides install, up, doctor, ui, heartbeat and archive:
   invariant prompt prefix against its model's budget.
 - `hx learn check|path|categories|invariant`: lint the `LEARNINGS/` files and say where they
   live. The Partner reviews proposals; the operator only checks the files.
-- `hx cache assess|budget` and `hx memory index`: cache arithmetic and a forced episode reindex.
+- `hx cache assess|budget`, `hx memory index` and `hx memory warm`: cache arithmetic, a forced episode reindex, and the one-time download of the embedding model (an agent never downloads it; `hx doctor` row `memory-model`).
 - `config/capabilities.json`: the MCP servers (`"servers": {NAME: {"command": [...]}}`) and
   operator skills (`"skills": {NAME: "/abs/SKILL.md"}`) workers may reach through `hx tools`;
   the Partner's `hx tools index` records each server's protocol version. `config/hx.json`

@@ -26,6 +26,12 @@ where = ["src"]
 [tool.setuptools.package-data]
 hx = ["skeleton/**/*", "skills/**/*", "ui/static/**/*", "packaging/**/*"]
 
+[project.optional-dependencies]
+# `pip install -e ".[test]"`: the runner and the worker plugin that spreads the suite over
+# every core. Every test owns its scratch instance, HOME and tmux socket, so the lanes are
+# process-parallel; `-n auto` below is what CI and the milestone script run with.
+test = ["pytest", "pytest-xdist"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ""
+addopts = "-n auto"

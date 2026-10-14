@@ -327,6 +327,64 @@ def locked(root: Path):
             os.close(handle)
 
 
+#: The files chroma's default embedder (ONNX all-MiniLM-L6-v2) needs on disk. They are checked
+#: before chroma is ever handed the function, because chroma fetches an 80 MB archive from S3
+#: the first time one is missing — and it does so under whatever `HOME` the process has, which
+#: for an agent is a scratch home. An agent boundary never downloads; `hx memory warm` does, once.
+MODEL_FILES = (
+    "config.json", "model.onnx", "special_tokens_map.json",
+    "tokenizer_config.json", "tokenizer.json", "vocab.txt",
+)
+
+
+def _embedder_class():
+    """The class that owns the model files and the download; chroma's `DefaultEmbeddingFunction`
+    is a thin wrapper that constructs one of these at the first embed."""
+    try:
+        from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+    except Exception as exc:  # noqa: BLE001 — an ImportError, or anything its import chain raises
+        raise MemoryUnavailable(f"chromadb is not importable ({exc})") from exc
+    return ONNXMiniLM_L6_V2
+
+
+def model_dir() -> Path:
+    """Where chroma keeps the embedding model for this `HOME` (`~/.cache/chroma/onnx_models/…`)."""
+    cls = _embedder_class()
+    return Path(cls.DOWNLOAD_PATH) / cls.EXTRACTED_FOLDER_NAME
+
+
+def model_missing() -> list[str]:
+    """The model files not on disk; empty when the embedder can run without a download."""
+    folder = model_dir()
+    return [name for name in MODEL_FILES if not (folder / name).is_file()]
+
+
+def _embedding_function():
+    """Chroma's default embedder, handed over only once its model is already on disk. It is
+    the `default` function by name, so a store created before this guard opens unchanged."""
+    _embedder_class()
+    missing = model_missing()
+    if missing:
+        raise MemoryUnavailable(
+            f"the embedding model is not cached ({model_dir() / missing[0]} is missing); "
+            "run `hx memory warm` once as the operator — an agent never downloads it"
+        )
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+    return DefaultEmbeddingFunction()
+
+
+def warm() -> Path:
+    """Download the embedding model into this `HOME`'s cache if it is not there. Idempotent."""
+    cls = _embedder_class()
+    if model_missing():
+        cls()._download_model_if_not_exists()
+    missing = model_missing()
+    if missing:
+        raise MemoryUnavailable(f"the download left {model_dir() / missing[0]} missing")
+    return model_dir()
+
+
 def _collection(root: Path):
     """Open (or create) the `episodes` collection. Call only inside `locked`."""
     try:
@@ -335,6 +393,7 @@ def _collection(root: Path):
     except Exception as exc:  # noqa: BLE001 — an ImportError, or anything its import chain raises
         raise MemoryUnavailable(f"chromadb is not importable ({exc})") from exc
 
+    embedder = _embedding_function()
     directory = chroma_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
     try:
@@ -342,7 +401,7 @@ def _collection(root: Path):
             path=str(directory), settings=Settings(anonymized_telemetry=False)
         )
         return client.get_or_create_collection(
-            COLLECTION, metadata={"hnsw:space": "cosine"}
+            COLLECTION, metadata={"hnsw:space": "cosine"}, embedding_function=embedder
         )
     except MemoryUnavailable:
         raise
@@ -763,6 +822,9 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     drain = sub.add_parser("index", help="drain the queue into chroma")
     drain.add_argument("--root", help=argparse.SUPPRESS)
 
+    fetch = sub.add_parser("warm", help="download the embedding model once (operator; ~80 MB)")
+    fetch.add_argument("--root", help=argparse.SUPPRESS)
+
     listing = sub.add_parser("list", help="episode metadata, newest first")
     listing.add_argument("--id", dest="item", default=None)
     listing.add_argument("--role", default=None)
@@ -792,6 +854,10 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         if args.command == "index":
             indexed, total = index(root)
             print(f"{PREFIX} indexed={indexed} total={total}")
+            return 0
+
+        if args.command == "warm":
+            print(f"{PREFIX} model={warm()}")
             return 0
 
         if args.command == "list":

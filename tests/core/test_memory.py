@@ -337,6 +337,56 @@ def test_every_chroma_open_happens_under_the_lock(instance, monkeypatch):
     assert held and all(held), held
 
 
+# --- the embedding model is never downloaded by an agent -----------------------------------------
+
+
+def _model_elsewhere(monkeypatch, tmp_path):
+    """Point chroma's default embedder at an empty cache, as an agent's scratch HOME would be."""
+    from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+
+    monkeypatch.setattr(ONNXMiniLM_L6_V2, "DOWNLOAD_PATH", tmp_path / "onnx_models")
+    return ONNXMiniLM_L6_V2
+
+
+@needs_chroma
+def test_an_uncached_model_is_unavailable_not_downloaded(instance, monkeypatch, tmp_path):
+    from hx import memory
+
+    cls = _model_elsewhere(monkeypatch, tmp_path)
+
+    def never(self):
+        raise AssertionError("hx asked chroma to download the embedding model")
+
+    monkeypatch.setattr(cls, "_download_model_if_not_exists", never)
+    seed(instance, "eng-001", "eng-001-main", "seam", state_with("stream the importer"))
+    with pytest.raises(memory.MemoryUnavailable) as caught:
+        memory.search(instance, "importer", k=1)
+    assert "hx memory warm" in str(caught.value)
+    assert not (tmp_path / "onnx_models").exists()
+
+
+@needs_chroma
+def test_warm_downloads_once_and_is_idempotent(instance, monkeypatch, tmp_path, capsys):
+    from hx import memory
+
+    cls = _model_elsewhere(monkeypatch, tmp_path)
+    fetched: list[int] = []
+
+    def fake_download(self):
+        fetched.append(1)
+        folder = tmp_path / "onnx_models" / cls.EXTRACTED_FOLDER_NAME
+        folder.mkdir(parents=True)
+        for name in memory.MODEL_FILES:
+            (folder / name).write_text("x")
+
+    monkeypatch.setattr(cls, "_download_model_if_not_exists", fake_download)
+    assert memory.main(["warm"], instance) == 0
+    assert memory.main(["warm"], instance) == 0
+    assert fetched == [1]
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"HX-MEMORY model={tmp_path / 'onnx_models' / 'onnx'}"] * 2
+
+
 # --- indexing ------------------------------------------------------------------------------------
 
 

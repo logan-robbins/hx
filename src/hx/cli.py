@@ -229,7 +229,7 @@ AUDIENCES: dict[str, set[str]] = {
     "operator": {
         "install", "up", "doctor", "ui", "heartbeat", "archive",
         "learn check", "learn path", "learn categories", "learn invariant",
-        "cache assess", "cache budget", "memory index",
+        "cache assess", "cache budget", "memory index", "memory warm",
         "models",
         "metrics --commands",
         "cache report",

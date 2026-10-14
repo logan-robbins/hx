@@ -51,6 +51,20 @@ def installed_skills(path: Path) -> set[str]:
     return {p.name for p in path.iterdir() if p.is_dir() and not p.name.startswith(".")}
 
 
+def fake_home(path: Path) -> Path:
+    """A scratch HOME for a child hx. Nothing of the operator's `~/.claude` reaches it; the
+    embedding model cache `~/.cache/chroma` is shared by symlink when the operator has one, so
+    no test fetches the 80 MB model, and without one `hx memory` reports unavailable (it never
+    downloads: `hx.memory._embedding_function`)."""
+    path.mkdir(parents=True, exist_ok=True)
+    real = Path(os.environ.get("HOME", "")) / ".cache" / "chroma"
+    link = path / ".cache" / "chroma"
+    if real.is_dir() and not link.exists():
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(real)
+    return path
+
+
 def clean_env(**extra: str) -> dict[str, str]:
     """A child environment with no inherited HARNESS_* or CLAUDE_* leakage."""
     env = {
@@ -76,7 +90,7 @@ def run_hx(tmp_path):
     def _run(*args: str, env_extra: dict[str, str] | None = None, cwd: Path | None = None):
         env = clean_env(**(env_extra or {}))
         env.setdefault("HOME", str(tmp_path / "fake-home"))
-        Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+        fake_home(Path(env["HOME"]))
         return subprocess.run(
             [sys.executable, "-m", "hx", *args],
             env=env,
@@ -291,8 +305,7 @@ def hx(instance, tmux_server):
         )
         if harness_id is not None:
             env["HARNESS_ID"] = harness_id
-        env["HOME"] = str(instance.parent / "fake-home")
-        Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+        env["HOME"] = str(fake_home(instance.parent / "fake-home"))
         return subprocess.run(
             [sys.executable, "-m", "hx", *args],
             env=env,

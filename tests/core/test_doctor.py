@@ -459,3 +459,16 @@ def test_a_partner_only_section_is_exempt_only_in_a_skill_the_partner_also_carri
     assert skill_manifest.refused_mentions(text, AUDIENCES, partner_sections=True) == []
     leaked = text + "\nAnd `hx code contracts --register d.jsonl` here.\n"
     assert skill_manifest.refused_mentions(leaked, AUDIENCES, partner_sections=True) == ["code contracts"]
+
+
+def test_the_memory_model_row_says_warm_when_the_cache_is_empty(instance, monkeypatch, tmp_path):
+    from hx import memory
+
+    checks = run_checks(instance)
+    assert ("memory-model", OK) in statuses(checks), detail_for(checks, "memory-model")
+
+    monkeypatch.setattr(memory, "model_missing", lambda: ["model.onnx"])
+    monkeypatch.setattr(memory, "model_dir", lambda: tmp_path / "onnx")
+    checks = run_checks(instance)
+    assert ("memory-model", WARN) in statuses(checks)
+    assert "hx memory warm" in detail_for(checks, "memory-model")[0]

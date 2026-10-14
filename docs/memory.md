@@ -91,6 +91,7 @@ same file is usually worse advice than yesterday's, but a much better match stil
 hx memory search QUERY [--role R] [--pod P] [--id ID] [--kind K] [--k N]
                        [--all-roles] [--half-life-h H] [--json]
 hx memory index
+hx memory warm
 hx memory list [--id ID] [--role R] [--kind K] [--limit N] [--json]
 hx memory stats [--json]
 ```
@@ -134,10 +135,12 @@ Three `harness.json` `companion` fields control it:
 - The store is `state/memory/chroma`, collection `episodes`, **global to the instance**. Every
   agent's episodes land in it; the persona filter is applied at query time, never at write time,
   so one agent can deliberately read what another learned.
-- The embedding function is chroma's default, ONNX all-MiniLM-L6-v2. It downloads once into
-  `~/.cache/chroma/onnx_models` (not `~/.claude`, which hx never touches) and runs locally
-  thereafter. It is not a model call in the spec-02 sense: no Claude Code session, no API, no
-  network at query time.
+- The embedding function is chroma's default, ONNX all-MiniLM-L6-v2, cached under
+  `~/.cache/chroma/onnx_models` (not `~/.claude`, which hx never touches) and run locally. hx
+  hands chroma the function only when its six model files are already on disk; otherwise every
+  open raises `MemoryUnavailable` naming `hx memory warm`, the operator's one-time ~80 MB
+  download. An agent at a boundary never downloads anything: chroma would otherwise fetch the
+  archive from S3 under whatever `HOME` the process has. `hx doctor` reports `memory-model`.
 - An instance that has never produced an episode never opens chroma at all — `hx compose` checks
   for `state/memory/chroma/chroma.sqlite3` or a non-empty queue first.
 - To reset: delete `state/memory/`. Everything in it is derived from episodes that have already

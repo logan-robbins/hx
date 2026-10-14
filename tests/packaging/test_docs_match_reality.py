@@ -107,6 +107,12 @@ def build_instance(root: pathlib.Path, scratch: pathlib.Path) -> dict:
     env.pop("HARNESS_ROOT", None)
     env.pop("HARNESS_ID", None)
     (scratch / "home").mkdir(parents=True, exist_ok=True)
+    # The scratch HOME shares the operator's embedding-model cache, as the core conftest does:
+    # `hx doctor`'s `memory-model` row is `ok` on a warmed machine and nothing downloads.
+    real_cache = pathlib.Path(os.environ.get("HOME", "")) / ".cache" / "chroma"
+    if real_cache.is_dir():
+        (scratch / "home" / ".cache").mkdir(parents=True, exist_ok=True)
+        (scratch / "home" / ".cache" / "chroma").symlink_to(real_cache)
 
     # Step 3 stops with exit 4 until the token exists; that is asserted properly by
     # packaging/e2e-deploy.sh, so here it is just the first half of the install.

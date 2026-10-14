@@ -727,6 +727,23 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     if not root.is_dir():
         return checks
 
+    # Episode memory's embedding model (docs/memory.md): on disk, or every `hx memory` and the
+    # Memory episodes section report unavailable until the operator warms it. Never downloaded
+    # by an agent.
+    from . import memory as memory_mod
+
+    try:
+        missing = memory_mod.model_missing()
+    except memory_mod.MemoryUnavailable as exc:
+        checks.append((WARN, "memory-model", str(exc)))
+    else:
+        if missing:
+            checks.append((WARN, "memory-model",
+                           f"{memory_mod.model_dir()} lacks {missing[0]}; `hx memory warm` "
+                           "downloads it once (~80 MB); until then episode memory is unavailable"))
+        else:
+            checks.append((OK, "memory-model", str(memory_mod.model_dir())))
+
     # Central learnings (docs/learnings.md): where the directory is, how many rules, what waits.
     from . import learn as learn_mod
 
