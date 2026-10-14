@@ -79,6 +79,26 @@ into `purpose` (while that is still the placeholder) and one pending text propos
 else it held that no shared source already says, then removes it. `hx doctor` warns
 `persona:<id>` while anything is left.
 
+### Measured
+
+| Variant | | Persona | Home `CLAUDE.md` | Boundary Read | `hx cache report` prefix | At a boundary |
+|---|---|---|---|---|---|---|
+| conftest | before | 8,295 (`run/<id>/persona.md`, system prompt) | 2,946 | 3,497 (context file) | 12,200 | 14,738 |
+| conftest | after | 6,558 (`context` hook output) | 3,353 | 1,954 (work item) | 10,719 | 11,865 |
+| template | before | 12,583 | 2,946 | 7,699 | 16,488 | 23,228 |
+| template | after | 6,617 | 3,353 | 1,954 | 10,778 | 11,924 |
+
+One launched `backend-engineer` worker on a fresh instance with no rules, in bytes. "Before"
+is the tree this work started from; "after" is this one. The conftest variant carries the
+test fixture's `purpose`; the template variant carries a one-line `purpose` plus, before, the
+template's per-id `AGENTS.md` and, after, the template's `explorer` block. "At a boundary" is
+persona + home `CLAUDE.md` + the boundary Read. The hook output is the persona (6,225 bytes for
+`backend-engineer`, up from 4,360 with the definition-of-done standard set), the identity line
+and the pointer; an idle agent's is 120 bytes shorter and it has no boundary Read. The before
+Read was an idle agent's context file, which repeated `config/CLAUDE.md`; the after Read is a
+dispatched work item with a one-line goal. `config/CLAUDE.md` grew by the goal-contract
+paragraphs.
+
 ## Planned prompt sources
 
 A planned run reads the same persona and Companion role file a live one does, so an edit to a
