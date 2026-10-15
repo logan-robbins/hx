@@ -125,7 +125,8 @@ Resolve missing starting facts through targeted graph/map retrieval or discovery
 ## Inspecting recorded proof
 
 `hx metrics [IDENTITY]` aggregates ledger packet/run, lease, receipt, checkpoint, milestone,
-and delivery state. `hx show ID --json` reads current task/run/worker/plan detail; immutable
+and delivery state, and each agent's captured chat bytes, output tokens and model turns
+(docs/prompt-runtime.md). `hx show ID --json` reads current task/run/worker/plan detail; immutable
 checkpoint/event references retain their exact scope. These views do not manufacture live
 readiness or prove that a search established a semantic relationship.
 

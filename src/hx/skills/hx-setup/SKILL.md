@@ -268,7 +268,8 @@ every audience's. Besides install, up, doctor, ui and heartbeat:
   `config/models.json` and `docs/models.md`; `unverified` for a provider with no key (Anthropic,
   on an OAuth seed); exit 3 with `--expect current` when a configured id is stale or its window
   is too large. It writes nothing; the human edits the registry.
-- `hx metrics`: recorded packet, run, ownership, check, checkpoint, and delivery counts. `hx cache report [ID]`: each agent's
+- `hx metrics`: recorded packet, run, ownership, check, checkpoint, and delivery counts, and each agent's
+  captured chat bytes, output tokens and turns. `hx cache report [ID]`: each agent's
   invariant prompt prefix against its model's budget.
 - `hx learn check|path|categories|invariant`: lint the `LEARNINGS/` files and say where they
   live. The Partner reviews proposals; the operator only checks the files.

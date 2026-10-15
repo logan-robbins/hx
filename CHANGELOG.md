@@ -11,6 +11,11 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- Per-agent chat metrics (docs/prompt-runtime.md): `hx metrics` adds `agents`, each worker's
+  launch `flavors`, `chat_bytes`, `output_tokens` and `turns` (model responses) from captured
+  main-session events — Claude transcripts, Codex rollouts, Pi `message_end` records and meta
+  `model_response` hooks; a figure no captured record reports is `null`, never estimated. Claude
+  transcript assistant events carry `message_id` so one response's repeated usage counts once.
 - Test-run summaries (CONTRACTS.md § Scoped check execution artifacts): `checks.execute` parses
   captured output once with `hx.test_summary` (pytest, unittest, jest, vitest, go test, cargo
   test, dotnet test) into `summary` — `framework`, printed `passed`/`failed`/`skipped`/`errors`

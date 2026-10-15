@@ -38,6 +38,21 @@ worker bundle through `--append-system-prompt` and carry the rule once. Partner 
 context; neither carries the rule. Planned capsules replace `config/CLAUDE.md` with the compaction
 instructions, whose `PROMPT` states that a model reads the summary.
 
+`hx metrics` reports `agents`: for each worker with a run in the bounded projection, its launch
+`flavors` and the `chat_bytes`, `output_tokens` and `turns` of its captured main-session events.
+A turn is one model response. Only records that report a figure count; a figure that no captured
+record reports is `null`, and nothing is estimated. Child streams, hook copies of transcript
+messages, failed meta `model_response` attempts and retired or unreadable observations do not
+count. The Partner has no run and is not reported.
+
+| Flavor | `chat_bytes` | `output_tokens` | `turns` |
+|---|---|---|---|
+| claude | UTF-8 bytes of transcript assistant text | largest `output_tokens` per transcript `message_id`, summed | transcript message IDs with usage |
+| codex | rollout assistant and agent message text | per-response `token_usage_record` `output_tokens` (`turn_usage` is cumulative and not added) | `token_usage_record` count |
+| pi | assistant `message_end` text | assistant `message_end` usage `output` | assistant `message_end` records with usage |
+| meta | `null`: its Stop hook reports only the last message | successful `model_response` usage | successful `model_response` count |
+| grok | `null` | `null` | `null` |
+
 Whole source-file tools likewise return complete exact files in one logical operation. Native
 host envelopes may require automatic transport segments. Every required segment must be emitted
 before the read can settle; missing, partial or truncated results cannot authorize later work.

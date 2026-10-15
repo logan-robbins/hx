@@ -144,8 +144,11 @@ def claude_v1(body: dict) -> list[Event]:
     text = public_text(content)
     usage = _usage(message.get("usage"))
     if text or usage:
-        results.append(Event("assistant_message" if kind == "assistant" else "request",
-                             {"text": text, "claim": kind == "assistant"}, native, usage))
+        data = {"text": text, "claim": kind == "assistant"}
+        if kind == "assistant" and isinstance(message.get("id"), str) and message["id"]:
+            # One API response spans several records that repeat its usage.
+            data["message_id"] = message["id"]
+        results.append(Event("assistant_message" if kind == "assistant" else "request", data, native, usage))
     if isinstance(content, list):
         for index, block in enumerate(content):
             if not isinstance(block, dict):
