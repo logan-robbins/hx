@@ -312,7 +312,8 @@ def test_compiled_context_instructions_reach_assignment_once_and_expire_on_polic
         "model": "configured-model", "effort": "high", "flavor": flavor, "workdir": str(repo)}))
     (config / "AGENTS.md").write_text("## UPDATES BELOW ONLY\nDo not import this previous task's notes.\n")
     bundle = prompt_compiler.build(store.root, "eng-001")
-    issued = run_hx("compose", "eng-001", "--run", run, "--request", "compiled", "--prompt-manifest", bundle["manifest_path"], "--json", "--root", str(store.root))
+    issued = run_hx("compose", "eng-001", "--run", run, "--request", "compiled", "--prompt-manifest", bundle["manifest_path"],
+                    "--max-tokens", "16000", "--json", "--root", str(store.root))
     assert issued.returncode == 0, issued.stderr
     metadata = json.loads(issued.stdout)
     text = Path(metadata["path"]).read_text()

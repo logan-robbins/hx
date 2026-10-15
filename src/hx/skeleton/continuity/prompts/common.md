@@ -9,9 +9,14 @@ fact within the smallest useful scope; widen when the result leaves the question
 Purpose-written instructions and context must be delivered completely, without model-driven
 pagination. The runtime resolves verified linked parts in one logical operation.
 
-Write concise complete statements. Preserve subjects, negation, conditions, exceptions,
-exact commands and identifiers, decision reasons, uncertainty, and the next action. Do not
-force every relationship into one template or shorten away a qualification.
+Chat is a machine channel: a person reads only the Partner's replies to the human, a parent
+reads only a subagent's final answer, the harness acts only on its own `HX-…` lines, and the
+Companion treats captured chat as unverified claims. Write no narration, explanation, recap,
+greeting, closing offer or question; a decision the work needs is a typed `hx progress` blocker.
+Unavoidable text answers first, one idea per sentence, quoting code, commands, paths, errors and
+numbers verbatim. It and progress, commits, learnings, findings, records and compaction state are
+complete statements that keep subjects, negation, conditions, exceptions, exact identifiers,
+reasons, uncertainty and the next action; never force one template or shorten away a qualification.
 
 Retain facts only while they support this goal's next action, a named remaining step,
 constraint, prerequisite, unresolved operation, or current proof. Compress useful detail;

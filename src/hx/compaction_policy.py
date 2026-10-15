@@ -9,6 +9,7 @@ routine progress, worker investigation and successful check details already repr
 For engineering, keep remaining steps, edited-source state, exact useful commands, unresolved
 failures and approaches that must not be repeated. For QA, keep the tested revision/environment,
 reproduction, assertion coverage, unresolved defects and remaining checks.
+A model, not a person, reads this summary: write typed statements, never narrative.
 Write concise complete statements.
 Keep the goal, exact constraints, current cursor and next action, unresolved blockers,
 active child/tool operations, changed interfaces, and commands still needed to finish.

@@ -361,3 +361,30 @@ def test_learning_companion_has_assessment_authority_separate_from_context_compa
     assert "structured assessment" in rendered and "independent accept, merge, or reject" in rendered
     assert "Never patch" in rendered
     assert "submit_patch" not in rendered and "expected versions" not in rendered
+
+
+CHAT_RULE = "Chat is a machine channel:"
+PARTNER_LINE = "Your replies to the human are the one place where a sentence is the deliverable."
+
+
+@pytest.mark.parametrize("audience", ["worker", "subagent", "partner", "companion", "learning"])
+def test_every_delivered_bundle_carries_the_chat_channel_rule_exactly_once(instance, audience):
+    item_id = "partner" if audience == "partner" else "eng-001"
+    configure(instance, item_id=item_id, role="partner" if audience == "partner" else "backend-engineer")
+    (instance / "personas" / "partner.md").write_text((prompts.BUNDLE / "personas" / "partner.md").read_text())
+    bundle = prompts.build(instance, item_id, audience=audience)
+    _, rendered = prompts.verified_bundle(instance, item_id, Path(bundle["manifest_path"]),
+                                          workdir=bundle["identity"]["workdir"], audience=audience)
+    delivered = rendered["system"] + rendered["context"]
+    assert delivered.count(CHAT_RULE) == 1
+    assert delivered.count("a decision the work needs is a typed `hx progress` blocker.") == 1
+    assert delivered.count("compaction state are\ncomplete statements that keep subjects, negation, conditions") == 1
+    assert delivered.count(PARTNER_LINE) == int(audience == "partner")
+
+
+def test_live_partner_boundary_carries_its_reply_line_once_without_the_worker_chat_rule(instance):
+    (instance / "personas" / "partner.md").write_text((prompts.BUNDLE / "personas" / "partner.md").read_text())
+    text = persona.boundary(instance, "partner", env={})["text"]
+    assert text.count(PARTNER_LINE) == 1
+    assert "Ask a question only\nwhen the human must decide." in text
+    assert CHAT_RULE not in text

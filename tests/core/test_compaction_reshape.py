@@ -57,3 +57,8 @@ def test_compaction_prompt_keeps_invariants_stable():
     text = compact_instructions()
     assert "invariant" in text.lower()
     assert "cold seam" in text.lower()
+
+
+def test_compaction_summary_is_written_for_a_model_reader():
+    from hx.compaction_policy import PROMPT
+    assert PROMPT.count("A model, not a person, reads this summary: write typed statements, never narrative.") == 1

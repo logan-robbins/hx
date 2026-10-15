@@ -24,6 +24,20 @@ line/byte pagination and no summary substitutes for required material. System pr
 and native input are assembled from the exact verified bytes; complete delivery does not prove
 attention, comprehension or instruction following.
 
+Chat is a machine channel. The rule lives once in `continuity/prompts/common.md`, so the
+compiled worker, subagent, partner, Context Companion and Learning Companion bundles each carry
+it exactly once; it grew `common.md` by 510 bytes, from 3756 to 4266. Packet workers receive the
+worker bundle as their system or context channel and both Companions receive theirs; no runtime
+path delivers the compiled subagent or partner bundle. The live Partner boundary is
+`config/CLAUDE.md`, `personas/partner.md`, identity, reviewed rules and `PARTNER.md`, without
+`common.md`. The Partner's exception, that its replies to the human are the one place a sentence
+is the deliverable, lives once in the persona's Domain judgment section, which reaches both the
+live boundary and the compiled partner bundle. Pi worker children receive the parent's compiled
+worker bundle through `--append-system-prompt` and carry the rule once. Partner children receive
+`config/partner/SUBAGENTS.md` and other planned-worker children receive no hx SubagentStart
+context; neither carries the rule. Planned capsules replace `config/CLAUDE.md` with the compaction
+instructions, whose `PROMPT` states that a model reads the summary.
+
 Whole source-file tools likewise return complete exact files in one logical operation. Native
 host envelopes may require automatic transport segments. Every required segment must be emitted
 before the read can settle; missing, partial or truncated results cannot authorize later work.

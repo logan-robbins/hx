@@ -73,6 +73,15 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- Chat is a machine channel (docs/prompt-runtime.md): `continuity/prompts/common.md` states it
+  once, so every compiled bundle carries it exactly once. No narration between tool calls,
+  explanation, recap, greeting, closing offer or chat question; a needed decision is a typed
+  `hx progress` blocker; unavoidable text answers first with payload verbatim; typed progress,
+  commits, learning proposals, map findings, Companion records and compaction state stay complete
+  statements. `personas/partner.md` makes the Partner's replies to the human the one place a
+  sentence is the deliverable; `compaction_policy.PROMPT` says a model reads the summary.
+  Rebuild instances with `hx install`.
+
 - Prompt layers (docs/prompt-runtime.md § Prompt layers): every agent's prompt is four layers,
   each from one source — the invariants (`config/CLAUDE.md`), the persona (`personas/<role>.md`,
   one file per role), the learnings (`LEARNINGS/<category>.md`, and `personas/<role>/<category>.md`
