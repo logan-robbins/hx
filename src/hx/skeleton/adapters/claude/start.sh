@@ -173,7 +173,11 @@ if [ "$mode" = exec ]; then
     # The invariants' one channel on Claude is the home's native user CLAUDE.md
     # (`config_harness.INVARIANTS_CHANNEL`), refreshed here so an edit to config/CLAUDE.md
     # lands at the next launch or restart, like a persona edit, not only at a reinstall.
-    if [ -f "$root/config/CLAUDE.md" ]; then
+    if [ "$id" = partner ]; then
+      # The verified complete Partner context segments own invariants and
+      # persona delivery; clear this HX-private copy to avoid duplicates.
+      : > "$home/CLAUDE.md"
+    elif [ -f "$root/config/CLAUDE.md" ]; then
       cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
     fi
   fi

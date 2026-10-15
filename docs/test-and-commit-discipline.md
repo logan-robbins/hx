@@ -1,7 +1,7 @@
 # Test kinds, commit size, and sign-off cadence
 
 Meta-rules for how agents work, independent of what they build. hx already
-enforces pieces of this (declared checks at completion, bounded inspection,
+enforces pieces of this (declared checks at completion, scoped retrieval,
 lane gates in `tools/milestone-check.sh`); this document standardises the
 rest so the Partner, workers, and subagents all follow the same discipline
 and the harness can measure whether they did.
@@ -36,10 +36,11 @@ Rules:
   plan's map brief, `hx code search`/`symbols` for code questions, and
   `hx content search` for indexed docs. Reading a file to edit it is fine;
   reading to explore is routed through the indexes.
-- Full-repository scans (recursive grep/find over the tree, whole-file reads
-  of large files) are a rule violation, not a style issue. The runtime
-  bounds (160 lines, 80 results) stay; the code index exists so the bound
-  rarely bites.
+- Use targeted indexed queries to choose relevant source files, then read each selected
+  file completely through the managed whole-file transport. Line slices cannot establish
+  absence. Ad hoc recursive repository exploration wastes context; the mandatory complete
+  size audit and source indexing are deterministic runtime operations. Scoped searches
+  retain an 80-result candidate bound and cannot certify exhaustive absence.
 - Context files and packets must carry the targeted facts an assignment
   needs. If a worker has to search for something the packet should have
   contained, that is a packet defect to record, not worker diligence.

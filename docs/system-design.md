@@ -11,98 +11,104 @@ dependency structure, traces source responsibilities to target packets, and iden
 callees/contracts to implement once and reuse. Harness workers own implementation and proof.
 Unknown or dynamic source relationships stay explicit until investigated or validated.
 
-## Runtime path
+## Directive-to-release flow
 
-```mermaid
-flowchart LR
-    U[User goal and corrections] --> P[Partner]
-    M[Portable semantic map] --> P
-    P --> G[Behavior and dependency packets]
-    G --> L[Admission and write leases]
-    L --> C[Bounded task context]
-    C --> W[Native worker session]
-    W --> B[Worker binds DoD and checks]
-    B --> A[Independent policy approval]
-    A --> W
-    W --> R[Tools and repository]
-    R --> O[Incremental capture and artifacts]
-    O --> J[Jev judgments on bounded deltas]
-    J --> N[Companion structured patch]
-    N --> S[Validated task state]
-    N --> M
-    S --> C
-    W --> I[Publish immutable contract early]
-    I --> P
-    W --> D[Drain, scoped checks, packet coverage]
-    D --> P
-    D --> V[Intent review and short landing]
-    V --> Q[Fixed post-merge validation]
-    Q --> F[Pre-deploy checks and tested artifact]
-```
+The role boxes show a project with two engineering workers and two QA workers. The internals
+of each pair are shown once. Actual packet count and routing follow the dependency DAG;
+a ready packet does not wait for an entire wave. The Partner owns graph understanding and
+parallel decomposition. Workers own implementation and exact checks, subject to independent
+binding approval. Every agent has two separate sidecars: Context Companion and Learning
+Companion, with independent event cursors, jobs, budgets and output contracts.
 
-The Partner understands the application/code graph, owns dependency decomposition,
-and schedules maximum useful parallel work within dependencies, ownership/resources, and capacity. Its goal is one paragraph describing the result
-and why, with explicit dependency and substitution language. It does not design the
-implementation or write the worker's definition of done. Plans represent
-that packet as behavior, acceptance obligations, source scope, map inputs, exact
-contract/provider versions, shared resources, output obligations, and inherited policy.
-The harness worker binds its definition of done and executable checks before editing;
-a separately configured reviewer approves the exact binding. Admission validates current inputs and acquires
-write and resource leases before work starts. Explicit native launch starts the admitted worker/controller; the root service captures tool and lifecycle events,
-and schedules bounded companion passes. Completion drains managed work, validates
-receipts and outputs, publishes results, releases leases, and notifies the Partner.
-Early contract publication can unlock consumers before the provider packet completes.
-Packet coverage retains explicit real-provider obligations; it does not imply deployment
-eligibility. [Agent-scale runtime](agent-scale-runtime.md) gives commands and configuration.
-
-## Directive-to-deploy data flow
-
-Every directive follows current code/application dependency evidence, search for existing
-capabilities, and reuse before construction. The Partner explores those dependencies,
-chooses observable packet boundaries, and schedules maximum useful parallel work within
-ownership, resources, source safety, and capacity. Request size does not select packet count.
-All assignments use the same packet admission, independent binding, proof, and delivery lifecycle.
+Project registration, policies and prepared worker directories are project setup. A packet
+reuses a configured directory when suitable; `hx repo assignment` is an optional provisioning
+helper. Admission always revalidates current source, graph, dependencies and ownership.
 
 ```mermaid
 flowchart TB
-    U[User directive and corrections] --> P[Partner frames the result and reason]
-    P --> G[Current code graph and semantic map]
-    G --> DAG[Dependency packet DAG<br/>behavior · scope · contracts · outputs]
-    DAG --> READY[Readiness and admission<br/>current inputs · prerequisites · leases]
-
-    READY --> PROV[Provider packet<br/>bind checks, then implement]
-    READY --> OTHER[Independent packet<br/>disjoint scope and resources]
-    PROV --> CONTRACT[Publish immutable interface early]
-    CONTRACT --> CONS[Consumer packet<br/>use only its permitted stand-in]
-    PROV --> PROOF[Provider implementation and local proof]
-    CONS --> CPROOF[Consumer implementation and local proof]
-
-    PROOF --> INTEG[Real-provider integration packet<br/>exact provider + consumer versions]
-    CPROOF --> INTEG
-    OTHER --> COVER[Packet coverage and source outputs]
-    INTEG --> COVER
-    COVER --> REVIEW[Intent review by configured authority]
-    REVIEW --> LAND[Short local landing<br/>expected-head update]
-    LAND --> ICAND[Freeze integration candidate]
-    ICAND --> ICI[Post-merge checks on fixed source<br/>main may advance]
-    ICI --> VERIFIED[Verified integration checkpoint]
-    VERIFIED --> DCAND[Freeze deploy candidate<br/>real obligations resolved]
-    DCAND --> DCI[Pre-deploy checks + immutable build manifest]
-    DCI --> ELIGIBLE[Deployable candidate and artifact]
-    ELIGIBLE --> RELEASE[Configured external release tool or pipeline]
-    RELEASE --> DEPLOYED[Deployed release]
-
-    subgraph WORKERS[Packet work, subject to readiness and capacity]
-        PROV
-        OTHER
-        CONTRACT
-        CONS
+    subgraph HUMAN["HUMAN"]
+        H["Directive, constraints and corrections"]
     end
-    subgraph TESTS[Parallel proof inside a candidate]
-        ICI
-        DCI
+
+    subgraph PARTNER["PARTNER"]
+        direction TB
+        P1["Understand current application dependencies<br/>code index / audit / search · repo file · map plan-context"]
+        P2["Search and reuse before building<br/>Decompose the dependency DAG for maximum useful parallelism<br/>plan draft / validate / apply / ready"]
+        P3{"Admit each ready packet<br/>Current source and exact prerequisites<br/>Free ownership, resources and capacity"}
+        PC["CONTEXT COMPANION<br/>Capture → current scheduling state → restore"]
+        PL["LEARNING COMPANION<br/>Observe → assess → evidence-backed proposal<br/>Independent review → shared or role rule"]
+        P1 --> P2 --> P3
+        P2 -.-> PC -.-> P2
+        P2 -.-> PL -.-> P1
     end
+
+    subgraph ENGINEERING["ENGINEERING · parallel packets"]
+        direction LR
+        subgraph ENG1["ENG 1 · shared engineering internals"]
+            direction TB
+            E1{"Complete instructions and learning rules delivered<br/>Worker binds DoD and checks<br/>Independent binding approval"}
+            E2["Search → read whole files → implement<br/>Native tools · complete file-read · code queries<br/>Publish / acquire immutable interfaces early"]
+            E3["Check and audit → verified packet coverage<br/>check · build / test · plan audit / finish"]
+            EC["CONTEXT COMPANION<br/>Captured events → validated task/map patch → checkpoint"]
+            EL["LEARNING COMPANION<br/>Independent event cursor → assess → propose<br/>Reviewed global and engineering rules feed future context"]
+            E1 --> E2 --> E3
+            E3 -->|"Repair within packet"| E2
+            E2 -.-> EC -.-> E2
+            E2 -.-> EL
+        end
+        subgraph ENG2["ENG 2"]
+            E4["Same engineering loop<br/>Separate admitted packet, scope and source<br/>Own Context + Learning Companions"]
+        end
+    end
+
+    subgraph QA["QA · parallel verification packets"]
+        direction LR
+        subgraph QA1["QA 1 · shared QA internals"]
+            direction TB
+            Q1{"Admitted exact source / provider versions<br/>Complete context and reviewed QA rules<br/>Independent check-binding approval"}
+            Q2["Verify behavior and real-provider integration<br/>plan materialize / verify-integration<br/>check · build test · inspect complete evidence"]
+            Q3{"Current passing receipts and exact coverage<br/>Managed work and capture drained"}
+            QC["CONTEXT COMPANION<br/>Failures, commands and pending proof → current checkpoint"]
+            QL["LEARNING COMPANION<br/>Independent assessment → QA or shared proposal<br/>Different session accepts / merges / rejects"]
+            Q1 --> Q2 --> Q3
+            Q2 -.-> QC -.-> Q2
+            Q2 -.-> QL
+        end
+        subgraph QA2["QA 2"]
+            Q4["Same QA loop<br/>Independent checks / private test shards<br/>Own Context + Learning Companions"]
+        end
+    end
+
+    subgraph RELEASE["RELEASE"]
+        direction TB
+        R1{"Independent intent review<br/>change submit / review<br/>Configured authority for consequential boundaries"}
+        R2["Short local landing<br/>change land --expected-head<br/>Moved head → prepare again"]
+        R3["Freeze merged source and run integration CI<br/>change candidate / run-validation<br/>Build once; parallel private test shards<br/>Main can advance while this candidate is tested"]
+        R4{"Deploy gate<br/>Same-source integration verified<br/>Real-provider obligations resolved<br/>Pre-deploy checks + tested immutable artifact match"}
+        R5["Seal and verify release handoff<br/>handoff delivery / check --live<br/>Configured release tool deploys the tested artifact"]
+        RC["CONTEXT COMPANION<br/>Candidate, checks and release obligations → current state"]
+        RL["LEARNING COMPANION<br/>CI / release outcomes → assessment → proposal<br/>Reviewed release and shared rules feed future context"]
+        R1 --> R2 --> R3 --> R4 --> R5
+        R3 -->|"Diagnose / scoped repair / reconcile"| R3
+        R3 -.-> RC -.-> R3
+        R5 -.-> RL
+    end
+
+    H --> P1
+    P3 -->|"plan assign · launch"| E1
+    P3 -->|"plan assign · launch"| E4
+    E3 -->|"Exact covered output"| Q1
+    E4 -->|"Exact covered output"| Q4
+    Q3 -->|"Verified packet / integration evidence"| R1
+    Q4 -->|"Verified packet / integration evidence"| R1
+    R5 --> DONE["DEPLOYED RELEASE<br/>External deployment evidence and health checks"]
 ```
+
+Full instructions, current required context and applicable reviewed learning rules are
+assembled and delivered automatically. File transport resolves all verified linked parts;
+the model never selects pages. Explicit source-file reads return the whole file or refuse
+before delivery. Search candidates and reduced command output retain their isolated,
+explicitly scoped contracts and cannot establish absence or replace a complete file read.
 
 The graph uses two kinds of ordering. A hard prerequisite waits for the producer's completed
 output and, when it is source, installation proof. A `contract` or permitted `substitutable`
@@ -116,7 +122,7 @@ plan waves describe possible parallelism; `ready` and `assign` recheck actual co
 |---|---|---|---|
 | 1. Directive and repository orientation | User goal, constraints, corrections; current repository identity and source evidence | Partner uses its native read/search tools for the goal and project instructions. `hx code index --repo …` builds the derived source graph; `hx code fresh … --expect fresh` checks scope freshness. Use `hx code search`, `symbols`, `signature`, `callers`, `tests-for`, `conform`, or `precedent` for bounded code relationships; `hx content search` for indexed documentation. `hx repo file`, `diff`, and `history` retrieve exact content or revision context. For conversions, index the existing source first and keep source and target namespaces separate. | Graph exploration and search/reuse are planning prerequisites for every directive. The graph is candidate evidence; only validated, anchored application-map relationships are trusted as validated dependencies. |
 | 2. Decomposition and packet design | A bounded map slice plus dependency, interface, write-scope, and resource relationships becomes versioned packets | `hx map plan-context …` assembles relevant responsibilities, anchors, contracts, checks, owners, and discovery gaps. The Partner decides what can overlap and writes each packet goal as the result, why, dependencies, and allowed stand-in language. `hx plan validate --file …` checks structure and reports waves, width, max parallelism, and interface warnings; `hx plan apply --file …` records the accepted revision. `hx plan unit TASK` reads one assignment. | Plan dependencies set the earliest start; disjoint work scopes, resource declarations, and host slots bound actual concurrency. The Partner defines the packet boundary, not the worker's implementation or definition of done. |
-| 3. Admission and source materialization | Frozen source is materialized before a packet receives its admitted run, map versions, and prerequisite proofs | `hx repo assignment TASK …` makes a sparse clean checkout; accept its workdir in the plan before admission. `hx plan ready PLAN` explains which units can start. `hx plan assign TASK --revision … --worker …` rechecks readiness and acquires ownership; `hx launch ID --run RUN --request REQUEST` explicitly advances native startup. `hx repo expand …` adds known files before a tool needs them. Use `hx plan audit RUN` to check that edits stay in the assigned scope. | Separate packets can start in parallel only after admission proves current inputs, clean source, prerequisite readiness, nonconflicting leases, and available capacity. A sparse omission is not evidence that a capability is absent. |
+| 3. Admission and source materialization | Frozen source is materialized before a packet receives its admitted run, map versions, and prerequisite proofs | `hx repo assignment TASK …` optionally provisions a sparse clean checkout when a suitable prepared workdir is unavailable; accept a newly provisioned workdir in the plan before admission. `hx plan ready PLAN` explains which units can start. `hx plan assign TASK --revision … --worker …` rechecks readiness and acquires ownership; `hx launch ID --run RUN --request REQUEST` explicitly advances native startup. `hx repo expand …` adds known files before a tool needs them. Use `hx plan audit RUN` to check that edits stay in the assigned scope. | Separate packets can start in parallel only after admission proves current inputs, clean source, prerequisite readiness, nonconflicting leases, and available capacity. A sparse omission is not evidence that a capability is absent. |
 | 4. Worker binding and implementation | The admitted packet becomes an approved worker check binding, then source changes and evidence | Before edits, the worker records its exact checks and obligation coverage with `hx plan bind RUN --file …`; `hx plan binding RUN` reads it; the separately configured reviewer approves the frozen hash with `hx plan approve-binding RUN --binding …`. The worker then uses its configured native read/search/edit/write/shell tools and HX graph/content queries. `hx check CHECK --run RUN` executes a bound check. For .NET, `hx build graph` evaluates the real MSBuild closure, then `hx build build` creates or reuses the immutable build. | Binding and independent approval are a per-packet gate before known mutation/proof operations. Once approved, independent admitted workers can edit concurrently in their own worktrees. |
 | 5. Interface-first fan-out | An immutable contract version and its passing contract evidence become a consumer input | Provider: `hx plan publish-contract RUN --output API --file receipts.json`. Consumer: `hx plan acquire-contract CONSUMER --producer PROVIDER --output API --out …`. Use these only for the declared contract/output version; the plan must permit a stand-in. `hx code search` and `hx code signature` let consumers locate and inspect the published interface. | Publication can release consumers before provider implementation finishes. The contract is immutable and versioned; undeclared or unpermitted stand-ins cannot bypass a hard prerequisite. Real-provider verification remains pending. |
 | 6. Local proof and packet completion | Changed paths, exact output versions, and run-bound receipts become packet coverage | Run each bound check with `hx check` or the appropriate `hx build test BUILD --run RUN --request … --filter …`; query `hx build status JOB` and recover uncertain jobs with `hx build reconcile JOB`. `hx plan finish RUN --file receipts.json` publishes accepted outputs and releases leases atomically. For the real provider, `hx plan verify-integration …` records the consumer's integration result; `hx plan materialize …` installs exact source outputs for a hard source dependency. | Packet coverage can free workers and unlock the next ready packets. It does not resolve deferred integration or make the change deployable. Matching check artifacts may be reused only when source, environment, tools, fixtures, platform, and declared closure identities match. |
@@ -191,14 +197,24 @@ autocompaction settings are configured where each adapter exposes them. The comp
 prepares state for the reset; it does not write a second narrative summary. Partner
 restoration carries current goals and assignments without replaying worker chatter.
 
-Startup prompts keep identity, execution gates, and required reading instructions inline.
-Full shared, role, and project instructions live in immutable files named by exact path,
-content hash, and byte count. Mandatory assignment context that exceeds its inline budget
-uses the same approach through a checkpoint-owned artifact. The agent must read those files
-in full before acting; pagination must continue through the end. Required text is never
-truncated, and delivering a reference does not prove that the agent read it. Native reads
-verify current membership and integrity, and known edit tools cannot mutate these files.
-The Companion retains its instructions inline because its tools cannot open arbitrary files.
+Native startup and managed reset assemble the complete required instructions and current
+assignment as verified native input. This includes reviewed global and role learning rules
+for every worker flavor, subagent, Partner and both Companions. No agent chooses pages or
+reads an instruction facade to discover missing mandatory text. Immutable backing material
+is split into linked files of at most 40,000 UTF-8 bytes; the runtime validates every part,
+its NEXT/END marker and aggregate identity before automatic assembly. Native transport and
+model-context admission refuse a complete payload that cannot fit instead of shortening it.
+Prompt and checkpoint manifests retain exact hashes, sizes and delivery accounting. Complete
+delivery is evidence of transport, not a claim that the model understood or obeyed the text.
+
+The Learning Companion is a separate assessment process paired with each agent. It has its
+own captured-event cursor, frozen jobs, model/effort, request budget and proposal limit.
+It cannot mutate task facts, acknowledge the Context Companion's cursor or approve a rule.
+Accepted assessments durably enqueue evidence-backed proposals for `hx learn` review; only
+a different authorized session can accept, merge or reject them. Context and learning jobs
+share host execution capacity but retain independent schedules and failure states. Unchanged
+unresolved windows do not trigger repeated paid calls. Learning backlog does not gate packet
+completion or release; retained source evidence waits for its independent assessment cursor.
 
 Tool catalogs allow targeted discovery and loading. Exact known tool IDs bypass
 semantic discovery. Required tools stay available. Pi's supported extension API can
@@ -207,11 +223,20 @@ restart; advisory adapters provide recipes without claiming to shrink their nati
 schemas. Tool execution records request identity and bounded output so an uncertain
 operation is not silently repeated.
 
-Repository inspection is bounded during normal task work. The runtime caps source reads
-and scoped search results, prevents repeating unchanged successful searches within a
-checkpoint, reuses small exact search results for unchanged sources, and routes common
-large command output through bounded capture. These controls reduce accidental context
-and tool-call waste; they do not sandbox arbitrary programs.
+Explicit source-file reads deliver the whole exact file in one logical operation. Native
+host limits are handled by deterministic transport segments; the model never issues pagination
+calls. A complete read is settled only after every part has been emitted and its source identity
+still matches admission. Partial, failed or truncated reads cannot authorize later work or
+completion. Scoped search results and reduced build/test output remain separate contracts;
+no excerpt establishes source absence. Arbitrary shell programs are not a filesystem sandbox.
+
+`hx code audit --repo PATH` scans tracked and nonignored text files without a file-count cap,
+reporting every outlier with bytes, SHA-256 and estimated tokens. The default per-file budget
+is 10,000 estimated tokens, using four UTF-8 bytes per token; this is a heuristic, not a model
+tokenizer. Indexing and admission force the scan. Existing large files remain explicit
+orientation obligations and are fully indexed within the separately declared indexing resource
+bound. Newly changed oversized text files pause audit and cannot complete. Transport-only
+native input files are assembled completely and admitted against their explicit context budget.
 
 ## Completion and boundaries
 
@@ -288,7 +313,7 @@ only the existing application-map validation path can promote a proposal.
 
 Instances can configure one host repository service over a Unix socket. The existing
 CLI then shares immutable graph/source objects and bounded metadata queries across
-instances. Diff, ancestry, history, and file-range jobs need no client checkout. Ownership
+instances. Diff, ancestry, history, and complete-file jobs need no client checkout. Ownership
 continues to come from the requesting instance's live ledger. Sparse materialization
 shares Git objects while writing only selected source paths in a fresh directory.
 

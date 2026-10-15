@@ -96,10 +96,8 @@ ALLOWED = {
     "hx-board": bash("hx board"),
     "allow-regex-wins-in-its-segment": bash("hx plan show plan-with-pytest-in-name"),
     "separator-inside-quotes": bash('hx wake partner "eng-001 done; pytest ran green"'),
-    "a-sibling-of-the-root": bash("cat /deny/treehouse/a.md"),
+    "a-sibling-of-the-root": bash("ls /deny/treehouse"),
     "a-longer-path-containing-the-root": bash("ls /x/deny/tree/a"),
-    "read-elsewhere": tool("Read", file_path="/allowed/PARTNER.md"),
-    "read-a-sibling": tool("Read", file_path="/deny/treehouse/a.md"),
     "grep-pattern-is-not-a-path": tool("Grep", pattern="/deny/tree", path="/allowed"),
     "glob-relative-pattern-elsewhere": tool("Glob", pattern="**/*.md", path="/allowed"),
     "another-tool": tool("Agent", prompt="dotnet test /deny/tree"),
@@ -128,6 +126,14 @@ def test_guard_allows_with_no_output(root, payload):
     assert result.stdout == "" and result.stderr == ""
 
 
+@pytest.mark.parametrize("path", ["/allowed/PARTNER.md", "/deny/treehouse/a.md"])
+def test_optional_path_rules_allow_reads_outside_the_denied_root(root, path):
+    """Whole-file admission is enforced separately from optional path policy."""
+    from hx.hook_guard import handle
+
+    assert handle(tool("Read", file_path=path), "partner", root) == (0, "")
+
+
 @pytest.mark.parametrize(
     "contents",
     [None, "{not json", "[]", '{"deny_commands": ["("]}', '{"deny_paths": ["relative/tree"]}',
@@ -140,7 +146,7 @@ def test_guard_is_inactive_and_logged_without_a_valid_file(root, contents):
         path.unlink()
     else:
         path.write_text(contents)
-    for payload in (bash("dotnet test"), tool("Read", file_path="/deny/tree/a.cs")):
+    for payload in (bash("dotnet test"), tool("Edit", file_path="/deny/tree/a.cs", old_string="a", new_string="b")):
         result = run_guard(root, payload)
         assert result.returncode == 0 and result.stdout == "" and result.stderr == "", result.stderr
     assert "inactive:" in (root / "logs" / "partner" / "guard.log").read_text()

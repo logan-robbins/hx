@@ -47,6 +47,9 @@ def guard(store, row):
 
 def reset_one(store, *, env=None):
     from . import application_loop as loop, context_packets, goal, native_controller, native_launch, native_tools
+    continuation = store.db.execute("SELECT run_id FROM native_launches WHERE status='continuation_required' AND json_extract(payload,'$.continuation_input.phase')='prepared' ORDER BY rowid LIMIT 1").fetchone()
+    if continuation:
+        return native_controller.submit_continuation(store, native_launch._row(store, continuation[0]), env=env)
     row = store.db.execute("SELECT scope,payload FROM runtime_cycles WHERE scope LIKE 'tokens:%' AND json_extract(payload,'$.reset')='needed' ORDER BY scope LIMIT 1").fetchone()
     if not row:
         return None
@@ -71,7 +74,13 @@ def reset_one(store, *, env=None):
     visible = goal.capture_pane(current['payload']['session'], child)
     if not visible or not goal.pane_is_idle(visible):
         return None
-    context_packets.issue(store, current['run_id'], request_id='threshold-' + current['payload']['checkpoint_id'], mode='planned')
+    from . import native_restart
+    if native_restart.request_instruction_refresh(store, current):
+        return {'status': 'instruction_restart_queued', 'run_id': current['run_id']}
+    from . import prompt_compiler
+    _, rendered = prompt_compiler.verified_bundle(store.root, current['payload']['worker_id'], Path(current['payload']['manifest']), workdir=current['payload']['workdir'])
+    budget = current['payload']['initial_input_limit'] - len(rendered['system'].encode()) - 512
+    context_packets.issue(store, current['run_id'], request_id='threshold-' + current['payload']['checkpoint_id'], mode='planned', instructions=rendered['context'], max_tokens=budget)
     # Claim before sending; ambiguous delivery must not repeatedly clear state.
     with store.transaction() as tx:
         actual = native_launch._row(tx, current['run_id'])

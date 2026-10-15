@@ -1,7 +1,8 @@
 """Route Partner observations and admitted native worker hooks.
 
-Partner observation failures are logged and return without blocking the turn.
-Its configured tool guard may explicitly deny an operation. Worker startup,
+Partner observation failures are logged; missing context/source delivery also
+invalidates admission for the next operation. Its configured tool guard may
+explicitly deny an operation. Worker startup,
 request and tool admission errors deny execution; observation failures retain a
 capture gap instead of inventing successful evidence. Native host crashes and
 hook timeouts still require process reconciliation before ownership is released.
@@ -55,9 +56,8 @@ IMPLEMENTED = (
     "stop-failure", "stop-cancelled", "session-end", "model-response",
 )
 
-#: The handlers that produce output on stdout, and what form it takes. `context` prints one
-#: pointer or a bounded Claude reset context object; the two subagent hooks return JSON because
-#: plain stdout is not injected for them (spec 09.1, docs/en/hooks#subagentstart).
+#: Context and child boundaries emit complete automatically segmented native context.
+#: Worker continuation is submitted as verified full native input by the controller.
 _HANDLERS = {
     "context": hook_context.handle,
     "log": hook_log.handle,
@@ -129,6 +129,8 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
     parser.add_argument("--id", required=True, dest="item_id", help="the id, baked in by install.sh")
     parser.add_argument("event", choices=sorted(EVENTS), help="the hx hook event (spec 09.1)")
     parser.add_argument("--root", help=argparse.SUPPRESS)
+    parser.add_argument('--read-segment', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--context-segment', type=int, help=argparse.SUPPRESS)
     for field in ("run", "launch", "adapter"):
         parser.add_argument("--continuity-" + field, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
@@ -151,6 +153,12 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
             raise HxError(f"--id {item_id} is not an id (`partner` or `<pod>-NNN`)")
         check_id(item_id, env)
         payload = read_payload(stdin)
+        if args.read_segment is not None:
+            from .file_reads import is_read
+            if not is_read(payload):
+                return 0
+        if item_id == 'partner' and event in {'context', 'subagent-start', 'subagent-result'}:
+            payload = {**payload, '_hx_context_segment': args.context_segment or 0}
 
         if env.get("HX_CONTINUITY_RUN") and event != "guard":
             from .continuity_store import ContinuityStore
@@ -176,8 +184,38 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 if event == "tool-start":
                     from .native_tools import admit
                     admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload)
+                complete_read = None
+                broker_error = None
+                if launch and event in {'log', 'log-failure'}:
+                    from .file_reads import is_read, broker_result
+                    if is_read(payload):
+                        from .unit_execution import _run
+                        with ledger.transaction() as tx:
+                            _, task, _ = _run(tx, env['HX_CONTINUITY_RUN'])
+                        from .file_read_delivery import SEGMENTED_ADAPTERS, emit
+                        try:
+                            if adapter in SEGMENTED_ADAPTERS:
+                                def write_segment(value):
+                                    print(value, flush=True)
+                                complete_read = emit(ledger, launch, task['payload'], payload,
+                                    args.read_segment or 0, write=write_segment,
+                                    event='PostToolUseFailure' if event == 'log-failure' else 'PostToolUse')
+                                if complete_read is None:
+                                    return 0
+                            else:
+                                complete_read = broker_result(ledger, launch, task['payload'], payload)
+                        except (HxError, OSError) as exc:
+                            broker_error = str(exc)
+                            payload = {**payload, 'tool_response': {'error': broker_error},
+                                       'is_error': True, 'hook_event_name': 'PostToolUse'}
+                        # Capture exactly what the hook emits to the native host.
+                        # The native preview is never treated as the full file.
+                        if complete_read is not None:
+                            payload = {**payload, 'tool_response': complete_read['text'], 'is_error': False,
+                                       'hook_event_name': 'PostToolUse'}
                 hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
-                     adapter=adapter, launch_id=launch_id, event=event, payload=payload)
+                     adapter=adapter, launch_id=launch_id,
+                     event='log' if complete_read is not None or broker_error else event, payload=payload)
                 from .native_sources import observe as observe_sources
                 observe_sources(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id,
                                 worker_id=item_id, adapter=adapter, event=event, payload=payload)
@@ -191,13 +229,56 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                     from .native_controller import observe
                     line = observe(ledger, env["HX_CONTINUITY_RUN"], launch_id, event, payload)
                     if line:
-                        print(line)
+                        if event == 'context' and adapter in {'claude', 'codex', 'meta'}:
+                            print(json.dumps({'hookSpecificOutput': {
+                                'hookEventName': 'SessionStart', 'additionalContext': line}}))
+                        elif adapter != 'grok':
+                            print(line)
                 if launch:
                     token_controls.observe(ledger, launch, event, payload)
+                if complete_read is not None:
+                    if adapter == 'pi':
+                        print(json.dumps({'hx_complete_read': complete_read}))
+                    elif adapter == 'codex':
+                        print(json.dumps({'hookSpecificOutput': {
+                            'hookEventName': 'PostToolUse',
+                            'additionalContext': complete_read['text']}}))
+                elif broker_error and not args.read_segment:
+                    print(json.dumps({'hookSpecificOutput': {
+                        'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',
+                        'additionalContext': 'Complete-file delivery failed: ' + broker_error
+                            + '. The file has not been delivered completely; retry the whole file before another operation.'}}))
             return 0
 
         if item_id != "partner":
             raise HxError("worker hooks require an admitted run and native launch identity")
+        if event == 'guard':
+            from . import partner_context
+            from . import partner_file_reads
+            try:
+                if partner_context.paths(root)[0].exists():
+                    partner_context.require_delivered(root)
+                partner_file_reads.require_delivered(root, payload)
+                code, line = hook_guard.handle(payload, item_id, root, env=env)
+                if code == 0:
+                    partner_file_reads.admit(root, payload)
+                if line:
+                    print(line, file=sys.stderr if code == hook_guard.DENY else sys.stdout)
+                return code
+            except (HxError, OSError) as exc:
+                from .native_tools import AdmissionDenied
+                raise AdmissionDenied(str(exc)) from exc
+        if event in {'log', 'log-failure'}:
+            from .file_reads import is_read
+            if is_read(payload):
+                from . import partner_file_reads
+                complete_read = partner_file_reads.emit(root, payload, args.read_segment or 0,
+                    write=lambda value: print(value, flush=True),
+                    event='PostToolUseFailure' if event == 'log-failure' else 'PostToolUse')
+                if complete_read is None:
+                    return 0
+                payload = {**payload, 'tool_response': complete_read['text'], 'is_error': False}
+                event = 'log'
 
         # Partner observations maintain its orchestration context.
         if event in {"request", "tool-start", "message", "stop-failure", "stop-cancelled", "session-end", "model-response"}:
@@ -235,7 +316,8 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 except Exception:
                     pass  # Storage failure is still reported to the native hook.
         print(f"hx-hook: {event}: {detail}", file=sys.stderr)
-        return 2 if event in {"request", "tool-start", "context"} and item_id != "partner" else 0
+        return 2 if (event in {"request", "tool-start", "context"} and item_id != "partner"
+                     or args.context_segment is not None) else 0
 
 
 if __name__ == "__main__":

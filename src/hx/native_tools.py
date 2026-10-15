@@ -29,8 +29,15 @@ def _identity(payload):
 
 
 def pending(tx, launch_id):
-    return tx.db.execute("SELECT count(*) FROM native_tool_calls WHERE launch_id=? AND status='admitted'",
-                         (launch_id,)).fetchone()[0]
+    active = tx.db.execute("SELECT count(*) FROM native_tool_calls WHERE launch_id=? AND status='admitted'",
+                          (launch_id,)).fetchone()[0]
+    # A settled native preview is not a completed file delivery. Preserve the
+    # completion barrier until a later complete retry resolves the same file.
+    incomplete = tx.db.execute('''SELECT count(*) FROM native_reads r WHERE r.launch_id=? AND r.success=-1
+        AND NOT EXISTS (SELECT 1 FROM native_reads ok WHERE ok.launch_id=r.launch_id
+            AND ok.session_id=r.session_id AND ok.actor_id=r.actor_id AND ok.checkpoint_id=r.checkpoint_id
+            AND ok.read_key=r.read_key AND ok.success=1 AND ok.rowid>r.rowid)''', (launch_id,)).fetchone()[0]
+    return active + incomplete
 
 
 def child(tx, run_id, session_id, event):
@@ -101,6 +108,13 @@ def _admit(store, run_id, launch_id, payload):
     with store.transaction() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
     reading = runtime_policy.inspect_call(snapshot, task['payload'], payload, root=store.root)
+    if reading is not None:
+        import json
+        from .file_reads import ensure_capacity
+        try:
+            ensure_capacity(store, snapshot, json.loads(reading[1]))
+        except ValidationError as exc:
+            raise AdmissionDenied(str(exc)) from exc
     from . import search_coverage
     search = search_coverage.prepare(store, snapshot, task['payload'], payload)
     with store.transaction() as tx:
@@ -113,12 +127,15 @@ def _admit(store, run_id, launch_id, payload):
         run, current_task, _ = unit_execution._run(tx, run_id)
         if run["phase"] == "paused" or row["status"] != "submitted" or not row["payload"].get("startup_observed"):
             raise AdmissionDenied("native tool admission is closed; reconcile the assignment before continuing")
+        if tx.db.execute('SELECT 1 FROM native_capture_gaps WHERE run_id=? LIMIT 1', (run_id,)).fetchone():
+            raise AdmissionDenied('native capture has an unresolved gap; reconcile it before another tool operation')
         if row["payload"].get("pane") != pane:
             raise AdmissionDenied("native pane ownership changed before tool admission")
         if any(row['payload'][field] != snapshot['payload'][field] for field in ('checkpoint_id', 'required_files')):
             raise AdmissionDenied('native context checkpoint changed before tool admission; inspect its current required material')
         runtime_policy.verify_material_read(tx, row, current_task['payload'], payload, reading)
         actor = _actor(tx, row, session, actor, admission=True)
+        runtime_policy.require_complete_reads(tx, row, session, actor, reading)
         key = (launch_id, session, actor, call)
         previous = tx.db.execute("SELECT input_hash,status FROM native_tool_calls WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?", key).fetchone()
         if previous:

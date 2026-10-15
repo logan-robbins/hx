@@ -66,7 +66,7 @@ def test_hook_end_to_end_writes_the_log_stream(instance):
         {
             "hookEventName": "post_tool_use",
             "sessionId": "abc-123",
-            "toolName": "read_file",
+            "toolName": "custom_tool",
             "toolUseId": "call_1",
             "toolInput": {"path": "/x"},
             "toolResult": {"text": "hello"},
@@ -86,7 +86,7 @@ def test_hook_end_to_end_writes_the_log_stream(instance):
     )
     assert result.returncode == 0, result.stderr
     record = json.loads(main_stream(instance, "partner").read_text().splitlines()[-1])
-    assert record["tool"] == "read_file"
+    assert record["tool"] == "custom_tool"
     assert record["ref"]["tool_use_id"] == "call_1"
 
 

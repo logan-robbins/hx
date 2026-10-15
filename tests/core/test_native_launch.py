@@ -184,7 +184,7 @@ def test_preparation_charges_exact_startup_marker_and_pointer_before_spawn(confi
         packet = native_launch.context_packets._read(tx, body['checkpoint_id'], run)
     overhead = native_controller.startup_overhead(body['capsule'], run, row['launch_id'], rendered['system'])
     assert body['charged_initial_tokens'] == packet['charged_tokens'] + overhead
-    assert body['initial_input_limit'] == native_launch.INITIAL_INPUT_LIMIT
+    assert body['initial_input_limit'] == min(native_launch.INITIAL_INPUT_LIMIT, 200000)
     assert body['charged_initial_tokens'] + native_launch.STARTUP_OBSERVATION_RESERVE <= body['initial_input_limit']
     assert row['status'] == 'prepared' and 'session' not in body
 
@@ -208,8 +208,8 @@ def test_initial_input_limit_respects_configured_context_threshold(configured):
     store, _, _ = configured
     path = store.root / 'config/models.json'
     models = json.loads(path.read_text())
-    models['claude-opus-5-5']['threshold'] = 7000
+    models['claude-opus-5-5']['threshold'] = 17000
     path.write_text(json.dumps(models))
     row = prepare(configured)
-    assert row['payload']['initial_input_limit'] == 7000
-    assert row['payload']['charged_initial_tokens'] <= 7000
+    assert row['payload']['initial_input_limit'] == 17000
+    assert row['payload']['charged_initial_tokens'] <= 17000

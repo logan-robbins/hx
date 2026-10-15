@@ -60,7 +60,11 @@ def run_adapter(
 def prepare_persona(root: Path, item_id: str, *, env=None) -> dict:
     """Validate the configured Partner prompt sources before bootstrap."""
     from . import persona as persona_mod
-    return persona_mod.boundary(root, item_id, env=env)
+    result = persona_mod.boundary(root, item_id, env=env)
+    if item_id == PARTNER:
+        from .partner_context import validate
+        result['delivery'] = validate(root, result['text'])
+    return result
 
 
 def ui_url(root: Path) -> str:
@@ -122,13 +126,19 @@ def launch(root: Path, item_id: str, *, run_id: str | None = None,
     from . import claude_bin, envfile
     envfile.sync_seed(root)
     claude_bin.refresh_pin(root, env)
-    prepare_persona(root, PARTNER, env=env)
     already = tmux.has_session(PARTNER, env)
     if not already:
-        for adapter_name in ("install.sh", "start.sh"):
-            result = run_adapter(root, adapter_name, PARTNER, env)
-            if result.returncode:
-                raise HxError(f"launch partner: {adapter_name} failed:\n{result.stdout}{result.stderr}")
+        from .partner_context import invalidate
+        invalidate(root)
+        result = run_adapter(root, 'install.sh', PARTNER, env)
+        if result.returncode:
+            raise HxError(f"launch partner: install.sh failed:\n{result.stdout}{result.stderr}")
+        prepare_persona(root, PARTNER, env=env)
+        result = run_adapter(root, 'start.sh', PARTNER, env)
+        if result.returncode:
+            raise HxError(f"launch partner: start.sh failed:\n{result.stdout}{result.stderr}")
+    else:
+        prepare_persona(root, PARTNER, env=env)
     return {"id": PARTNER, "session": "existing" if already else "started"}
 
 

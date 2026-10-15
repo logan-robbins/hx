@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from . import checks, companion_map, companion_protocol as protocol, jev_deltas, native_processes, passes, prompt_compiler
+from . import checks, companion_map, companion_protocol as protocol, jev_deltas, native_processes, passes, prompt_compiler, sidecar_process
 from .config_harness import load_harness
 from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
@@ -65,7 +65,11 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
         if (job["worker_id"] != worker or job["payload"]["record_ids"] != list(record_ids)
             or job["payload"].get("requested_map", job["payload"].get("map_selection")) != requested_map):
             raise Conflict("companion request identity was reused with different inputs")
-        return _reduce(store, job) if job["status"] == "reducing" else job
+        prior_run = store.db.execute("SELECT ended_at FROM runs WHERE run_id=?", (run_id,)).fetchone()
+        if prior_run["ended_at"] is not None:
+            return job  # Historical identity is inspectable, never refreshed or executed.
+        if job["status"] != "prepared":
+            return _reduce(store, job) if job["status"] == "reducing" else job
     if requested_map is None:
         map_snapshot, map_record_ids = companion_map.assignment_selection(store, run_id)
         map_selection = companion_map.selection(map_snapshot, map_record_ids)
@@ -77,11 +81,11 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
     if config.companion.get("disabled") or config.companion.get("provider", "claude-cli") != "claude-cli":
         raise ValidationError("planned companion requires the configured native Claude companion")
     prompt = prompt_compiler.build(store.root, worker, audience="companion")
+    if old and not sidecar_process.supersede_unpaid(store, "companion_jobs", old[0], prompt["version"]):
+        return protocol.row(store, old[0])
     _, rendered = prompt_compiler.verified_bundle(store.root, worker, Path(prompt["manifest_path"]),
         workdir=prompt["identity"]["workdir"], audience="companion")
-    binary = Path(json.loads(_bytes(store.root / "config/claude.json"))["bin"]).resolve()
-    if not binary.is_file() or not os.access(binary, os.X_OK):
-        raise ValidationError("configured Claude executable is unavailable")
+    runtime = sidecar_process.runtime(store.root, config, purpose="context")
     body = passes.prepare(store, run_id, stream_id, record_ids=record_ids, prompt_version=prompt["version"],
                           map_snapshot=map_snapshot, map_record_ids=map_record_ids)
     if body is None:
@@ -94,18 +98,22 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
     if map_selection is not None:
         system += companion_map.instructions()
     size = len(system.encode()) + len(canonical(body).encode()) + len(canonical(protocol.TOOLS).encode())
-    if size > REQUEST_BYTES:
-        raise RequiredContextOverflow("companion instructions, frozen pass, and schemas exceed 32 KiB")
-    reducible = all(_bookkeeping(event) or selection['events'][event['event_id']].get('unchanged', False)
+    ordinary_budget = protocol.READ_BUDGET * 6 + protocol.MAX_CALLS * 1024
+    if size > REQUEST_BYTES or size + ordinary_budget > runtime["model_input_limit"]:
+        raise RequiredContextOverflow("complete companion request and evidence allowance exceed the independent model context budget or 32 KiB initial request bound")
+    source_budget = min(protocol.MCP_MAX_RESULT_CHARS, runtime['model_input_limit'] - size - ordinary_budget)
+    evidence_budget = ordinary_budget + source_budget
+    from . import evidence
+    with store.transaction() as tx:
+        whole_sources = any(evidence.describe(tx, event['event_id'])[2] for event in body['events'])
+    reducible = not whole_sources and all(_bookkeeping(event) or selection['events'][event['event_id']].get('unchanged', False)
                     for event in body['events'])
-    info = binary.stat()
-    payload = {"manifest": prompt["manifest_path"], "prompt_version": prompt["version"], "system": system,
-        "binary": str(binary), "binary_stat": [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns],
-        "model": config.companion.get("model") or config.model,
-        "effort": config.companion.get("effort") or config.effort, "record_ids": list(record_ids), "map_selection": map_selection, "requested_map": requested_map,
+    payload = {**runtime,"manifest": prompt["manifest_path"], "prompt_version": prompt["version"], "system": system,
+        "record_ids": list(record_ids), "map_selection": map_selection, "requested_map": requested_map,
         "jev": {key: value for key, value in selection.items() if key != "scores"},
         "semantic_reduction": reducible and not all(_bookkeeping(event) for event in body['events']),
-        "request_bytes": size, "reads": 0, "read_bytes": 0, "attempts": 0}
+        "request_bytes": size, "evidence_budget": evidence_budget, 'source_read_budget': source_budget,
+        'source_read_bytes': 0, 'source_reads': {}, "reads": 0, "read_bytes": 0, "attempts": 0}
     job_id = str(uuid.uuid4())
     try:
         with store.transaction() as tx:
@@ -136,6 +144,9 @@ def execute(store, job_id, *, env=None, timeout_s=60):
     if type(timeout_s) not in (int, float) or not 0 < timeout_s <= 60:
         raise ValidationError("companion execution deadline must be at most 60 seconds")
     job = protocol.row(store, job_id)
+    if job["status"] in {"prepared", "reducing"}:
+        with store.transaction() as tx:
+            passes._active_run(tx, job["run_id"])
     if job["status"] == "reducing":
         _reduce(store, job)
         return status(store, job_id)
@@ -145,15 +156,7 @@ def execute(store, job_id, *, env=None, timeout_s=60):
     payload = job["payload"]
     prompt_compiler.verified_bundle(store.root, job["worker_id"], Path(payload["manifest"]),
         workdir=body["task"]["workdir"], audience="companion")
-    info = Path(payload["binary"]).stat()
-    if [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns] != payload["binary_stat"]:
-        raise Conflict("companion executable changed after preparation")
-    token_file = store.root / "seed/token"
-    if token_file.stat().st_mode & 0o77:
-        raise ValidationError("companion credential must be private")
-    credential = _bytes(token_file, 8192).decode().strip()
-    if not credential:
-        raise ValidationError("companion credential is absent")
+    transport = sidecar_process.preflight(store.root, payload, body, protocol="companion_protocol", timeout_s=timeout_s)
     # One root-wide model slot keeps low-memory hosts serial. A crash retains
     # running ownership until explicit process reconciliation, without a TTL.
     try:
@@ -162,6 +165,8 @@ def execute(store, job_id, *, env=None, timeout_s=60):
             if current["status"] != "prepared":
                 return status(tx, job_id)
             passes._active_run(tx, job["run_id"])
+            if tx.db.execute("SELECT 1 FROM learning_jobs WHERE status='running'").fetchone():
+                raise Conflict("learning Companion owns the root execution slot")
             companion_map.check_scope(tx, body, versions=True)
             cursor = tx.db.execute("SELECT classified_seq,revision FROM cursors WHERE run_id=? AND stream_id=?",
                                    (job["run_id"], body["stream_id"])).fetchone()
@@ -176,42 +181,16 @@ def execute(store, job_id, *, env=None, timeout_s=60):
             tx.db.execute("UPDATE companion_jobs SET status='running' WHERE job_id=?", (job_id,))
     except sqlite3.IntegrityError as exc:
         raise Conflict("another companion owns the root execution slot") from exc
-    execution_env = {key: value for key, value in (os.environ if env is None else env).items()
-                     if key in {"PATH", "TMPDIR", "ANTHROPIC_BASE_URL"}}
-    execution_env.update(CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1", CLAUDE_CODE_DISABLE_AUTO_MEMORY="1",
-        CLAUDE_CODE_MAX_OUTPUT_TOKENS=COMPANION_MAX_OUTPUT_TOKENS, DISABLE_AUTOUPDATER="1")
-    execution_env["ANTHROPIC_API_KEY" if credential.startswith("sk-ant-api") else "CLAUDE_CODE_OAUTH_TOKEN"] = credential
     execution = None
     pending_hash = None
     try:
-        with tempfile.TemporaryDirectory(prefix="hx-companion-") as scratch:
-            home = Path(scratch)
-            execution_env.update(HOME=scratch, CLAUDE_CONFIG_DIR=str(home / "config"), XDG_CONFIG_HOME=str(home / "xdg"))
-            (home / "config").mkdir()
-            (home / "config/settings.json").write_text(canonical({"disableAllHooks": True, "autoMemoryEnabled": False,
-                "permissions": {"defaultMode": "dontAsk"}, "enabledPlugins": {}}))
-            (home / "system.md").write_text(payload["system"])
-            (home / "pass.json").write_text(canonical(body))
-            # Explicit module path avoids ambient PYTHONPATH or installed-package drift.
-            server = home / "server.py"
-            server.write_text("import sys\nsys.path.insert(0," + repr(str(Path(__file__).resolve().parent.parent)) + ")\n"
-                "from pathlib import Path\nfrom hx.companion_protocol import serve\nserve(Path(sys.argv[1]),sys.argv[2])\n")
-            mcp = {"mcpServers": {"continuity": {"command": sys.executable,
-                "args": [str(server), str(store.root.resolve()), job_id]}}}
-            (home / "mcp.json").write_text(canonical(mcp))
-            argv = [payload["binary"], "--print", "--output-format", "json", "--no-session-persistence",
-                "--setting-sources", "user", "--system-prompt-file", str(home / "system.md"),
-                "--tools", "", "--strict-mcp-config", "--mcp-config", str(home / "mcp.json"),
-                "--allowedTools", "mcp__continuity__read_evidence,mcp__continuity__submit_patch",
-                "--permission-mode", "dontAsk", "--disable-slash-commands", "--no-chrome",
-                "--max-turns", "6", "--model", payload["model"], "--effort", payload["effort"]]
-            def spawned(process):
-                identity = native_processes.probe(process.pid)
-                with store.transaction() as tx:
-                    protocol.update(tx, protocol.row(tx, job_id), process=identity)
-            with (home / "pass.json").open("rb") as input_file:
-                execution = checks.execute(argv, home, execution_env, home / "output.json", timeout_s, OUTPUT_BYTES,
-                                           stdin=input_file, on_spawn=spawned)
+        def spawned(process):
+            identity = native_processes.probe(process.pid)
+            with store.transaction() as tx:
+                protocol.update(tx, protocol.row(tx, job_id), process=identity)
+        execution = sidecar_process.execute(store.root, job_id, payload, body,
+            protocol="companion_protocol", tools=("read_evidence", "submit_patch"),
+            on_spawn=spawned, env=env, timeout_s=timeout_s, output_bytes=OUTPUT_BYTES, transport=transport)
         if store.db.execute("SELECT status FROM passes WHERE pass_id=?", (job["pass_id"],)).fetchone()[0] != "committed":
             # A failed extraction acknowledges only pending evidence; it must
             # not discard the tail or manufacture a current fact.

@@ -20,7 +20,7 @@ from .ids import ID_RE, PARTNER
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
-_OPTIONAL = ("workdir", "harness", "companion", "flavor", "purpose", "explorer")
+_OPTIONAL = ("workdir", "harness", "companion", "learning", "flavor", "purpose", "explorer")
 
 #: `explorer`: what the worker's orientation subagent runs on. Every engineer persona's first
 #: rule spawns it with the goal paragraph before the first edit (Agent tool, this model and
@@ -110,6 +110,7 @@ class HarnessConfig:
     flavor: str = "claude"
     harness: dict = field(default_factory=dict)
     companion: dict = field(default_factory=dict)
+    learning: dict = field(default_factory=dict)
     purpose: str | None = None
     explorer: dict = field(default_factory=dict)
 
@@ -289,6 +290,20 @@ def validate_harness(
             f"{path}: unknown `companion` field(s) {', '.join(unknown_companion)}"
         )
 
+    learning = data.get("learning") or {}
+    if not isinstance(learning, dict) or learning.keys() - {"model", "effort", "disabled", "batch_records", "request_bytes", "max_proposals"}:
+        raise ValidationError(f"{path}: learning must contain only model, effort, disabled, batch_records, request_bytes, max_proposals")
+    for key in ("model", "effort"):
+        if key in learning and (not isinstance(learning[key], str) or not learning[key].strip()):
+            raise ValidationError(f"{path}: learning.{key} must be nonempty text")
+    if "effort" in learning and learning["effort"] not in EFFORT_LEVELS:
+        raise ValidationError(f"{path}: learning.effort must be one of {', '.join(EFFORT_LEVELS)}")
+    if "disabled" in learning and type(learning["disabled"]) is not bool:
+        raise ValidationError(f"{path}: learning.disabled must be a boolean")
+    for key, maximum in (("batch_records", 128), ("request_bytes", 262144), ("max_proposals", 8)):
+        if key in learning and (type(learning[key]) is not int or not 1 <= learning[key] <= maximum):
+            raise ValidationError(f"{path}: learning.{key} must be an integer from 1 to {maximum}")
+
     if models is not None and model not in models:
         raise ValidationError(
             f"{path}: `model` `{model}` is not in config/models.json "
@@ -323,6 +338,7 @@ def validate_harness(
         flavor=flavor,
         harness=harness,
         companion=companion,
+        learning=learning,
         purpose=purpose_text(purpose),
         explorer=explorer,
     )

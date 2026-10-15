@@ -1,277 +1,90 @@
 # Deploying hx
 
-This is everything a human does. It happens once. After it, you talk to the Partner and
-nothing else.
+HX is one unreleased product. Install its current package, create one instance, and configure
+that instance for the project. The [system design](system-design.md) describes the complete
+directive-to-release lifecycle; [getting started](getting-started.md) covers initial setup.
 
-## What you are setting up
+## Install and create the instance
 
-`hx` is a control plane for a fleet of Claude Code sessions. Each one — including the
-supervising **Partner** — is a full Claude Code instance in its own tmux session, using an admitted packet run, with its own config directory and its own working directory.
-The Partner itself orchestrates and does not own a worker run.
-
-Each participant has configured Companion observation. Worker passes receive frozen captured
-events and bounded evidence access, then submit structured task/map changes for validation.
-The Companion cannot execute worker commands or establish completion from a claim. Current
-ledger packets and native reset checkpoints carry the facts needed to continue.
-
-Two things exist and never mix:
-
-- The **package** `hx`: Python 3.14 with declared runtime dependencies, published as `hx-harness`.
-- The **instance** `$HARNESS_ROOT`: your data. Created by `hx install`. `/srv/hx` on a server,
-  `~/hx` on a workstation.
-
-Upgrading the package never writes into your instance; `hx install` is idempotent and is
-what re-copies the skeleton.
-
-## Before you start
-
-- **A non-root user.** hx refuses to run as root, and Claude Code refuses
-  `--dangerously-skip-permissions` under root or sudo. Every agent here runs with that flag.
-- **`tmux`** and **`git`** on `PATH`.
-- **Python 3.14 or newer.**
-- **The `claude` binary**, at any current version. `hx install` records the one it finds and
-  every launch re-records what the binary reports, so the fleet runs the latest release;
-  the wheel's `hx/packaging/tested-claude-versions.json` is the list the live suite last
-  passed on, which the install and `hx doctor` report as `tested` or `untested`.
-- **A Claude account.** The harness authenticates with a long-lived token of its own that you
-  generate in one command — see step 3. Your own login is never read.
-
-## 1. Install the package
+Use a non-root macOS or Linux account with Python 3.14, `uv`, `tmux`, `git`, and Claude Code
+available. Build and install the current checkout:
 
 ```bash
-uv tool install hx-harness
+uv build
+uv tool install --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+hx install --root ~/hx
 ```
 
-The distribution is named `hx-harness`; the command, the Python package, and the repository are
-all `hx`. `pipx install hx-harness` works too. It installs two entry points, `hx` and
-`hx-hook`, into your uv tool bin directory, and nothing at all into your `~/.claude`.
+The package contains executable code and templates. The instance at `~/hx` contains its
+configuration, private agent homes, captured evidence, and authoritative continuity ledger.
+It must be outside the user's personal `~/.claude` directory. Installation does not import
+that personal configuration.
 
-## 2. Create the instance
+Without configured credentials, installation stops with exit 4 and names the instance's
+`seed/token`. Run `claude setup-token`, save the resulting token there with mode 0600, and
+repeat the same `hx install` command. A local dotenv credential file can instead be configured
+with `--env-file /absolute/path/to/.env`; existing instance seed credentials take precedence.
+See [getting started](getting-started.md) for the credential procedure.
 
-```bash
-export HARNESS_ROOT=~/hx        # or /srv/hx on a server
-hx install
-```
-
-That is the whole of it. `hx install` runs four numbered steps and prints each one; it is
-idempotent, so the run below is what happens the first time and re-running it picks up where it
-stopped. Everything that follows on this page is output from a real run of
-`packaging/e2e-deploy.sh`, not an illustration.
-
-It refuses to run as root, checks `tmux`, `git` and Python, and records the `claude` binary:
-
-```
-1. claude 2.1.278 at /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe (tested)
-2. instance at ~/hx
-   created  PARTNER.md
-   created  adapters/claude/install.sh
-   created  adapters/claude/start.sh
-   created  companion/BASE.md
-   created  companion/roles/backend-engineer.md
-   created  companion/roles/frontend-engineer.md
-   created  companion/roles/partner.md
-   created  companion/roles/release-engineer.md
-   created  config/CLAUDE.md
-   created  config/models.json
-   created  config/partner/SUBAGENTS.md
-   created  config/partner/harness.json
-   created  personas/backend-engineer.md
-   created  personas/frontend-engineer.md
-   created  personas/partner.md
-   created  personas/qa-engineer.md
-   created  personas/release-engineer.md
-   created  templates/worker/SUBAGENTS.md
-   created  templates/worker/harness.json
-   created  .gitignore
-   created  config/hx.json
-   created  config/claude.json
-```
-
-A `claude` newer than the live suite has passed on installs the same way and is marked
-`untested` beside the newest tested version. `partner` is the only agent a fresh instance has; `templates/worker/harness.json` is
-what the Partner fills in to create another (its role, its one-paragraph `purpose`, its
-workdir), and `personas/<role>.md` are the role personas each agent is handed at every
-boundary. You never do either yourself — the Partner has a skill for it.
-
-## 3. Seed the token
-
-Then it stops, with **exit 4**, and asks for the one thing it cannot do for you:
-
-```
-hx needs one long-lived token for this instance. Two steps, both yours:
-
-  1. claude setup-token
-  2. paste the token it prints into ~/hx/seed/token
-
-Then run this command again. hx reads nothing from your own ~/.claude, on any
-platform: this token is the whole of an agent's auth (spec 11 Auth).
-```
-
-Do exactly that — `claude setup-token` in your own Claude, paste the line it prints into
-`$HARNESS_ROOT/seed/token` — and run the same `hx install` command again. It sets the file to
-mode 0600 and carries on. `start.sh` then reads that file in its own process and exports it as
-`CLAUDE_CODE_OAUTH_TOKEN` for each session it launches: never as an argument to anything, so it
-cannot appear in `ps`, and never written anywhere under `run/`.
-
-Agent homes hold no credentials file at all. Revoking the harness's access later is one token,
-in one place, with nothing of yours entangled in it.
-
-## 4. The rest of the install
-
-The second run picks up at step 3 and finishes. Step 2 runs again and prints `kept` for
-everything already there — that is what idempotent looks like:
-
-```
-3. seed token at ~/hx/seed/token, mode 0600
-4. partner started
-
-tmux attach -t partner
-```
-
-**Keeping it running is yours.** hx ships no launchd plist and no systemd unit. `hx up`
-(launch everything) and `hx heartbeat` (restart dead sessions, wake the Partner when the board
-moved) are ordinary commands; put them in your own cron if you want them at boot or on a
-timer:
-
-```cron
-@reboot      hx up
-*/15 * * * * hx heartbeat
-```
-
-**Working directories are not hx's business.** Each worker's `workdir` is whatever absolute
-directory the Partner puts in `config/<id>/harness.json` — a fresh directory it creates, or a
-checkout that already exists. hx creates no repository and no branch, and pushes nothing
-anywhere. The only git it ever runs is `git status --porcelain` inside `hx complete done`, and
-only when that directory is a git repository.
-
-## 5. Talk to the Partner
-
-Step 6 started the Partner and printed:
+A completed installation starts the Partner and reports the UI address. Attach to its session:
 
 ```bash
 tmux attach -t partner
 ```
 
-That is the interface. Tell it what you want built, in your own words. It writes its own goal
-file from the conversation, dispatches itself, decomposes the work into goal files for
-workers, launches and dispatches them, reads their digests as they finish, and reports back to
-you in chat.
+Tell the Partner the project repository and desired outcome. Repository registration,
+policies, and prepared worker directories are project configuration. A packet reuses suitable
+prepared directories; optional source materialization is needed when those inputs are missing.
+Every admission still revalidates current source, graph evidence, dependencies and ownership.
 
-**You do not run hx commands.** If the Partner ever tells you to run one, tell it that is its
-job — that instruction is in its persona and its skill.
+## Execution and the two Companions
 
-Detach with `Ctrl-b d`. The fleet keeps working.
+Every directive uses the code/application dependency graph and search for existing behavior,
+interfaces, providers and tests before construction. The Partner defines observable packets
+and schedules maximum useful parallel work. Workers own implementation and exact executable
+checks, which require independent binding approval before edits or proof.
 
-## Watching without attaching
+Every agent has a Context Companion and a separate Learning Companion. The Context Companion
+observes frozen events and proposes validated task/map updates. The Learning Companion has
+its own cursor, jobs and budget, assesses that agent's evidence, and creates pending reusable
+rule proposals. A different authorized session accepts, merges or rejects those proposals.
+Reviewed global and applicable role rules reach every agent and both Companions in full.
 
-```bash
-hx ui
-```
+Instructions and required context are delivered completely at managed native boundaries.
+Source/instruction evidence is a complete verified object or an explicit refusal; bounded
+non-file observations retain their own evidence contract. Neither Companion can turn an
+agent's completion claim into proof.
 
-serves an observing UI on `127.0.0.1` (port from `config/ui.json`, default 8765), with a
-bearer token in `run/ui-token`. It shows the fleet graph with each worker's Companion beside
-it, a detail view per packet/run with current progress, binding, ownership, and proof, a Session page
-and a Compaction page (the Companion's last written state, verbatim) that open in their own
-window, the Task board, Activity, Goals, Archive, and the Partner chat. It observes; it does
-not operate. Full control — slash commands, interrupts — is `tmux attach -t partner`.
+## Observe and recover
 
-## Package changes
-
-Rebuild/install the current package and use its current instance/store schema. HX is unreleased;
-obsolete state is refused and replaced instead of migrated. Preserve any needed project source
-and evidence before replacing an obsolete instance. Package installation and instance creation
-remain separate operations. `hx doctor` checks current configuration and installed assets.
-
-## What hx never touches
-
-Your `~/.claude`, your checkouts, and any remote. See [operating HX](operating.md) for the
-line-by-line version.
-
-## If something is wrong
+The UI projects the same ledger task/run identities, bindings, progress, ownership and
+delivery evidence as the CLI. Its Partner chat sends an explicit human message. Recorded
+milestones do not substitute for current readiness checks.
 
 ```bash
-hx doctor        # tmux, git, the recorded binary and its version, the seed token and its mode,
-                 # every agent home's settings, mirror reachability
-hx board         # status rows plus scope lines; exits 0 always
+hx doctor --root ~/hx
+hx board --root ~/hx
+hx up --root ~/hx
+hx heartbeat --root ~/hx
 ```
 
-Both are safe to run yourself and neither changes anything. A board error is normally the
-Partner's to reconcile through the original run/request; heartbeat advances existing durable intents.
+`doctor` checks configuration and installed assets; `board` reads current fleet projections.
+`up` recovers the Partner, UI and root service. `heartbeat` advances existing durable native
+intents. Worker launch, drain and shutdown retain their admitted run and original request
+identity; uncertain process ownership retains obligations until reconciled.
 
-Real `hx doctor` output from a finished install — every line `ok`, exit 0:
+## Project release
 
-```
-$ hx doctor
-ok    python           3.14.7 (~/.local/share/uv/tools/hx-harness/bin/python)
-ok    tmux             tmux 3.7c
-ok    git              git version 2.50.1 (Apple Git-155)
-ok    root             ~/hx
-ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe at 2.1.278 (tested)
-ok    skeleton         PARTNER.md
-ok    skeleton         LEARNINGS/orientation.md
-ok    skeleton         LEARNINGS/ownership.md
-ok    skeleton         LEARNINGS/planning.md
-ok    skeleton         LEARNINGS/domain.md
-ok    skeleton         LEARNINGS/build.md
-ok    skeleton         LEARNINGS/testing.md
-ok    skeleton         LEARNINGS/runtime.md
-ok    skeleton         LEARNINGS/evidence.md
-ok    skeleton         LEARNINGS/delivery.md
-ok    skeleton         LEARNINGS/harness.md
-ok    skeleton         LEARNINGS/environment.md
-ok    skeleton         adapters/claude/install.sh
-ok    skeleton         adapters/claude/start.sh
-ok    skeleton         adapters/claude/seam-command
-ok    skeleton         adapters/load-env.sh
-ok    skeleton         adapters/pi/install.sh
-ok    skeleton         adapters/pi/start.sh
-ok    skeleton         adapters/pi/seam-command
-ok    skeleton         adapters/pi/extension/index.ts
-ok    skeleton         adapters/grok/install.sh
-ok    skeleton         adapters/grok/start.sh
-ok    skeleton         adapters/grok/seam-command
-ok    skeleton         adapters/grok/hook.py
-ok    skeleton         adapters/meta/install.sh
-ok    skeleton         adapters/meta/start.sh
-ok    skeleton         adapters/meta/seam-command
-ok    skeleton         adapters/meta/hook.py
-ok    skeleton         companion/BASE.md
-ok    skeleton         companion/roles/partner.md
-ok    skeleton         companion/roles/qa-engineer.md
-ok    skeleton         personas/qa-engineer.md
-ok    skeleton         continuity/prompts/common.md
-ok    skeleton         continuity/prompts/audiences/worker.md
-ok    skeleton         continuity/prompts/audiences/companion.md
-ok    skeleton         config/CLAUDE.md
-ok    skeleton         config/models.json
-ok    skeleton         config/partner/SUBAGENTS.md
-ok    skeleton         config/partner/harness.json
-ok    skeleton         personas/partner.md
-ok    skeleton         templates/work-item.md
-ok    learnings        ~/hx/LEARNINGS: 0 rule(s) (none), 0 pending proposal(s)
-ok    models           2 model(s): claude-opus-5 window=1000000 seam=200000 autocompact=250000, claude-sonnet-5 window=1000000 seam=200000 autocompact=250000
-ok    skills           8 skill(s) valid (frontmatter, size, worker lint); 4 over the 8 KiB facade bound; optional on: none
-ok    hx.json          hx_bin ~/.local/share/uv/tools/hx-harness/bin/hx
-ok    hx.json          hook_bin ~/.local/share/uv/tools/hx-harness/bin/hx-hook
-ok    hx.json          python_bin ~/.local/share/uv/tools/hx-harness/bin/python
-ok    bin              bin/hx -> ~/.local/share/uv/tools/hx-harness/bin/hx
-ok    bin              bin/hx-hook -> ~/.local/share/uv/tools/hx-harness/bin/hx-hook
-ok    token            seed/token present, mode 0600
-ok    home:partner     settings.json
-ok    home:partner     .claude.json (onboarding done, 1 trusted cwd)
-ok    sandbox:partner  IS_SANDBOX=1 on the tmux session
-ok    sandbox:partner  --dangerously-skip-permissions in the pane's argv
-```
+Verified packet coverage releases worker ownership and can unlock dependent work. Integration,
+intent review, local landing and release eligibility have their own exact-source gates. Fixed
+CI candidates permit main to advance while checks run; matching .NET builds share immutable
+artifacts and tests use private writable shards without recompiling.
 
-The two `sandbox:` lines are per live agent, and they are the ones worth reading: they check
-the *running* session rather than the configuration that was meant to produce it. If an agent
-was launched some other way, or a relaunch lost a flag, that is where it shows.
+The deploy gate requires same-source integration, resolved real-provider obligations and the
+tested immutable artifact. The project's configured release system performs deployment and
+health checks. HX does not imply a remote push or deployment from local landing. See
+[agent-scale runtime](agent-scale-runtime.md) for the commands and evidence contracts.
 
-Before you have pasted the token, the `token` line is a `warn` naming
-`claude setup-token`, and `hx install` itself stops with exit 4 rather than leaving you to
-find that out from `doctor`. Every `warn` names the step that clears it, and `doctor` fails
-(exit 1) only on things that are actually broken: a missing `tmux` or `git`, a Python below
-3.14, or a pinned `claude` that is not executable.
-
-(Absolute paths above are from a real run; yours will be under your own `$HARNESS_ROOT` and uv
-tool directory.)
+Package installation and instance creation are separate operations. Use the current instance
+and store schemas; obsolete unreleased state is refused and replaced. Preserve needed project
+source and evidence before replacing an obsolete instance.

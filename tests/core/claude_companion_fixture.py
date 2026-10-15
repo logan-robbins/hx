@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 @contextmanager
-def transport(frozen, response):
+def transport(frozen, response, *, blocks=None):
     requests = []
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
@@ -33,7 +33,9 @@ def transport(frozen, response):
                 return
             requests.append(body)
             turn = len(requests)
-            if turn == 1:
+            if blocks is not None:
+                block = blocks[min(turn - 1, len(blocks) - 1)]
+            elif turn == 1:
                 block = {'type': 'tool_use', 'id': 'read_1', 'name': 'mcp__continuity__read_evidence',
                          'input': {'event_id': frozen['events'][0]['event_id'], 'offset': 0, 'limit': 1024}}
             elif turn == 2:

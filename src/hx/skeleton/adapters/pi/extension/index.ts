@@ -254,7 +254,7 @@ export default function (pi: {
   });
 
   pi.on("tool_result", (event, ctx) => {
-    callHook("log", {
+    const stdout = callHook("log", {
       tool_name: event.toolName,
       tool_use_id: event.toolCallId,
       tool_input: event.input,
@@ -263,6 +263,14 @@ export default function (pi: {
       ...(childIdentity ?? { transcript_path: sessionFile(ctx) }),
     });
     syncTools();
+    const value = stdout.trim().startsWith('{') ? JSON.parse(stdout) : null;
+    if (value?.hx_complete_read || ["read", "Read", "read_file"].includes(event.toolName)) {
+      if (!value.hx_complete_read?.complete || typeof value.hx_complete_read.text !== "string") {
+        throw new Error("hx complete-file broker did not deliver the whole file");
+      }
+      return { content: [{ type: "text", text: value.hx_complete_read.text }],
+        details: { hxCompleteRead: value.hx_complete_read.receipt }, isError: false };
+    }
   });
 
   const settle = async (event: { type?: string; entries?: unknown[] }, ctx: any) => {

@@ -93,17 +93,16 @@ def test_partner_checkpoint_restores_scheduling_decisions_without_debugging_chat
     assert '### Memory' not in text and 'INTERMEDIATE EXCHANGE' not in text
 
 
-def test_a_partner_reset_hands_its_persona_and_one_pointer_to_partner_md(instance, monkeypatch):
-    """No inlined state and no JSON envelope: the persona, the identity line, the rules, then
-    one Read of PARTNER.md, which already holds its `## Status`."""
+def test_a_partner_reset_hands_its_persona_and_complete_current_notes(instance, monkeypatch):
+    """The configured persona, identity, rules and current notes are all inline."""
     from hx import compose, hook_context
     (instance / 'PARTNER.md').write_text('Ship the parser. eng-001 owns implementation; QA waits.\n')
     code, output = hook_context.handle({'source': 'clear'}, 'partner', instance, env={})
     assert code == 0
     lines = [line for line in output.split('\n') if line.strip()]
-    assert lines[0] == 'You are the Partner.'
-    assert lines[-1] == hook_context.CONTEXT_LINE.format(path=(instance / 'PARTNER.md').resolve())
-    assert not output.lstrip().startswith('{') and 'QA waits.' not in output
+    assert 'You are the Partner.' in lines
+    assert 'QA waits.' in output
+    assert 'Use the Read tool once' not in output
     assert '\n## Status\n' in (instance / 'PARTNER.md').read_text()
 
 

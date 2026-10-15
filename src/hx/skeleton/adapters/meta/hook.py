@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hook-bin", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument("event")
+    parser.add_argument("--read-segment", type=int)
     for field in ("run", "launch", "adapter"):
         parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
@@ -79,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(body, dict):
         body = {"_hx_capture_error": True}
 
+    if args.read_segment is not None:
+        extra += ["--read-segment", str(args.read_segment)]
     payload = json.dumps(translate(body)).encode()
     # --hook-bin can be a bare path or a command with arguments.
     try:

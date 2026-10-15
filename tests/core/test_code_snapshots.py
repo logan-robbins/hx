@@ -139,20 +139,12 @@ def test_path_map_changes_share_nodes_and_extract_only_commit_delta(
     conn.close()
 
 
-def test_scope_refresh_and_admission_never_enumerate_unrelated_paths(
+def test_scope_refresh_scans_all_sizes_but_only_parses_requested_paths(
     tmp_path, monkeypatch
 ):
     repo = repository(tmp_path)
     root = tmp_path / "state"
     code_index.index_repo(root, repo)
-    original_run = subprocess.run
-
-    def run(argv, **kwargs):
-        if "ls-files" in argv:
-            pytest.fail("exact path must not enumerate git files")
-        return original_run(argv, **kwargs)
-
-    monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr(
         code_build,
         "discover",
@@ -877,33 +869,21 @@ def test_thirteen_cold_shared_service_requests_use_one_extraction(
             thread.join(timeout=5)
 
 
-def test_oversize_fingerprint_streams_without_archiving_or_reading_whole_body(
-    tmp_path, monkeypatch
+def test_oversize_index_fails_without_archiving_or_publishing_partial_coverage(
+    tmp_path,
 ):
     repo = repository(tmp_path)
     oversized = repo / "large.py"
     oversized.write_text("x" * 8192)
-    read = Path.read_bytes
-
-    def bounded(path):
-        if path == oversized:
-            pytest.fail("oversize body was read wholesale")
-        return read(path)
-
-    monkeypatch.setattr(Path, "read_bytes", bounded)
     root = tmp_path / "state"
-    result = code_index.index_repo(root, repo, max_file_bytes=128)
-    assert result["skipped"] == 1
-    assert code_freshness.scope(root, repo, ["large.py"])["fresh"]
+    with pytest.raises(ValueError, match="large.py.*index aborted"):
+        code_index.index_repo(root, repo, max_file_bytes=128)
     conn = connect(root)
-    excluded = conn.execute(
-        'SELECT sha256,size FROM exclusions WHERE path="large.py"'
-    ).fetchone()
-    assert excluded["size"] == 8192
-    assert not conn.execute(
-        "SELECT 1 FROM source_objects WHERE sha=?", (excluded["sha256"],)
-    ).fetchone()
+    assert not conn.execute("SELECT 1 FROM code_snapshots").fetchone()
+    assert not conn.execute('SELECT 1 FROM exclusions WHERE path="large.py"').fetchone()
     conn.close()
+    result = code_index.index_repo(root, repo)
+    assert result["skipped"] == 0
 
 
 def test_live_absence_requires_complete_snapshot_after_scoped_bootstrap(tmp_path):

@@ -73,6 +73,10 @@ from pathlib import Path
 from hx.hook_contract import installation_args
 continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "grok", os.environ)
 
+if continuity:
+    from hx.file_read_delivery import install_profile
+    install_profile(Path(os.environ["HX_ROOT"]), item_id)
+
 events = (
     "SessionStart:context",
     "PostToolUse:log",
@@ -100,6 +104,16 @@ for spec in events:
         f"  type = \"command\"\n"
         f"  command = '{cmd}'\n"
     )
+if continuity:
+    from hx.file_read_delivery import segment_slots
+    for index in range(1, segment_slots(Path(os.environ['HX_ROOT']), item_id)):
+        cmd = shlex.join([python, adapter, '--id', item_id, '--hook-bin', hook_bin,
+            '--root', os.environ['HX_ROOT'], *continuity, 'log', '--read-segment', str(index)])
+        blocks.append('[[hooks.PostToolUse]]\nmatcher = "Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command"\n'
+            '  [[hooks.PostToolUse.hooks]]\n  type = "command"\n' + f"  command = '{cmd}'\n")
+        failure = cmd.replace(' log --read-segment ', ' log-failure --read-segment ')
+        blocks.append('[[hooks.PostToolUseFailure]]\nmatcher = "Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command"\n'
+            '  [[hooks.PostToolUseFailure.hooks]]\n  type = "command"\n' + f"  command = '{failure}'\n")
 
 config = """\
 [cli]

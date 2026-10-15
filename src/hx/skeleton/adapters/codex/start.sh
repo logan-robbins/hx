@@ -96,6 +96,10 @@ if [ "$mode" = exec ]; then
     # A planned launch's persona is the compiled planned system prompt, prepared in its
     # private root and verified by the controller (`native_launch`).
     [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
+  elif [ "$id" = partner ]; then
+    # The complete Partner boundary is delivered automatically through the
+    # verified context segments. Keep one authoritative instruction delivery.
+    : > "$home/AGENTS.md"
   else
     # Codex reads `$CODEX_HOME/AGENTS.md` as its user instructions at every start: the
     # invariants and the role persona, concatenated here at every exec so an edit to either

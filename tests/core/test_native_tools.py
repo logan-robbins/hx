@@ -37,9 +37,18 @@ def payload(call='call-1', **changes):
 
 
 def fire(store, run, row, event, body):
-    return hooks.main(['--root', str(store.root), '--id', 'eng-001', '--continuity-run', run,
-        '--continuity-launch', row['launch_id'], '--continuity-adapter', 'claude', event],
+    args = ['--root', str(store.root), '--id', 'eng-001', '--continuity-run', run,
+        '--continuity-launch', row['launch_id'], '--continuity-adapter', 'claude', event]
+    code = hooks.main(args,
         stdin=StringIO(json.dumps(body)), env={})
+    from hx.file_reads import is_read
+    if code == 0 and event in {'log', 'log-failure'} and is_read(body):
+        from hx.file_read_delivery import segment_slots
+        for index in range(1, segment_slots(row['payload']['capsule'], 'eng-001')):
+            code = hooks.main([*args, '--read-segment', str(index)], stdin=StringIO(json.dumps(body)), env={})
+            if code:
+                return code
+    return code
 
 
 def installed_command(row, adapter, event):
@@ -386,3 +395,87 @@ session.dispose();
     assert result.returncode == 0, result.stderr
     assert 'grep' in json.loads(result.stdout)['names']
     assert tool_catalog.selection(store, row)['status'] == 'loaded'
+
+
+@pytest.mark.parametrize('adapter', ['claude', 'codex', 'pi', 'grok', 'meta'])
+def test_installed_file_broker_delivers_tail_after_truncated_native_preview(runtime, adapter):
+    store, repo, run, env = runtime
+    flavor(runtime, adapter)
+    row = submitted(runtime)
+    path = Path(repo) / 'complete.py'
+    complete = '# full source\n' * 4000 + 'def existing_capability():\n    return "tail retained"\n'
+    path.write_text(complete)
+    body = payload('complete-file', tool_name='read' if adapter == 'pi' else 'Read',
+                   tool_input={'path' if adapter == 'pi' else 'file_path': str(path)})
+    admitted = subprocess.run(installed_command(row, adapter, 'tool-start'), input=json.dumps(body),
+        text=True, capture_output=True, env={'PATH': env['PATH']}, timeout=10)
+    assert admitted.returncode == 0, admitted.stderr
+    from hx.file_read_delivery import SEGMENTED_ADAPTERS, segment_slots
+    count = segment_slots(row['payload']['capsule'], 'eng-001') if adapter in SEGMENTED_ADAPTERS else 1
+    parts = []
+    for index in range(count):
+        command = installed_command(row, adapter, 'log')
+        if index:
+            command += ['--read-segment', str(index)]
+        result = subprocess.run(command, input=json.dumps({**body,
+            'tool_response': {'text': '# full source\n', 'truncated': True}}),
+            text=True, capture_output=True, env={'PATH': env['PATH']}, timeout=10)
+        assert result.returncode == 0, result.stderr
+        if not result.stdout.strip():
+            continue
+        emitted = json.loads(result.stdout)
+        actual = emitted['hx_complete_read']['text'] if adapter == 'pi' else emitted['hookSpecificOutput']['additionalContext']
+        if adapter in SEGMENTED_ADAPTERS:
+            assert len(actual) <= 10000
+            parts.append(actual.split('\n', 1)[1])
+        else:
+            parts.append(actual)
+    actual = ''.join(parts)
+    assert actual == complete
+    assert store.db.execute('SELECT success FROM native_reads WHERE call_id=?', ('complete-file',)).fetchone()[0] == 1
+    assert native_tools.pending(store, row['launch_id']) == 0
+    if adapter == 'codex':
+        config = tomllib.loads((Path(row['payload']['capsule']) / 'run/eng-001/home/config.toml').read_text())
+        assert config['hooks']['PostToolUse'][0]['hooks'][0]['additionalContextLimit'] == 0
+
+
+@pytest.mark.parametrize('adapter', ['claude', 'codex', 'pi', 'grok', 'meta'])
+def test_installed_shell_file_broker_delivers_complete_source_once(runtime, adapter):
+    store, repo, run, env = runtime
+    flavor(runtime, adapter)
+    row = submitted(runtime)
+    path = Path(repo) / 'whole source.py'
+    complete = '# ordinary source\n' * 1800 + '🦉' * 5000 + '\nTAIL_REQUIRED_CAPABILITY\n'
+    path.write_text(complete)
+    name, key = ('exec_command', 'cmd') if adapter == 'codex' else ('bash', 'command') if adapter == 'pi' else ('Bash', 'command')
+    body = payload('shell-file', tool_name=name, tool_input={key: 'hx file-read ' + shlex.quote(str(path))})
+    admitted = subprocess.run(installed_command(row, adapter, 'tool-start'), input=json.dumps(body),
+        text=True, capture_output=True, env={'PATH': env['PATH']}, timeout=10)
+    assert admitted.returncode == 0, admitted.stderr
+    child = native_launch.environment(store.root, row, env=env)
+    child.update(HARNESS_ID='eng-001')
+    marker = subprocess.run([str(Path(row['payload']['capsule']) / 'bin/hx'), 'file-read', str(path)],
+        text=True, capture_output=True, env=child, cwd=repo, timeout=10)
+    assert marker.returncode == 0, marker.stderr
+    assert json.loads(marker.stdout)['complete_file_read'] == 'synchronous_native_broker'
+    assert 'TAIL_REQUIRED_CAPABILITY' not in marker.stdout
+    from hx.file_read_delivery import SEGMENTED_ADAPTERS, segment_slots
+    count = segment_slots(row['payload']['capsule'], 'eng-001') if adapter in SEGMENTED_ADAPTERS else 1
+    parts = []
+    for index in range(count):
+        command = installed_command(row, adapter, 'log')
+        if index:
+            command += ['--read-segment', str(index)]
+        response = subprocess.run(command, input=json.dumps({**body, 'tool_response': {'output': marker.stdout}}),
+            text=True, capture_output=True, env={'PATH': env['PATH']}, timeout=10)
+        assert response.returncode == 0, response.stderr
+        if not response.stdout.strip():
+            continue
+        emitted = json.loads(response.stdout)
+        text = emitted['hx_complete_read']['text'] if adapter == 'pi' else emitted['hookSpecificOutput']['additionalContext']
+        if adapter in SEGMENTED_ADAPTERS:
+            assert len(text.encode()) <= 10000
+            text = text.split('\n', 1)[1]
+        parts.append(text)
+    assert ''.join(parts) == complete
+    assert native_tools.pending(store, row['launch_id']) == 0

@@ -9,6 +9,64 @@ from .test_appmap import mapped
 from .test_map_updates import active
 
 
+@pytest.fixture(autouse=True)
+def no_automatic_learning_model(monkeypatch):
+    from hx import learning_companion
+    # Existing context scheduling tests exercise their own paid lane only.
+    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: {'status': 'idle'})
+    monkeypatch.setattr(learning_companion, 'reconcile', lambda *a, **kw: None)
+
+
+def test_two_companions_alternate_without_sharing_cursors(planned, monkeypatch):
+    from hx import learning_companion
+    store, run, _ = planned
+    calls = []
+    monkeypatch.setattr(loop, '_context_tick', lambda *a, **kw: calls.append('context') or {'status': 'committed'})
+    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: calls.append('learning') or {'status': 'committed'})
+    for expected in ('context', 'learning', 'context', 'learning'):
+        assert loop.tick(store)['companion_kind'] == expected
+    assert calls == ['context', 'learning', 'context', 'learning']
+    assert store.db.execute('SELECT classified_seq FROM cursors WHERE run_id=?', (run,)).fetchone()[0] == 0
+    assert store.db.execute('SELECT assessed_seq FROM learning_cursors').fetchone()[0] == 0
+
+
+def test_context_failure_does_not_stop_independent_learner(planned, monkeypatch):
+    from hx import learning_companion
+    store, _, _ = planned
+    def failed(*a, **kw):
+        raise loop.Conflict('Context evidence is unresolved.')
+    monkeypatch.setattr(loop, '_context_tick', failed)
+    seen = []
+    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: seen.append(1) or {'status': 'committed'})
+    assert loop.tick(store)['status'] == 'unresolved'
+    result = loop.tick(store)
+    assert result['companion_kind'] == 'learning' and result['status'] == 'committed'
+    assert seen == [1]
+
+
+def test_learning_failure_does_not_stop_context_or_repeat_paid_loop(planned, monkeypatch):
+    from hx import learning_companion
+    store, _, _ = planned
+    loop._save(store, 'companion-turn', {'next': 'learning'})
+    calls = []
+    def unavailable(*a, **kw):
+        calls.append('learning')
+        raise loop.Conflict('Learning assessment is unresolved.')
+    monkeypatch.setattr(learning_companion, 'tick', unavailable)
+    monkeypatch.setattr(loop, '_context_tick', lambda *a, **kw: calls.append('context') or {'status': 'committed'})
+    assert loop.tick(store)['status'] == 'unresolved'
+    assert loop.tick(store)['status'] == 'committed'
+    assert calls == ['learning', 'context']
+
+
+def test_pending_learning_does_not_delay_completion(planned, monkeypatch):
+    from hx import learning_companion, native_completion
+    store, _, _ = planned
+    monkeypatch.setattr(native_completion, 'advance_one', lambda *a, **kw: {'status': 'completed'})
+    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: pytest.fail('Completion has priority.'))
+    assert loop.tick(store)['status'] == 'completed'
+
+
 def test_automatic_delta_pass_commits_once_and_leaves_late_events(planned, monkeypatch):
     store, run, event = planned
     calls = []

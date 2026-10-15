@@ -474,3 +474,35 @@ def test_plan_assignment_rejects_task_without_current_packet_contract(fleet):
     with pytest.raises(ValidationError, match="current dependency packet"):
         with store.transaction() as tx:
             tx.start_run("unplanned", 1, "eng-001")
+
+
+def test_legacy_outliers_are_retained_in_readiness_assignment_and_admission(fleet):
+    from hx import code_index
+    store, repo = fleet[:2]
+    (repo / "legacy.py").write_text("#" * 40_001 + "\ndef reusable_tail(): return 1\n")
+    commit(repo)
+    code_index.index_repo(store.root, repo)
+    planning.apply(store, plan(fleet, [unit(repo, "a")]))
+    ready = statuses(store)["a"]
+    assert ready["status"] == "ready"
+    assert ready["file_sizes"]["outliers"][0]["path"] == "legacy.py"
+    assigned = units.assign(store, "a", 1, "eng-001")
+    admission = json.loads(store.db.execute("SELECT payload FROM unit_runs WHERE run_id=?", (assigned["run_id"],)).fetchone()[0])
+    assert assigned["file_sizes"] == admission["file_sizes"] == ready["file_sizes"]
+    bind(store, assigned["run_id"])
+    assert finish(store, assigned["run_id"])["state"] == "packet_covered"
+
+
+def test_oversized_changed_source_pauses_audit_and_cannot_complete(fleet):
+    store, repo = fleet[:2]
+    planning.apply(store, plan(fleet, [source_unit(repo, "a")]))
+    run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run)
+    (repo / "feature.py").write_text("#" * 40_001 + "\ndef hidden_tail(): return 1\n")
+    commit(repo)
+    result = units.audit(store, run)
+    assert not result["within_scope"] and "feature.py" in result["reason"]
+    assert "estimated tokens" in result["reason"]
+    with pytest.raises(Conflict, match="paused|changed files exceed"):
+        finish(store, run)
+    assert not store.db.execute("SELECT 1 FROM unit_outputs").fetchone()

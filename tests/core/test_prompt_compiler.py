@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from hx import persona, prompt_compiler as prompts
+from hx import instruction_materials, learn, persona, prompt_compiler as prompts
 from hx.errors import ValidationError
 
 FLAVORS = ("claude", "codex", "meta", "grok", "pi")
@@ -27,7 +27,7 @@ def startup_text(bundle):
 
 
 def text(bundle):
-    return startup_text(bundle) + "".join(Path(ref["path"]).read_text() for ref in bundle["required_files"])
+    return startup_text(bundle) + instruction_materials.read_bundle([ref for ref in bundle["required_files"] if ref.get("delivery") != "inline"]).decode()
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
@@ -136,7 +136,7 @@ def test_prompt_sources_exclude_per_id_and_global_invariants_and_bound_whole_rol
     assert "migration_review" not in after
     source = instance / "personas" / "backend-engineer.md"
     source.write_text(source.read_text() + "\n## Operator policy details\n" + "OVERSIZED ROLE SOURCE " * 100000)
-    with pytest.raises(ValidationError, match="64 KiB"):
+    with pytest.raises(ValidationError, match="256 KiB"):
         prompts.build(instance, "eng-001")
 
 
@@ -246,13 +246,10 @@ def test_long_warranted_policy_is_referenced_in_full_not_truncated_in_startup(in
     policy.write_text(full_policy)
     bundle = prompts.build(instance, "eng-001")
     initial = startup_text(bundle)
-    assert len(initial.encode()) < 3000
-    assert "FINAL MANDATORY CONDITION" not in initial
-    assert "IN FULL" in initial and "through its final byte" in initial
-    assert "Do not substitute an excerpt" in initial and "continue until all bytes are read" in initial
-    assert '"id":"eng-001"' in initial and '"workdir":' in initial
-    for mandatory in ("graph dependencies", "search/reuse", "ownership", "independent approval", "configured tools"):
-        assert mandatory in initial
+    assert full_policy in initial
+    assert all(ref["delivery"] == "inline" for ref in bundle["required_files"])
+    assert "Required file:" not in initial and "continue until" not in initial
+    assert '\"id\":\"eng-001\"' in initial and '\"workdir\":' in initial
     material, = bundle["required_files"]
     exact = Path(material["path"]).read_bytes()
     assert full_policy.encode() in exact
@@ -280,3 +277,87 @@ def test_companion_keeps_full_inline_policy_when_its_evidence_tools_cannot_read_
     assert bundle["required_files"] == []
     assert "frozen range" in startup_text(bundle)
     assert "structured result channel" in startup_text(bundle)
+
+
+@pytest.mark.parametrize("flavor,role", [(flavor, role) for role in ROLES for flavor in FLAVORS] + [(flavor, "partner") for flavor in ("claude", "codex")])
+@pytest.mark.parametrize("audience", ["executor", "subagent", "companion", "learning"])
+def test_reviewed_global_and_exact_role_learnings_reach_every_native_audience(instance, flavor, role, audience):
+    import hashlib
+    item_id = "partner" if role == "partner" else "eng-001"
+    configure(instance, flavor=flavor, role=role, item_id=item_id)
+    author = {"HARNESS_ID": "eng-002"}
+    reviewer = {"HARNESS_ID": "partner"}
+    global_proposal = learn.propose(instance, signal="GLOBAL observation", check="Never discard scope or negation.",
+        evidence="verified global evidence", category="evidence", env=author)
+    learn.accept(instance, global_proposal["id"], env=reviewer)
+    role_proposal = learn.propose(instance, signal=f"ROLE {role} observation", check="Do not deploy before integration passes.",
+        evidence="verified role evidence", category="delivery", role=role, env=author)
+    learn.accept(instance, role_proposal["id"], env=reviewer)
+    foreign_role = "qa-engineer" if role != "qa-engineer" else "backend-engineer"
+    foreign = learn.propose(instance, signal="FOREIGN ROLE observation", check="Keep only foreign context.",
+        evidence="foreign evidence", category="domain", role=foreign_role, env=author)
+    learn.accept(instance, foreign["id"], env=reviewer)
+    learn.propose(instance, signal="PENDING PROPOSAL IS NOT POLICY", check="Do not execute unreviewed candidates.",
+        evidence="unreviewed evidence", category="runtime", env=author)
+    compiled = prompts.build(instance, item_id, audience=None if audience == "executor" else audience)
+    rendered = text(compiled)
+    assert "GLOBAL observation" in rendered and f"ROLE {role} observation" in rendered
+    assert "Never discard scope or negation." in rendered
+    assert "Do not deploy before integration passes." in rendered
+    assert "FOREIGN ROLE observation" not in rendered and "PENDING PROPOSAL IS NOT POLICY" not in rendered
+    sources = [source for source in compiled["sources"] if source.get("kind") == "reviewed-learning"]
+    assert {source["scope"] for source in sources} == {"global", role}
+    for source in sources:
+        exact = Path(source["path"]).read_bytes()
+        assert source["source_hash"] == hashlib.sha256(exact).hexdigest()
+        assert source["bytes"] == len(exact)
+        assert exact.decode() in rendered
+
+
+def test_reviewed_rule_revision_invalidates_prepared_bundle(instance):
+    configure(instance)
+    proposal = learn.propose(instance, signal="A release proof is stale", check="Compare the exact tested artifact.",
+        evidence="observed run", category="delivery", role="backend-engineer", env={"HARNESS_ID": "eng-001"})
+    learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
+    old = prompts.build(instance, "eng-001")
+    source = learn.rule_files(instance, role="backend-engineer")[0]
+    source.write_text(source.read_text() + "\nDo not omit the final reviewed condition.\n")
+    assert prompts.build(instance, "eng-001")["version"] != old["version"]
+    with pytest.raises(ValidationError, match="sources, identity"):
+        prompts.verified_bundle(instance, "eng-001", Path(old["manifest_path"]), workdir=old["identity"]["workdir"])
+
+
+def test_long_multibyte_policy_has_bounded_linked_parts_and_one_exact_bundle(instance):
+    import hashlib
+    configure(instance)
+    policy = "Must preserve every constraint.\n" + "不可省略否定条件。" * 6000 + "\nFINAL condition: do not rebuild the existing helper.\n"
+    (instance / "continuity" / "policy.md").write_text(policy)
+    bundle = prompts.build(instance, "eng-001")
+    refs = bundle["required_files"]
+    assert len(refs) > 1
+    complete = instruction_materials.read_bundle(refs)
+    assert policy.strip("\n").encode() in complete
+    assert hashlib.sha256(complete).hexdigest() == refs[0]["bundle_sha256"]
+    assert len(complete) == refs[0]["bundle_bytes"]
+    for index, ref in enumerate(refs):
+        data = Path(ref["path"]).read_bytes()
+        assert len(data) <= 40000 and data.decode()
+        assert ref["part"] == index + 1 and ref["parts"] == len(refs)
+        assert (ref["next_path"] or "END OF COMPLETE MATERIAL") in data.decode()
+        assert prompts.material_bundle(instance, "eng-001", Path(bundle["manifest_path"]), Path(ref["path"]),
+            workdir=bundle["identity"]["workdir"]) == refs
+    Path(refs[-1]["path"]).write_text("Missing final obligation")
+    with pytest.raises(ValidationError, match="altered"):
+        instruction_materials.read_bundle(refs)
+
+
+def test_learning_companion_has_assessment_authority_separate_from_context_companion(instance):
+    configure(instance)
+    compiled = prompts.build(instance, "eng-001", audience="learning")
+    rendered = text(compiled)
+    assert compiled["identity"]["audience"] == "learning"
+    assert compiled["identity"]["runtime"] == "claude"
+    assert compiled["required_files"] == []
+    assert "structured assessment" in rendered and "independent accept, merge, or reject" in rendered
+    assert "Never patch" in rendered
+    assert "submit_patch" not in rendered and "expected versions" not in rendered

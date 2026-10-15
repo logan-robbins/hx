@@ -16,13 +16,21 @@ from .store import atomic_write_text
 
 
 def _prompt(launch_id):
-    return (f"Assignment {launch_id}: read the task context identified by this session's "
-            "startup hook once, then complete the declared unit using its constraints and acceptance checks. "
-            "Do not act without that context.")
+    return (f"Assignment {launch_id}: the complete current task context follows in this input. "
+            "Complete the declared unit using every supplied constraint and acceptance check. "
+            "Do not reread its backing files to reconstruct the same context.")
 
 
-def _pointer(path):
-    return f"Read the task context at {canonical(str(path))} once before executing the assignment."
+def _input_end(launch_id):
+    # Keep every packet byte inside a non-whitespace envelope. Native editors
+    # may trim outer whitespace, including the checkpoint's final newline.
+    return f"\n\nEnd of complete input for assignment {launch_id}."
+
+
+def _submission_prompt(row):
+    """The exact frozen native input, delivered without a required model read."""
+    return _prompt(row["launch_id"]) + "\n\n" + native_launch._bytes(
+        Path(row["payload"]["packet_path"]), 262144).decode("utf-8") + _input_end(row["launch_id"])
 
 
 def startup_packet_path(capsule, run_id, launch_id):
@@ -31,8 +39,8 @@ def startup_packet_path(capsule, run_id, launch_id):
 
 
 def startup_overhead(capsule, run_id, launch_id, system):
-    """Charge the exact system prefix, submitted marker, and startup pointer."""
-    return len((system + _prompt(launch_id) + _pointer(startup_packet_path(capsule, run_id, launch_id))).encode())
+    """Charge the exact system prefix and submitted complete-input marker."""
+    return len((system + _prompt(launch_id) + "\n\n" + _input_end(launch_id)).encode())
 
 
 def required_files(payload, packet):
@@ -219,11 +227,12 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
             current = native_launch._row(ledger, run_id)
             if current['status'] == 'ready' and current['payload'].get('startup_observed'):
                 refresh_before_submission(ledger, current)
-            return _result(ledger, run_id)
+            else:
+                return _result(ledger, run_id)
         with ledger.transaction() as tx:
             row = native_launch.verify_inputs(tx, run_id, states={"starting", "ready"})
             payload = {**row["payload"], "pane": pane}
-            prompt = _prompt(row["launch_id"])
+            prompt = _submission_prompt(row)
             payload["submission_hash"] = digest(prompt)
             _transition(tx, run_id, {"starting", "ready"}, "submitting", payload=payload)
         try:
@@ -360,31 +369,19 @@ def observe(ledger, run_id, launch_id, event, observation):
             if native_launch._bytes(persona, 262144) != rendered["system"].encode():
                 raise Conflict("native launcher did not install its expected system prefix")
             _transition(tx, run_id, startup_states, "composing_startup")
-        packet_path = startup_packet_path(payload['capsule'], run_id, launch_id)
-        overhead = startup_overhead(payload['capsule'], run_id, launch_id, rendered['system'])
-        from .runtime_policy import CONTEXT_BYTES
-        budget = min(CONTEXT_BYTES, payload["initial_input_limit"] - overhead)
-        try:
-            if budget <= 0:
-                raise ValidationError("startup instructions exhaust the initial context budget")
-            packet = context_packets.issue(ledger, run_id, request_id="startup-" + launch_id,
-                instructions=rendered["context"], mode="forced", max_tokens=budget, optional_tokens=min(1000, budget))
-            atomic_write_text(packet_path, packet["text"])
-            payload = {**payload, "checkpoint_id": packet["checkpoint_id"], "packet_path": str(packet_path),
-                       "packet_hash": packet["packet_hash"], "pane": pane, "native_session": native_session,
-                       "required_files": required_files(payload, packet),
-                       "startup_observed": True,
-                       "instruction_delivery": "launcher_prefix_verified_startup_observed",
-                       "charged_initial_tokens": packet["charged_tokens"] + overhead}
-            with ledger.transaction() as tx:
-                unit_execution._run(tx, run_id)
-                _transition(tx, run_id, {"composing_startup"}, "ready" if previous_status == "starting" else previous_status, payload=payload)
-        except Exception as exc:
-            with ledger.transaction() as tx:
-                _transition(tx, run_id, {'composing_startup'}, 'startup_failed',
-                            error=type(exc).__name__)
-            raise
-        return _pointer(packet_path)
+        # Startup acknowledges ownership and the installed prefix only. The
+        # full frozen checkpoint travels in the exact submitted native input;
+        # no hook envelope, pointer or model read carries required context.
+        payload = {**payload, "pane": pane, "native_session": native_session,
+                   "startup_observed": True,
+                   "instruction_delivery": "prefix_verified_waiting_for_complete_input"}
+        with ledger.transaction() as tx:
+            unit_execution._run(tx, run_id)
+            _transition(tx, run_id, {"composing_startup"},
+                        "ready" if previous_status == "starting" else previous_status, payload=payload)
+        return None
+    if event == "request" and row["status"] == "continuation_required" and row["payload"].get("instruction_restart"):
+        raise Conflict("current reviewed instructions require their queued controlled restart before another model request")
     if event == "request" and not row["payload"].get("startup_observed"):
         with ledger.transaction() as tx:
             _transition(tx, run_id, {row["status"]}, "submission_rejected", error="startup context is not verified")
@@ -395,13 +392,29 @@ def observe(ledger, run_id, launch_id, event, observation):
         if row["payload"].get("native_session") and native_session != row["payload"]["native_session"]:
             raise Conflict("native submission acknowledgement belongs to another session")
         _owned_pane(row)
+    if event == "request" and row["status"] == "continuation_required" and row["payload"].get("continuation_input"):
+        prompt = observation.get("prompt", observation.get("text"))
+        continuation = row["payload"]["continuation_input"]
+        if (continuation["phase"] not in {"submitting", "unconfirmed", "uncertain"}
+                or not isinstance(prompt, str) or digest(prompt) != continuation["submission_hash"]):
+            raise Conflict("continuation requires acknowledgment of its complete frozen native input")
+        with ledger.transaction() as tx:
+            unit_execution._run(tx, run_id)
+            payload = {**row["payload"], "submission_hash": digest(prompt),
+                       "continuation_input": {**continuation, "phase": "acknowledged"},
+                       "instruction_delivery": "complete_continuation_input_acknowledged"}
+            _transition(tx, run_id, {"continuation_required"}, "submitted", payload=payload)
+        return None
     if event == "request" and row["status"] in {"submitting", "submission_unconfirmed", "submission_uncertain", "submitted"}:
         prompt = observation.get("prompt", observation.get("text"))
         if not isinstance(prompt, str) or digest(prompt) != row["payload"].get("submission_hash"):
+            if row["status"] != "submitted":
+                raise Conflict("native input does not match the complete frozen checkpoint submission")
             return None
         with ledger.transaction() as tx:
             unit_execution._run(tx, run_id)
-            _transition(tx, run_id, {"submitting", "submission_unconfirmed", "submission_uncertain"}, "submitted")
+            _transition(tx, run_id, {"submitting", "submission_unconfirmed", "submission_uncertain"}, "submitted",
+                        payload={**row["payload"], "instruction_delivery": "complete_native_input_acknowledged"})
     return None
 
 
@@ -423,7 +436,7 @@ def guard_release(tx, run_id):
 
 
 def refresh_before_submission(ledger, row):
-    """Refresh the delivered pointer before the initial prompt can execute."""
+    """Freeze the full current native input before its first submission."""
     payload = row['payload']
     _, rendered = prompt_compiler.verified_bundle(ledger.root, payload['worker_id'],
         Path(payload['manifest']), workdir=payload['workdir'])
@@ -431,7 +444,7 @@ def refresh_before_submission(ledger, row):
         native_launch.verify_inputs(tx, row['run_id'], states={'ready'}, check_evidence=False)
         cursors, pending = context_packets._pending(tx, row['run_id'])
         sources = context_packets._sources(tx, row['run_id'])
-    overhead = len((rendered['system'] + _prompt(row['launch_id']) + _pointer(payload['packet_path'])).encode())
+    overhead = startup_overhead(payload['capsule'], row['run_id'], row['launch_id'], rendered['system'])
     budget = payload['initial_input_limit'] - overhead
     packet = context_packets.issue(ledger, row['run_id'], request_id='startup-refresh-' + digest([row['launch_id'], cursors, pending, sources]),
         mode='forced', instructions=rendered['context'], max_tokens=budget, optional_tokens=min(1000, budget))
@@ -444,3 +457,52 @@ def refresh_before_submission(ledger, row):
                    'required_files': required_files(payload, packet),
                    'charged_initial_tokens': packet['charged_tokens'] + overhead}
         _transition(tx, row['run_id'], {'ready'}, 'ready', payload=updated)
+
+
+def submit_continuation(ledger, row, *, env=None):
+    """Submit a frozen complete checkpoint once after an observed native reset."""
+    continuation = row["payload"].get("continuation_input")
+    if row["status"] != "continuation_required" or not continuation or continuation["phase"] != "prepared":
+        return None
+    from . import native_restart
+    if native_restart.request_instruction_refresh(ledger, row):
+        return {"status": "instruction_restart_queued", "run_id": row["run_id"]}
+    from .native_tools import pending
+    if pending(ledger, row["launch_id"]):
+        return None
+    pane = _owned_pane(row)
+    child = {**(os.environ if env is None else env), "HX_TMUX": " ".join(row["payload"]["tmux"])}
+    visible = goal.capture_pane(row["payload"]["session"], child)
+    if not visible or not goal.pane_is_idle(visible):
+        return None
+    with ledger.transaction() as tx:
+        current = native_launch._row(tx, row["run_id"])
+        if current["payload"] != row["payload"] or current["status"] != "continuation_required":
+            return None
+        packet = context_packets._read(tx, row["payload"]["checkpoint_id"], row["run_id"])
+        if native_launch._bytes(Path(row["payload"]["packet_path"]), 262144) != packet["text"].encode():
+            raise Conflict("continuation native input changed before submission")
+        _, rendered = prompt_compiler.verified_bundle(ledger.root, row["payload"]["worker_id"],
+            Path(row["payload"]["manifest"]), workdir=row["payload"]["workdir"])
+        system_path = Path(row["payload"]["capsule"]) / "run" / row["payload"]["worker_id"] / "persona.md"
+        if native_launch._bytes(system_path, 262144) != rendered["system"].encode():
+            raise Conflict("continuation native system instructions changed")
+        prompt = _submission_prompt(row)
+        if len(rendered["system"].encode()) + len(prompt.encode()) > row["payload"]["initial_input_limit"]:
+            raise ValidationError("complete continuation input exceeds its configured model context budget")
+        payload = {**row["payload"], "continuation_input": {**continuation, "phase": "submitting", "submission_hash": digest(prompt)}}
+        _transition(tx, row["run_id"], {"continuation_required"}, "continuation_required", payload=payload)
+    try:
+        _owned_pane(native_launch._row(ledger, row["run_id"]))
+        goal.paste(row["payload"]["session"], prompt, child)
+        phase = "unconfirmed"
+    except Exception:
+        phase = "uncertain"
+        raise
+    finally:
+        with ledger.transaction() as tx:
+            current = native_launch._row(tx, row["run_id"])
+            if current["status"] == "continuation_required" and current["payload"]["continuation_input"]["phase"] == "submitting":
+                payload = {**current["payload"], "continuation_input": {**current["payload"]["continuation_input"], "phase": phase}}
+                _transition(tx, row["run_id"], {"continuation_required"}, "continuation_required", payload=payload)
+    return {"status": "continuation_" + phase, "run_id": row["run_id"]}

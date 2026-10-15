@@ -22,13 +22,6 @@ VARIABLE_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}")
 HOOK_BYTES = 32 * 1024
 HOOK_BYTES_BY_FLAVOR = {"claude": 10_000}
 
-#: The pointer line of an agent with no task in progress.
-
-#: Opens the list of files the bound kept out of the hook's output.
-AS_FILES = ("{what} not printed here: with {it} this text would pass hx's {bound}-byte hook bound. "
-            "Use the Read tool once on each file below before anything else; do not cat them and "
-            "do not read them twice.")
-
 def expand_identity(text: str, values: dict[str, str]) -> str:
     """Resolve known identity variables once; never ship an invented identity."""
     unknown = set(VARIABLE_RE.findall(text)) - values.keys()
@@ -129,25 +122,19 @@ def _joined(parts: list[tuple[str, Path | None, str]]) -> str:
     return "\n\n".join(text for _, _, text in parts if text.strip()) + "\n"
 
 
-def _as_files(what: str, it: str, bound: int, files: list[Path]) -> tuple[str, None, str]:
-    lines = [AS_FILES.format(what=what, it=it, bound=bound)]
-    lines += [f"- {path.resolve()}" for path in files]
-    return ("as-files", None, "\n".join(lines))
-
 
 def boundary(root: Path, item_id: str, *, env=None) -> dict:
     """What the `context` hook prints for `item_id` at a boundary, from the sources, in order:
     the invariants and the persona where the hook is their channel, the identity line, the
-    rules, and the pointer to the file the boundary reads. Writes nothing.
+    rules, and complete current orchestration notes. Linked bounded material files
+    are immutable backing; no required source is delegated to a model read.
 
     Returns `{"id", "flavor", "role", "text", "bytes", "bound", "parts", "as_files", "file"}`:
-    `parts` is `(name, source, bytes)` per part as printed, `as_files` the sources the bound
-    turned into a list of files to read (empty when everything fit), `file` the boundary file
-    or None."""
+    `parts` is `(name, source, bytes)` per part as delivered, `required_files` holds
+    immutable inline backing where needed, and `file` identifies the current context source."""
     from . import learn
     from .compose import status_file
     from .config_harness import invariants_channel, persona_channel
-    from .hook_context import CONTEXT_LINE
 
     root = Path(root)
     values = identity_values(root, item_id)
@@ -158,32 +145,34 @@ def boundary(root: Path, item_id: str, *, env=None) -> dict:
         raise NotFound(f"{persona_file}: the Partner's persona is missing; `hx install` ships it")
 
     head: list[tuple[str, Path | None, str]] = []
-    if invariants_channel(flavor) == "hook":
+    if item_id == PARTNER or invariants_channel(flavor) == "hook":
         clauses = root / "config" / "CLAUDE.md"
         text = clauses.read_text().strip("\n") if clauses.is_file() else ""
         if text.strip():
             head.append(("invariants", clauses, text))
-    if persona_channel(flavor) == "hook" and persona:
+    if (item_id == PARTNER or persona_channel(flavor) == "hook") and persona:
         head.append(("persona", persona_file, persona))
     head.append(("identity", root / "config" / item_id / "harness.json", identity_line(root, item_id)))
     rules = [("rules", path, path.read_text().strip("\n")) for path in learn.rule_files(root, env, role)]
     work = status_file(root, item_id)
     if work is not None:
-        tail = [("pointer", work, CONTEXT_LINE.format(path=work.resolve()))]
+        tail = [("current-context", work, work.read_text(encoding="utf-8").strip("\n"))]
     else:
         tail = []
 
     bound = hook_bound(flavor)
     as_files: list[Path] = []
+    required_files = []
     parts = head + rules + tail
-    if len(_joined(parts).encode()) > bound and rules:
-        as_files = [path for _, path, _ in rules]
-        parts = head + [_as_files("Your learnings are", "them", bound, as_files)] + tail
-    if len(_joined(parts).encode()) > bound and any(name == "persona" for name, _, _ in head):
-        as_files = [persona_file, *as_files]
-        head = [part for part in head if part[0] != "persona"]
-        parts = head + [_as_files("Your persona and learnings are" if rules else "Your persona is",
-                                  "them" if rules else "it", bound, as_files)] + tail
+    # The model receives every applicable instruction in the same native input.
+    # Linked files are verified immutable backing, never an instruction for the
+    # model to choose, fetch, or paginate required material.
+    full = _joined(parts)
+    if len(full.encode()) > bound:
+        from . import instruction_materials
+        required_files, materials = instruction_materials.prepare(
+            full, root / "run" / item_id / "persona" / "material", kind="persona", delivery="inline")
+        instruction_materials.install(required_files, materials)
     text = _joined(parts)
     return {
         "id": item_id, "flavor": flavor, "role": role, "text": text,
@@ -191,6 +180,7 @@ def boundary(root: Path, item_id: str, *, env=None) -> dict:
         "parts": [(name, _relative(root, path) if path else None, len(body.encode()))
                   for name, path, body in parts],
         "as_files": [_relative(root, path) for path in as_files],
+        "required_files": required_files,
         "file": work,
     }
 
@@ -203,7 +193,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         prog="hx persona",
         description="Print what the `context` hook hands ID at every boundary: the invariants and "
                     "the persona where the hook is their channel, the identity line, the rules, and "
-                    "the pointer to the current checkpoint.",
+                    "the complete current checkpoint.",
         epilog="example: hx persona eng-001",
     )
     parser.add_argument("id")

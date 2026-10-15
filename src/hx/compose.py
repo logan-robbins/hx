@@ -308,8 +308,8 @@ def write_status(root: Path, item_id: str, parts: list[tuple[str, str | None, st
 
 
 #: The opening of a subagent's context file.
-SUBAGENT_INTRO = ("This file is everything hx has for you that you were not already given at launch. "
-                  "Read it once; you do not need to search for anything it contains.")
+SUBAGENT_INTRO = ("This is the complete current context HX adds to your native task instructions. "
+                  "It is already delivered here; no additional file read is required.")
 
 
 def compose_text(

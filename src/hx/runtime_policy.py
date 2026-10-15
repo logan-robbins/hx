@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import json
 import re
 import shlex
 from pathlib import Path
@@ -13,7 +14,6 @@ from .errors import HxError
 
 CONTEXT_BYTES = 8192
 MEMORY_BYTES = 4096
-READ_LINES = 160
 SEARCH_RESULTS = 80
 INPUT_BYTES = 16384
 
@@ -28,8 +28,9 @@ def check_files(row, *, replacing=None):
     payload = row['payload']
     capsule = Path(payload['capsule'])
     worker = payload['worker_id']
-    paths = [(Path(payload['packet_path']), CONTEXT_BYTES),
-             (capsule / 'run' / worker / 'persona.md', CONTEXT_BYTES)]
+    # System instructions are verified by the prompt manifest and launch context
+    # budget. A facade/memory budget must never turn them into excerpts.
+    paths = []  # Compiled checkpoint manifests own their complete context budget.
     home = capsule / 'run' / worker / 'home'
     paths += [(home / name, MEMORY_BYTES) for name in ('MEMORY.md', 'memory.md', 'context.md')]
     for path, bound in paths:
@@ -51,7 +52,7 @@ def _material_reference(row, path):
 
 
 def inspect_call(row, task, observation, *, root=None):
-    """Return a bounded read identity, or None when this is not a source read."""
+    """Return a complete read identity, or None for non-file operations."""
     name = observation.get('tool_name', observation.get('toolName', ''))
     name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
     args = observation.get('tool_input', observation.get('toolInput'))
@@ -90,12 +91,21 @@ def inspect_call(row, task, observation, *, root=None):
             projected = size + growth * (repeats if growth > 0 else 1)
             if projected > MEMORY_BYTES:
                 raise AdmissionDenied('context/memory write exceeds 4096 bytes; replace obsolete facts instead of appending history')
-    if name in {'Read', 'read', 'read_file'}:
-        path = _source(args, task)
-        limit = args.get('limit')
-        offset = args.get('offset', 1)
-        if type(offset) is not int or offset < 1:
-            raise AdmissionDenied('source read offset must be a positive line number')
+    from .file_reads import read_input
+    try:
+        file_args = read_input(observation)
+    except HxError as exc:
+        raise AdmissionDenied(str(exc)) from exc
+    if file_args is not None:
+        if 'repo_args' in file_args:
+            from .file_reads import prepare, identity
+            try:
+                _, receipt = prepare(row, task, observation, root=root)
+            except (HxError, OSError) as exc:
+                raise AdmissionDenied(str(exc)) from exc
+            return identity(receipt)
+        from .file_reads import source_path
+        path = source_path(file_args, task)
         required = _material_reference(row, path)
         if required is not None:
             if root is None:
@@ -115,19 +125,12 @@ def inspect_call(row, task, observation, *, root=None):
                 raise AdmissionDenied('required instruction material failed bundle or content verification') from exc
             if verified != required:
                 raise AdmissionDenied('required instruction material differs from the admitted launch')
-            if limit is not None and (type(limit) is not int or limit < 1):
-                raise AdmissionDenied('required material read limits must be positive line counts')
-            # Complete immutable instructions are an admitted source. Reading
-            # all of them, or every page in order, must remain possible.
-            return digest([str(path), offset, limit]), _stamp(path)
-        if limit is not None and (type(limit) is not int or not 1 <= limit <= READ_LINES):
-            raise AdmissionDenied('source reads allow at most 160 lines; select the needed symbol range')
-        # Small files are already bounded. Large files require explicit slices.
-        if path.stat().st_size > CONTEXT_BYTES and limit is None:
-            raise AdmissionDenied('full-file read exceeds 8192 bytes; select at most 160 lines')
-        if name == 'read_file' and path.name in {'SKILL.md', 'AGENTS.md', 'CLAUDE.md'} and path.stat().st_size > CONTEXT_BYTES:
-            raise AdmissionDenied('this native tool returns instruction files whole; use hx tool-exec for bounded extraction')
-        return digest([str(path), offset, limit]), _stamp(path)
+        from .file_reads import prepare, identity
+        try:
+            _, receipt = prepare(row, task, observation, root=root)
+        except (HxError, OSError) as exc:
+            raise AdmissionDenied(str(exc)) from exc
+        return identity(receipt)
     if name in {'Grep', 'grep', 'search', 'Glob', 'glob', 'find', 'ls'}:
         _source(args, task)
         limit = args.get('head_limit', args.get('limit', args.get('max_results')))
@@ -135,7 +138,7 @@ def inspect_call(row, task, observation, *, root=None):
             raise AdmissionDenied('search requires a named scope and at most 80 results; if the tool has no limit, use hx tool-exec')
     if name == 'list_dir':
         raise AdmissionDenied('native list_dir cannot accept a result bound; use hx tool-exec --request ID -- ls PATH')
-    if name in {'Bash', 'bash', 'exec_command', 'shell', 'run_shell_command', 'run_terminal_cmd'}:
+    if name in {'Bash', 'bash', 'exec_command', 'shell', 'shell_command', 'run_shell_command', 'run_terminal_cmd'}:
         command = args.get('command', args.get('cmd', ''))
         # These common unbounded inspections have native bounded equivalents.
         # This is an efficiency gate, not an attempt to sandbox arbitrary code.
@@ -144,11 +147,17 @@ def inspect_call(row, task, observation, *, root=None):
                 parts = shlex.split(command)
             except ValueError:
                 return None
+            from .file_inspection import require_non_file_output
+            try:
+                require_non_file_output(['sh', '-c', command])
+            except HxError as exc:
+                raise AdmissionDenied(str(exc)) from exc
             noisy = {'pytest', 'npm', 'pnpm', 'yarn', 'cargo', 'make', 'mvn', 'gradle', 'dotnet'}
             if parts and (parts[0] in noisy or parts[:2] in [['git', 'diff'], ['git', 'show'], ['git', 'log'], ['go', 'test']]):
                 raise AdmissionDenied('run build/test/diff output through hx tool-exec --request ID -- COMMAND, or use an assigned hx check')
-            if parts and parts[0] in {'cat', 'less', 'more', 'find'}:
-                raise AdmissionDenied('use a scoped file range or bounded search; whole-file/tree inspection requires an explicit batch operation')
+            if parts and (parts[0] in {'cat', 'less', 'more', 'find', 'head', 'tail', 'awk'}
+                          or parts[0] == 'sed' and any(part == '-n' or part.startswith('-n') for part in parts[1:])):
+                raise AdmissionDenied('use the native complete-file read tool for files or bounded search for trees')
             if parts and parts[0] in {'rg', 'grep'}:
                 raise AdmissionDenied('use scoped Grep with head_limit, or hx tool-exec --request ID -- rg PATTERN PATH for bounded output')
     return None
@@ -160,10 +169,20 @@ def verify_material_read(tx, row, task, observation, reading):
         return
     name = observation.get('tool_name', observation.get('toolName', ''))
     name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
-    if name not in {'Read', 'read', 'read_file'}:
+    from .file_reads import read_input
+    args = read_input(observation)
+    if args is None:
         return
-    args = observation.get('tool_input', observation.get('toolInput'))
-    path = _source(args, task)
+    if 'repo_args' in args:
+        return  # A fixed Git object is revalidated by the emission broker.
+    from .file_reads import source_path
+    path = source_path(args, task)
+    receipt = json.loads(reading[1])
+    try:
+        if any(_stamp(Path(part['path'])) != part['stamp'] for part in receipt['files']):
+            raise AdmissionDenied('file changed before native read admission')
+    except OSError as exc:
+        raise AdmissionDenied('file disappeared before native read admission') from exc
     required = _material_reference(row, path)
     if required is None:
         return
@@ -183,7 +202,8 @@ def verify_material_read(tx, row, task, observation, reading):
         after = _stamp(path)
     except OSError as exc:
         raise AdmissionDenied('required material disappeared before native tool admission') from exc
-    if before != reading[1] or after != before or len(data) != required['bytes'] or hashlib.sha256(data).hexdigest() != required['sha256']:
+    expected_stamp = next(part['stamp'] for part in receipt['files'] if Path(part['path']).resolve() == path)
+    if before != expected_stamp or after != before or len(data) != required['bytes'] or hashlib.sha256(data).hexdigest() != required['sha256']:
         raise AdmissionDenied('required material changed before native tool admission')
 
 
@@ -198,14 +218,37 @@ def remember_read(tx, row, session, actor, call, reading):
         AND r.read_key=? AND r.source_stamp=? AND r.success=1 AND c.status='settled' LIMIT 1''',
         (row['launch_id'], session, actor, checkpoint, key, stamp)).fetchone()
     if prior:
-        raise AdmissionDenied(f'unchanged source range already read in call {prior[0]}; use that result or select a different range')
+        raise AdmissionDenied(f'complete unchanged file already delivered in call {prior[0]}; use that result')
     tx.db.execute('INSERT INTO native_reads VALUES(?,?,?,?,?,?,?,0)',
         (row['launch_id'], session, actor, call, checkpoint, key, stamp))
 
 
 def settled(tx, launch_id, session, actor, call, payload):
-    result = payload.get('tool_response')
-    failed = payload.get('is_error') or (isinstance(result, dict) and
-        (result.get('is_error') or result.get('isError') or result.get('error')))
+    from .file_reads import delivered
+    found = tx.db.execute('SELECT source_stamp FROM native_reads WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?',
+                         (launch_id, session, actor, call)).fetchone()
+    if found is None:
+        return
+    success = delivered(json.loads(found[0]), payload)
     tx.db.execute('UPDATE native_reads SET success=? WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?',
-        (0 if failed else 1, launch_id, session, actor, call))
+        (1 if success else -1, launch_id, session, actor, call))
+
+
+def require_complete_reads(tx, row, session, actor, reading):
+    """Incomplete native output never authorizes a later action or completion."""
+    pending = tx.db.execute('''SELECT r.call_id FROM native_reads r JOIN native_tool_calls c
+        USING(launch_id,session_id,actor_id,call_id) WHERE r.launch_id=? AND r.session_id=?
+        AND r.actor_id=? AND r.checkpoint_id=? AND c.status='admitted' AND r.success<>1 LIMIT 1''',
+        (row['launch_id'], session, actor, row['payload']['checkpoint_id'])).fetchone()
+    if pending and reading is None:
+        raise AdmissionDenied('complete-file transport is still pending for call ' + pending[0] +
+                              '; wait for every automatic transport segment before another operation')
+    unresolved = tx.db.execute('''SELECT r.read_key,r.call_id FROM native_reads r
+        WHERE r.launch_id=? AND r.session_id=? AND r.actor_id=? AND r.checkpoint_id=? AND r.success=-1
+        AND NOT EXISTS (SELECT 1 FROM native_reads ok WHERE ok.launch_id=r.launch_id
+            AND ok.session_id=r.session_id AND ok.actor_id=r.actor_id AND ok.checkpoint_id=r.checkpoint_id
+            AND ok.read_key=r.read_key AND ok.success=1 AND ok.rowid>r.rowid)''',
+        (row['launch_id'], session, actor, row['payload']['checkpoint_id'])).fetchall()
+    if unresolved and (reading is None or reading[0] not in {item[0] for item in unresolved}):
+        raise AdmissionDenied('complete-file delivery failed in call ' + unresolved[0][1] +
+                              '; retry that whole file before another operation')

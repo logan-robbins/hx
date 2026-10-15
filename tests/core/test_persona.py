@@ -1,7 +1,7 @@
 """Current identity/channel selection and bounded context, without migration paths."""
 import json
 import pytest
-from hx import persona, learn
+from hx import instruction_materials, persona, learn
 from hx.errors import ValidationError, NotFound
 
 
@@ -60,14 +60,16 @@ def test_shared_subagent_instructions_expand_current_identity(instance):
     assert '{{id}}' not in text and '{{workdir}}' not in text
 
 
-def test_large_persona_moves_to_a_single_explicit_read_pointer(instance,monkeypatch):
+def test_large_persona_stays_complete_in_one_native_input(instance,monkeypatch):
     configure(instance)
     (instance/'personas'/'custom-engineer.md').write_text('bounded context '+('source '*1000))
     monkeypatch.setitem(persona.HOOK_BYTES_BY_FLAVOR,'claude',1000)
     result=persona.boundary(instance,'eng-001')
-    assert result['bytes']<=result['bound']
-    assert result['as_files']==['personas/custom-engineer.md']
-    assert 'Use the Read tool once' in result['text']
+    assert result['bytes']>result['bound']
+    assert result['as_files']==[]
+    assert 'bounded context '+('source '*1000) in result['text']
+    assert 'Required complete persona' not in result['text']
+    assert 'bounded context' in instruction_materials.read_bundle(result['required_files']).decode()
     assert 'Own the requested packet result.' in result['text']
 
 

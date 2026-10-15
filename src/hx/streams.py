@@ -222,6 +222,22 @@ def truncate(
     if len(records) <= max_records and path.stat().st_size <= max_bytes:
         return 0
 
+    # Partner context and learning consume the same log independently. The
+    # context cursor cannot retire observations the learner has not assessed.
+    root = path.parent.parent.parent
+    if path.parent.name == 'partner' and (root / 'config/partner/harness.json').is_file():
+        from .config_harness import load_harness
+        config = load_harness(root / 'config/partner/harness.json', check_cross_file=False)
+        if not config.learning.get('disabled'):
+            from .continuity_store import ContinuityStore
+            from .learning_companion import register
+            stream = path.name.removesuffix('-open.jsonl').removesuffix('-closed.jsonl').removesuffix('.jsonl')
+            with ContinuityStore(root) as ledger:
+                register(ledger)
+                learning = ledger.db.execute('SELECT assessed_seq FROM learning_cursors WHERE agent_id=? AND stream_id=?',
+                                             ('partner', stream)).fetchone()
+            state_seq = min(state_seq, learning[0] if learning else 0)
+
     floor = max(0, state_seq - keep_behind)
     keep = records[-max_records:] if len(records) > max_records else list(records)
 

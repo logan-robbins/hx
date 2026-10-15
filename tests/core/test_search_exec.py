@@ -109,3 +109,88 @@ def test_javascript_execute_or_skip(tmp_path):
     result = search_exec.execute(tmp_path, "javascript", "console.log('js-hi')")
     assert result["exit_code"] == 0
     assert "js-hi" in result["stdout_returned"]
+
+
+@pytest.mark.parametrize('language,code', [
+    ('shell', 'cat source.py'),
+    ('shell', 'printf before; head -30 source.py'),
+    ('shell', "bash -lc 'git show HEAD:source.py'"),
+    ('python', 'from pathlib import Path; print(Path("source.py").read_text())'),
+    ('python', 'import sys; sys.stderr.write(open("source.py").read())'),
+    ('javascript', 'console.log(require("fs").readFileSync("source.py", "utf8"))'),
+])
+def test_recognized_source_dump_is_refused_before_isolated_execution(tmp_path, monkeypatch, language, code):
+    monkeypatch.setattr(search_exec, '_run', lambda *a, **k: pytest.fail('source dump executed'))
+    result = search_exec.execute(tmp_path, language, code)
+    assert result['exit_code'] is None
+    assert 'complete-file' in result['error']
+    assert result['bytes_produced'] == 0
+    assert not result['stdout_returned']
+
+
+@pytest.mark.parametrize('language,code', [
+    ('python', 'print(FILE_CONTENT, end="")'),
+    ('python', 'print(FILE_CONTENT[:100])'),
+    ('python', 'copy = FILE_CONTENT\nprint(copy)'),
+    ('python', 'import sys; sys.stdout.write(FILE_CONTENT)'),
+    ('python', 'print(FILE_CONTENT.splitlines())'),
+    ('python', 'print(str(FILE_CONTENT))'),
+    ('javascript', 'console.log(FILE_CONTENT)'),
+    ('javascript', 'process.stdout.write(FILE_CONTENT.slice(0, 100))'),
+    ('shell', 'printf "%s" "$FILE_CONTENT"'),
+])
+def test_bound_source_dump_cannot_be_reduced_or_paginated(tmp_path, monkeypatch, language, code):
+    source = tmp_path / 'source.py'
+    source.write_text('prefix\n' * 1500 + 'def EXISTING_TAIL_CAPABILITY(): pass\n')
+    monkeypatch.setattr(search_exec, '_run', lambda *a, **k: pytest.fail('source dump executed'))
+    result = search_exec.execute_file(tmp_path, source, language, code, intent='prefix')
+    assert result['exit_code'] is None
+    assert 'complete-file' in result['error']
+    assert result['bytes_produced'] == 0
+    assert not result['stdout_returned']
+
+
+def test_background_source_dump_is_refused_before_process_launch(tmp_path, monkeypatch):
+    monkeypatch.setattr(search_exec.subprocess, 'Popen', lambda *a, **k: pytest.fail('source dump launched'))
+    result = search_exec.execute(tmp_path, 'shell', 'cat source.py', background=True)
+    assert 'complete-file' in result['error']
+
+
+def test_batch_refuses_source_dump_and_keeps_nonfile_commands(tmp_path):
+    result = search_exec.batch_execute(tmp_path, [
+        {'label': 'source', 'command': 'cat source.py'},
+        {'label': 'computation', 'command': 'printf 42'},
+    ], concurrency=2)
+    source, computation = result['results']
+    assert 'complete-file' in source['error']
+    assert source['exit_code'] is None
+    assert not source['indexed']
+    assert computation['exit_code'] == 0
+    assert computation['summary'] == '42'
+
+
+def test_batch_cli_reports_file_dump_denial_as_failure(tmp_path, capsys):
+    import json
+    commands = tmp_path / 'commands.json'
+    commands.write_text(json.dumps([{'command': 'cat source.py'}]))
+    assert search_exec.main(['batch', '--file', str(commands)], tmp_path) == 1
+    assert 'complete-file' in capsys.readouterr().out
+
+
+def test_direct_file_computation_retains_isolated_execution(tmp_path):
+    source = tmp_path / 'source.py'
+    source.write_text('secret source text')
+    result = search_exec.execute(tmp_path, 'python',
+        f'from pathlib import Path; print(len(Path({str(source)!r}).read_text()))')
+    assert result['exit_code'] == 0
+    assert result['stdout_returned'].strip() == str(source.stat().st_size)
+
+
+def test_bound_javascript_file_length_retains_isolated_execution(tmp_path):
+    if not shutil.which('node'):
+        pytest.skip('node not available')
+    source = tmp_path / 'source.py'
+    source.write_text('secret source text')
+    result = search_exec.execute_file(tmp_path, source, 'javascript', 'console.log(FILE_CONTENT.length)')
+    assert result['exit_code'] == 0
+    assert result['stdout_returned'].strip() == str(source.stat().st_size)

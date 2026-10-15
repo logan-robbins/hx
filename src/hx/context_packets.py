@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import uuid
 from pathlib import Path
 
+from . import instruction_materials
 from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
 from .facts import RequiredContextOverflow, render_fact, _text
@@ -84,25 +84,6 @@ def _retire(tx, run_id, keep):
 
 
 
-def _assignment_facade(task, run, reference, instructions):
-    payload = task['payload']
-    lines = [f"Task {task['task_id']}@{task['revision']}; run {run['run_id']}; phase {run['phase']}.",
-             f"Repository {payload['repository']}; workdir {canonical(payload['workdir'])}.",
-             "Only this admitted run's frozen write scope and exact prerequisite/output versions authorize work. "
-             "Before any task action, read the required immutable full assignment IN FULL, through its final byte. "
-             "If the tool paginates, continue until every byte is read; do not use an excerpt or summary. "
-             "It contains all exact constraints, acceptance, scope, outputs, facts and pending evidence.",
-             "Preserve graph dependencies and search/reuse before building. Maximize useful parallelism within ownership/resources and capacity. "
-             "Edits/proof require the exact check binding's configured independent approval. "
-             "Missing material or uncertain proof is a blocker, never permission to proceed.",
-             f"Required full assignment: {reference['path']}",
-             f"SHA256 {reference['sha256']}; exact UTF-8 bytes {reference['bytes']}."]
-    if run['phase'] == 'paused':
-        lines.append("This assignment is paused. Do not mutate files; ask the Partner to reconcile its scope.")
-    if instructions:
-        lines.extend(["Required instruction facade:", instructions])
-    return "\n".join(lines) + "\n"
-
 def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="forced",
           max_tokens=8000, optional_tokens=1000, instructions="", count_tokens=None, tokenizer_id=None,
           prompt_manifest=None):
@@ -112,7 +93,7 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
     needs its adapter's turn-boundary barrier; this function never resets a model.
     """
     _id(request_id)
-    if mode not in {"forced", "planned"} or type(max_tokens) is not int or not 1 <= max_tokens <= 64000 or type(optional_tokens) is not int or not 0 <= optional_tokens <= max_tokens:
+    if mode not in {"forced", "planned"} or type(max_tokens) is not int or max_tokens < 1 or type(optional_tokens) is not int or not 0 <= optional_tokens <= max_tokens:
         raise ValidationError("context requires forced/planned mode and bounded token budgets")
     if len(record_ids) > 16 or len(required_ids) > MAX_RECORDS or not isinstance(instructions, str) or len(instructions.encode()) > 262144:
         raise ValidationError("context allows 16 optional and 64 required fact IDs")
@@ -174,8 +155,8 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
             raise RequiredContextOverflow("required context exceeds 64 facts; compress the current task state")
         selected, omitted, seen, mandatory_records = {}, {}, set(), {}
         # Bound decoded metadata too, even when a provider's tokenizer is supplied.
-        # Full mandatory material is independent of the startup facade budget.
-        # Preserve its exact bytes and reference it when it cannot fit inline.
+        # Preserve every mandatory byte in the actual native input. If that
+        # complete input cannot fit its admitted model budget, fail explicitly.
         max_fact_bytes = 262144
         def render(record):
             return render_fact(record["record_id"], record["version"], record["kind"], record["payload"])
@@ -192,6 +173,10 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
         lines.append("Allowed write paths: " + canonical(payload["write_paths"]) + ".")
         lines.append("Required outputs: " + canonical(payload["outputs"]) + ".")
         lines.append("Prerequisites: " + canonical(payload["prerequisites"]) + ".")
+        sizes = admission["file_sizes"]
+        if sizes["outliers"]:
+            lines.append("Complete source-size audit: " + canonical(sizes) + ".")
+            lines.append("Every listed legacy outlier is a discovery obligation. Read the complete file through the runtime's automatic material chain; never infer a function is absent from a prefix or rebuild it before inspecting the complete existing implementation. Changed files must fit the maintained file cap.")
         map_scope = None
         for ref in payload["map_inputs"]:
             current = tx.db.execute("SELECT h.version,r.applicability FROM map_heads h JOIN map_records r USING(repository,snapshot,record_id,version) WHERE repository=? AND snapshot=? AND record_id=?",
@@ -259,7 +244,8 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
             return "\n".join(lines) + "\n"
         if len(text().encode()) > 262144:
             raise RequiredContextOverflow("required full assignment exceeds the 256 KiB material bound; reconcile its required context")
-        reference_required = _count(text(), count_tokens) > max_tokens
+        if _count(text(), count_tokens) > max_tokens:
+            raise RequiredContextOverflow("complete required assignment exceeds the configured model context budget; no partial material was delivered")
         optional = list(dict.fromkeys(record_ids))
         if not optional:
             cursor_step = next((record["payload"]["step"] for record in mandatory_records.values() if record["kind"] == "cursor"), None)
@@ -280,7 +266,7 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
             if content in seen:
                 selected[record_id] = record["version"]
                 continue
-            if _count("\n".join([*optional_lines, line]), count_tokens) > optional_tokens or (not reference_required and _count(text() + line + "\n", count_tokens) > max_tokens) or len((text() + line + "\n").encode()) > 262144:
+            if _count("\n".join([*optional_lines, line]), count_tokens) > optional_tokens or (_count(text() + line + "\n", count_tokens) > max_tokens) or len((text() + line + "\n").encode()) > 262144:
                 omitted[record_id] = "budget"
                 continue
             lines.append(line)
@@ -290,18 +276,15 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
         packet = text()
         full_bytes = len(packet.encode())
         required_files = []
-        if reference_required:
-            material_hash = hashlib.sha256(packet.encode()).hexdigest()
-            reference = {"path": str(store.artifacts / material_hash), "sha256": material_hash,
-                         "bytes": full_bytes, "kind": "assignment"}
-            facade = _assignment_facade(task, run, reference, instructions)
-            if _count(facade, count_tokens) > max_tokens or len(facade.encode()) > 262144:
-                raise RequiredContextOverflow("required assignment facade exceeds context budget; its exact full text cannot be safely referenced")
-            installed = tx.put_artifact(packet.encode(), owner_type="checkpoint", owner_id=checkpoint_id, slot="full-context")
-            if installed != material_hash:
-                raise ValidationError("full assignment artifact identity changed")
-            required_files.append(reference)
-            packet = facade
+        if full_bytes > instruction_materials.MAX_FILE_BYTES:
+            required_files, materials = instruction_materials.prepare(
+                packet, store.root / "run" / run["worker_id"] / "context" / "material", kind="assignment", delivery="inline")
+            instruction_materials.install(required_files, materials)
+            for reference in required_files:
+                installed = tx.put_artifact(materials[reference["path"]], owner_type="checkpoint", owner_id=checkpoint_id,
+                                            slot=f"full-context:{reference['part']}")
+                if installed != reference["sha256"]:
+                    raise ValidationError("full assignment artifact identity changed")
         metadata = {"schema_version": 1, "request_hash": request_hash, "run_id": run_id,
                     "task_id": task["task_id"], "task_revision": task["revision"], "phase": run["phase"], "mode": mode,
                     "records": selected, "omitted": omitted, "map_inputs": payload["map_inputs"],
@@ -310,7 +293,7 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                     "cursors": cursors, "pending": pending, "capture": sources, "receipts": receipts,
                     "charged_tokens": _count(packet, count_tokens), "tokenizer": tokenizer_id or "utf8-bytes",
                     "inline_bytes": len(packet.encode()), "full_context_bytes": full_bytes,
-                    "referenced_bytes": sum(ref["bytes"] for ref in required_files), "required_files": required_files,
+                    "referenced_bytes": sum(ref["payload_bytes"] for ref in required_files), "required_files": required_files,
                     "extraction_ready": not pending and not lag, "native_reset_ready": False}
         tx._change()
         artifact = tx.put_artifact(packet.encode(), owner_type="checkpoint", owner_id=checkpoint_id, slot="packet")
@@ -349,13 +332,16 @@ def _read(tx, checkpoint_id, run_id):
         record = tx.record(record_id)
         _check_sources(record["inputs"], task["payload"], tx)
     for reference in metadata["required_files"]:
-        expected_path = tx.store.artifacts / reference["sha256"]
-        owner = tx.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='checkpoint' AND owner_id=? AND slot='full-context'", (checkpoint_id,)).fetchone()
+        expected_path = (tx.store.root / "run" / run["worker_id"] / "context" / "material"
+                         / reference["bundle_sha256"] / f"{reference['part']:04d}.md")
+        owner = tx.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='checkpoint' AND owner_id=? AND slot=?",
+                              (checkpoint_id, f"full-context:{reference['part']}")).fetchone()
         if reference.get("kind") != "assignment" or Path(reference["path"]) != expected_path or not owner or owner[0] != reference["sha256"]:
             raise ValidationError("required full assignment is not owned by this checkpoint")
         data = tx.read_artifact(reference["sha256"])
-        if len(data) != reference["bytes"]:
-            raise ValidationError("required full assignment length changed")
+        if data != instruction_materials.verify_file(reference):
+            raise ValidationError("required full assignment content changed")
+    instruction_materials.read_bundle(metadata["required_files"])
     return {"checkpoint_id": checkpoint_id, "packet_hash": row["packet_hash"],
             "text": tx.read_artifact(row["packet_hash"]).decode(), **metadata}
 
@@ -388,3 +374,17 @@ def verify_material(store, run_id, path, *, checkpoint_id=None):
         requested = Path(path).absolute()
         return next((ref for ref in packet["required_files"]
                      if Path(ref["path"]).absolute() == requested), None)
+
+
+def material_bundle(store, run_id, path, *, checkpoint_id=None):
+    """Resolve a current assignment chain for one complete broker read."""
+    with store.transaction() as tx:
+        run, _, _ = _run(tx, run_id)
+        current = run["checkpoint_id"]
+        if not current or (checkpoint_id is not None and checkpoint_id != current):
+            raise Conflict("full assignment read requires the current checkpoint")
+        packet = _read(tx, current, run_id)
+        requested = Path(path).absolute()
+        if any(Path(ref["path"]).absolute() == requested for ref in packet["required_files"]):
+            return packet["required_files"]
+        return []

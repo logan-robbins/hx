@@ -132,6 +132,7 @@ def _parser():
     sub = parser.add_subparsers(dest="command", required=True)
     for name in (
         "index",
+        "audit",
         "search",
         "symbols",
         "type",
@@ -158,7 +159,10 @@ def _parser():
         p.add_argument("--namespace")
         if name != "import":
             p.add_argument("--at", help="indexed commit, ref or immutable snapshot ID")
-        if name == "index":
+        if name == "audit":
+            p.add_argument("--repo", required=True)
+            p.add_argument("--paths", nargs="+")
+        elif name == "index":
             p.add_argument("--repo", required=True)
             p.add_argument("--paths", nargs="+")
             p.add_argument("--max-file-bytes", type=int)
@@ -246,7 +250,15 @@ def main(argv, root, *, env=None, _emit=print, read_ledger=True):
         name = getattr(args, "name", None)
         if name is not None and not name.strip():
             raise ValueError("name must not be empty")
-        if args.command == "index":
+        if args.command == "audit":
+            from .file_limits import scan_repo
+
+            if args.at:
+                raise ValueError("audit inspects the complete live repository; --at is unsupported")
+            result = scan_repo(args.repo, args.paths)
+            _emit(json.dumps(result))
+            return 0 if result["clean"] else 3
+        elif args.command == "index":
             if args.at:
                 from .code_build import index_revision
 

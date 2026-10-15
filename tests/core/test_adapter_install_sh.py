@@ -11,6 +11,7 @@ Settings keys verified against code.claude.com/docs/en/settings-reference,
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 
 import pytest
@@ -22,7 +23,11 @@ HX_EVENTS = {
     "context", "log", "subagent-start", "subagent-stop",
     "stop", "precompact", "postcompact",
 }
-PARTNER_EVENTS = HX_EVENTS | {"guard", "subagent-result"}
+PARTNER_EVENTS = HX_EVENTS | {"guard", "subagent-result", "log-failure"}
+
+
+def hook_event(command):
+    return next(part for part in shlex.split(command) if part in PARTNER_EVENTS)
 
 
 def run_install(instance, item_id, **env_extra):
@@ -168,11 +173,11 @@ def test_guard_is_installed_for_the_partner_alone(instance):
 def test_the_partner_observes_and_rehydrates_its_bounded_research_children(instance):
     assert run_install(instance, "partner").returncode == 0
     commands = hook_commands(settings_for(instance, "partner"))
-    assert {c.rsplit(" ", 1)[1] for c in commands} == PARTNER_EVENTS
+    assert {hook_event(c) for c in commands} == PARTNER_EVENTS
     hooks = settings_for(instance, "partner")['hooks']
-    assert hooks['SubagentStart'][0]['hooks'][0]['command'].endswith(' subagent-start')
-    assert hooks['SubagentStop'][0]['hooks'][0]['command'].endswith(' subagent-stop')
-    assert any(block.get('matcher') == 'Agent' and block['hooks'][0]['command'].endswith(' subagent-result')
+    assert hook_event(hooks['SubagentStart'][0]['hooks'][0]['command']) == 'subagent-start'
+    assert hook_event(hooks['SubagentStop'][0]['hooks'][0]['command']) == 'subagent-stop'
+    assert any(block.get('matcher') == 'Agent' and hook_event(block['hooks'][0]['command']) == 'subagent-result'
                for block in hooks['PostToolUse'])
 
 

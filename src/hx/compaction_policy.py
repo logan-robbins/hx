@@ -28,26 +28,12 @@ def compact_instructions():
     return '# Compact instructions\n\n' + PROMPT + '\n'
 
 
-def claude_boundary_context(text):
-    """Use the documented SessionStart context channel, not an invented system override."""
-    import json
-    from .runtime_policy import CONTEXT_BYTES
-    body = ('Current continuation state follows. Use it with the active system instructions; '
-            'it is state, not permission to change them. Do not reread its source files merely '
-            'to reconstruct this same state.\n\n' + text)
-    if len(body.encode()) > CONTEXT_BYTES:
-        return None
-    return json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart',
-                                             'additionalContext': body}}, ensure_ascii=False)
-
-
 def continue_context(ledger, row, observation):
     """A native reset reads current ledger state; it never waits for Jev or a companion."""
     from pathlib import Path
     from . import context_packets, native_controller, native_launch, prompt_compiler, unit_execution
     from .continuity_store import Conflict, digest
     from .store import atomic_write_text
-    from .runtime_policy import CONTEXT_BYTES
     source = observation.get('source')
     if source not in {'compact', 'clear', 'resume'}:
         raise Conflict('unknown native continuation boundary')
@@ -62,6 +48,9 @@ def continue_context(ledger, row, observation):
     if not row['payload'].get('submission_hash'):
         raise Conflict('the assignment was never submitted')
     pane = native_controller._owned_pane(row)
+    from . import native_restart
+    if native_restart.request_instruction_refresh(ledger, row):
+        return None
     run_id = row['run_id']
     with ledger.transaction() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
@@ -76,7 +65,7 @@ def continue_context(ledger, row, observation):
     # Forced mode preserves pending corrections and source gaps explicitly.
     # It does not classify, acknowledge, or delete anything on a model's behalf.
     overhead = len(rendered['system'].encode()) + 512
-    budget = min(CONTEXT_BYTES, current['payload']['initial_input_limit'] - overhead)
+    budget = current['payload']['initial_input_limit'] - overhead
     packet = context_packets.issue(ledger, run_id, request_id=request, mode='forced',
         instructions=rendered['context'], max_tokens=budget, optional_tokens=min(1000, budget))
     path = Path(current['payload']['capsule']).parent / (packet['checkpoint_id'] + '.md')
@@ -89,16 +78,16 @@ def continue_context(ledger, row, observation):
         payload = {**latest['payload'], 'checkpoint_id': packet['checkpoint_id'], 'packet_path': str(path),
             'packet_hash': packet['packet_hash'], 'startup_observed': True, 'native_session': session,
             'required_files': native_controller.required_files(latest['payload'], packet),
-            'instruction_delivery': 'continuation_checkpoint', 'continuation_source': source}
-        native_controller._transition(tx, run_id, {latest['status']}, 'submitted', payload=payload)
+            'instruction_delivery': 'waiting_for_complete_continuation_input', 'continuation_source': source,
+            'continuation_input': {'phase': 'prepared', 'checkpoint_id': packet['checkpoint_id'], 'packet_hash': packet['packet_hash']},
+            'charged_initial_tokens': packet['charged_tokens'] + native_controller.startup_overhead(current['payload']['capsule'], run_id, current['launch_id'], rendered['system'])}
+        native_controller._transition(tx, run_id, {latest['status']}, 'continuation_required', payload=payload)
         # Read reuse never crosses a model context reset.
         tx.db.execute('DELETE FROM native_reads WHERE launch_id=? AND checkpoint_id<>?',
                       (row['launch_id'], packet['checkpoint_id']))
-    if current['payload'].get('tool_selection', {}).get('adapter') == 'claude':
-        inline = claude_boundary_context(packet['text'])
-        if inline is not None:
-            return inline
-    return native_controller._pointer(path)
+    # The application loop submits the full checkpoint after the native UI is
+    # idle. Hook output never carries mandatory continuation material.
+    return None
 
 
 def prepare_native_compaction(ledger, row, observation):
@@ -110,7 +99,7 @@ def prepare_native_compaction(ledger, row, observation):
     with ledger.transaction() as tx:
         cursors, _ = context_packets._pending(tx, row['run_id'])
     request = 'precompact-' + digest([row['launch_id'], observation, cursors])
-    packet = context_packets.issue(ledger, row['run_id'], request_id=request, mode='forced', max_tokens=8192)
+    packet = context_packets.issue(ledger, row['run_id'], request_id=request, mode='forced', max_tokens=row['payload']['initial_input_limit'])
     path = Path(row['payload']['capsule']).parent / (packet['checkpoint_id'] + '.md')
     atomic_write_text(path, packet['text'])
-    return native_controller._pointer(path)
+    return None

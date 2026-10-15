@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from .errors import HxError
+
 
 NOTIFY = {"plan_changed", "unit_completed", "unit_scope_violation", "contract_published",
           "packet_covered", "integration_verified", "deployable", "native_launch_unresolved"}
@@ -29,11 +31,14 @@ def drain(store, *, wake=None, limit=8):
         identity = body.get('identity') or body.get('contract_hash') or body.get('commit') or item['operation_id']
         message = f"HX-EVENT {item['operation_id']} {notify_kind} task={body.get('task_id', body.get('change', '-'))} identity={identity}"
         try:
+            if kind == 'learning_proposal':
+                from .learning_protocol import publish
+                publish(store.root, body)
             accepted = bool(wake(store.root, message)) if kind in NOTIFY or notify_kind in {'change_landed', 'candidate_verified', 'candidate_deployable', 'candidate_failed', 'repair_packet_created', 'change_reverted', 'validation_interrupted'} else True
             with store.transaction() as tx:
                 tx.finish_outbox(item['operation_id'], item['lease_token'], error=None if accepted else 'Partner notification endpoint unavailable', retry_after=5)
             delivered.append({'id': item['operation_id'], 'kind': notify_kind, 'accepted': accepted})
-        except OSError as exc:
+        except (OSError, HxError) as exc:
             with store.transaction() as tx:
                 tx.finish_outbox(item['operation_id'], item['lease_token'], error=str(exc), retry_after=5)
             delivered.append({'id': item['operation_id'], 'kind': notify_kind, 'accepted': False})

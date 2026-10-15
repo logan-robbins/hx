@@ -51,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hook-bin", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument("event")
+    parser.add_argument('--context-segment', type=int)
+    parser.add_argument('--read-segment', type=int)
     for field in ("run", "launch", "adapter"):
         parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
@@ -59,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("planned hook identity must be complete")
     extra = [part for field, value in zip(("run", "launch", "adapter"), continuity)
              if value is not None for part in ("--continuity-" + field, value)]
+    if args.context_segment is not None:
+        extra += ['--context-segment', str(args.context_segment)]
+    if args.read_segment is not None:
+        extra += ['--read-segment', str(args.read_segment)]
 
     try:
         raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)

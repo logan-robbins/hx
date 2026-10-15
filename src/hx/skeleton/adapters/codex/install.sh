@@ -107,6 +107,10 @@ continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "codex", os
 root = os.environ["HX_ROOT"]
 cwd = os.environ["HX_CWD"]
 
+if continuity or item_id == "partner":
+    from hx.file_read_delivery import install_profile
+    install_profile(Path(root), item_id)
+
 # The Claude hook set (spec 09.1), in Codex's TOML shape. Matchers follow the
 # official reference: SessionStart filters the start source, PostToolUse and
 # the compaction events match every occurrence when matcher is omitted, and
@@ -126,7 +130,7 @@ if continuity:
     events.append(("UserPromptSubmit", None, "request"))
     events.append(("PreToolUse", None, "tool-start"))
 if item_id == "partner":
-    events.append(("PreToolUse", "Bash|apply_patch|Edit|Write", "guard"))
+    events.append(("PreToolUse", None, "guard"))
     events.append(("PostToolUse", "Agent|spawn_agent", "subagent-result"))
 blocks = []
 for codex_event, matcher, hx_event in events:
@@ -136,6 +140,8 @@ for codex_event, matcher, hx_event in events:
         python, adapter, "--id", item_id, "--hook-bin", hook_bin,
         "--root", root, *continuity, hx_event,
     ))
+    if item_id == 'partner' and hx_event in {'context', 'subagent-start', 'subagent-result'}:
+        cmd += ' --context-segment 0'
     block = f"[[hooks.{codex_event}]]\n"
     if matcher is not None:
         block += f"matcher = \"{matcher}\"\n"
@@ -143,8 +149,27 @@ for codex_event, matcher, hx_event in events:
         f"  [[hooks.{codex_event}.hooks]]\n"
         f"  type = \"command\"\n"
         f"  command = '{cmd}'\n"
+        + ("  additionalContextLimit = 0\n" if (continuity or item_id == 'partner') and hx_event in {'log', 'context'} else "")
     )
     blocks.append(block)
+if item_id == 'partner':
+    from hx.file_read_delivery import segment_slots
+    for index in range(1, segment_slots(Path(root), item_id)):
+        cmd = shlex.join([python, adapter, '--id', item_id, '--hook-bin', hook_bin,
+            '--root', root, 'log', '--read-segment', str(index)])
+        blocks.append('[[hooks.PostToolUse]]\nmatcher = "Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command"\n'
+            '  [[hooks.PostToolUse.hooks]]\n  type = "command"\n'
+            + f"  command = '{cmd}'\n  additionalContextLimit = 0\n")
+    for native_event, hx_event, matcher in [('SessionStart', 'context', 'startup|resume|clear|compact'),
+            ('SubagentStart', 'subagent-start', None), ('PostToolUse', 'subagent-result', 'Agent|spawn_agent')]:
+        for index in range(1, segment_slots(Path(root), item_id)):
+            cmd = shlex.join([python, adapter, '--id', item_id, '--hook-bin', hook_bin,
+                '--root', root, hx_event, '--context-segment', str(index)])
+            block = f'[[hooks.{native_event}]]\n'
+            if matcher:
+                block += 'matcher = "' + matcher + '"\n'
+            blocks.append(block + f'  [[hooks.{native_event}.hooks]]\n  type = "command"\n'
+                + f"  command = '{cmd}'\n  additionalContextLimit = 0\n")
 
 config = """\
 approval_policy = "never"

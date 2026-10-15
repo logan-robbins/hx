@@ -8,7 +8,7 @@ from hx.cli import COMMANDS, IMPLEMENTED
 
 CURRENT_COMMANDS = {
     "board", "build", "cache", "capture", "change", "check", "code", "companion",
-    "complete", "compose", "content", "discipline", "doctor", "evidence", "exec", "flush",
+    "complete", "compose", "content", "discipline", "doctor", "evidence", "exec", "file-read", "flush",
     "goals", "handoff", "heartbeat", "install", "launch", "learn", "loop", "map", "metrics",
     "models", "observe", "persona", "plan", "progress", "read", "repo", "seam", "show",
     "sift", "task", "tool-exec", "tools", "ui", "up", "wake",

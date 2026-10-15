@@ -306,17 +306,19 @@ def _worker_report(root, item_id, *, env=None):
         if len(data)!=expected['bytes'] or hashlib.sha256(data).hexdigest()!=expected['sha256']:
             raise ValidationError('frozen prompt channel was altered')
     from .prompt_compiler import _verify_required_file
+    from .instruction_materials import read_bundle
     required_files=[]
     for material in manifest['required_files']:
         _verify_required_file(material)
-        required_files.append({**material,'integrity':'verified','read_status':UNMEASURED})
+        required_files.append({**material,'integrity':'verified','read_status':'not_required_inline'})
+    read_bundle(manifest['required_files'])
     sizes={channel:manifest['delivery'][channel]['bytes'] for channel in ('system','context')}
     prefix=sum(sizes.values())
     result['invariant'].update(prefix_bytes=prefix,prompt_version=payload['prompt_version'],
         channels=manifest['delivery'],sections=manifest['sections'],inline_bytes=prefix,
-        referenced_full_text_bytes=sum(material['bytes'] for material in required_files),
-        required_files=required_files,reference_read_status=UNMEASURED,
-        accounting='Inline frozen instructions only; referenced full text and checkpoint are separate. References are required reads, not proof of reading. Tool schemas and host additions are unmeasured.')
+        referenced_full_text_bytes=0, backing_material_bytes=sum(material['payload_bytes'] for material in required_files),
+        required_files=required_files,reference_read_status='not_required_inline',
+        accounting='Full frozen instructions are delivered inline once; linked materials are verified backing, with no required model read. Checkpoint, tool schemas and host additions are accounted separately or unmeasured.')
     for relative in (f'config/{item_id}/harness.json','config/models.json'):
         _frozen_json(capsule/relative,expected_hash=payload['configuration'][relative])
     harness=load_harness(capsule/'config'/item_id/'harness.json',check_cross_file=False)

@@ -74,10 +74,12 @@ def test_packaged_instructions_cannot_reintroduce_removed_task_authorities():
         assert not [name for name in removed if name in text],path
 
 
-def test_partner_skill_preserves_exact_current_boundary_read_instruction():
-    from hx.hook_context import CONTEXT_LINE
+def test_partner_skill_requires_complete_automatic_boundary_delivery_without_rereads():
     text=(SKILLS/'hx-partner/SKILL.md').read_text()
-    assert CONTEXT_LINE.format(path='<path>') in text
+    assert 'automatically delivers your complete' in text
+    assert 'no additional file read is required' in text
+    assert 'without offsets' in text and 'or limits' in text
+    assert 'Use the Read tool once on' not in text
 
 
 def test_worker_mechanics_require_exact_independent_binding_and_typed_blockers():

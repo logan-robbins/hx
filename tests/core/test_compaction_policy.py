@@ -4,7 +4,8 @@ import tomllib
 
 import pytest
 
-from hx import compaction_policy, native_controller, native_launch
+from hx import compaction_policy, native_controller, native_launch, token_controls
+from .conftest import wait_for
 from .test_appmap import mapped
 from .test_map_updates import active
 from .test_native_tools import runtime, configured, assignment, fleet, submitted, payload, fire
@@ -27,13 +28,16 @@ def test_native_reset_rebuilds_current_packet_without_semantic_call(runtime, mon
     line = native_controller.observe(store, run, row['launch_id'], 'context',
         {'source': 'compact', 'session_id': row['payload']['native_session']})
     current = native_launch._row(store, run)
-    assert current['status'] == 'submitted' and current['payload']['checkpoint_id'] != old
+    assert current['status'] == 'continuation_required' and current['payload']['checkpoint_id'] != old
     text = Path(current['payload']['packet_path']).read_text()
     assert 'parser now preserves' in text and 'Preserve the public signature.' in text
-    assert len(text.encode()) <= 8192
-    attached = json.loads(line)['hookSpecificOutput']
-    assert attached['hookEventName'] == 'SessionStart'
-    assert text in attached['additionalContext']
+    assert line is None
+    assert current['payload']['continuation_input']['phase'] == 'prepared'
+    assert fire(store, run, current, 'tool-start', payload('before-full-delivery')) == 2
+    assert token_controls.reset_one(store, env=runtime[3])['status'] in {'continuation_unconfirmed', 'continuation_acknowledged'}
+    wait_for(lambda: native_launch._row(store, run)['status'] == 'submitted', what='full continuation native input acknowledgment')
+    current = native_launch._row(store, run)
+    assert current['payload']['continuation_input']['phase'] == 'acknowledged'
     assert store.db.execute('SELECT disposition FROM events WHERE event_id=?', (event['event_id'],)).fetchone()[0] is None
     assert fire(store, run, current, 'tool-start', payload('after-compact')) == 0
 
@@ -56,12 +60,22 @@ def test_precompact_prepares_pointer_without_acknowledging_tail(runtime):
     row = submitted(runtime)
     before = [tuple(r) for r in store.db.execute('SELECT stream_id,classified_seq FROM cursors WHERE run_id=? ORDER BY stream_id', (run,))]
     line = compaction_policy.prepare_native_compaction(store, row, {'trigger': 'auto'})
-    assert 'Read the task context' in line and len(line.encode()) < 512
+    assert line is None
     assert before == [tuple(r) for r in store.db.execute('SELECT stream_id,classified_seq FROM cursors WHERE run_id=? ORDER BY stream_id', (run,))]
 
 
-def test_inline_boundary_limit_counts_utf8_bytes_without_truncation():
-    assert compaction_policy.claude_boundary_context('界' * 3000) is None
-    state = 'Do not publish until QA passes; next run `pytest tests/parser -q`.'
-    result = json.loads(compaction_policy.claude_boundary_context(state))
-    assert state in result['hookSpecificOutput']['additionalContext']
+def test_long_continuation_keeps_all_unicode_and_final_constraints_without_hook_reads(runtime):
+    store, _, run, _ = runtime
+    row = submitted(runtime)
+    full = '界' * 5000 + ' FINAL: do not replace the existing implementation.'
+    with store.transaction() as tx:
+        event = tx.append_event(run, 'main', 'large-current-condition', 'correction', {'text': full})
+        tx.put_record('large-current-constraint', expected_version=0, task_id='implement', kind='constraint',
+            payload={'schema_version': 1, 'text': full}, evidence=[event['event_id']], inputs={}, reason='Current mandatory condition.', expires_when='task ends')
+    output = native_controller.observe(store, run, row['launch_id'], 'context',
+        {'source': 'compact', 'session_id': row['payload']['native_session']})
+    current = native_launch._row(store, run)
+    text = Path(current['payload']['packet_path']).read_text()
+    assert output is None and full in text
+    assert len(text.encode()) > 8192
+    assert text in native_controller._submission_prompt(current)

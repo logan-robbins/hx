@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from . import tool_execution as tool_execution_cmd
+from . import file_reads as file_reads_cmd
 from . import tool_catalog as tool_catalog_cmd
 from . import code_index as code_cmd
 from . import repo_service as repo_cmd
@@ -65,6 +66,7 @@ IMPLEMENTED = {
     "launch": lifecycle.main_launch,
     "loop": loop_cmd.main,
     "tool-exec": tool_execution_cmd.main,
+    "file-read": file_reads_cmd.main,
     "tools": tool_catalog_cmd.main,
     "code": code_cmd.main,
     "repo": repo_cmd.main,
@@ -160,9 +162,10 @@ AUDIENCES: dict[str, set[str]] = {
         "handoff delivery",
         "build status", "build reconcile",
         "code journal",
+        "code audit",
     },
     "partner": {
-        "launch",        "read",
+        "launch",        "read", "file-read",
         "board", "show", "metrics", "goals",
         "plan draft", "plan replan", "plan changes", "plan validate", "plan apply", "plan unit",
         "plan ready", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
@@ -178,6 +181,7 @@ AUDIENCES: dict[str, set[str]] = {
         # GRAPH_PLAN steps 2-8 (the graph lane builds them; the gate covers them already).
         "code contracts", "code submaps", "code stats", "code import",
         "code journal",
+        "code audit",
         "models",
         "cache report",
         "repo status", "repo register", "repo diff", "repo merge-base", "repo history", "repo file",
@@ -193,12 +197,13 @@ AUDIENCES: dict[str, set[str]] = {
 
         "code search", "code symbols", "code impact", "code edges",
         "content search", "content fetch",
-        "exec", "sift", "tool-exec",
+        "exec", "sift", "tool-exec", "file-read",
         "tools discover", "tools load", "tools call", "tools status",
         "discipline commit", "evidence",
         # GRAPH_PLAN steps 2-6, with --expect/--owners.
         "code type", "code signature", "code callers", "code register", "code tests-for",
         "code conform", "code precedent", "code contract", "code map", "code fresh",
+        "code audit",
         # TOOL_SKILL_PLAN step 5.
         "discipline pull",
         "repo diff", "repo merge-base", "repo history", "repo file",
@@ -212,7 +217,7 @@ AUDIENCES: dict[str, set[str]] = {
     },
     "subagent": {
         "code search", "code type", "code signature", "code callers",
-        "content search", "content fetch", "exec",  "evidence",
+        "content search", "content fetch", "exec",  "evidence", "file-read",
         "repo diff", "repo history", "repo file",
     },
     # The Companion is a Read + Write session: no `hx` command at all.

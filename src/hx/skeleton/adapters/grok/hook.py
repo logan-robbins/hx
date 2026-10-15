@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hook-bin", required=True)
     parser.add_argument("--root")
     parser.add_argument("event")
+    parser.add_argument("--read-segment", type=int)
     for field in ("run", "launch", "adapter"):
         parser.add_argument("--continuity-" + field)
     args = parser.parse_args(argv)
@@ -73,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         # A type such as 'explore' is shared by concurrent children, not an ID.
         translated.pop("agent_id", None)
         translated["agent_type"] = body["subagentType"]
+    if args.read_segment is not None:
+        extra += ["--read-segment", str(args.read_segment)]
     payload = json.dumps(translated).encode()
     # --hook-bin can be a bare path or a command with arguments.
     try:

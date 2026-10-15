@@ -260,12 +260,14 @@ def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_pat
     assert companion.is_file()
     config = tomllib.loads((home / "config.toml").read_text())
     guards = config["hooks"].get("PreToolUse", [])
-    assert len(guards) == 1 and guards[0]["matcher"] == "Bash|apply_patch|Edit|Write"
+    assert len(guards) == 1 and 'matcher' not in guards[0]
     assert "guard" in guards[0]["hooks"][0]["command"]
     assert config['hooks']['SubagentStart'] and config['hooks']['SubagentStop']
     result_hooks = [entry for entry in config['hooks']['PostToolUse']
                     if any('subagent-result' in hook['command'] for hook in entry['hooks'])]
-    assert len(result_hooks) == 1 and result_hooks[0]['matcher'] == 'Agent|spawn_agent'
+    from hx.file_read_delivery import segment_slots
+    assert len(result_hooks) == segment_slots(instance, 'partner')
+    assert all(hook['matcher'] == 'Agent|spawn_agent' for hook in result_hooks)
     assert config["projects"][str(instance)]["trust_level"] == "trusted"
 
 

@@ -1,8 +1,8 @@
 # hx — Game of Harnesses
 
 hx runs a coordinated fleet of native coding-agent harnesses. A Partner turns a goal
-into bounded assignments; workers execute in their own sessions; a companion maintains
-the small current state needed to continue; and hx checks, publishes, and reports
+into bounded assignments; workers execute in their own sessions; separate Context and Learning Companions
+maintain current state and assess reusable lessons; and hx checks, publishes, and reports
 completed work.
 
 Use hx for new features, application maintenance, integrations, or codebase conversions.
@@ -48,7 +48,12 @@ flowchart TB
     W --> T[Tools · repository · child agents]
     T --> E[Incremental event capture]
     E --> J[Jev: bounded delta and routing judgments]
-    J --> K[Companion: task and map patches]
+    J --> K[Context Companion: task and map patches]
+    E --> L[Learning Companion: independent assessment]
+    L --> LP[Evidence-backed proposal]
+    LP --> LR[Other-session review]
+    LR --> RULES[Reviewed global and role rules]
+    RULES --> C
     K --> S[Validated current task state]
     K --> M
     S --> C
@@ -85,17 +90,26 @@ builds, immutable artifacts, and test shards that avoid repeated compilation.
 
 The Companion processes frozen captured events and submits structured changes to current
 task state and the application map. Native worker passes expose only bounded evidence reads
-and structured patch submission; the Companion cannot execute the worker's commands. Jev is required for its bounded judgments about
+for non-file observations, complete verified source evidence, and structured patch submission;
+the Companion cannot execute the worker's commands. Jev is required for its bounded judgments about
 observation deltas, repeated tool observations, optional tool discovery, and surplus
 output. Jev does not choose which facts survive, write facts, generate task plans, or
 switch models. The companion handles factual changes; deterministic code validates
 scope, versions, evidence references, and source applicability.
 
-Native startup keeps identity, graph/search/reuse, ownership, independent approval, and required
-full-read rules in a compact facade. Longer warranted instructions and oversized mandatory task
-context retain exact immutable full-text files with hashes and explicit full-read requirements.
-They are never truncated or assumed consumed just because a reference was delivered. Only current
-verified required material can be read whole through the managed exception.
+Native startup and managed reset deliver complete verified instructions and required task
+context automatically. Reviewed global and role learnings are included for every flavor and
+agent role. Linked immutable backing files stay within 40,000 UTF-8 bytes (10,000 estimated
+tokens at four bytes per token), and the runtime resolves the entire chain without agent
+pagination. Whole source reads return exact complete content or refuse; native transport
+segments do not cost additional model tool calls. Scoped search and command-output reduction
+remain available for their separate purposes. `hx code audit --repo PATH` reports every
+existing size outlier; changed oversized text files cannot complete.
+
+Every agent has an independent Learning Companion alongside its Context Companion. It observes
+captured events, proposes evidence-backed shared or role-specific lessons, and retains its own
+cursor and budget. A different authorized session reviews proposals with `hx learn`; assessment
+never silently approves a rule or edits current task state.
 
 Workers receive a bounded packet for the active assignment: goal and corrections,
 acceptance, next action, relevant findings and commands, required map records, and
@@ -122,8 +136,8 @@ Partner. Other native harnesses can be assigned as workers when configured. Type
 API access is required for Jev; the runtime has no inference fallback for Jev decisions.
 See [getting started](docs/getting-started.md) for credentials and installation.
 
-Worker tasks use one schema-2 dependency packet lifecycle. Source materialization and accepted
-workdir precede admission; `hx plan assign` reserves ownership and explicit `hx launch ID
+Worker tasks use one schema-2 dependency packet lifecycle. A configured source workdir precedes admission; optional provisioning is needed only when no
+suitable prepared directory exists; `hx plan assign` reserves ownership and explicit `hx launch ID
 --run RUN --request REQUEST` advances native startup. Workers bind executable checks before
 edits and obtain approval from the configured independent reviewer. Empty write scopes still
 require a current repository graph. The ledger is authoritative for task state and views.

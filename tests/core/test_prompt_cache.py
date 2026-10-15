@@ -148,9 +148,10 @@ def test_required_full_text_is_counted_separately_and_never_reported_as_read(con
     result=prompt_cache.agent_report(store.root,'eng-001')
     invariant=result['invariant']
     assert invariant['inline_bytes']==invariant['prefix_bytes']
-    assert invariant['referenced_full_text_bytes']>20000
-    assert invariant['inline_bytes']<invariant['referenced_full_text_bytes']
+    assert invariant['backing_material_bytes']>20000
+    assert invariant['inline_bytes']>=invariant['backing_material_bytes']>20000
+    assert invariant['referenced_full_text_bytes']==0
     assert invariant['required_files'][0]['integrity']=='verified'
-    assert invariant['required_files'][0]['read_status']=='unmeasured'
-    assert invariant['reference_read_status']=='unmeasured'
+    assert invariant['required_files'][0]['read_status']=='not_required_inline'
+    assert invariant['reference_read_status']=='not_required_inline'
     assert result['cache']['state']=='unmeasured'

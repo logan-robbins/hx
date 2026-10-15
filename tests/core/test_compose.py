@@ -6,7 +6,6 @@ import uuid
 import pytest
 from hx import compose
 from hx.errors import Refused
-from hx.hook_context import CONTEXT_LINE
 from .conftest import clean_env
 
 def run_hook(instance, item_id, event, payload=None, *, tmux=None, harness_id=None, **env_extra):
@@ -29,7 +28,10 @@ def test_partner_context_preserves_notes_and_updates_current_state(instance, sou
     path.write_text("# Partner\n\nCurrent directive: ship lookup.\n\n## Status\n\nstale\n\n## Decisions\n\nPublish API before consumers.\n")
     result = run_hook(instance, "partner", "context", {"source": source})
     assert result.returncode == 0, result.stderr
-    assert CONTEXT_LINE.format(path=path.resolve()) in result.stdout
+    handed = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
+    assert 'Current directive: ship lookup.' in handed
+    assert 'Publish API before consumers.' in handed
+    assert 'Use the Read tool once' not in handed
     assert "Current directive: ship lookup." in path.read_text()
     assert "Publish API before consumers." in path.read_text()
     assert "stale" not in path.read_text()

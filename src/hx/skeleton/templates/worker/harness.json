@@ -13,6 +13,13 @@
   "harness": {
     "args": []
   },
+  "learning": {
+    "model": "claude-haiku-5-5",
+    "effort": "low",
+    "batch_records": 32,
+    "request_bytes": 65536,
+    "max_proposals": 4
+  },
   "companion": {
     "model": "claude-haiku-5-5",
     "effort": "low",

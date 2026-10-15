@@ -197,8 +197,8 @@ def scope(root, repository, paths, *, bootstrap=False, local=False):
             for p in scoped_names(repo, paths)
             if in_scope(p, paths) and p not in indexed and (repo / p).is_file()
         ]
-        # Binary/oversize files deliberately stay in the degraded coverage lane;
-        # their existence alone cannot claim source freshness for graph queries.
+        # Binary files retain explicit fingerprints. Oversized text aborts
+        # indexing rather than publishing missing source as complete coverage.
         if missing:
             reasons.append("scope has files absent from the index")
             changed.extend(missing)

@@ -53,19 +53,45 @@ packet. The Companion submits bounded, evidence-linked task/map changes; Jev jud
 observation/routing candidates without proving absence, dependency truth, or completion.
 No personal or cross-task episodic state is retrieved into worker assignments.
 
-Prompt manifests include `required_files` entries with exact `path`, `sha256`, `bytes`,
-`channel`, and source `sections`, plus `full_instruction_bytes`. System/context delivery bytes
-charge only the startup facade, whose mandatory policy and full-read requirement remain inline.
-Full required instruction text is immutable and verified; a reference is not evidence it was
-read. Companion instructions stay inline because its evidence tools cannot open arbitrary files.
+Prompt manifests retain exact instruction source identities and `required_files` backing
+material. Complete shared, audience, role, reviewed global/role learning, policy and identity
+instructions are delivered automatically in the actual native input channel. Startup and
+managed continuation hash their exact full submission and require native acknowledgment;
+an oversized hook string that a host may truncate and model-selected file pagination are
+not instruction transport. The Partner's synchronous hook segments obey the complete
+boundary contract below.
 
-Checkpoint metadata always includes `required_files`, `inline_bytes`, `full_context_bytes`,
-and `referenced_bytes`. Warranted mandatory task text that exceeds inline budget is preserved
-as an exact immutable artifact retained by the checkpoint's `full-context` reference. Its entry
-has `path`, `sha256`, `bytes`, and `kind: "assignment"`. Full-read membership requires the current
-checkpoint and current task/fact/source identities. Corruption, retirement, or changed required
-facts invalidates the reference. These artifacts are read-only; no automatic reading or proof
-is inferred from delivery of their facade. Tiny budgets that cannot hold the safe facade refuse.
+Backing material parts are at most 40,000 UTF-8 bytes (10,000 estimated tokens using four
+bytes per token, an explicit heuristic). Each part names `path`, `sha256`, `bytes`,
+`payload_sha256`, `payload_bytes`, `part`, `parts`, `next_path`, `bundle_sha256`, and
+`bundle_bytes`, plus its typed source/channel metadata. The physical NEXT/END markers and all
+part/aggregate identities are verified before automatic full reconstruction. No mandatory
+instruction, assignment obligation or selected required fact is sliced to satisfy a budget.
+Complete native input that cannot fit its configured context/transport budget is refused.
+When reviewed instruction sources change, the next managed boundary closes admission and
+requests a drained native restart with the current compiled bundle. The run/checkpoint
+continues only after acknowledgment of that fresh complete input. Active frozen prefixes
+are never amended in place.
+
+Explicit native source-file reads prohibit offsets/limits and resolve the whole verified
+file or instruction chain in one logical call. Host-limited transports emit deterministic
+segments without model pagination. Only all required complete segments settle a successful
+read; incomplete delivery retains an action/completion barrier and permits full retry.
+`hx file-read PATH` provides this same complete transport through one standalone native
+shell call when the harness has no dedicated file-read tool. Managed calls return only the
+broker marker on stdout, and the logical read settles only after post-hook complete delivery;
+pipelines and lossy command wrappers are refused. Operator/protocol `hx repo file` returns
+full exact UTF-8 source with `bytes`, `sha256`, `total_lines`, and `complete: true`; managed
+native calls use the marker and complete broker transport. A partial range request or
+unsupported complete response is refused.
+Operator `hx evidence EVENT` also returns complete verified source/instruction evidence;
+managed native shell callers must use the complete-file broker for source. Offset and
+limit options apply only to non-file observations. Companion MCP source responses declare
+the host's complete-result envelope and refuse anything exceeding their frozen context or
+transport allowance before returning content. `hx exec` and `tool-exec` refuse
+recognized source-dump commands before execution instead of reducing their output.
+Search candidates and reduced non-file command output retain their separate bounded contracts.
+Complete transport is evidence of emitted content, not proof of model attention or obedience.
 
 `hx complete done` requests managed completion under the caller's `HX_CONTINUITY_RUN`.
 It does not publish proof from agent prose. The runtime drains observed managed work and
@@ -77,11 +103,9 @@ Lease release after stop requires reconciled owned-process quiescence.
 
 ## Partner boundary transport
 
-The Partner's current orchestration context is named by the hook instruction:
-
-```text
-Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
-```
+The Partner's current persona, reviewed rules and orchestration context are supplied
+completely at its native context boundary. Where a host caps one hook string, deterministic
+synchronous transport segments preserve the exact complete boundary without model reads.
 
 Its file-backed observation pass is requested with:
 
@@ -91,6 +115,8 @@ Companion pass: read <path> and do what it says.
 
 This observes Partner scheduling state; it does not assign, launch, or complete a worker.
 Worker observations use the frozen ledger pass and bounded evidence/structured-patch tools.
+Source and instruction evidence is a complete verified object or an explicit refusal;
+the bounded evidence contract applies to non-file observations.
 The Partner messaging endpoint record `run/partner/socket.json` has exactly `socket`, `token`,
 `ts`, and `session_id`; token contents are never user-facing output.
 
@@ -121,7 +147,7 @@ creates no assignment or task transition. `hx wake partner TEXT` uses the same w
 ## Configuration and instructions
 
 `config/ID/harness.json` names identity, pod, role, purpose, absolute workdir, supported flavor,
-model/effort, Companion settings, and optional explorer model/effort. Roles have matching
+model/effort, independent `companion` and `learning` settings, and optional explorer model/effort. Roles have matching
 `personas/ROLE.md` and `companion/roles/ROLE.md`. Workers use isolated native homes and
 configured credentials; instance setup does not authorize changing personal harness state.
 `config/hx.json` carries runtime, repository service, and optional capability settings.
@@ -147,10 +173,11 @@ namespaces for named queries. `fresh` requires one unambiguous namespace.
 `{repo, files, symbols, changed, skipped, head, resolved}`. The repository identity
 is the portable map's `repo_id`, then a git remote, then the resolved path.
 The store is `state/code-index/index.db` outside product checkouts. Bodies occur
-once in `files`; Porter and optional trigram FTS use external content. Oversize
-and binary bodies are excluded and counted in `skipped`; streamed fingerprints
-remain in `exclusions` for scope freshness. Oversize exclusions cannot certify
-absence. No file-count cap applies.
+once in `files`; Porter and optional trigram FTS use external content. Text files above
+the maintained-file budget remain fully indexed and appear in the mandatory size audit.
+The separate parser resource bound refuses indexing before publishing partial coverage.
+Binary bodies are excluded and counted in `skipped`; streamed fingerprints remain in
+`exclusions` for scope freshness. No file-count cap applies.
 A derived index without current namespaces is rebuilt from source. Extractor-generation changes
 invalidate old candidates before the next refresh.
 
@@ -252,8 +279,9 @@ capture is bounded by `HX_CODE_REVISION_MAX_BYTES` and `HX_CODE_REVISION_MAX_PAT
 Configure `config/hx.json` `repository_service` or `HX_REPO_SERVICE_SOCKET` as a Unix socket
 path. `hx repo serve [--socket PATH] [--workers N]` owns one shared derived store outside
 product checkouts. Workers are bounded to 1–64; requests to 64 KiB and responses to 256 KiB.
-Metadata limits are 1–100 rows and source ranges 1–160 lines. Source blobs are bounded
-regular Git files. Register with `hx repo register --repo PATH`.
+Metadata limits are 1–100 rows. Source-file reads return complete regular Git blobs with exact
+UTF-8 bytes and content identity; range parameters are refused. A complete response exceeding
+the explicit transport limit fails instead of returning a prefix. Register with `hx repo register --repo PATH`.
 
 The JSON protocol uses `method: register|status|code|scope|diff|merge-base|history|file|materialize|expand`.
 Source operations name `namespace` and `at`; answers carry exact resolved commit and
@@ -392,3 +420,38 @@ required recipe hashes, captured receipts, tested build/manifest and remaining o
 `handoff check DIR` verifies captured evidence and seals; `--live` also requires current
 identities/readiness to match. Historical evidence retains its original scope. Missing,
 pending, failed or skipped validation cannot become deployment approval.
+
+## Independent context and learning Companions
+
+Each agent has a Context Companion and a separate Learning Companion. Context jobs own their
+frozen task/map patches and context event cursor. Learning jobs have separate `learning_jobs`
+and `learning_cursors`, frozen captured evidence, model/effort, request and proposal budgets.
+Neither sidecar can acknowledge the other's cursor. Context failure does not disable learning;
+learning lag does not block packet completion or release. Both respect shared host capacity.
+
+Learning assessment tools are exactly `read_evidence` (one complete frozen evidence object,
+without offsets) and `submit_assessment`. Responses require `schema_version: 1`,
+`event_digest`, `proposals`, and `pending_event_ids`, with optional `ignored_event_reasons`
+mapping explicitly ignored event IDs to reasons. Each proposal contains exactly
+`category`, `scope` (global or paired role), `signal`, `check`, and nonempty `evidence_ids`.
+Foreign, unread, ignored, pending or changed evidence cannot support a proposal. Artifact
+references require a complete verified artifact read; a captured excerpt never proves the
+original source or command output was complete. Relevant unavailable evidence remains pending.
+Assessment commits its
+own cursor and durable proposal outbox atomically, preserving exact cited evidence artifacts.
+Replayed accepted output is idempotent. Failed/uncertain paid work is not silently repeated.
+
+The outbox creates pending `hx learn` proposals only. An independently authorized different
+session accepts, merges or rejects them. Reviewed global and matching role rule files compile
+into every agent audience/flavor, including both Companions and worker subagents; proposal
+text cannot override current policy or become an execution receipt. Accept and merge refuse
+a rule file above 40,000 UTF-8 bytes before changing it; the proposal remains pending.
+
+## Whole-file size discovery
+
+`hx code audit --repo PATH` scans tracked and nonignored text files completely, reporting every
+outlier's path, UTF-8 bytes, SHA-256 and estimated tokens. Indexing and admission force this
+scan; stored admission and public readiness/assignment retain the report. Existing outliers
+remain visible and fully indexed within the separately declared parser resource bound; a
+resource limit refuses indexing without publishing partial absence. Changed oversized text
+files pause scope audit and cannot publish completion.

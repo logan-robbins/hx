@@ -192,7 +192,10 @@ def admit(tx, task):
     from .dependency_packets import guard_resources
     guard_resources(tx, task)
     state = workspace(payload, clean=True)
-    return {"workspace": state, "prerequisites": _prerequisites(tx, task, state)}
+    from .file_limits import scan_repo
+    file_sizes = scan_repo(payload["workdir"])
+    return {"workspace": state, "prerequisites": _prerequisites(tx, task, state),
+            "file_sizes": file_sizes}
 
 
 def bind(tx, task, run_id, admission):
@@ -223,8 +226,9 @@ def ready(store, plan_id):
                 if tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", tuple(row)).fetchone():
                     result.append({"task_id": row["task_id"], "status": ("deployable" if packet_readiness["deployable"] else "packet_covered"), "readiness": packet_readiness})
                     continue
-                admit(tx, task)
-                result.append({"task_id": row["task_id"], "status": "ready", "readiness": packet_readiness})
+                admission = admit(tx, task)
+                result.append({"task_id": row["task_id"], "status": "ready", "readiness": packet_readiness,
+                               "file_sizes": admission["file_sizes"]})
             except (Conflict, ValidationError) as exc:
                 result.append({"task_id": row["task_id"], "status": "blocked", "reason": str(exc)})
     return {"plan_id": plan_id, "units": result, "note": "Readiness is a snapshot; assignment atomically rechecks ownership and prerequisites."}
@@ -244,7 +248,9 @@ def assign(store, task_id, revision, worker_id):
         _task(tx, task_id)
         run_id = tx.start_run(task_id, revision, worker_id)
         task = _task(tx, task_id, active_run=run_id)
-        return {"run_id": run_id, "task_id": task_id, "revision": revision, "worker_id": worker_id, "assignment": task["payload"]}
+        admission = json.loads(tx.db.execute("SELECT payload FROM unit_runs WHERE run_id=?", (run_id,)).fetchone()[0])
+        return {"run_id": run_id, "task_id": task_id, "revision": revision, "worker_id": worker_id, "assignment": task["payload"],
+                "file_sizes": admission["file_sizes"]}
 
 
 def _changed(payload, admission, state):
@@ -269,6 +275,8 @@ def audit(store, run_id):
             scopes = _scope(payload)
             state = workspace(payload)
             changed = _changed(payload, admission, state)
+            from .file_limits import require_changed
+            require_changed(payload["workdir"], changed)
             unexpected = []
             for path in changed:
                 candidate = write_scope(Path(payload["workdir"]), path)
@@ -342,6 +350,8 @@ def complete(store, run_id, receipt_ids, *, env=None):
             raise Conflict("prerequisite proof changed since admission")
         _scope(payload)
         changed = _changed(payload, admission, state)
+        from .file_limits import require_changed
+        require_changed(payload["workdir"], changed)
         from .dependency_packets import guard_contract_files
         guard_contract_files(tx, task, state)
         declared_paths = {path for output in payload["outputs"] if output["kind"] in {"source", "contract"} for path in output["paths"]}

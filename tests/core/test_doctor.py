@@ -292,9 +292,8 @@ def test_an_instance_on_a_shared_directory_is_not_asked_for_its_own_skeleton_fil
 
 
 
-def test_hook_size_names_every_agent_whose_hook_output_passed_its_bound(instance, monkeypatch):
-    """The `context` hook prints rules whole up to its bound and lists them as files past it
-    (`hx.persona.boundary`); doctor names each agent that happens to, and only those."""
+def test_complete_context_past_one_hook_string_bound_is_delivered_without_warning(instance, monkeypatch):
+    """Automatic full transport has multiple native strings and no model file walk."""
     from hx import learn, persona
     largest = max(persona.boundary(instance, item_id)["bytes"] for item_id in ("eng-001", "partner"))
     monkeypatch.setattr(persona, "HOOK_BYTES_BY_FLAVOR", {"claude": largest + 200})
@@ -303,9 +302,21 @@ def test_hook_size_names_every_agent_whose_hook_output_passed_its_bound(instance
                              role="engineer", env={"HARNESS_ID": "eng-001"})
     learn.accept(instance, proposal["id"], env={"HARNESS_ID": "partner"})
     checks = run_checks(instance)
+    assert ("hook-size", WARN) not in statuses(checks)
+    assert 'x' * 400 in persona.boundary(instance, 'eng-001')['text']
+
+
+def test_complete_context_total_overflow_names_every_affected_agent(instance, monkeypatch):
+    from hx import token_controls
+    original = token_controls.limits
+    def small(root, agent):
+        return {**original(root, agent), 'threshold': 1}
+    monkeypatch.setattr(token_controls, 'limits', small)
+    checks = run_checks(instance)
     assert ("hook-size", WARN) in statuses(checks)
-    (detail,) = detail_for(checks, "hook-size")
-    assert "eng-001 (personas/engineer/build.md past" in detail and "partner" not in detail
+    detail = '\n'.join(detail_for(checks, 'hook-size'))
+    assert 'partner:' in detail and 'eng-001:' in detail
+    assert 'complete' in detail and 'budget' in detail
 
 
 # --- skills (TOOL_SKILL_PLAN step 1) -----------------------------------------------------------

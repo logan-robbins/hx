@@ -1,7 +1,7 @@
 """Partner startup context and messaging endpoint discovery.
 
 Each boundary refreshes PARTNER.md's Status and hands the Partner its configured
-persona and one pointer to its orchestration notes. Worker boundaries receive
+persona and complete orchestration notes. Worker boundaries receive
 immutable context through the native launch hook contract.
 """
 
@@ -13,14 +13,6 @@ from pathlib import Path
 
 from . import compose as compose_mod, persona as persona_mod, store, streams, timestamps
 from .ids import PARTNER
-
-#: Spec 09.1, verbatim. It names the *tool*, because a live agent read the file twice —
-#: `Bash cat` and then `Read` — when the line only named the action (build-3 live check).
-#: Never JSON, never a leading brace: plain stdout is what `SessionStart` injects as context.
-CONTEXT_LINE = (
-    "Use the Read tool once on {path} before anything else; "
-    "do not cat it and do not read it twice."
-)
 
 SOCKET_ENV = "CLAUDE_CODE_MESSAGING_SOCKET"
 TOKEN_ENV = "CLAUDE_CODE_MESSAGING_TOKEN"
@@ -49,6 +41,16 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     """Write `## Status`, record the boundary, and return what the agent is handed."""
     from .companion import require_partner
     require_partner(item_id)
+    if '_hx_context_segment' in payload:
+        from .partner_context import emit
+        emit(root, payload, payload['_hx_context_segment'],
+             build=lambda: _body(payload, item_id, root, env=env),
+             write=lambda value: print(value, flush=True))
+        return 0, ''
+    return 0, _body(payload, item_id, root, env=env)
+
+
+def _body(payload: dict, item_id: str, root: Path, *, env=None) -> str:
     source = payload.get("source") or "startup"
 
     if item_id == PARTNER:
@@ -59,7 +61,7 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     handed = persona_mod.boundary(root, item_id, env=env)
 
     # A boundary record, so the Companion sees where the conversation restarted (spec 07.1).
-    # The context pointer names the Partner orchestration notes.
+    # Record the complete source body once, before automatic transport fan-out.
     streams.append_record(
         root,
         item_id,
@@ -74,4 +76,4 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     )
 
 
-    return 0, handed["text"]
+    return handed["text"]

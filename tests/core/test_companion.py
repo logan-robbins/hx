@@ -339,6 +339,12 @@ def test_truncation_never_drops_records_at_or_ahead_of_the_cursor(instance):
     from hx.streams import iter_records, main_stream, truncate
 
     append(instance, "partner", "partner-main", 400)
+    from hx import learning_companion
+    from hx.continuity_store import ContinuityStore
+    with ContinuityStore(instance) as ledger:
+        learning_companion.register(ledger)
+        with ledger.transaction() as tx:
+            tx.db.execute("UPDATE learning_cursors SET assessed_seq=350 WHERE agent_id='partner' AND stream_id='partner-main'")
     path = main_stream(instance, "partner")
     truncate(path, state_seq=350, max_records=100, keep_behind=20)
 

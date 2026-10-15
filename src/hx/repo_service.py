@@ -23,6 +23,12 @@ MAX_RESPONSE = 262144
 MAX_BLOB = 512 * 1024
 
 
+def repository_read_request(root, argv, env=None):
+    """Native admission and CLI delivery share one complete Git-file identity."""
+    from .repository_file_read import repository_read_request as resolve
+    return resolve(root, argv, env)
+
+
 def configured_socket(root, env=None):
     env = os.environ if env is None else env
     if env.get("HX_REPO_SERVICE_SOCKET"):
@@ -308,9 +314,8 @@ def _dispatch(root, body):
         answer.update(path=path, commits=commits[:limit], complete=len(commits) <= limit)
     elif method == "file":
         path = _path(body["path"])
-        first, lines = body.get("line", 1), body.get("lines", 160)
-        if type(first) is not int or first < 1 or type(lines) is not int or not 1 <= lines <= 160:
-            raise ValidationError("file range requires a positive line and at most 160 lines")
+        if any(field in body for field in ("line", "lines", "offset", "length")):
+            raise ValidationError("file reads return the complete source; bounded slices are not supported")
         entries = _git(repo, "ls-tree", "-z", at, "--", path).split(b"\0")
         entry = next((r for r in entries if r and os.fsdecode(r.split(b"\t", 1)[1]) == path), None)
         if entry is None:
@@ -325,14 +330,18 @@ def _dispatch(root, body):
         raw = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", oid], capture_output=True, check=True, timeout=30).stdout
         if b"\0" in raw:
             raise ValidationError("source blob is binary")
-        source = raw.decode("utf-8", errors="replace").splitlines(keepends=True)
-        answer.update(path=path, object=oid, mode=mode, line=first, end_line=min(first + lines - 1, len(source)),
-                      text="".join(source[first - 1:first - 1 + lines]), complete=first == 1 and lines >= len(source))
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValidationError("source blob is not UTF-8; exact text delivery requires a supported encoding") from exc
+        answer.update(path=path, object=oid, mode=mode, bytes=len(raw),
+                      sha256=hashlib.sha256(raw).hexdigest(), text=source,
+                      total_lines=len(source.splitlines()), complete=True)
     else:
         raise ValidationError("unknown repository operation")
     encoded = json.dumps(answer).encode()
     if len(encoded) + 1 > MAX_RESPONSE:
-        raise ValidationError("repository response exceeds 256 KiB; narrow the request")
+        raise ValidationError("repository response exceeds 256 KiB; complete response was refused, not truncated")
     with _database(root) as conn:
         conn.execute("INSERT INTO telemetry VALUES(?,1,?) ON CONFLICT(method) DO UPDATE SET calls=calls+1,bytes=bytes+excluded.bytes", (method, len(encoded)))
     return answer
@@ -467,9 +476,6 @@ def main(argv, root, *, env=None):
                 p.add_argument("--out", required=True)
                 if name == 'materialize':
                     p.add_argument("--working-copy", action="store_true")
-            if name == "file":
-                p.add_argument("--line", type=int, default=1)
-                p.add_argument("--lines", type=int, default=160)
     args = parser.parse_args(argv)
     if args.command == "serve":
         serve(root, args.socket, workers=args.workers)
@@ -485,5 +491,12 @@ def main(argv, root, *, env=None):
             body = request_body(store, args.task, args.out, args.at, env=env)
     path = Path(args.socket) if args.socket else configured_socket(root, env)
     result = request(path, body) if path else dispatch(root, body)
+    child = os.environ if env is None else env
+    if args.command == 'file' and child.get('HARNESS_ID'):
+        from .repository_file_read import from_result, require_admitted
+        _, receipt = from_result(result)
+        require_admitted(root, receipt, child)
+        print(json.dumps({'complete_file_read': 'synchronous_native_broker', 'path': receipt['path']}))
+        return 0
     print(json.dumps(result))
     return 0

@@ -1,8 +1,8 @@
 """Reset the Partner conversation at a quiet, checkpointed boundary.
 
 The Partner's companion catches up, PARTNER.md receives its current Status,
-and the pane receives the adapter's reset command. The startup hook supplies
-its configured persona and a pointer to PARTNER.md for the next conversation.
+and the pane receives the adapter's reset command. Automatic native boundary
+handlers deliver the complete persona and notes before tool use resumes.
 """
 
 from __future__ import annotations
@@ -163,6 +163,10 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     # Sequence is spec 08's: `## Status` is written from what the Companion recorded, then
     # the `/clear` is queued and the record written.
     context_file = compose_mod.compose(root, item_id, stream, env=env)
+
+    from . import lifecycle, partner_context
+    lifecycle.prepare_persona(root, item_id, env=env)
+    partner_context.invalidate(root)
 
     goal_mod.paste(pane_target(item_id, env), seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))

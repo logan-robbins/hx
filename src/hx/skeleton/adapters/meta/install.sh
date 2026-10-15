@@ -88,6 +88,10 @@ from hx.hook_contract import installation_args
 continuity = installation_args(Path(os.environ["HX_ROOT"]), item_id, "meta", os.environ)
 root = os.environ["HX_ROOT"]
 
+if continuity:
+    from hx.file_read_delivery import install_profile
+    install_profile(Path(root), item_id)
+
 events = (
     "SessionStart:context",
     "PostToolUse:log",
@@ -110,6 +114,15 @@ for spec in events:
         "--root", root, *continuity, hx_event,
     ))
     hooks.setdefault(muse_event, []).append({"hooks": [{"type": "command", "command": cmd}]})
+if continuity:
+    from hx.file_read_delivery import segment_slots
+    for index in range(1, segment_slots(Path(root), item_id)):
+        cmd = shlex.join([python, adapter, '--id', item_id, '--hook-bin', hook_bin,
+            '--root', root, *continuity, 'log', '--read-segment', str(index)])
+        hooks['PostToolUse'].append({'matcher': 'Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command',
+            'hooks': [{'type': 'command', 'command': cmd}]})
+        hooks['PostToolUseFailure'].append({'matcher': 'Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command',
+            'hooks': [{'type': 'command', 'command': cmd.replace(' log --read-segment ', ' log-failure --read-segment ')}]})
 
 settings = {
     "schema_version": 1,

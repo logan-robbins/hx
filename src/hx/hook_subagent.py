@@ -1,7 +1,7 @@
 """The three subagent hooks (spec 09.1, 07.3, 09.4).
 
 `SubagentStart` is the only boundary a subagent gets: hx assigns its handle, opens its stream,
-composes its context file, and returns the path as JSON `additionalContext` — **JSON is the
+composes its context and delivers it completely as JSON `additionalContext` — **JSON is the
 only accepted form for this event**; plain stdout is not injected (verified against
 code.claude.com/docs/en/hooks#subagentstart, 2026-09-20).
 
@@ -15,7 +15,6 @@ import json
 from pathlib import Path
 
 from . import compose as compose_mod, store, streams, subagents
-from .hook_context import CONTEXT_LINE
 
 #: Until the Companion writes real digests (M5), a closed stream still gets a file, so the
 #: path the parent is handed always exists.
@@ -78,6 +77,18 @@ def _spawn_prompt(payload: dict) -> str:
 
 
 def start(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
+    if '_hx_context_segment' in payload:
+        from .partner_context import emit
+        emit(root, payload, payload['_hx_context_segment'],
+             build=lambda: _start_body(payload, item_id, root, env=env),
+             write=lambda value: print(value, flush=True),
+             scope='child:' + str(payload.get('agent_id') or ''), event='SubagentStart')
+        return 0, ''
+    text = _start_body(payload, item_id, root, env=env)
+    return 0, json.dumps({'hookSpecificOutput': {'hookEventName': 'SubagentStart', 'additionalContext': text}})
+
+
+def _start_body(payload: dict, item_id: str, root: Path, *, env=None) -> str:
     agent_id = str(payload.get("agent_id") or "")
     if not agent_id:
         raise ValueError("SubagentStart payload has no agent_id")
@@ -107,13 +118,7 @@ def start(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, st
     # The subagent's own context file: SUBAGENTS.md as who it is, its prompt as the task (07.3).
     path = compose_mod.compose(root, item_id, stream, subagent_prompt=prompt, env=env)
 
-    # JSON, because plain stdout is not injected for this event.
-    return 0, json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "SubagentStart",
-            "additionalContext": CONTEXT_LINE.format(path=path),
-        }
-    })
+    return path.read_text()
 
 
 def stop(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
@@ -173,6 +178,18 @@ def result(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     `SubagentStart` reports. That is the pairing build-5 could not find, so hx records it
     here and the subagent's context file uses it.
     """
+    if '_hx_context_segment' in payload:
+        from .partner_context import emit
+        emit(root, payload, payload['_hx_context_segment'],
+             build=lambda: _result_body(payload, item_id, root, env=env),
+             write=lambda value: print(value, flush=True),
+             scope='child-result:' + str(payload.get('tool_use_id') or payload.get('agent_id') or ''), event='PostToolUse')
+        return 0, ''
+    text = _result_body(payload, item_id, root, env=env)
+    return (0, json.dumps({'hookSpecificOutput': {'hookEventName': 'PostToolUse', 'additionalContext': text}})) if text else (0, '')
+
+
+def _result_body(payload: dict, item_id: str, root: Path, *, env=None) -> str:
     response = payload.get("tool_response")
     response = response if isinstance(response, dict) else {}
     status = response.get("status")
@@ -190,11 +207,11 @@ def result(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
             )
 
     if status not in (None, "completed"):
-        return 0, ""
+        return ""
 
     handle = subagents.load(root, item_id).get(agent_id)
     if not handle:
-        return 0, ""
+        return ""
 
     stream = subagents.stream_for(item_id, handle)
     digest = digest_path(root, item_id, stream)
@@ -206,14 +223,6 @@ def result(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         "ref": {"tool_use_id": payload.get("tool_use_id")},
     })
     if not digest.is_file():
-        return 0, ""
+        return ""
 
-    return 0, json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PostToolUse",
-            "additionalContext": (
-                f"{handle} finished. Its digest is at {digest}; "
-                f"use the Read tool once on it if you need what it found."
-            ),
-        }
-    })
+    return f'{handle} finished. Complete assessed result:\n' + digest.read_text()

@@ -1,0 +1,77 @@
+flowchart TB
+    subgraph HUMAN["HUMAN"]
+        H["Directive, constraints and corrections"]
+    end
+
+    subgraph PARTNER["PARTNER"]
+        direction TB
+        P1["Understand current application dependencies<br/>code index / audit / search · repo file · map plan-context"]
+        P2["Search and reuse before building<br/>Decompose the dependency DAG for maximum useful parallelism<br/>plan draft / validate / apply / ready"]
+        P3{"Admit each ready packet<br/>Current source and exact prerequisites<br/>Free ownership, resources and capacity"}
+        PC["CONTEXT COMPANION<br/>Capture → current scheduling state → restore"]
+        PL["LEARNING COMPANION<br/>Observe → assess → evidence-backed proposal<br/>Independent review → shared or role rule"]
+        P1 --> P2 --> P3
+        P2 -.-> PC -.-> P2
+        P2 -.-> PL -.-> P1
+    end
+
+    subgraph ENGINEERING["ENGINEERING · parallel packets"]
+        direction LR
+        subgraph ENG1["ENG 1 · shared engineering internals"]
+            direction TB
+            E1{"Complete instructions and learning rules delivered<br/>Worker binds DoD and checks<br/>Independent binding approval"}
+            E2["Search → read whole files → implement<br/>Native tools · complete file-read · code queries<br/>Publish / acquire immutable interfaces early"]
+            E3["Check and audit → verified packet coverage<br/>check · build / test · plan audit / finish"]
+            EC["CONTEXT COMPANION<br/>Captured events → validated task/map patch → checkpoint"]
+            EL["LEARNING COMPANION<br/>Independent event cursor → assess → propose<br/>Reviewed global and engineering rules feed future context"]
+            E1 --> E2 --> E3
+            E3 -->|"Repair within packet"| E2
+            E2 -.-> EC -.-> E2
+            E2 -.-> EL
+        end
+        subgraph ENG2["ENG 2"]
+            E4["Same engineering loop<br/>Separate admitted packet, scope and source<br/>Own Context + Learning Companions"]
+        end
+    end
+
+    subgraph QA["QA · parallel verification packets"]
+        direction LR
+        subgraph QA1["QA 1 · shared QA internals"]
+            direction TB
+            Q1{"Admitted exact source / provider versions<br/>Complete context and reviewed QA rules<br/>Independent check-binding approval"}
+            Q2["Verify behavior and real-provider integration<br/>plan materialize / verify-integration<br/>check · build test · inspect complete evidence"]
+            Q3{"Current passing receipts and exact coverage<br/>Managed work and capture drained"}
+            QC["CONTEXT COMPANION<br/>Failures, commands and pending proof → current checkpoint"]
+            QL["LEARNING COMPANION<br/>Independent assessment → QA or shared proposal<br/>Different session accepts / merges / rejects"]
+            Q1 --> Q2 --> Q3
+            Q2 -.-> QC -.-> Q2
+            Q2 -.-> QL
+        end
+        subgraph QA2["QA 2"]
+            Q4["Same QA loop<br/>Independent checks / private test shards<br/>Own Context + Learning Companions"]
+        end
+    end
+
+    subgraph RELEASE["RELEASE"]
+        direction TB
+        R1{"Independent intent review<br/>change submit / review<br/>Configured authority for consequential boundaries"}
+        R2["Short local landing<br/>change land --expected-head<br/>Moved head → prepare again"]
+        R3["Freeze merged source and run integration CI<br/>change candidate / run-validation<br/>Build once; parallel private test shards<br/>Main can advance while this candidate is tested"]
+        R4{"Deploy gate<br/>Same-source integration verified<br/>Real-provider obligations resolved<br/>Pre-deploy checks + tested immutable artifact match"}
+        R5["Seal and verify release handoff<br/>handoff delivery / check --live<br/>Configured release tool deploys the tested artifact"]
+        RC["CONTEXT COMPANION<br/>Candidate, checks and release obligations → current state"]
+        RL["LEARNING COMPANION<br/>CI / release outcomes → assessment → proposal<br/>Reviewed release and shared rules feed future context"]
+        R1 --> R2 --> R3 --> R4 --> R5
+        R3 -->|"Diagnose / scoped repair / reconcile"| R3
+        R3 -.-> RC -.-> R3
+        R5 -.-> RL
+    end
+
+    H --> P1
+    P3 -->|"plan assign · launch"| E1
+    P3 -->|"plan assign · launch"| E4
+    E3 -->|"Exact covered output"| Q1
+    E4 -->|"Exact covered output"| Q4
+    Q3 -->|"Verified packet / integration evidence"| R1
+    Q4 -->|"Verified packet / integration evidence"| R1
+    R5 --> DONE["DEPLOYED RELEASE<br/>External deployment evidence and health checks"]

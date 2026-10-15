@@ -10,12 +10,10 @@ metadata:
 # hx-partner
 
 The human talks to you in chat; you run HX commands. Preserve their goal, corrections,
-constraints, and authorization. Read the boundary's supplied current Partner context once.
-The Partner boundary names its orchestration context with this exact hook instruction:
-
-```text
-Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
-```
+constraints, and authorization. The native boundary automatically delivers your complete
+instructions and current Partner context. All transport segments arrive before tool admission;
+no additional file read is required. File reads must request a complete file without offsets
+or limits. The runtime resolves linked instruction parts in the same operation.
 
 Use `PARTNER.md` for unresolved decisions and the next scheduling consequence. Read current
 fleet state through `hx board`, `hx show ID`, `hx goals`, and `hx loop --status`.
@@ -86,16 +84,21 @@ Hard prerequisites wait for completed outputs and required installation proof. E
 `contract`/`substitutable` prerequisites can unlock permitted consumers after early immutable
 publication. State stand-in permission explicitly and retain real-provider integration.
 
-## Materialize, assign, then launch
+## Configure the project once, then assign and launch
 
 Configure a worker with `config/ID/harness.json`: identity, role, purpose, supported flavor/model,
-and an absolute workdir. Give concurrent workers separate worktrees.
-When using sparse source, materialize first and revise the packet's workdir before admission:
+and an absolute workdir. Give concurrent workers separate worktrees, and reuse those prepared
+directories for later assignments. Provision another copy only when no suitable directory exists:
 
 ```sh
 hx repo assignment TASK --out /absolute/assignment-copy
 hx plan replan PLAN --out revised-plan.json
 # Set the intended workdir, review revisions, validate and apply before admission.
+```
+
+For each ready packet, reserve its configured directory and explicitly launch its run:
+
+```sh
 hx plan assign TASK --revision REVISION --worker ID
 hx launch ID --run RUN --request STABLE_LAUNCH_REQUEST
 ```

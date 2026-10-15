@@ -122,6 +122,10 @@ from hx.hook_contract import installation_args
 continuity = installation_args(Path(root), item_id, "claude", os.environ)
 
 
+if continuity or is_partner:
+    from hx.file_read_delivery import install_profile
+    install_profile(Path(root), item_id)
+
 def hook(event):
     args = [hook_bin, "--id", item_id, *(["--root", root, *continuity] if continuity else []), event]
     return {"type": "command", "command": " ".join(shlex.quote(arg) for arg in args)}
@@ -151,13 +155,39 @@ if continuity:
     hooks["PostToolUseFailure"] = [entry("log-failure", "*")]
     hooks["StopFailure"] = [entry("stop-failure")]
     hooks["SessionEnd"] = [entry("session-end")]
+    from hx.file_read_delivery import segment_slots
+    from pathlib import Path
+    for index in range(1, segment_slots(Path(root), item_id)):
+        part = entry('log', 'Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command')
+        part['hooks'][0]['command'] += ' --read-segment ' + str(index)
+        hooks['PostToolUse'].append(part)
+        failed = entry('log-failure', 'Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command')
+        failed['hooks'][0]['command'] += ' --read-segment ' + str(index)
+        hooks['PostToolUseFailure'].append(failed)
 
 # The guard is the one hook that enforces anything, and it is the Partner's alone: it
 # directs by status and dispatch, and config/partner/guard.json names what it must not run or
 # read (spec 09.1). The matcher is `hook_guard.MATCHER`.
 if is_partner:
-    hooks["PreToolUse"] = [entry("guard", "Bash|Read|Edit|Write|Grep|Glob")]
+    hooks["PreToolUse"] = [entry("guard", "*")]
+    hooks.setdefault('PostToolUseFailure', [entry('log-failure', '*')])
     hooks["PostToolUse"].append(entry("subagent-result", "Agent"))
+    from hx.file_read_delivery import segment_slots
+    from pathlib import Path
+    for index in range(1, segment_slots(Path(root), item_id)):
+        for native_event, hx_event in [('PostToolUse', 'log'), ('PostToolUseFailure', 'log-failure')]:
+            part = entry(hx_event, 'Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command')
+            part['hooks'][0]['command'] += ' --read-segment ' + str(index)
+            hooks[native_event].append(part)
+    for native_event, hx_event, matcher in [('SessionStart', 'context', 'startup|resume|clear|compact'),
+            ('SubagentStart', 'subagent-start', '*'), ('PostToolUse', 'subagent-result', 'Agent')]:
+        for part in hooks[native_event]:
+            if part['hooks'][0]['command'].endswith(' ' + hx_event):
+                part['hooks'][0]['command'] += ' --context-segment 0'
+        for index in range(1, segment_slots(Path(root), item_id)):
+            part = entry(hx_event, matcher)
+            part['hooks'][0]['command'] += ' --context-segment ' + str(index)
+            hooks[native_event].append(part)
 
 settings = {
     "hooks": hooks,

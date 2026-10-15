@@ -527,7 +527,32 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--map-record", action="append", default=[], help="selected map ID (at most eight)")
     parser.add_argument("--job", help="inspect a previously prepared native companion job")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--learning", action="store_true",
+                        help="use the independent learning-assessment Companion")
     args = parser.parse_args(argv)
+
+    if args.learning:
+        from .continuity_store import ContinuityStore, canonical
+        from . import learning_companion
+        if args.wake or args.ingest or args.record or args.map_snapshot or args.map_record or (args.job and args.run):
+            parser.error("learning assessment cannot use context Companion options or combine job and run")
+        with ContinuityStore(root) as ledger:
+            if args.job:
+                owner = ledger.db.execute('SELECT agent_id FROM learning_jobs WHERE job_id=?', (args.job,)).fetchone()
+                if owner is None:
+                    raise NotFound('unknown learning assessment job')
+                if owner[0] != args.id:
+                    raise Refused('learning assessment job belongs to another agent')
+                result = learning_companion.status(ledger, args.job)
+            else:
+                if not args.request:
+                    parser.error("learning assessment requires --request")
+                stream = 'partner-main' if args.id == PARTNER and args.stream == 'main' else args.stream
+                job = learning_companion.prepare(ledger, args.id, stream, args.request, run_id=args.run)
+                result = ({"status": "no_work"} if job is None else learning_companion.status(ledger, job['job_id'])
+                          if args.prepare_only else learning_companion.execute(ledger, job['job_id'], env=env))
+            print(canonical(result))
+        return 0
 
     if args.run or args.job:
         from .continuity_store import ContinuityStore, canonical

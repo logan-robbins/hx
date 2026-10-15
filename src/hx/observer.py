@@ -270,6 +270,8 @@ def encode_observation(*, session_id: str, event: Event, fallback_identity: tupl
     payload = {"schema_version": 1, "logical_id": logical_id, "observation_hash": observation_hash,
                "identity_certain": event.native_id is not None,
                "session_id": session_id, "native_id": event.native_id}
+    from .evidence import source_evidence
+    payload['evidence_scope'] = 'whole_file' if source_evidence({'observation': observation}, event.kind) else 'observation'
     if len(encoded) <= 4096:
         payload["observation"] = observation
     else:
@@ -284,6 +286,17 @@ def append_observation(tx, *, run_id: str, stream_id: str, session_id: str,
                        event: Event, fallback_identity: tuple) -> dict:
     capture_key, payload, encoded = encode_observation(session_id=session_id, event=event,
                                                       fallback_identity=fallback_identity)
+    if payload['evidence_scope'] == 'whole_file':
+        from .evidence import verified_source
+        try:
+            _, receipt = verified_source(tx, {'run_id': run_id}, payload, encoded, admitted=True)
+        except ValidationError:
+            payload['source_evidence_unavailable'] = True
+        else:
+            # Keep historical source identity after live read admission rows are
+            # retired by a context reset. The observed complete output must have
+            # matched these bytes before this immutable receipt is attached.
+            payload['source_receipt'] = receipt
     captured = tx.append_event(run_id, stream_id, capture_key, event.kind, payload)
     from .token_controls import captured_usage
     captured_usage(tx, run_id, stream_id, event)

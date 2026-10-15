@@ -114,13 +114,14 @@ Partner's own persona is `~/hx/personas/partner.md`; the Companions' rules are
 
 ## 6. Learnings
 
-Every agent carries the instance's `LEARNINGS/` — one file per category of mistake — whole,
-in its system prompt. When something trips an agent up it proposes a rule
-(`hx learn propose --category <c> --signal … --check … --evidence …`); the Partner reviews
-proposals on its next wake (`hx learn pending`, then `hx learn accept` or `hx learn reject`),
-and only that review writes a file — so each lesson stays one rule, and every agent has it
-from its next launch. You can propose and review too, from your own shell. docs/learnings.md
-has the taxonomy and the whole process.
+Each agent has a Learning Companion alongside its Context Companion. It watches captured
+evidence with its own cursor and budget and proposes reusable rules. Agents can also use
+`hx learn propose --category <c> --signal … --check … --evidence …`. A different authorized
+session reviews with `hx learn pending`, then accept, merge or reject; assessment alone
+cannot publish a rule. Reviewed global and matching role rules are delivered completely to
+all applicable agents, subagents and both Companions. Active workers adopt changed rules at
+their next controlled boundary through a drained restart. [Learnings](learnings.md) describes
+the evidence and review contracts.
 
 ## 7. Stopping and starting
 

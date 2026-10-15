@@ -19,7 +19,7 @@ Every directive follows current graph exploration and search/reuse before constr
 Choose packet boundaries from behavior/dependencies and maximize useful parallel work within
 ownership, source safety, resources, and capacity. Request size does not select packet count.
 The only assignment contract is the current schema-2 packet with approved worker bindings.
-Materialize source and accept the correct workdir before admission. `hx plan assign` reserves
+Configure source workdirs at project setup; provision an additional directory only when needed and accept it before admission. `hx plan assign` reserves
 a run; then explicitly `hx launch ID --run RUN --request REQUEST` advances native startup.
 A reservation alone does not prove packet delivery or execution.
 
@@ -65,7 +65,7 @@ Configure `repository_service` in `config/hx.json` as the absolute socket path, 
 checkouts; register repositories with that service. Code commands and freshness gates
 then use the configured service. `--owners` joins the requesting instance's live leases,
 so shared derived facts do not become another ownership authority. Requests, responses,
-source ranges, and concurrent workers are bounded. An unavailable configured service
+complete source responses, and concurrent workers have explicit transport/resource limits. An unavailable configured service
 returns an explicit error.
 
 Metadata queries materialize no client checkout. `materialize` requires a fresh directory

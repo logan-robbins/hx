@@ -19,7 +19,7 @@ from .test_unit_execution import fleet
 
 
 CLI_STAND_IN = r'''#!/usr/bin/env python3
-import json, os, pathlib, shlex, subprocess, sys, tomllib
+import json, os, pathlib, shlex, subprocess, sys, tomllib, tty, termios
 root = pathlib.Path(os.environ['HARNESS_ROOT'])
 worker = os.environ['HARNESS_ID']
 flavor = os.environ['HX_CONTINUITY_ADAPTER']
@@ -48,16 +48,39 @@ def fire(event, **fields):
     record({'event': event, 'code': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr})
 record({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'home': str(home)})
 fire('context', source='startup')
-print('hx-fake-idle>', flush=True)
-for line in sys.stdin:
-    line = line.rstrip('\n')
-    if not line:
-        print('hx-fake-idle>', flush=True)
+# Emulate a native multiline editor: advertise bracketed paste and submit the
+# complete buffered input only when the controller sends Enter after paste.
+print('\x1b[?2004hhx-fake-idle>', flush=True)
+tty.setcbreak(sys.stdin.fileno())
+buffer = bytearray()
+escape = bytearray()
+pasting = False
+while True:
+    char = os.read(sys.stdin.fileno(), 1)
+    if not char:
+        break
+    if escape or char == b'\x1b':
+        escape.extend(char)
+        if bytes(escape) == b'\x1b[200~':
+            pasting = True
+            escape.clear()
+        elif bytes(escape) == b'\x1b[201~':
+            pasting = False
+            escape.clear()
+        elif not any(candidate.startswith(bytes(escape)) for candidate in (b'\x1b[200~', b'\x1b[201~')):
+            buffer.extend(escape)
+            escape.clear()
         continue
-    record({'prompt': line})
-    if not os.environ.get('HX_TEST_SKIP_ACK'):
-        fire('request', prompt=line)
-    print('hx-fake-idle>', flush=True)
+    if char in (b'\n', b'\r') and not pasting:
+        line = buffer.decode()
+        buffer.clear()
+        if line:
+            record({'prompt': line})
+            if not os.environ.get('HX_TEST_SKIP_ACK'):
+                fire('request', prompt=line)
+        print('hx-fake-idle>', flush=True)
+    else:
+        buffer.extend(char)
 '''
 
 
@@ -113,7 +136,7 @@ def test_real_tmux_installed_hooks_and_single_submission(runtime, adapter):
     flavor(runtime, adapter)
     row = ready(runtime)
     assert row["payload"]["session"].startswith("hx-")
-    assert row["payload"]["instruction_delivery"] == "launcher_prefix_verified_startup_observed"
+    assert row["payload"]["instruction_delivery"] == "prefix_verified_waiting_for_complete_input"
     result = controller.advance(store, "eng-001", run, "launch", env=env)
     wait_for(lambda: native_launch._row(store, run)["status"] == "submitted", what="exact native request acknowledgement", limit=10)
     assert controller.advance(store, "eng-001", run, "launch", env=env)["status"] == "submitted"
@@ -245,7 +268,15 @@ def test_installed_muse_startup_and_request_hooks(runtime, tmp_path):
              what="installed Muse input prompt", limit=10)
     controller.advance(store, "eng-001", run, "launch", env=env)
     wait_for(lambda: native_launch._row(store, run)["status"] == "submitted", what="installed Muse request hook", limit=15)
-    assert native_launch._row(store, run)["payload"]["instruction_delivery"] == "launcher_prefix_verified_startup_observed"
+    current = native_launch._row(store, run)
+    assert current["payload"]["instruction_delivery"] == "complete_native_input_acknowledged"
+    # Muse trims external trailing whitespace. The non-whitespace closing
+    # envelope preserves the packet's newline as an interior exact byte.
+    packet = Path(current['payload']['packet_path']).read_text()
+    assert packet.endswith('\n')
+    actual_input = controller._submission_prompt(current)
+    assert packet in actual_input and actual_input.endswith(controller._input_end(current['launch_id']))
+    assert actual_input.strip() == actual_input
     assert controller.advance(store, "eng-001", run, "launch", env=env)["status"] == "submitted"
 
 
@@ -292,23 +323,52 @@ def test_public_controller_rejects_raw_persistence_runs(tmp_path):
         assert not (tmp_path / 'run').exists()
 
 
-def test_startup_composition_failure_keeps_owned_run_visible_and_drainable(runtime, monkeypatch):
-    from hx.facts import RequiredContextOverflow
+def test_startup_never_recomposes_or_references_required_context(runtime, monkeypatch):
     store, _, run, env = runtime
     row = ready(runtime)
-    # Simulate a failure after the controller claimed its first startup boundary.
     with store.transaction() as tx:
         payload = {**row['payload'], 'startup_observed': False}
         tx.db.execute("UPDATE native_launches SET status='starting',payload=? WHERE launch_id=?", (json.dumps(payload), row['launch_id']))
-    def overflow(*a, **kw):
-        raise RequiredContextOverflow('required observation exceeds the context bound')
-    monkeypatch.setattr(controller.context_packets, 'issue', overflow)
-    with pytest.raises(RequiredContextOverflow):
-        controller.observe(store, run, row['launch_id'], 'context', {'source': 'startup', 'session_id': row['payload']['native_session']})
-    failed = native_launch._row(store, run)
-    assert failed['status'] == 'startup_failed' and failed['error'] == 'RequiredContextOverflow'
-    assert not failed['payload']['startup_observed']
-    assert store.db.execute('SELECT ended_at FROM runs WHERE run_id=?', (run,)).fetchone()[0] is None
-    assert store.db.execute('SELECT count(*) FROM leases WHERE run_id=?', (run,)).fetchone()[0]
-    assert controller.advance(store, 'eng-001', run, 'launch', env=env)['status'] == 'startup_failed'
-    assert controller.drain(store, 'eng-001', run, 'launch', env=env)['status'] == 'draining'
+    def unexpected(*a, **kw):
+        pytest.fail('startup must deliver the already frozen complete input, with no new model read')
+    monkeypatch.setattr(controller.context_packets, 'issue', unexpected)
+    result = controller.observe(store, run, row['launch_id'], 'context', {'source': 'startup', 'session_id': row['payload']['native_session']})
+    current = native_launch._row(store, run)
+    assert result is None and current['status'] == 'ready'
+    assert current['payload']['checkpoint_id'] == row['payload']['checkpoint_id']
+    assert current['payload']['startup_observed']
+    assert Path(current['payload']['packet_path']).read_text() in controller._submission_prompt(current)
+
+
+@pytest.mark.parametrize("adapter", ["claude", "codex", "meta", "grok", "pi"])
+def test_every_adapter_receives_exact_full_checkpoint_once_without_required_reads(runtime, adapter):
+    from hx import context_packets
+    from hx.continuity_store import digest
+    store, _, run, env = runtime
+    flavor(runtime, adapter)
+    row = ready(runtime)
+    controller.advance(store, "eng-001", run, "launch", env=env)
+    wait_for(lambda: native_launch._row(store, run)["status"] == "submitted", what="complete input acknowledgment")
+    current = native_launch._row(store, run)
+    packet = context_packets.read(store, current["payload"]["checkpoint_id"], run)
+    rows = [json.loads(line) for line in (store.root / "run/eng-001/native-test.jsonl").read_text().splitlines()]
+    inputs = [row["prompt"] for row in rows if "prompt" in row]
+    assert inputs == [controller._prompt(current["launch_id"]) + "\n\n" + packet["text"] + controller._input_end(current["launch_id"])]
+    assert digest(inputs[0]) == current["payload"]["submission_hash"]
+    assert all(not entry.get("stdout") for entry in rows if entry.get("event") == "context")
+    assert "Read the task context at" not in inputs[0]
+    assert inputs[0].count("Finish one observable behavior end to end.") == (1 if adapter in {"codex", "meta"} else 0)
+
+
+def test_truncated_initial_native_input_is_rejected_before_model_execution(runtime):
+    store, _, run, env = runtime
+    env["HX_TEST_SKIP_ACK"] = "1"
+    ready(runtime)
+    controller.advance(store, "eng-001", run, "launch", env=env)
+    current = native_launch._row(store, run)
+    assert current["status"] == "submission_unconfirmed"
+    partial = controller._submission_prompt(current)[:-100]
+    with pytest.raises(Conflict, match="complete frozen checkpoint"):
+        controller.observe(store, run, current["launch_id"], "request",
+            {"prompt": partial, "session_id": "test-native-session"})
+    assert native_launch._row(store, run)["status"] == "submission_unconfirmed"

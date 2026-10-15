@@ -11,31 +11,37 @@ searches/reuses existing capabilities before construction, and maximizes useful 
 within ownership, resource, source, and capacity limits. Packet count follows decomposition.
 The worker owns implementation and exact checks, approved independently before edits/proof.
 
-Startup delivers a compact audience facade with session identity, graph/search/reuse policy,
-useful parallelism, admitted ownership, independent binding approval, tool/evidence boundaries,
-and the requirement to read exact required material before task action. Full common/audience/
-domain/purpose/operator instructions remain lossless in immutable hash-addressed files. The
-facade names their paths, SHA-256, and byte lengths and requires a full read through the final
-byte; pagination must continue until complete. File text is not claimed delivered or consumed
-merely because its reference was delivered. Longer warranted instructions are never truncated
-into a prefix or replaced by a summary.
+Startup and managed continuation submit the complete required instructions and task packet
+as verified native input. The runtime freezes and hashes the exact submission before delivery.
+Startup callbacks acknowledge native session/ownership; they do not spill long instructions
+through a capped hook or ask the model to retrieve missing mandatory text. Full current source,
+assignment, facts and context must fit the configured admission budget or the operation refuses.
 
-Prompt manifests record exact source sections, source hashes, full-instruction byte counts,
-required files, and per-channel inline delivery identities. Source and material integrity are
-verified before native use. Only exact required files of the current verified bundle receive
-a full-read exception; arbitrary large source inspection retains its normal scope bounds.
-Required material is read-only. Companion evidence tools cannot read arbitrary files, so its
-full instructions remain inline under its explicit request bound.
+Full immutable instruction backing material is stored in files no larger than 40,000 UTF-8
+bytes, with deterministic NEXT/END markers, part identities and an aggregate content identity.
+The runtime follows and verifies the entire chain automatically. There is no model-controlled
+line/byte pagination and no summary substitutes for required material. System prompt transports
+and native input are assembled from the exact verified bytes; complete delivery does not prove
+attention, comprehension or instruction following.
 
-A required task context that exceeds its inline budget is retained in full as an immutable
-checkpoint-owned artifact. Its compact facade preserves task/run/workdir/phase, ownership,
-check approval, full-read requirements, and exact artifact identity. No acceptance, source
-scope, prerequisite, output, required fact, or pending observation is truncated to make it fit.
-The checkpoint retains the artifact and verifies its current task/fact/source applicability;
-retired or altered material cannot authorize a read. Inline and referenced byte accounting
-are separate, and required reading is not inferred from checkpoint creation or acknowledgment.
-If even the safe facade or the explicit full-material resource bound cannot be represented,
-the runtime refuses with the unmet requirement rather than inventing completion.
+Whole source-file tools likewise return complete exact files in one logical operation. Native
+host envelopes may require automatic transport segments. Every required segment must be emitted
+before the read can settle; missing, partial or truncated results cannot authorize later work.
+Known file-inspection shell wrappers cannot route file reads into lossy command-output reduction.
+`hx file-read PATH` is the standalone native shell entry point when no dedicated read tool
+is available; its broker delivers the complete content before acknowledging the call.
+Search candidates, captured log deltas and isolated tool-output reduction retain their explicit
+contracts, and never establish exhaustive source absence.
+
+Reviewed global and configured-role learning files are compiled into Partner, worker, subagent,
+Context Companion and Learning Companion instructions for all native worker flavors. Source
+hashes and exact conditions remain intact; pending proposals and foreign role rules are excluded.
+Changed reviewed rules invalidate the relevant compiled input instead of mutating an active
+frozen instruction bundle. At the next managed context boundary, a changed bundle closes tool
+admission and queues a controlled, drained restart with a fresh capsule and complete current
+instructions. The existing run and checkpoint are retained; native acknowledgment reopens
+admission. Newly prepared Companion jobs use the current prompt identity, while attempted paid
+jobs retain their frozen inputs.
 
 A native boundary restores current instructions and the current run packet. Checkpoints freeze
 source/task/event identities and acknowledge an exact frontier; late events remain pending.
@@ -62,3 +68,11 @@ source/dependencies and exact output coverage, then publishes and releases owner
 The Partner's `PARTNER.md` retains current human decisions, constraints, unresolved questions,
 and next scheduling consequences. It does not duplicate the authoritative fleet view or carry
 intermediate agent dialogue. Board/detail and readiness commands supply bounded current state.
+
+The Learning Companion has an independent cursor, native assessment process, model/effort,
+request budget and proposal limit. It reads frozen captured evidence and can only submit
+assessments; it cannot patch task state, complete work or approve lessons. Pending proposals
+are projected idempotently through the durable outbox. Another authorized session uses
+`hx learn accept`, merge or reject. Both Companions share execution capacity, with independent
+fair scheduling and failure states. Learning lag retains its evidence and never pretends to
+be a current-context blocker or deployment gate.

@@ -347,11 +347,14 @@ def test_excluded_bodies_keep_scope_fingerprints_and_absence_is_not_certified(
     root = tmp_path / "root"
     (repo / "image.bin").write_bytes(b"image\x00payload")
     (repo / "large.py").write_text("def Hidden():\n return 1\n")
-    result = code_index.index_repo(root, repo, max_file_bytes=16)
-    assert result["skipped"] == 2
+    with pytest.raises(ValueError, match="large.py.*index aborted"):
+        code_index.index_repo(root, repo, max_file_bytes=16)
+    result = code_index.index_repo(root, repo)
+    assert result["skipped"] == 1
+    assert code_index.symbols_for(root, "Hidden")
     assert code_index.main(["fresh", ".", "--expect", "fresh"], root) == 0
     capsys.readouterr()
-    assert code_index.main(["type", "Hidden", "--expect", "absent"], root) == 3
+    assert code_index.main(["symbols", "Hidden", "--expect", "absent"], root) == 3
     capsys.readouterr()
     (repo / "image.bin").write_bytes(b"changed\x00payload")
     assert code_index.main(["fresh", "image.bin", "--expect", "fresh"], root) == 3

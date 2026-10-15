@@ -170,7 +170,7 @@ def paste(name: str, text: str, env=None) -> bool:
         source = handle.name
     try:
         subprocess.run([*command, "load-buffer", "-b", buffer_name, source], check=True)
-        subprocess.run([*command, "paste-buffer", "-b", buffer_name, "-t", target_of(name)], check=True)
+        subprocess.run([*command, "paste-buffer", "-p", "-r", "-b", buffer_name, "-t", target_of(name)], check=True)
         return submit(name, text, env)
     finally:
         subprocess.run([*command, "delete-buffer", "-b", buffer_name], capture_output=True, check=False)

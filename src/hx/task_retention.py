@@ -58,11 +58,18 @@ def close(tx, task_id):
 def retire_closed(store, *, limit=64):
     """Erase closed-task raw bodies in bounded batches; keep live cited evidence."""
     from .continuity_store import canonical
+    from .learning_companion import register
+    # Registration precedes retirement even when called outside the root loop.
+    # Closing a worker does not close its independent learning assessment.
+    register(store)
     with store.transaction() as tx:
         # Cited application findings/checks remain useful beyond worker completion.
         rows = tx.db.execute('''SELECT e.event_id,e.run_id FROM events e JOIN runs r USING(run_id)
             WHERE r.ended_at IS NOT NULL AND r.outcome='completed'
             AND json_extract(e.payload,'$.retired') IS NULL
+            AND NOT EXISTS(SELECT 1 FROM learning_cursors c
+                           WHERE c.agent_id=r.worker_id AND c.stream_id='run:'||e.run_id||':'||e.stream_id
+                           AND e.seq>c.assessed_seq)
             AND NOT EXISTS(SELECT 1 FROM records f JOIN record_heads h USING(record_id,version),json_each(f.evidence) j
                            WHERE f.validity='current' AND j.value=e.event_id)
             AND NOT EXISTS(SELECT 1 FROM map_records m JOIN map_heads h USING(repository,snapshot,record_id,version),json_each(m.evidence) j

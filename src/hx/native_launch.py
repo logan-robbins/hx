@@ -1,7 +1,7 @@
 """Private native installation inputs for one frozen planned assignment.
 
 Preparing files does not acknowledge native instruction delivery or start a
-model. A controller must observe startup before submitting the task pointer.
+model. A controller observes startup and submits the complete frozen native input.
 """
 
 from __future__ import annotations
@@ -19,7 +19,9 @@ from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
 from .ids import is_id
 
-INITIAL_INPUT_LIMIT = 8000
+# Maximum compiler material. The configured model threshold, not a small fixed
+# facade budget, decides whether exact inline instructions can be admitted.
+INITIAL_INPUT_LIMIT = 262144
 # Pending startup evidence is addressed explicitly. Reserve its bounded inline
 # observation and capture metadata before installing or starting the native CLI.
 STARTUP_OBSERVATION_RESERVE = 1024
@@ -125,13 +127,10 @@ def prepare(ledger, worker, run_id, request_id, *, env=None, resume_from=None):
         # Charge custom system instructions as well as task context. This is a
         # conservative initial-input bound, not full provider request accounting.
         from .native_controller import startup_overhead
-        from .runtime_policy import CONTEXT_BYTES
         from .token_controls import limits
-        if len(rendered['system'].encode()) > CONTEXT_BYTES:
-            raise ValidationError('required system instructions exceed the runtime context file bound')
         initial_limit = min(INITIAL_INPUT_LIMIT, limits(root, worker)['threshold'])
         overhead = startup_overhead(capsule, run_id, launch_id, rendered['system'])
-        packet_budget = min(CONTEXT_BYTES, initial_limit - overhead - STARTUP_OBSERVATION_RESERVE)
+        packet_budget = initial_limit - overhead - STARTUP_OBSERVATION_RESERVE
         if packet_budget <= 0:
             raise ValidationError("required system instructions exhaust the initial context budget")
         payload = {"worker_id": worker, "capsule": str(capsule), "manifest": manifest["manifest_path"], 'workdir': task['payload']['workdir'],

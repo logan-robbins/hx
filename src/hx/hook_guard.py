@@ -53,7 +53,7 @@ PATH_KEYS = {
 }
 #: `Grep` and `Glob` descend into what they are pointed at.
 RECURSIVE = ("Grep", "Glob")
-MATCHER = "Bash|" + "|".join(PATH_KEYS)
+MATCHER = "*"  # Every tool must pass complete-context and whole-file admission.
 
 _SEPARATORS = ";&|()<>\n"
 _GLOB_CHARS = re.compile(r"[*?\[{]")

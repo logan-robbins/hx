@@ -48,19 +48,47 @@ def test_exact_source_reads_do_not_follow_dirty_working_copy(tmp_path, repositor
     assert base["merge_base"] == before
 
 
-def test_traversal_symlink_and_partial_ranges(tmp_path, repository):
+def test_traversal_symlink_and_partial_ranges_are_refused(tmp_path, repository):
     repo, before = repository
     root = tmp_path / "service"
     ns = repo_service.register(root, repo)["namespace"]
     with pytest.raises(ValidationError, match="inside"):
         repo_service.dispatch(root, {"method": "file", "namespace": ns, "path": "../private"})
-    answer = repo_service.dispatch(root, {"method": "file", "namespace": ns, "path": "main.py", "lines": 1})
-    assert answer["text"] == "def feature():\n" and not answer["complete"]
+    for field in ("line", "lines", "offset", "length"):
+        with pytest.raises(ValidationError, match="complete source"):
+            repo_service.dispatch(root, {"method": "file", "namespace": ns, "path": "main.py", field: 1})
     (repo / "link.py").symlink_to("main.py")
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "link")
     with pytest.raises(ValidationError, match="regular"):
         repo_service.dispatch(root, {"method": "file", "namespace": ns, "path": "link.py"})
+
+
+def test_complete_source_includes_late_function_long_lines_and_exact_unicode(tmp_path, repository):
+    import hashlib
+    repo, _ = repository
+    source = "# orientation\n" * 300 + "value = '" + "é雪" * 400 + "'\n\ndef existing_provider():\n    return value\n"
+    (repo / "large.py").write_text(source)
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "late existing provider")
+    root = tmp_path / "service"
+    ns = repo_service.register(root, repo)["namespace"]
+    answer = repo_service.dispatch(root, {"method": "file", "namespace": ns, "path": "large.py"})
+    assert answer["text"] == source and answer["complete"] is True
+    assert answer["bytes"] == len(source.encode())
+    assert answer["sha256"] == hashlib.sha256(source.encode()).hexdigest()
+    assert answer["total_lines"] == len(source.splitlines())
+
+
+def test_complete_source_rejects_invalid_utf8_instead_of_replacing_bytes(tmp_path, repository):
+    repo, _ = repository
+    (repo / "invalid.py").write_bytes(b"valid_prefix = True\n\xffunread_tail")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "invalid encoding")
+    root = tmp_path / "service"
+    ns = repo_service.register(root, repo)["namespace"]
+    with pytest.raises(ValidationError, match="not UTF-8"):
+        repo_service.dispatch(root, {"method": "file", "namespace": ns, "path": "invalid.py"})
 
 
 def test_socket_serves_multiple_instances_and_real_code_cli(tmp_path, repository):

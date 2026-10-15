@@ -88,8 +88,16 @@ def working(instance, hx, tmux_server):
 
 def test_one_record_per_tool_call_in_the_spec_07_1_shape(working, tmp_path):
     transcript = transcript_with(tmp_path, input_tokens=1000, cache_read=47000)
+    from hx import partner_context, partner_file_reads
+    from hx.file_read_delivery import segment_slots
+    target = tmp_path / 'source.py'
+    target.write_text('complete source content\n')
+    for index in range(segment_slots(working, 'partner')):
+        partner_context.emit(working, {'session_id': 'abc123'}, index, build=lambda: 'Complete current Partner context.', write=lambda value: None)
+    payload = post_tool(tool="Read", tool_input={"file_path": str(target)}, transcript=transcript)
+    partner_file_reads.admit(working, payload)
     result = run_hook(working, "partner", "log",
-                      post_tool(tool="Read", tool_input={"file_path": "/x"}, transcript=transcript))
+                      payload)
     assert result.returncode == 0, result.stderr
 
     record = records(working, "partner", "partner-main")[-1]
@@ -97,7 +105,7 @@ def test_one_record_per_tool_call_in_the_spec_07_1_shape(working, tmp_path):
     assert record["stream"] == "partner-main"
     assert isinstance(record["seq"], int) and record["seq"] >= 1
     assert record["ts"].endswith("Z")
-    assert "/x" in record["input"] and record["output"]
+    assert str(target) in record["input"] and record["output"]
     assert record["context_tokens"] == 48000, "input + cache reads, not output"
     assert record["ref"]["transcript"] == str(transcript)
     assert record["ref"]["tool_use_id"] == "toolu_01ABC"
@@ -192,7 +200,7 @@ def test_three_parallel_subagents_get_three_isolated_streams(working):
         assert (logs / f"partner-{handle}-open.jsonl").is_file()
         context = working / "run" / "partner" / f"partner-{handle}.context.md"
         assert context.is_file()
-        assert str(context) in paths[[k for k, v in mapping.items() if v == handle][0]]
+        assert paths[[k for k, v in mapping.items() if v == handle][0]].endswith(context.read_text())
 
     # Each carries its own task, and none carries another's.
     first = (working / "run" / "partner" / "partner-s001.context.md").read_text()
@@ -255,8 +263,8 @@ def test_the_closed_stream_digest_reaches_the_parent(working):
     })
     assert result.returncode == 0, result.stderr
     body = json.loads(result.stdout)
-    assert str(digest) in body["hookSpecificOutput"]["additionalContext"]
-    assert "Read tool" in body["hookSpecificOutput"]["additionalContext"]
+    assert digest.read_text() in body["hookSpecificOutput"]["additionalContext"]
+    assert "Read tool" not in body["hookSpecificOutput"]["additionalContext"]
 
     handed = [r for r in records(working, "partner", "partner-main") if r["event"] == "subagent_result"]
     assert handed and handed[-1]["handle"] == "s001" and handed[-1]["digest"] == str(digest)

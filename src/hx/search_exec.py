@@ -21,6 +21,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .errors import ValidationError
+from .file_inspection import require_non_file_code
+
 SMALL = 5_000
 HUGE = 102_400
 MAX_RETURN = 6_000
@@ -147,6 +150,10 @@ def execute(root, language, code, *, cwd=None, timeout=30, intent=None, backgrou
         return _error(f"unsupported language: {language}")
     if lang in ("javascript", "typescript") and not shutil.which("node"):
         return _error("node is not available for javascript/typescript execution")
+    try:
+        require_non_file_code(lang, code)
+    except ValidationError as exc:
+        return _error(str(exc))
     if background:
         tmp = Path(tempfile.mkdtemp(prefix="hx-exec-"))
         script = tmp / f"script{_LANGUAGES[lang]}"
@@ -202,8 +209,13 @@ def execute_file(root, path, language, code, *, timeout=30, intent=None) -> dict
     if not target.is_file():
         return _error(f"file not found: {path}")
     lang = _norm(language)
+    try:
+        require_non_file_code(lang, code, bound_file=True)
+    except ValidationError as exc:
+        return _error(str(exc))
     # The file's bytes reach the script only via HX_FILE_CONTENT_PATH; the
-    # wrapper binds FILE_CONTENT before user code. Raw bytes never come back.
+    # wrapper binds FILE_CONTENT before user code. Recognized raw dumps are
+    # refused above; derived, non-file output keeps the bounded result path.
     prelude = {
         "python": "import os as _os, pathlib as _pl\n"
                   "FILE_CONTENT = _pl.Path(_os.environ['HX_FILE_CONTENT_PATH'])"
@@ -258,11 +270,12 @@ def batch_execute(root, commands, *, queries=None, concurrency=1, timeout=60) ->
     def one(cmd):
         label = str(cmd.get("label") or cmd.get("command", "")[:40] or "cmd")
         try:
+            require_non_file_code('shell', str(cmd.get("command", "")))
             exit_code, out_b, err_b, timed_out = _run(
                 "shell", str(cmd.get("command", "")), timeout=timeout)
-        except ValueError as exc:
+        except (ValueError, ValidationError) as exc:
             return {"label": label, "exit_code": None, "summary": str(exc),
-                    "indexed": False}, (label, "")
+                    "indexed": False, "error": str(exc)}, (label, "")
         text = out_b.decode("utf-8", errors="replace")
         indexed, _, _ = _index_and_search(root, text, source=f"batch:{label}", query=None) \
             if text else (False, 0, [])
@@ -338,6 +351,8 @@ def main(argv, root, *, env=None) -> int:
                                concurrency=args.concurrency, timeout=args.timeout)
     print(json.dumps(result, indent=2))
     if isinstance(result, dict) and result.get("error"):
+        return 1
+    if any(item.get('error') for item in result.get('results', [])):
         return 1
     code = result.get("exit_code") if isinstance(result, dict) else None
     return 0 if code in (0, None) else 1

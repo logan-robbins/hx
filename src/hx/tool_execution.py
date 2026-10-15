@@ -22,6 +22,8 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
         raise ValidationError('tool execution requires a bounded argument array')
     if len(canonical(argv).encode()) > 16384:
         raise ValidationError('tool command exceeds 16384 bytes')
+    from .file_inspection import require_non_file_output
+    require_non_file_output(argv)
     with store.transaction() as tx:
         run = passes._active_run(tx, run_id)
         if child.get('HARNESS_ID') not in {None, run['worker_id']}:

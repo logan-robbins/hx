@@ -1,4 +1,4 @@
-"""Serial observation → map refresh → companion update. One model slot per root."""
+"""Observe and schedule independent context and learning Companions in one slot."""
 from __future__ import annotations
 
 import argparse
@@ -140,9 +140,23 @@ def tick(store, *, env=None):
             _save(store, 'completion-error', completion)
     if completion and completion['status'] in {'advancing', 'completed', 'failed'}:
         return {**completion, 'map_changes': changed}
-    running = reconcile_companion(store)
-    if running and running['status'] == 'running':
-        return {'status': 'waiting', 'companion': running, 'map_changes': changed}
+    from . import learning_companion
+    running = []
+    for kind, reconcile in (('context', reconcile_companion), ('learning', learning_companion.reconcile)):
+        try:
+            current = reconcile(store)
+        except (HxError, OSError) as exc:
+            current = {'status': 'unresolved', 'error': str(exc)}
+        if current and current.get('status') == 'running':
+            running.append({'kind': kind, **current})
+        elif current and current.get('error'):
+            _save(store, kind + '-companion-error', current)
+        elif current and _state(store, kind + '-companion-error'):
+            _save(store, kind + '-companion-error', {})
+    # An ambiguous process remains an occupied paid slot until reconciled.
+    occupied = bool(store.db.execute("SELECT 1 FROM companion_jobs WHERE status='running' UNION ALL SELECT 1 FROM learning_jobs WHERE status='running' LIMIT 1").fetchone())
+    if running or occupied:
+        return {'status': 'waiting', 'companions': running, 'map_changes': changed}
     from .native_restart import advance_one as restart_one
     restart = restart_one(store, env=env)
     if restart:
@@ -151,6 +165,30 @@ def tick(store, *, env=None):
     reset = reset_one(store, env=env)
     if reset:
         return {**reset, 'map_changes': changed}
+    from . import learning_companion
+    first = _state(store, 'companion-turn').get('next', 'context')
+    order = (first, 'context' if first == 'learning' else 'learning')
+    fallback = {'status': 'idle'}
+    for kind in order:
+        try:
+            result = (learning_companion.tick(store, env=env) if kind == 'learning'
+                      else _context_tick(store, env=env))
+        except (HxError, OSError) as exc:
+            result = {'status': 'unresolved', 'error': str(exc)}
+        result = result or {'status': 'idle'}
+        _save(store, 'companion-turn', {'next': 'context' if kind == 'learning' else 'learning'})
+        if result.get('status') == 'unresolved' and result.get('error'):
+            _save(store, kind + '-companion-error', result)
+        elif result.get('status') not in {'idle', 'no_work'} and _state(store, kind + '-companion-error'):
+            _save(store, kind + '-companion-error', {})
+        if result.get('status') not in {'idle', 'no_work'}:
+            return {**result, 'companion_kind': kind, 'map_changes': changed}
+        fallback = result
+    return {**fallback, 'map_changes': changed}
+
+
+def _context_tick(store, *, env=None):
+    """Advance only the context Companion's cursor and frozen observation pass."""
     after = _state(store, 'companion-round').get('after', ['', ''])
     candidates = store.db.execute('''SELECT r.run_id,r.worker_id,r.task_id,r.task_revision,c.stream_id,c.head_seq,c.classified_seq,c.revision
         FROM runs r JOIN cursors c USING(run_id) WHERE r.ended_at IS NULL AND
@@ -158,7 +196,7 @@ def tick(store, *, env=None):
         AND (r.run_id,c.stream_id)>(?,?) ORDER BY r.run_id,c.stream_id LIMIT 1''', after).fetchall()
     if not candidates:
         _save(store, 'companion-round', {'after': ['', '']})
-        return {'status': 'idle', 'map_changes': changed}
+        return {'status': 'idle'}
     candidate = dict(candidates[0])
     candidate['retry'] = _state(store, 'retry:' + candidate['run_id']).get('generation', 0)
     _save(store, 'companion-round', {'after': [candidate['run_id'], candidate['stream_id']]})
@@ -179,7 +217,7 @@ def tick(store, *, env=None):
                               (candidate['run_id'], candidate['stream_id'])).fetchone()
     candidate.update(classified_seq=cursor['classified_seq'], revision=cursor['revision'])
     _save(store, scope, {'version': digest(candidate), **result})
-    return {**result, 'run_id': candidate['run_id'], 'map_changes': changed}
+    return {**result, 'run_id': candidate['run_id']}
 
 
 @contextmanager
@@ -268,6 +306,16 @@ def status(store, *, after=''):
     units = []
     for row in rows[:16]:
         unit = dict(row)
+        unit['context_companion'] = dict(store.db.execute(
+            'SELECT job_id,status FROM companion_jobs WHERE run_id=? ORDER BY rowid DESC LIMIT 1',
+            (row['run_id'],)).fetchone() or {})
+        unit['learning_companion'] = dict(store.db.execute(
+            'SELECT job_id,status FROM learning_jobs WHERE run_id=? ORDER BY rowid DESC LIMIT 1',
+            (row['run_id'],)).fetchone() or {})
+        unit['unassessed_learning'] = store.db.execute('''SELECT coalesce(sum(c.head_seq-l.assessed_seq),0)
+            FROM cursors c JOIN learning_cursors l ON l.agent_id=?
+            AND l.stream_id='run:'||c.run_id||':'||c.stream_id WHERE c.run_id=?''',
+            (row['worker_id'], row['run_id'])).fetchone()[0]
         intent = _state(store, 'finish:' + row['run_id'])
         if intent:
             unit['completion'] = {key: intent[key] for key in ('status', 'failed_check', 'evidence') if key in intent}
@@ -287,11 +335,16 @@ def status(store, *, after=''):
         FROM dotnet_jobs ORDER BY rowid DESC LIMIT 8''')]
     validations = [dict(row) for row in store.db.execute('''SELECT batch_id,head,boundary,status
         FROM delivery_validations ORDER BY rowid DESC LIMIT 8''')]
+    learning_jobs = [dict(row) for row in store.db.execute('''SELECT job_id,agent_id,stream_id,run_id,status
+        FROM learning_jobs ORDER BY rowid DESC LIMIT 16''')]
     service = _state(store, 'application-service')
     running = bool(service.get('ready') and service.get('process') and native_processes.current(service['process']))
     return {'service': {**service, 'running': running, 'ready': running},
             'active': units, 'replanning': changes(store, limit=4), 'recent_completions': completed, 'last_cycle': _state(store, 'last-cycle'),
             'recent_milestones': milestones, 'build_jobs': builds, 'validation_snapshots': validations,
+            'learning_assessments': learning_jobs,
+            'context_companion_error': _state(store, 'context-companion-error'),
+            'learning_companion_error': _state(store, 'learning-companion-error'),
             'proof_note': 'Recorded lifecycle headers; plan ready/change status revalidate current proof before scheduling or release.',
             'service_error': _state(store, 'service-error'), 'completion_error': _state(store, 'completion-error'),
             'next_after': rows[15]['run_id'] if len(rows)>16 else None}

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from hx import checks, context_packets as packets, observer, planning, progress, prompt_compiler, unit_execution
+from hx import checks, context_packets as packets, instruction_materials, observer, planning, progress, prompt_compiler, unit_execution
 from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
 from hx.errors import ValidationError
 from hx.facts import RequiredContextOverflow
@@ -83,12 +83,14 @@ def test_whole_optional_facts_are_selected_without_loading_large_ones(assignment
     finally:
         store.db.row_factory = original
     assert "A-small" in packet["records"] and packet["omitted"]["Z-large"] == "budget"
-    required = packets.issue(store, run, request_id="required-large", required_ids=["Z-large"])
-    reference, = required["required_files"]
+    required = packets.issue(store, run, request_id="required-large", required_ids=["Z-large"], max_tokens=220000)
+    reference = required["required_files"][0]
     assert reference["kind"] == "assignment"
     assert "Z-large" in required["records"] and "Z-large" not in required["omitted"]
-    assert "irrelevant detail " * 10000 in Path(reference["path"]).read_text()
-    assert required["charged_tokens"] <= 8000 < reference["bytes"]
+    assert "irrelevant detail " * 10000 in instruction_materials.read_bundle(required["required_files"]).decode()
+    assert all(ref["bytes"] <= 40000 for ref in required["required_files"])
+    assert required["charged_tokens"] == required["inline_bytes"] == required["full_context_bytes"]
+    assert "irrelevant detail " * 10000 in required["text"]
 
 
 def test_unprocessed_correction_and_large_pending_output_survive_forced_boundary(assignment):
@@ -316,8 +318,9 @@ def test_compiled_context_instructions_reach_assignment_once_and_expire_on_polic
     text = Path(metadata["path"]).read_text()
     assert text.count("Session identity:") == 1
     material, = bundle["required_files"]
-    assert material["path"] in text and material["sha256"] in text
-    assert "IN FULL" in text and "through its final byte" in text
+    assert material["path"] not in text
+    assert instruction_materials.read_bundle(bundle["required_files"]).decode().strip() in text
+    assert text.count("Finish one observable behavior end to end.") == 1
     assert Path(material["path"]).read_text().count("Finish one observable behavior end to end.") == 1
     assert "previous task's notes" not in text
     assert metadata["prompt_bundle"]["version"] == bundle["version"]
@@ -346,38 +349,39 @@ def test_queued_native_delivery_blocks_planned_context_and_stays_visible_in_forc
 
 def test_long_required_assignment_uses_exact_owned_artifact_and_truthful_inline_accounting(assignment):
     store, _, run, _ = assignment
-    full = "Warranted exact condition. " * 1000 + "FINAL REQUIRED CONDITION stays unchanged."
+    full = "Warranted exact condition. " * 3000 + "FINAL REQUIRED CONDITION stays unchanged."
     fact(assignment, "long-constraint", "constraint", {"text": full})
-    packet = packets.issue(store, run, request_id="long-required")
-    reference, = packet["required_files"]
+    packet = packets.issue(store, run, request_id="long-required", max_tokens=120000)
+    reference = packet["required_files"][0]
     data = Path(reference["path"]).read_bytes()
-    assert full.encode() in data and "FINAL REQUIRED CONDITION" not in packet["text"]
+    assert full in packet["text"]
+    assert full.encode() in instruction_materials.read_bundle(packet["required_files"])
     assert hashlib.sha256(data).hexdigest() == reference["sha256"]
-    assert packet["full_context_bytes"] == reference["bytes"] == len(data)
-    assert packet["referenced_bytes"] == len(data)
-    assert packet["inline_bytes"] == packet["charged_tokens"] == len(packet["text"].encode()) < 8000
-    assert "read the required immutable full assignment IN FULL" in packet["text"]
-    assert "through its final byte" in packet["text"]
+    assert packet["full_context_bytes"] == reference["bundle_bytes"]
+    assert packet["referenced_bytes"] == reference["bundle_bytes"]
+    assert packet["inline_bytes"] == packet["charged_tokens"] == len(packet["text"].encode()) > 40000
+    assert "Required full assignment:" not in packet["text"]
+    assert all(ref["delivery"] == "inline" for ref in packet["required_files"])
     assert packets.verify_material(store, run, reference["path"], checkpoint_id=packet["checkpoint_id"]) == reference
     assert packets.verify_material(store, run, store.root / "unlisted.txt") is None
     assert packets.read(store, packet["checkpoint_id"], run) == packet
-    retained = store.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='checkpoint' AND owner_id=? AND slot='full-context'", (packet["checkpoint_id"],)).fetchone()
+    retained = store.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='checkpoint' AND owner_id=? AND slot='full-context:1'", (packet["checkpoint_id"],)).fetchone()
     assert retained[0] == reference["sha256"]
     assert reference["sha256"] not in store.collect_artifacts()
 
 
 def test_full_assignment_reference_cannot_survive_source_fact_revision_or_corruption(assignment):
     store, _, run, _ = assignment
-    fact(assignment, "long-constraint", "constraint", {"text": "Retain this exact condition. " * 1000})
-    old = packets.issue(store, run, request_id="long-before")
-    reference, = old["required_files"]
-    fact(assignment, "long-constraint", "constraint", {"text": "Retain the revised exact condition. " * 1000})
+    fact(assignment, "long-constraint", "constraint", {"text": "Retain this exact condition. " * 2000})
+    old = packets.issue(store, run, request_id="long-before", max_tokens=100000)
+    reference = old["required_files"][0]
+    fact(assignment, "long-constraint", "constraint", {"text": "Retain the revised exact condition. " * 2000})
     with pytest.raises(Conflict, match="required context changed|facts changed"):
         packets.verify_material(store, run, reference["path"])
-    current = packets.issue(store, run, request_id="long-after")
+    current = packets.issue(store, run, request_id="long-after", max_tokens=100000)
     with pytest.raises(Conflict, match="current checkpoint"):
         packets.verify_material(store, run, reference["path"], checkpoint_id=old["checkpoint_id"])
-    required, = current["required_files"]
+    required = current["required_files"][0]
     Path(required["path"]).write_bytes(b"Substituted excerpt")
-    with pytest.raises(ValidationError, match="corrupt artifact"):
+    with pytest.raises(ValidationError, match="altered"):
         packets.read(store, current["checkpoint_id"], run)
