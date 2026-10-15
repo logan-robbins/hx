@@ -351,7 +351,7 @@ def summary(tx, task, *, _seen=None, _memo=None):
                 if not producer_status['deployable']:
                     upstream.append(need['task_id'])
     is_covered = any(row['kind']=='packet_covered' for row in rows) and _completion_intact(tx,task)
-    result = {'binding':task['payload'].get('binding_status','legacy'),'contracts':published,
+    result = {'binding':task['payload'].get('binding_status','unbound'),'contracts':published,
             'packet_covered':is_covered,'pending_integration':sorted(pending),'upstream_pending':sorted(set(upstream)),
             'deployable':bool(task['payload'].get('dependency_packet') and is_covered and not pending and not upstream)}
     memo[key] = result
@@ -359,8 +359,6 @@ def summary(tx, task, *, _seen=None, _memo=None):
 
 
 def completion_checks(payload):
-    if not payload.get('dependency_packet'):
-        return set(payload['checks'])
     names = set(payload['check_policy']['required_checks'])
     for obligation, ids in payload.get('check_coverage', {}).items():
         if not obligation.startswith('integration.'):

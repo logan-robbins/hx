@@ -252,10 +252,8 @@ def test_overlay_creation_is_idempotent_and_map_proposal_cli_works(active, run_h
     assert json.loads(result.stdout)["records"]["compiler"]["version"] == 2
 
 
-def test_schema_six_upgrade_backfills_relation_index(active):
+def test_schema_six_reopen_retains_relation_index(active):
     store, repo, info, _, _, baseline, _, _, _ = active
-    store.db.execute("DELETE FROM map_relations")
-    store.db.execute("PRAGMA user_version=6")
     with ContinuityStore(store.root) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert appmap.get_record(upgraded, repo, baseline, "compiler")["validated_edges"]

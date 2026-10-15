@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Run at the end of every goal, before writing goals/<lane>-<n>.done.md:
+# Run the required repository test scope before submitting a change:
 #   tools/milestone-check.sh <lane> [--all]      lane ∈ build | ui | gtm
 #   tools/milestone-check.sh                      no lane: the whole suite is required (CI form)
 # 1. tests/guard (required): user ~/.claude untouched since baseline; HARNESS_ROOT refusal.
 # 2. the lane's own test paths (required).
 # 3. with --all: every other lane's tests as well (advisory): reported, never fatal here. A red
-#    advisory suite is another lane mid-commit; report it in a handoff, do not fix it, do not
-#    wait for it. Without --all the check stops after step 2 (fast).
+#    advisory suite remains visible; it cannot establish complete release proof.
+#    Without --all the check stops after step 2 (fast).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
@@ -33,5 +33,5 @@ fi
 if [ "${2:-}" != "--all" ]; then echo "MILESTONE-CHECK PASSED for ${lane:-all} (own paths; add --all for the advisory run)"; exit 0; fi
 echo "== advisory: the rest of the suite (other lanes; never fatal here)"
 others=""; for d in tests/*/; do d=${d%/}; case " tests/guard $own " in *" $d "*) ;; *) others="$others $d";; esac; done
-if "$PY" -m pytest $others -q; then echo "advisory: green"; else echo "advisory: RED in another lane's paths; report in a handoff, do not fix, do not wait"; fi
+if "$PY" -m pytest $others -q; then echo "advisory: green"; else echo "advisory: RED in another lane's paths; resolve before claiming full-suite validation"; fi
 echo "MILESTONE-CHECK PASSED for ${lane:-all}"

@@ -1,267 +1,150 @@
-"""`hx board`: a plain listing of what is on disk (spec 08, CONTRACTS.md).
-
-The v1 cut (spec 14 D25) removed the nine invariants, the `errors` list and `--require-done`.
-What is left is the shape the ui lane renders, and the fact that it always exits 0.
-"""
-
-from __future__ import annotations
-
+"""Ledger projections never infer assignments from files or worker configuration."""
 import json
-import subprocess
-
-from hx.board import collect, render_text
-
-CONTRACT_ITEM_KEYS = {
-    "id", "pod", "role", "state", "file", "outcome", "dispatched", "completed",
-    "open_subagents", "goal_ts", "session_alive", "needs_input", "context_tokens", "seams", "turn_ts",
-    "companion_pass", "companion_ts", "scope",
-}
-
-
-def write_tasks(root, tasks):
-    (root / "tasks.json").write_text(json.dumps(tasks, indent=2))
-
-
-def goal_marker(root, item_id, ts="2026-09-20T12:00:03Z"):
-    directory = root / "run" / item_id
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "goal").write_text(ts + "\n")
-
-
-# --- shape ------------------------------------------------------------------------------
-
-
-def test_json_shape_matches_contracts(instance, work_item):
-    work_item("eng-001", "idle")
-    board = collect(instance)
-    assert set(board) == {"root_abs", "ts", "items", "memory"}
-    assert board["root_abs"] == str(instance)
-    assert board["ts"].endswith("Z")
-    for item in board["items"]:
-        assert set(item) == CONTRACT_ITEM_KEYS, set(item) ^ CONTRACT_ITEM_KEYS
-
-
-def test_the_partner_is_not_an_item(instance, work_item):
-    """The Partner has no work item, so it is not on the board (CONTRACTS.md, spec 14 D25)."""
-    work_item("eng-001", "idle")
-    work_item("partner", "idle")  # even if something wrote one, it is not listed
-    assert [i["id"] for i in collect(instance)["items"]] == ["eng-001"]
-    assert "partner" not in render_text(collect(instance))
-
-
-def test_a_config_dir_with_no_work_item_is_listed_with_no_state(instance):
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["state"] is None and item["file"] is None
-
-
-def test_ids_are_sorted(instance, work_item):
-    for item_id in ("eng-002", "eng-001"):
-        work_item(item_id, "idle")
-    assert [i["id"] for i in collect(instance)["items"]] == ["eng-001", "eng-002"]
-
-
-def test_role_and_pod_come_from_config(instance, work_item):
-    work_item("eng-001", "idle")
-    items = {i["id"]: i for i in collect(instance)["items"]}
-    assert items["eng-001"]["role"] == "engineer" and items["eng-001"]["pod"] == "engineers"
-
-
-def test_text_form_is_the_spec_08_columns(instance, work_item):
-    work_item("eng-001", "working")
-    goal_marker(instance, "eng-001")
-    write_tasks(instance, {"eng-001": {"outcome": None,
-                                       "dispatched": "2026-09-20T12:00:00Z", "completed": None}})
-    line = render_text(collect(instance)).splitlines()[0]
-    assert line.split("  ") == [
-        "eng-001", "engineers", "working", "-", "2026-09-20T12:00:00Z", "dead", "-",
-        "subagents=0", "context=-", "seams=-",
-    ]
-
-
-def test_needs_input_matches_known_awaiting_human_markers():
-    from hx.board import pane_awaits_input
-
-    billing = [
-        "Fable 5.1 now uses usage credits",
-        "  ❯ Switch to Sonnet 5 and continue",
-        "    Continue with Fable 5.1",
-        "  Enter to confirm · Esc to cancel",
-    ]
-    assert pane_awaits_input(billing) is True
-    assert pane_awaits_input(["❯ Try something", "bypass permissions on"]) is False
-    assert pane_awaits_input([]) is False
-    assert pane_awaits_input(["Do you want to proceed? (y/n)"]) is True
-
-
-def test_needs_input_is_false_without_a_live_session(instance, work_item):
-    work_item("eng-001", "working")
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["session_alive"] is False
-    assert item["needs_input"] is False
-
-
-def test_the_state_is_whatever_the_suffix_says(instance, work_item):
-    """No regex gate: hx reads the suffix and reports it (spec 06, spec 14 D25)."""
-    path = work_item("eng-001", "working")
-    path.rename(path.with_name("eng-001-halfway.md"))
-    assert {i["id"]: i for i in collect(instance)["items"]}["eng-001"]["state"] == "halfway"
-
-
-# --- fields that later milestones fill in -------------------------------------------------
-
-
-def test_later_milestone_fields_are_null_or_false_without_data(instance, work_item):
-    work_item("eng-001", "idle")
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["context_tokens"] is None
-    assert item["seams"] is None
-    assert item["session_alive"] is False
-    assert item["goal_ts"] is None and item["turn_ts"] is None
-
-
-def test_context_tokens_and_seams_are_computed_when_the_stream_exists(instance, work_item):
-    work_item("eng-001", "working")
-    goal_marker(instance, "eng-001")
-    logs = instance / "logs" / "eng-001"
-    logs.mkdir(parents=True)
-    records = [
-        {"seq": 1, "ts": "2026-09-20T11:00:00Z", "event": "seam"},
-        {"seq": 2, "ts": "2026-09-20T12:10:00Z", "event": "post_tool", "context_tokens": 48211},
-        {"seq": 3, "ts": "2026-09-20T12:20:00Z", "event": "seam"},
-        {"seq": 4, "ts": "2026-09-20T12:30:00Z", "event": "seam"},
-    ]
-    (logs / "eng-001-main.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
-    write_tasks(instance, {"eng-001": {"outcome": None,
-                                       "dispatched": "2026-09-20T12:00:00Z", "completed": None}})
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["context_tokens"] == 48211
-    assert item["seams"] == 2, "seams before `dispatched` belong to the previous dispatch"
-
-
-def test_open_subagents_are_counted(instance, work_item):
-    work_item("eng-001", "working")
-    logs = instance / "logs" / "eng-001"
-    logs.mkdir(parents=True)
-    (logs / "eng-001-s001-open.jsonl").write_text("")
-    (logs / "eng-001-s002-open.jsonl").write_text("")
-    (logs / "eng-001-s003-closed.jsonl").write_text("")
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["open_subagents"] == 2
-
-
-# --- it judges nothing ----------------------------------------------------------------------
-
-
-def test_scope_is_the_goals_first_line_from_tasks_json(instance, work_item):
-    work_item("eng-001", "working")
-    write_tasks(instance, {"eng-001": {"goal": "Stream the importer.\n\nWhy: speed."}})
-    board = collect(instance)
-    item = {i["id"]: i for i in board["items"]}["eng-001"]
-    assert item["scope"] == "Stream the importer."
-    assert "scope eng-001: Stream the importer." in render_text(board).splitlines()
-
-
-def test_scope_falls_back_to_the_work_item(instance, work_item):
-    work_item("eng-001", "working")
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["scope"] == "Do it."
-
-
-def test_scope_is_null_with_no_goal(instance, work_item):
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["scope"] is None
-
-
-def test_a_malformed_work_item_is_listed_not_refused(instance, work_item):
-    path = work_item("eng-001", "working")
-    path.write_text("---\nid: eng-002\npod: engineers\n---\n")
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["state"] == "working"
-
-
-def test_a_malformed_tasks_json_does_not_raise(instance, work_item):
-    work_item("eng-001", "idle")
-    (instance / "tasks.json").write_text("{oops")
-    assert [i["id"] for i in collect(instance)["items"]] == ["eng-001"]
-
-
-def test_a_stray_file_under_pods_is_ignored(instance, work_item):
-    work_item("eng-001", "idle")
-    (instance / "pods" / "engineers" / "notes.txt").write_text("x\n")
-    assert [i["id"] for i in collect(instance)["items"]] == ["eng-001"]
-
-
-def test_exit_0_always(run_hx, instance, work_item):
-    work_item("eng-001", "working")
-    env = {"HARNESS_ROOT": str(instance)}
-    assert run_hx("board", env_extra=env).returncode == 0
-    (instance / "pods" / "engineers" / "stray.md").write_text("x\n")
-    assert run_hx("board", env_extra=env).returncode == 0
-    assert run_hx("board", "--json", env_extra=env).returncode == 0
-
-
-def test_json_has_no_errors_key(run_hx, instance, work_item):
-    work_item("eng-001", "working")
-    board = json.loads(run_hx("board", "--json", env_extra={"HARNESS_ROOT": str(instance)}).stdout)
-    assert "errors" not in board
-
-
-def test_board_on_a_missing_root_says_so(run_hx, tmp_path):
-    result = run_hx("board", env_extra={"HARNESS_ROOT": str(tmp_path / "nope")})
-    assert result.returncode == 2
-    assert "does not exist" in result.stderr
-
-
-def test_session_alive_uses_tmux(instance, work_item, tmux_server):
-    work_item("eng-001", "working")
-    env = {"HX_TMUX": " ".join(tmux_server)}
-    board = collect(instance, env=env)
-    assert {i["id"]: i for i in board["items"]}["eng-001"]["session_alive"] is False
-
-    subprocess.run([*tmux_server, "new-session", "-d", "-s", "eng-001", "sleep 60"], check=True)
-    board = collect(instance, env=env)
-    assert {i["id"]: i for i in board["items"]}["eng-001"]["session_alive"] is True
-
-
-def test_the_pane_log_is_not_a_stream(instance, work_item):
-    """`logs/<id>/<id>-pane.log` is the tmux `pipe-pane` capture (spec 03, 11), not a stream."""
-    work_item("eng-001", "working")
-    logs = instance / "logs" / "eng-001"
-    logs.mkdir(parents=True)
-    (logs / "eng-001-pane.log").write_text("ansi noise\n")
-    (logs / "eng-001-s001-open.jsonl").write_text("")
-    item = {i["id"]: i for i in collect(instance)["items"]}["eng-001"]
-    assert item["open_subagents"] == 1
-    assert item["context_tokens"] is None and item["seams"] is None
-
-
-def test_companion_activity_is_on_the_row(instance, work_item):
-    """CONTRACTS.md: `companion_pass` is a pass file in flight, `companion_ts` the last state."""
-    from hx.companion import activity
-
-    row = collect(instance)["items"][0]
-    assert row["companion_pass"] is False and row["companion_ts"] is None
-
-    state = instance / "state" / "eng-001" / "eng-001-main.json"
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps({"seq": 3, "ts": "2026-09-21T15:24:22Z"}))
-    pass_file = instance / "run" / "eng-001" / "companion" / "eng-001-main.pass.md"
-    pass_file.parent.mkdir(parents=True, exist_ok=True)
-    pass_file.write_text("# Companion pass\n")
-
-    row = collect(instance)["items"][0]
-    assert row["companion_pass"] is True
-    assert row["companion_ts"] == "2026-09-21T15:24:22Z"
-    detail = activity(instance, "eng-001")
-    assert detail["pass_stream"] == "eng-001-main" and detail["streams"] == 1
-    assert detail["pass_since"] is not None
-
-
-def test_the_board_carries_the_memory_summary_without_opening_chroma(instance, work_item):
-    """`memory` is `{episodes, queued, indexed_ts}` from stats.json and the queue (docs/memory.md)."""
-    from hx import memory
-
-    board = collect(instance)
-    assert board["memory"] == {"episodes": None, "queued": 0, "indexed_ts": None}
-    memory.enqueue(instance, "eng-001", "eng-001-main", "pass", {"goal": "stream the importer"})
-    assert collect(instance)["memory"]["queued"] == 1
+from pathlib import Path
+import pytest
+from hx import board, show, read, task, goals
+from hx.continuity_store import ContinuityStore, canonical
+from hx.errors import NotFound, Refused
+
+
+def seed(root):
+    """Recorded packet/run/proof state, independent of native executables."""
+    payload = {'plan_id': 'orders', 'dependency_packet': True, 'repository': 'repo',
+               'workdir': str(root), 'goal': 'Return the order result', 'acceptance': ['Result matches input'],
+               'write_paths': ['order.py'], 'write_scope': ['order.py'], 'map_inputs': [],
+               'outputs': [{'id': 'source', 'version': 1, 'kind': 'source', 'paths': ['order.py']}],
+               'prerequisites': [], 'resources': [], 'check_policy': {'reviewer': 'qa-001', 'required_checks': ['unit']}}
+    with ContinuityStore(root) as store:
+        db = store.db
+        db.execute("INSERT INTO task_heads VALUES('orders.work',1)")
+        db.execute('INSERT INTO tasks VALUES(?,1,NULL,?,1)', ('orders.work',canonical(payload)))
+        definition={'schema_version':2,'plan_id':'orders','goal':'Order lookup','tasks':[payload]}
+        db.execute("INSERT INTO plan_heads VALUES('orders',1)")
+        db.execute('INSERT INTO plans VALUES(?,1,?,?)', ('orders','hash',canonical({'definition': definition})))
+        db.execute("INSERT INTO plan_units VALUES('orders',1,'orders.work',1)")
+        db.execute("INSERT INTO runs VALUES('run-1','orders.work',1,'be-001',0,'implementing',NULL,NULL,1,NULL)")
+        db.execute('INSERT INTO unit_runs VALUES(?,?,?)', ('run-1',str(root),canonical({'workspace':{}})))
+        db.execute('INSERT INTO leases VALUES(?,?,?,?)',('repo','order.py','run-1','{}'))
+        db.execute("INSERT INTO artifacts VALUES('artifact',0,1)")
+        db.execute("INSERT INTO checkpoints VALUES('checkpoint-1','run-1',1,0,1,'{}','artifact',1)")
+        db.execute("INSERT INTO receipts VALUES('receipt-1','run-1','unit','v1','{}','i','e','s','s',0,'artifact',0.5,1)")
+        db.execute("UPDATE ledger_meta SET revision=7")
+        db.commit()
+    return payload
+
+
+@pytest.fixture
+def packet_root(tmp_path):
+    seed(tmp_path)
+    return tmp_path
+
+
+def test_empty_view_does_not_create_database_or_read_old_state(tmp_path):
+    (tmp_path/'tasks.json').write_text('{broken old state')
+    (tmp_path/'pods').mkdir()
+    (tmp_path/'pods'/'be-999-working.md').write_text('old worker')
+    result=board.collect(tmp_path)
+    assert result['tasks']==[] and result['runs']==[]
+    assert not (tmp_path/'state').exists()
+    assert 'items' not in result and 'memory' not in result
+
+
+def test_packet_run_ownership_and_proof_are_projected(packet_root):
+    result=board.collect(packet_root)
+    assert result['ledger_revision']==7
+    assert result['tasks'][0]['task_id']=='orders.work'
+    assert result['tasks'][0]['worker_id']=='be-001'
+    assert result['tasks'][0]['status']=='implementing'
+    assert result['plans'][0]['plan_id']=='orders'
+    assert result['leases'][0]['canonical_path']=='order.py'
+    assert result['checkpoints'][0]['acknowledged']==1
+    assert result['checks'][0]['valid']==1
+    assert 'orders.work@1' in board.render_text(result)
+
+
+@pytest.mark.parametrize('identity',['orders.work','run-1','be-001','orders'])
+def test_detail_resolves_ledger_identity(packet_root,identity):
+    assert show.collect(packet_root,identity)['tasks'][0]['task_id']=='orders.work'
+    assert 'orders.work' in read.read(packet_root,identity,detail=True)
+
+
+def test_unknown_configured_worker_is_not_assignment(packet_root):
+    (packet_root/'config'/'be-999').mkdir(parents=True)
+    with pytest.raises(NotFound): show.collect(packet_root,'be-999')
+
+
+def test_task_uses_run_frozen_revision_and_checks_owner(packet_root):
+    assert json.loads(task.task(packet_root,'be-001',run_id='run-1'))['payload']['goal']=='Return the order result'
+    with pytest.raises(Refused): task.task(packet_root,'be-002',run_id='run-1')
+    with pytest.raises(NotFound): task.task(packet_root,'be-999')
+
+
+def test_goals_projects_plans_and_packet_dependencies(packet_root):
+    result=goals.collect(packet_root)
+    assert result['plans'][0]['payload']['definition']['goal']=='Order lookup'
+    assert result['tasks'][0]['payload']['prerequisites']==[]
+    assert 'goals' not in result
+
+
+def test_reads_do_not_mutate_ledger(packet_root):
+    database=packet_root/'state'/'continuity.sqlite'
+    before=database.read_bytes()
+    board.collect(packet_root); show.collect(packet_root,'run-1'); goals.collect(packet_root)
+    assert database.read_bytes()==before
+
+
+def test_overview_reports_cap_and_detail_selects_beyond_it(packet_root,monkeypatch):
+    monkeypatch.setattr(board,'LIMIT',1)
+    with ContinuityStore(packet_root) as store:
+        payload=json.loads(store.db.execute('SELECT payload FROM tasks').fetchone()[0])
+        payload={**payload,'goal':'Second packet'}
+        store.db.execute("INSERT INTO task_heads VALUES('z.work',1)")
+        store.db.execute('INSERT INTO tasks VALUES(?,1,NULL,?,2)',('z.work',canonical(payload)))
+        store.db.execute("INSERT INTO plan_units VALUES('orders',1,'z.work',1)")
+        store.db.commit()
+    assert board.collect(packet_root)['truncated']
+    assert show.collect(packet_root,'z.work')['tasks'][0]['payload']['goal']=='Second packet'
+
+
+def test_frozen_run_assignment_and_current_packet_revision_are_distinct(packet_root):
+    with ContinuityStore(packet_root) as store:
+        payload=json.loads(store.db.execute('SELECT payload FROM tasks').fetchone()[0])
+        store.db.execute('INSERT INTO tasks VALUES(?,2,NULL,?,2)',('orders.work',canonical({**payload,'goal':'Revised result'})))
+        store.db.execute("UPDATE task_heads SET revision=2")
+        store.db.execute("UPDATE plan_units SET task_revision=2")
+        store.db.commit()
+    detail=show.collect(packet_root,'run-1')
+    assert detail['tasks'][0]['payload']['goal']=='Revised result'
+    assert detail['runs'][0]['assignment']['goal']=='Return the order result'
+    assert json.loads(task.task(packet_root,'be-001',run_id='run-1'))['task_revision']==1
+
+
+def test_completion_and_delivery_are_recorded_proof_headers(packet_root):
+    with ContinuityStore(packet_root) as store:
+        db=store.db
+        db.execute("INSERT INTO unit_completions VALUES('orders.work',1,'run-1',?)",(canonical({'state':'packet_covered','checks':{'unit':'receipt-1'}}),))
+        db.execute("UPDATE runs SET outcome='completed',ended_at=2 WHERE run_id='run-1'")
+        db.execute("DELETE FROM leases")
+        db.execute("INSERT INTO unit_milestones VALUES('orders.work',1,'packet_covered','proof','{}')")
+        db.execute("INSERT INTO delivery_changes VALUES('change-1',1,'head','reviewed',?)",(canonical({'run_id':'run-1'}),))
+        db.execute("INSERT INTO delivery_validations VALUES('candidate-1','repo','head','integration','verified','{}')")
+        db.commit()
+    view=board.collect(packet_root)
+    assert view['tasks'][0]['status']=='packet_covered'
+    assert view['tasks'][0]['active_run_id'] is None
+    assert view['leases']==[]
+    assert view['milestones'][0]['kind']=='packet_covered'
+    assert view['delivery']['changes'][0]['status']=='reviewed'
+    assert view['delivery']['candidates'][0]['head']=='head'
+    assert show.collect(packet_root,'orders.work')['delivery']['changes'][0]['change_id']=='change-1'
+
+
+def test_public_views_exclude_nonpacket_continuity_records(packet_root):
+    with ContinuityStore(packet_root) as store:
+        store.db.execute("INSERT INTO task_heads VALUES('capture-only',1)")
+        store.db.execute("INSERT INTO tasks VALUES('capture-only',1,NULL,'{}',1)")
+        store.db.execute("INSERT INTO runs VALUES('capture-run','capture-only',1,'be-999',0,'assigned',NULL,NULL,1,NULL)")
+        store.db.commit()
+    assert [t['task_id'] for t in board.collect(packet_root)['tasks']]==['orders.work']
+    with pytest.raises(NotFound): show.collect(packet_root,'capture-only')
+    with pytest.raises(NotFound): task.task(packet_root,'be-999',run_id='capture-run')

@@ -1,16 +1,4 @@
-"""Parser and validator for goal files (spec 06, CONTRACTS.md).
-
-The Partner dispatches a goal as a file at any path it likes, never command-line text, and
-`hx dispatch` deletes it once it has read it: the text then lives in `tasks.json` and the
-Work Item and nowhere else. The persona treats the dispatched goal as its Work Item.
-
-A goal file is one `## Goal` section and nothing else: a paragraph saying what the result is
-and why, optionally followed by one to three sentences on what it depends on. No frontmatter,
-no other heading. The worker writes its own `## Definition of done` in the work item, on top
-of its role's standard set (its persona), and `hx complete done` checks the evidence it left,
-not a block the Partner wrote.
-"""
-
+"""Goal paragraph parsing and current ledger plan projection."""
 from __future__ import annotations
 
 import re
@@ -27,9 +15,9 @@ _FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)\s*$")
 
 #: Where a refused heading belongs now, for the two the old two-section contract carried.
 _MOVED = {
-    "Definition of done": "the worker writes its own `## Definition of done` in the work item, "
-                          "on top of its role's standard set",
-    "Checks": "there is no Checks block: `hx complete done` requires the worker's `## Evidence`",
+    "Definition of done": "the worker binds its own checks and definition of done, "
+                          "against the packet acceptance obligations",
+    "Checks": "checks belong in the approved packet binding",
 }
 
 
@@ -43,7 +31,7 @@ class Goal:
 
     @property
     def body(self) -> str:
-        """Everything below the frontmatter, copied verbatim into the Work Item (spec 06)."""
+        """Everything below the frontmatter, used as the planning input."""
         return self.text
 
 
@@ -84,7 +72,7 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
     if not goals:
         raise ValidationError(
             f"{path_str}: no `{GOAL_HEADING}` section; a goal is one `{GOAL_HEADING}` paragraph "
-            f"(spec 06). `hx dispatch` refuses it"
+            f"(spec 06). provide it as a planning input"
         )
     if len(goals) > 1:
         raise ValidationError(
@@ -118,66 +106,29 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
 def parse_goal(path: str | Path) -> Goal:
     path = Path(path)
     if not path.is_file():
-        raise ValidationError(f"{path}: goal file not found; the goal is always a file (spec 06)")
+        raise ValidationError(f"{path}: planning goal input not found")
     return parse_goal_text(path.read_text(), path)
 
 
-# --- `hx goals [--json]` (CONTRACTS.md) -------------------------------------------------------
-#
-# Read-only over `tasks.json`, and nothing else. The goal file is consumed and deleted at
-# dispatch, so there is no file to compare against and no graph to draw (spec 14 D25).
+def collect(root):
+    from .board import collect as board
+    view = board(root)
+    return {key: view[key] for key in ('schema_version', 'root_abs', 'ts', 'ledger_revision', 'plans', 'tasks', 'truncated')}
 
 
-def collect(root: Path) -> dict:
-    """The `hx goals --json` document: one entry per id in `tasks.json`."""
-    from . import timestamps
-    from .ids import sort_key
-    from .tasks import load_tasks
-    from .workitems import find_work_item, parse_work_item_filename
-
-    root = Path(root)
-    tasks = load_tasks(root)
-
-    entries = []
-    for item_id in sorted(tasks, key=sort_key):
-        record = tasks[item_id]
-        work_item = find_work_item(root, item_id)
-        state = None
-        if work_item is not None:
-            state = parse_work_item_filename(work_item.name, path=work_item).state
-        entries.append(
-            {
-                "id": item_id,
-                "pod": work_item.parent.name if work_item else None,
-                "state": state,
-                "outcome": record.get("outcome"),
-                "goal": record.get("goal"),
-                "addenda": list(record.get("addenda") or []),
-                "dispatched": record.get("dispatched"),
-                "completed": record.get("completed"),
-            }
-        )
-
-    return {"root_abs": str(root), "ts": timestamps.now(), "goals": entries}
-
-
-def main(argv: list[str], root: Path, *, env=None) -> int:
+def main(argv, root, *, env=None):
     import argparse
     import json
-
-    parser = argparse.ArgumentParser(prog="hx goals", add_help=True)
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--root", help=argparse.SUPPRESS)
+    parser = argparse.ArgumentParser(prog='hx goals', description='Current plans and their dependency packets.')
+    parser.add_argument('--json', action='store_true')
+    parser.add_argument('--root', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-
     view = collect(root)
     if args.json:
         print(json.dumps(view, indent=2))
     else:
-        for entry in view["goals"]:
-            print(
-                f"{entry['id']}  {entry['state'] or '-'}  {entry['outcome'] or '-'}  "
-                f"addenda={len(entry['addenda'])}  dispatched={entry['dispatched'] or '-'}  "
-                f"completed={entry['completed'] or '-'}"
-            )
+        for plan in view['plans']:
+            print(f"{plan['plan_id']}@{plan['revision']}: {plan['payload']['definition']['goal']}")
+        for task in view['tasks']:
+            print(f"  {task['task_id']}@{task['revision']} {task['status']}: {task['payload']['goal']}")
     return 0

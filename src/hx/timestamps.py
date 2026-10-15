@@ -25,7 +25,7 @@ def parse(value: str) -> _dt.datetime | None:
     try:
         parsed = _dt.datetime.fromisoformat(text)
     except ValueError:
-        # The compact form `20260920T101500Z` also appears in spec 08's tasks.json example.
+        # Compact UTC timestamps are also accepted for operator-supplied time filters.
         try:
             parsed = _dt.datetime.strptime(value.strip(), "%Y%m%dT%H%M%SZ")
         except ValueError:

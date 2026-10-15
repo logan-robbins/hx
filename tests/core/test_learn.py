@@ -343,13 +343,6 @@ def test_the_rule_files_are_the_category_files_that_hold_a_rule(instance):
 # --- scope: global or one role ------------------------------------------------------------------
 
 
-def test_a_role_field_an_older_hx_wrote_is_read_and_can_be_dropped():
-    rule = learn.parse_rule("**Rule T4** · Role: backend-engineer · Signal: s · Check: c · Evidence: e")
-    assert rule["key"] == "T4" and rule["role"] == "backend-engineer"
-    assert (rule["signal"], rule["check"], rule["evidence"]) == ("s", "c", "e")
-    assert learn.parse_rule("**Rule T5** · Signal: s · Check: c · Evidence: e")["role"] is None
-    assert learn.without_role_field(rule["line"]) == learn.render_rule("T", 4, "s", "c", "e") \
-        == "**Rule T4** · Signal: s · Check: c · Evidence: e"
 
 
 def test_propose_role_scopes_the_rule_and_accept_keeps_it(instance):
@@ -428,24 +421,6 @@ def test_numbers_are_unique_across_the_shared_directory_and_every_role(instance)
     assert any(status == "fail" and "L2 is also" in detail for status, detail in rows)
 
 
-def test_rules_an_older_hx_scoped_in_place_move_next_to_their_persona(instance, tmp_path):
-    domain = instance / "LEARNINGS" / "domain.md"
-    domain.write_text(learn.category_header("domain")
-                      + "**Rule L1** · Signal: everyone · Check: c · Evidence: e\n"
-                      + "**Rule L2** · Role: backend-engineer · Signal: backend · Check: c · Evidence: e\n")
-    assert any(status == "warn" and "still carry `Role:`" in detail for status, detail in learn.check(instance))
-    assert learn.migrate_role_rules(instance) == 1
-    assert "backend" not in domain.read_text() and "everyone" in domain.read_text()
-    moved = (instance / "personas" / "backend-engineer" / "domain.md").read_text()
-    assert "**Rule L2** · Signal: backend · Check: c · Evidence: e" in moved and "Role:" not in moved
-    assert learn.migrate_role_rules(instance) == 0, "once moved, nothing to do"
-    # A shared directory is the fleet's, not this instance's to empty.
-    shared = tmp_path / "shared"
-    shared.mkdir()
-    (shared / "domain.md").write_text("**Rule L7** · Role: qa-engineer · Signal: s · Check: c · Evidence: e\n")
-    env = {"HX_LEARNINGS": str(shared)}
-    assert learn.migrate_role_rules(instance, env) == 0
-    assert "Role: qa-engineer" in (shared / "domain.md").read_text()
 
 
 def test_cli_scope_round_trip(instance):
@@ -523,3 +498,7 @@ def test_cli_propose_from_a_file(instance, tmp_path):
     assert result.returncode == 0, result.stderr
     proposal = json.loads(result.stdout)
     assert proposal["check"] == "HX_TMUX names the server" and proposal["category"] == "environment"
+
+
+def test_inline_role_is_not_a_supported_rule_shape():
+    assert learn.parse_rule("**Rule T4** · Role: backend-engineer · Signal: s · Check: c · Evidence: e") is None

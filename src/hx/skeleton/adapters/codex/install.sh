@@ -116,7 +116,6 @@ cwd = os.environ["HX_CWD"]
 events = [
     ("SessionStart", "startup|resume|clear|compact", "context"),
     ("PostToolUse", None, "log"),
-    ("PostToolUse", "Agent|spawn_agent", "subagent-result"),
     ("Stop", None, "stop"),
     ("PreCompact", None, "precompact"),
     ("PostCompact", None, "postcompact"),
@@ -128,6 +127,7 @@ if continuity:
     events.append(("PreToolUse", None, "tool-start"))
 if item_id == "partner":
     events.append(("PreToolUse", "Bash|apply_patch|Edit|Write", "guard"))
+    events.append(("PostToolUse", "Agent|spawn_agent", "subagent-result"))
 blocks = []
 for codex_event, matcher, hx_event in events:
     # hook_bin can be a command with arguments (`python -m hx.hooks` in

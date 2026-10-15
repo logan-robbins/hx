@@ -52,8 +52,8 @@ def overlaps(a, b):
 
 
 def _definition(body):
-    if not isinstance(body, dict) or body.keys() != {"schema_version", "plan_id", "expected_revision", "repository", "goal", "constraints", "tasks"} or type(body["schema_version"]) is not int or body["schema_version"] not in {1, 2}:
-        raise ValidationError("plan has missing or unknown fields/schema")
+    if not isinstance(body, dict) or body.keys() != {"schema_version", "plan_id", "expected_revision", "repository", "goal", "constraints", "tasks"} or type(body["schema_version"]) is not int or body["schema_version"] != 2:
+        raise ValidationError("plan requires schema_version=2 and the current packet fields")
     if len(canonical(body).encode()) > PLAN_BYTES:
         raise ValidationError("plan exceeds 256 KiB; decompose the goal into smaller planning scopes")
     _id(body["plan_id"])
@@ -66,12 +66,9 @@ def _definition(body):
         raise ValidationError("plan requires 1–32 behavior units")
     tasks, parents, outputs = {}, {}, {}
     for unit in body["tasks"]:
-        fields = {"id", "expected_revision", "behavior", "acceptance", "workdir", "write_paths", "map_inputs", "checks", "outputs", "prerequisites"}
-        packet = body["schema_version"] == 2
-        if packet:
-            fields = (fields - {"checks"}) | {"resources", "check_policy"}
+        fields = {"id", "expected_revision", "behavior", "acceptance", "workdir", "write_paths", "map_inputs", "outputs", "prerequisites", "resources", "check_policy"}
         if not isinstance(unit, dict) or unit.keys() != fields:
-            raise ValidationError("each unit needs identity, behavior, acceptance, workdir, scope, map inputs, checks, outputs, and prerequisites")
+            raise ValidationError("each unit needs identity, behavior, acceptance, workdir, scope, map inputs, check policy, resources, outputs, and prerequisites")
         _id(unit["id"])
         if unit["id"] in tasks or type(unit["expected_revision"]) is not int or unit["expected_revision"] < 0:
             raise ValidationError("unit IDs must be unique and expected revisions nonnegative")
@@ -85,55 +82,44 @@ def _definition(body):
         if not isinstance(unit["write_paths"], list) or len(unit["write_paths"]) > 64:
             raise ValidationError("unit write paths must contain at most 64 files/reserved prefixes")
         scope = sorted(set(write_scope(workdir, path) for path in unit["write_paths"]))
-        recipes = {} if packet else unit["checks"]
-        if packet:
-            policy = unit["check_policy"]
-            if not isinstance(policy, dict) or policy.keys() != {"reviewer", "required_checks"}:
-                raise ValidationError("packet check policy needs independent reviewer and required check IDs")
-            _id(policy["reviewer"])
-            if policy["reviewer"] == "partner":
-                raise ValidationError("packet policy reviewer must be an independent worker")
-            if not isinstance(policy["required_checks"], list) or not 1 <= len(policy["required_checks"]) <= 16:
-                raise ValidationError("packet policy requires 1–16 standard check IDs")
-            for check_id in policy["required_checks"]:
-                _id(check_id)
-            if len(set(policy["required_checks"])) != len(policy["required_checks"]):
-                raise ValidationError("policy check IDs must be unique")
-            if not isinstance(unit["resources"], list) or len(unit["resources"]) > 32:
-                raise ValidationError("packet requires at most 32 shared resources")
-            resources = set()
-            for resource in unit["resources"]:
-                if not isinstance(resource, dict) or resource.keys() != {"id", "mode"} or resource["mode"] not in ("shared", "exclusive"):
-                    raise ValidationError("resource requires identity and shared or exclusive ownership")
-                _id(resource["id"])
-                if resource["id"] in resources:
-                    raise ValidationError("resource IDs must be unique")
-                resources.add(resource["id"])
-        if not packet and (not isinstance(recipes, dict) or not 1 <= len(recipes) <= 16):
-            raise ValidationError("every behavior unit requires 1–16 explicit acceptance checks")
-        for check_id, recipe in recipes.items():
-            checks.validate(recipe)
-            if check_id != recipe["id"]:
-                raise ValidationError("acceptance check key must match its recipe ID")
+        policy = unit["check_policy"]
+        if not isinstance(policy, dict) or policy.keys() != {"reviewer", "required_checks"}:
+            raise ValidationError("packet check policy needs independent reviewer and required check IDs")
+        _id(policy["reviewer"])
+        if policy["reviewer"] == "partner":
+            raise ValidationError("packet policy reviewer must be an independent worker")
+        if not isinstance(policy["required_checks"], list) or not 1 <= len(policy["required_checks"]) <= 16:
+            raise ValidationError("packet policy requires 1–16 standard check IDs")
+        for check_id in policy["required_checks"]:
+            _id(check_id)
+        if len(set(policy["required_checks"])) != len(policy["required_checks"]):
+            raise ValidationError("policy check IDs must be unique")
+        if not isinstance(unit["resources"], list) or len(unit["resources"]) > 32:
+            raise ValidationError("packet requires at most 32 shared resources")
+        resources = set()
+        for resource in unit["resources"]:
+            if not isinstance(resource, dict) or resource.keys() != {"id", "mode"} or resource["mode"] not in ("shared", "exclusive"):
+                raise ValidationError("resource requires identity and shared or exclusive ownership")
+            _id(resource["id"])
+            if resource["id"] in resources:
+                raise ValidationError("resource IDs must be unique")
+            resources.add(resource["id"])
         if not isinstance(unit["outputs"], list) or not 1 <= len(unit["outputs"]) <= 32:
             raise ValidationError("every unit requires explicit versioned outputs")
         declared = {}
         for output in unit["outputs"]:
-            if not isinstance(output, dict) or output.get("kind") not in ({"source", "receipt", "contract"} if packet else {"source", "receipt"}):
-                raise ValidationError("output kind must be source or receipt")
-            fields = {"id", "version", "kind", "paths" if output["kind"] in {"source", "contract"} else "check_id"}
-            if packet:
-                fields = (fields - {"check_id"}) | {"obligation"}
-                _text(output.get("obligation"), "output obligation")
+            if not isinstance(output, dict) or output.get("kind") not in {"source", "receipt", "contract"}:
+                raise ValidationError("output kind must be source, receipt, or contract")
+            fields = {"id", "version", "kind", "obligation"}
+            if output["kind"] in {"source", "contract"}:
+                fields.add("paths")
+            _text(output.get("obligation"), "output obligation")
             if output.keys() != fields:
                 raise ValidationError("output has missing or unknown fields")
             _id(output["id"])
             if output["id"] in declared or type(output["version"]) is not int or output["version"] < 1:
                 raise ValidationError("output IDs must be unique and versions positive")
-            if output["kind"] == "receipt":
-                if not packet and output["check_id"] not in recipes:
-                    raise ValidationError("receipt output must identify an assigned acceptance check")
-            else:
+            if output["kind"] != "receipt":
                 if not isinstance(output["paths"], list) or not 1 <= len(output["paths"]) <= 64:
                     raise ValidationError("source output requires 1–64 exact file paths")
                 for path in output["paths"]:
@@ -146,30 +132,27 @@ def _definition(body):
         payload = {"plan_id": body["plan_id"], "repository": body["repository"], "goal": unit["behavior"],
                    "parent_goal": body["goal"], "constraints": body["constraints"], "acceptance": unit["acceptance"],
                    "workdir": str(workdir), "write_paths": unit["write_paths"], "write_scope": scope,
-                   "map_inputs": unit["map_inputs"], "checks": recipes, "outputs": unit["outputs"],
+                   "map_inputs": unit["map_inputs"], "checks": {}, "outputs": unit["outputs"],
                    "prerequisites": unit["prerequisites"]}
-        if packet:
-            payload.update(dependency_packet=True, resources=unit["resources"], check_policy=unit["check_policy"])
+        payload.update(dependency_packet=True, resources=unit["resources"], check_policy=unit["check_policy"])
         if len(canonical(payload).encode()) > 16000:
             raise ValidationError("unit assignment exceeds 16 KiB; split its behavior before assignment")
         tasks[unit["id"]], outputs[unit["id"]], parents[unit["id"]] = payload, declared, set()
     for unit in body["tasks"]:
         seen = set()
         for dependency in unit["prerequisites"]:
-            base_fields = {"task_id", "output_id", "version"}
+            base_fields = {"task_id", "output_id", "version", "need"}
             early = isinstance(dependency, dict) and dependency.get("need") in ("contract", "substitutable")
-            if body["schema_version"] == 2:
-                base_fields |= {"need"}
-                if early:
-                    base_fields |= {"provider_output", "provider_version", "stand_in"}
+            if early:
+                base_fields |= {"provider_output", "provider_version", "stand_in"}
             if not isinstance(dependency, dict) or dependency.keys() != base_fields:
-                raise ValidationError("prerequisite requires task_id, output_id, version")
+                raise ValidationError("prerequisite requires task_id, output_id, version, and need")
             _id(dependency["task_id"])
             _id(dependency["output_id"])
             output = outputs.get(dependency["task_id"], {}).get(dependency["output_id"])
             if output is None or type(dependency["version"]) is not int or output["version"] != dependency["version"]:
                 raise ValidationError("prerequisite output is absent or has a different version")
-            if body["schema_version"] == 2 and dependency["need"] not in ("hard", "contract", "substitutable"):
+            if dependency["need"] not in ("hard", "contract", "substitutable"):
                 raise ValidationError("dependency need must be hard, contract, or substitutable")
             if early:
                 provider = outputs.get(dependency["task_id"], {}).get(dependency["provider_output"])
@@ -324,7 +307,7 @@ def _prepare_code(store,tasks):
 def assignment(store, task_id):
     with store.transaction() as tx:
         task = tx.task(task_id)
-        if task is None or "plan_id" not in task["payload"]:
+        if task is None or not task["payload"].get("dependency_packet") or "plan_id" not in task["payload"]:
             raise ValidationError("unknown planned unit")
         validate_task(tx, task)
         from .dependency_packets import effective_task, summary

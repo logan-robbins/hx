@@ -191,11 +191,8 @@ def test_concurrent_retry_has_one_delivery_and_event(ledger):
     assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
-def test_schema_three_upgrade_preserves_existing_task(ledger):
+def test_schema_three_reopen_preserves_existing_task(ledger):
     store, _ = ledger
-    for table in ("native_event_origins", "native_deliveries", "native_bindings"):
-        store.db.execute(f"DROP TABLE {table}")
-    store.db.execute("PRAGMA user_version=3")
     with ContinuityStore(store.root) as upgraded:
         with upgraded.transaction() as tx:
             assert tx.task("T")["payload"]["goal"] == "Capture the original run."

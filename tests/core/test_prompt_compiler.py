@@ -7,7 +7,6 @@ import pytest
 
 from hx import persona, prompt_compiler as prompts
 from hx.errors import ValidationError
-from hx.persona import LEGACY_HEADER
 
 FLAVORS = ("claude", "codex", "meta", "grok", "pi")
 ROLES = ("backend-engineer", "frontend-engineer", "release-engineer", "qa-engineer")
@@ -23,8 +22,12 @@ def configure(instance, *, flavor="claude", role="backend-engineer", item_id="en
     return data
 
 
-def text(bundle):
+def startup_text(bundle):
     return Path(bundle["system_path"]).read_text() + Path(bundle["context_path"]).read_text()
+
+
+def text(bundle):
+    return startup_text(bundle) + "".join(Path(ref["path"]).read_text() for ref in bundle["required_files"])
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
@@ -77,9 +80,12 @@ def test_partner_is_compiled_from_its_audience_and_role_instead_of_exempted(inst
         (prompts.BUNDLE / "personas" / "partner.md").read_text())
     result = prompts.build(instance, "partner")
     rendered = text(result)
-    assert "Real dependencies remain\ndependencies" in rendered
-    assert "Understand the application/code graph, dependencies, and resource contention" in rendered, \
-        "the domain judgment of personas/partner.md"
+    assert "Every directive follows the dependency graph" in rendered
+    assert "Maximize useful parallelism for every directive" in rendered
+    assert "Search" in rendered or "search" in rendered
+    assert "Apparent task\nsize does not determine packet count" in rendered
+    persona_text = (instance / "personas" / "partner.md").read_text()
+    assert prompts.DOMAIN_RE.search(persona_text)["body"].strip("\n") in rendered
     assert "No blockers by construction" not in rendered, "its live mechanics stay live"
     assert "runtime's completion and readiness results" in rendered
     assert "hx plan finish" not in rendered
@@ -109,13 +115,15 @@ def test_planned_and_live_personas_are_one_source(instance):
     live = persona.boundary(instance, "eng-001")["text"]
     for line in ("Prefer the importer's own retry helper.", "Owns the importer service and its schema."):
         assert line in planned and line in live
-    assert "## How you work" in live and "## How you work" not in planned
+    assert "## Domain judgment" in live and "## Domain judgment" not in planned
+    assert "Use `hx-worker` for exact mechanics." in live
+    assert "Use `hx-worker` for exact mechanics." not in planned
     subagent = text(prompts.build(instance, "eng-001", audience="subagent"))
     assert "Prefer the importer's own retry helper." in subagent
     assert "Owns the importer service" not in subagent, "a subagent's scope is its bounded question"
 
 
-def test_the_planned_prompt_reads_no_per_id_file_no_invariants_and_no_memory(instance):
+def test_prompt_sources_exclude_per_id_and_global_invariants_and_bound_whole_role_source(instance):
     configure(instance, flavor="codex")
     (instance / "config" / "eng-001" / "AGENTS.md").write_text("OLD PER-ID PERSONA\n")
     clauses = instance / "config" / "CLAUDE.md"
@@ -124,12 +132,12 @@ def test_the_planned_prompt_reads_no_per_id_file_no_invariants_and_no_memory(ins
     after = prompts.build(instance, "eng-001")
     assert after["version"] == before["version"], "config/CLAUDE.md reaches agents through its own channel"
     assert "OLD PER-ID PERSONA" not in text(after)
-    source = instance / "personas" / "backend-engineer.md"
-    source.write_text(source.read_text() + "\n" + LEGACY_HEADER + "\n" + "OLD PERSONAL STATE " * 100000)
-    rendered = text(prompts.build(instance, "eng-001"))
-    assert "OLD PERSONAL STATE" not in rendered
-    assert "Preserve service, data, and interface invariants." in rendered
+    assert "Preserve service, data, and interface invariants." in text(after)
     assert "migration_review" not in after
+    source = instance / "personas" / "backend-engineer.md"
+    source.write_text(source.read_text() + "\n## Operator policy details\n" + "OVERSIZED ROLE SOURCE " * 100000)
+    with pytest.raises(ValidationError, match="64 KiB"):
+        prompts.build(instance, "eng-001")
 
 
 def test_a_role_without_a_persona_has_no_domain_section(instance):
@@ -150,7 +158,7 @@ def test_unknown_identity_variable_fails_before_a_prompt_is_delivered(instance):
 def test_operator_policy_is_not_mistaken_for_a_personal_memory_region(instance):
     configure(instance)
     policy = instance / "continuity" / "policy.md"
-    policy.write_text("Operator policy.\n" + LEGACY_HEADER + "\nDo not publish before integration passes.\n")
+    policy.write_text("Operator policy.\n" + "## Operator policy details" + "\nDo not publish before integration passes.\n")
     assert "Do not publish before integration passes." in text(prompts.build(instance, "eng-001"))
 
 
@@ -174,7 +182,7 @@ def test_context_bundle_validates_sources_and_never_claims_system_prefix_loaded(
     configure(instance, flavor="codex")
     bundle = prompts.build(instance, "eng-001")
     rendered, version = prompts.context_instructions(instance, "eng-001", Path(bundle["manifest_path"]), workdir=bundle["identity"]["workdir"])
-    assert rendered == text(bundle) and version == bundle["version"]
+    assert rendered == startup_text(bundle) and version == bundle["version"]
     assert prompts.build(instance, "eng-001")["version"] == version
     policy = instance / "continuity" / "policy.md"
     policy.write_text("Keep the release target unchanged.")
@@ -198,3 +206,77 @@ def test_qa_role_and_companion_are_valid_installed_configuration(instance):
     assert config.role == "qa-engineer"
     assert (instance / "personas" / "qa-engineer.md").is_file()
     assert (instance / "companion" / "roles" / "qa-engineer.md").is_file()
+
+
+@pytest.mark.parametrize("audience", ["worker", "partner", "subagent"])
+def test_compiled_instruction_sources_carry_universal_graph_search_and_parallel_contract(instance, audience):
+    item_id = "partner" if audience == "partner" else "eng-001"
+    configure(instance, item_id=item_id, role="partner" if audience == "partner" else "backend-engineer")
+    if audience == "partner":
+        (instance / "personas" / "partner.md").write_text((prompts.BUNDLE / "personas" / "partner.md").read_text())
+    rendered = text(prompts.build(instance, item_id, audience=audience)).lower()
+    for obligation in ("every directive", "graph", "search", "reuse", "parallel", "packet count"):
+        assert obligation in rendered, (audience, obligation)
+    assert "simple path" not in rendered and "goal files" not in rendered
+
+
+def test_total_static_prompt_bound_remains_enforced(instance):
+    configure(instance)
+    common = instance / "continuity" / "prompts" / "common.md"
+    audience = instance / "continuity" / "prompts" / "audiences" / "worker.md"
+    role = instance / "personas" / "backend-engineer.md"
+    common.write_text("Common " + "c" * 65000)
+    audience.write_text("Audience " + "a" * 65000)
+    role.write_text("## Domain judgment\n" + "d" * 65000)
+    policy = instance / "continuity" / "policy.md"
+    policy.write_text("Policy " + "p" * 65000)
+    extra = instance / "continuity" / "policy" / "worker.md"
+    extra.parent.mkdir(parents=True, exist_ok=True)
+    extra.write_text("Extra policy " + "e" * 65000)
+    with pytest.raises(ValidationError, match="256 KiB"):
+        prompts.build(instance, "eng-001")
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_long_warranted_policy_is_referenced_in_full_not_truncated_in_startup(instance, flavor):
+    import hashlib
+    configure(instance, flavor=flavor)
+    policy = instance / "continuity" / "policy.md"
+    full_policy = "Preserve the exact release constraints.\n" + "Full warranted condition.\n" * 1000 + "FINAL MANDATORY CONDITION: retain the original provider."
+    policy.write_text(full_policy)
+    bundle = prompts.build(instance, "eng-001")
+    initial = startup_text(bundle)
+    assert len(initial.encode()) < 3000
+    assert "FINAL MANDATORY CONDITION" not in initial
+    assert "IN FULL" in initial and "through its final byte" in initial
+    assert "Do not substitute an excerpt" in initial and "continue until all bytes are read" in initial
+    assert '"id":"eng-001"' in initial and '"workdir":' in initial
+    for mandatory in ("graph dependencies", "search/reuse", "ownership", "independent approval", "configured tools"):
+        assert mandatory in initial
+    material, = bundle["required_files"]
+    exact = Path(material["path"]).read_bytes()
+    assert full_policy.encode() in exact
+    assert hashlib.sha256(exact).hexdigest() == material["sha256"]
+    assert len(exact) == material["bytes"] > 20000
+    verified = prompts.verify_material(instance, "eng-001", Path(bundle["manifest_path"]), Path(material["path"]), workdir=bundle["identity"]["workdir"])
+    assert verified == material
+    assert prompts.verify_material(instance, "eng-001", Path(bundle["manifest_path"]), policy, workdir=bundle["identity"]["workdir"]) is None
+
+
+def test_required_full_instruction_tamper_blocks_bundle_and_rebuild(instance):
+    configure(instance, flavor="codex")
+    bundle = prompts.build(instance, "eng-001")
+    material, = bundle["required_files"]
+    Path(material["path"]).write_text("A substituted excerpt must not become the full policy.")
+    for operation in (lambda: prompts.verified_bundle(instance, "eng-001", Path(bundle["manifest_path"]), workdir=bundle["identity"]["workdir"]),
+                      lambda: prompts.build(instance, "eng-001")):
+        with pytest.raises(ValidationError, match="required full instruction file.*altered"):
+            operation()
+
+
+def test_companion_keeps_full_inline_policy_when_its_evidence_tools_cannot_read_files(instance):
+    configure(instance)
+    bundle = prompts.build(instance, "eng-001", audience="companion")
+    assert bundle["required_files"] == []
+    assert "frozen range" in startup_text(bundle)
+    assert "structured result channel" in startup_text(bundle)

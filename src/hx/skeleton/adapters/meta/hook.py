@@ -11,15 +11,10 @@ variants map to snake_case, and `tool_response` is filled from `toolResult`
 when only the latter is present. Unknown keys pass through; hx-hook ignores
 what it does not read. Two deliberate gaps, not oversights:
 
-- context tokens: legacy tool hooks carry no usage counts. Planned capture
-  records PostLLMCall attempt usage separately; it is not a context-window total.
-- persona: the legacy route prints it (where the hook is its channel) from
-  `context` at every boundary. Planned sessions use the launch manifest and
-  verified startup context delivery.
-
-Hook commands run through the shell with a cleared environment, so everything
-the hook needs (--hook-bin, --root) is baked into the command line at install
-time; nothing is read from the environment.
+- context tokens: native hook payloads do not supply a context-window total.
+  Versioned source capture records supported attempt usage separately.
+- persona: worker instructions are frozen in the launch manifest and installed
+  once through the configured native channel; context hooks restore task checkpoints.
 """
 
 from __future__ import annotations

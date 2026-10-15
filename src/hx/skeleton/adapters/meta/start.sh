@@ -1,23 +1,14 @@
 #!/usr/bin/env bash
-# adapters/meta/start.sh <id> — launch Muse Code in tmux window <id>:main.
-#
-# Bare: no prompt argument. --yolo is the unattended posture (no approval, no
-# sandbox, workspace trusted), matching the Unrestricted profile baked into the
-# home settings. The Companion is not started here; lifecycle calls
-# adapters/claude/start.sh --companion for that.
+# Execute Muse Code inside the controller's admitted native launch capsule.
+# The controller owns tmux/process creation, immutable prompts and checkpoint delivery.
 set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
-mode=session
-while :; do
-  case "${1:-}" in
-    --exec) mode=exec; shift ;;
-    --companion) die "refuse: the Companion is a Claude session; start.sh --companion is adapters/claude" ;;
-    *) break ;;
-  esac
-done
-[ $# -eq 1 ] || die "usage: start.sh [--exec] <id>"
+[ "${1:-}" = --exec ] || die "worker launch admission refused: use hx launch ID --run RUN --request REQUEST"
+shift
+[ $# -eq 1 ] || die "usage: start.sh --exec <id>"
+mode=exec
 id=$1
 case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
@@ -36,6 +27,9 @@ if [ -z "$python" ] && [ -f "$root/config/hx.json" ]; then
 fi
 [ -n "$python" ] || python=python3
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
+
+# Every worker executable descends from the controller's admitted run supervisor.
+"$python" -m hx.adapter_guard "$id" meta "$mode" agent || die "worker launch admission refused"
 
 home=$root/run/$id/home
 harness=$root/config/$id/harness.json
@@ -73,68 +67,20 @@ effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effor
 [ -n "$model" ] || die "refuse: $harness has no \`model\`"
 [ -n "$effort" ] || die "refuse: $harness has no \`effort\`"
 
-if [ "$mode" = exec ]; then
-  . "$root/adapters/load-env.sh"
-  mkdir -p "$root/run/$id" "$home/data"
-  if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
-    # A planned launch's persona is the compiled planned system prompt, prepared in its
-    # private root and verified by the controller (`native_launch`).
-    [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
-  fi
+. "$root/adapters/load-env.sh"
+mkdir -p "$root/run/$id" "$home/data"
+[ -f "$persona" ] || die "refuse: frozen native system instructions are missing"
 
-  cd "$cwd"
-  export HARNESS_ID="$id"
-  export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
-  export XDG_CONFIG_HOME="$home"
-  export XDG_DATA_HOME="$home/data"
-  export META_API_KEY="$(cat "$token_file")"
-  export PATH="$root/bin:$PATH"
 
-  # No prompt argument. --yolo disables approval and sandboxing and trusts the
-  # workspace for this run. Muse takes no system prompt: the invariants, the persona, the
-  # identity line and the learnings arrive through the `context` hook at every boundary.
-  exec "$bin" --yolo --model "$model" --reasoning-effort "$effort"
-fi
+cd "$cwd"
+export HARNESS_ID="$id"
+export HARNESS_ROOT="$HX_CONTINUITY_AUTHORITY"
+export XDG_CONFIG_HOME="$home"
+export XDG_DATA_HOME="$home/data"
+export META_API_KEY="$(cat "$token_file")"
+export PATH="$root/bin:$PATH"
 
-read -r -a TMUX_CMD <<< "${HX_TMUX:-tmux}"
-command -v "${TMUX_CMD[0]}" >/dev/null 2>&1 || die "refuse: ${TMUX_CMD[0]} not found; every agent runs in tmux"
-
-key=$(cat "$token_file")
-env_args=(
-  -e HARNESS_ID="$id"
-  -e HARNESS_ROOT="$root"
-  -e XDG_CONFIG_HOME="$home"
-  -e XDG_DATA_HOME="$home/data"
-  -e META_API_KEY="$key"
-  -e PATH="$root/bin:$PATH"
-)
-while IFS='=' read -r name value; do
-  case "$name" in HX_*) env_args+=(-e "$name=$value") ;; esac
-done < <(env)
-
-launcher=("$here/start.sh" --exec "$id")
-pane_log=$root/logs/$id/$id-pane.log
-mkdir -p "$root/logs/$id"
-window=main
-
-if ! "${TMUX_CMD[@]}" has-session -t "=$id" 2>/dev/null; then
-  "${TMUX_CMD[@]}" new-session -d -s "$id" -n "$window" -c "$cwd" "${env_args[@]}" "${launcher[@]}"
-else
-  for arg in "${env_args[@]}"; do
-    case "$arg" in
-      -e) continue ;;
-      *) "${TMUX_CMD[@]}" set-environment -t "=$id" "${arg%%=*}" "${arg#*=}" ;;
-    esac
-  done
-  if "${TMUX_CMD[@]}" list-windows -t "=$id" -F '#{window_name}' | grep -qx "$window"; then
-    "${TMUX_CMD[@]}" respawn-window -k -t "=$id:$window" -c "$cwd" "${launcher[@]}"
-  else
-    "${TMUX_CMD[@]}" new-window -d -t "=$id:" -n "$window" -c "$cwd" "${launcher[@]}"
-  fi
-fi
-
-"${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
-"${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"
-
-printf 'start.sh: %s running in tmux session %s window %s (cwd %s)\n' "$bin" "$id" "$window" "$cwd"
-printf 'start.sh: pane log %s\n' "$pane_log"
+# No prompt argument. --yolo disables approval and sandboxing and trusts the
+# workspace for this run. Muse takes no system prompt: the invariants, the persona, the
+# identity line and the learnings arrive through the `context` hook at every boundary.
+exec "$bin" --yolo --model "$model" --reasoning-effort "$effort"

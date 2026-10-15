@@ -48,7 +48,7 @@ DOCS = Path(__file__).resolve().parents[2] / "docs" / "models.md"
 PROVIDERS: dict[str, dict] = {
     "anthropic": {
         "url": "https://api.anthropic.com/v1/models?lifecycle=active&limit=1000",
-        "auth": "x-api-key", "keys": ("ANTHROPIC_API_KEY", "ANTRHOPIC_API_KEY"),
+        "auth": "x-api-key", "keys": ("ANTHROPIC_API_KEY",),
         "seed": "token", "seed_prefix": "sk-ant-api", "heading": "anthropic",
         "family": ("claude-",),
     },

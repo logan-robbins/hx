@@ -190,15 +190,12 @@ def test_executable_symlink_and_relative_path_keep_invocation_identity(setup):
     assert argv[0] == str(link) and snapshot["complete"]
 
 
-def test_schema_four_upgrade_keeps_receipts_table(setup):
+def test_schema_four_reopen_keeps_receipts_table(setup):
     store, run, _, env = setup
     receipt = checks.run_check(store, run, "unit", recipe=definition(), env=env)
-    store.db.execute("DROP TABLE check_executions")
-    store.db.execute("DROP INDEX reusable_receipts")
-    store.db.execute("PRAGMA user_version=4")
     with ContinuityStore(store.root) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT count(*) FROM check_executions").fetchone()[0] == 0
+        assert upgraded.db.execute("SELECT count(*) FROM check_executions").fetchone()[0] == 1
         assert upgraded.db.execute("SELECT receipt_id FROM receipts").fetchone()[0] == receipt["receipt_id"]
         assert read(upgraded, receipt["event_id"])["content"] == "checked\n"
 
@@ -304,3 +301,17 @@ def test_fingerprinting_reads_only_bounded_chunks(setup, monkeypatch):
     fingerprint.path(target, "input")
     assert fingerprint.result()["complete"]
     assert sum(reads) == target.stat().st_size and len(reads) == 4
+
+
+def test_receipt_without_current_provenance_cannot_pass_any_gate(setup):
+    store, run, _, env = setup
+    receipt = checks.run_check(store, run, "unit", recipe=definition(), env=env, request_id="proof")
+    row = store.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt["receipt_id"],)).fetchone()
+    payload = json.loads(row["payload"])
+    payload["schema_version"] = 1
+    payload.pop("provenance")
+    store.db.execute("UPDATE receipts SET payload=? WHERE receipt_id=?", (json.dumps(payload), receipt["receipt_id"]))
+    row = store.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt["receipt_id"],)).fetchone()
+    assert not checks.receipt_intact(store, row)
+    assert not checks.current(store, run, receipt["receipt_id"], env=env)["current"]
+    assert not checks.run_check(store, run, "unit", recipe=definition(), env=env, request_id="proof")["valid"]

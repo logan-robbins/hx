@@ -1,41 +1,106 @@
 {
-  "root_abs": "/srv/hx",
-  "ts": "2026-09-20T13:10:00Z",
-  "goals": [
+  "schema_version": 2,
+  "root_abs": "/private/fixture/hx",
+  "ts": "2026-10-15T15:26:21Z",
+  "ledger_revision": 7,
+  "plans": [
     {
-      "id": "eng-000",
-      "pod": "engineers",
-      "state": "complete",
-      "outcome": "done",
-      "goal": "## Goal\nShip `hx board --json`.\n",
-      "addenda": [],
-      "dispatched": "2026-09-20T10:00:00Z",
-      "completed": "2026-09-20T11:58:12Z"
-    },
-    {
-      "id": "eng-001",
-      "pod": "engineers",
-      "state": "working",
-      "outcome": null,
-      "goal": "## Goal\nAdd `--require-done` to `hx board` so the Partner can assert that a set of ids finished with\noutcome `done` without reading the listing.\n",
-      "addenda": [
-        {
-          "ts": "2026-09-20T12:30:00Z",
-          "text": "Also refuse an id with no `config/<id>/` directory; exit 1 and name it."
+      "plan_id": "orders",
+      "revision": 1,
+      "request_hash": "hash",
+      "payload": {
+        "definition": {
+          "goal": "Order lookup",
+          "plan_id": "orders",
+          "schema_version": 2,
+          "tasks": [
+            {
+              "acceptance": [
+                "Result matches input"
+              ],
+              "check_policy": {
+                "required_checks": [
+                  "unit"
+                ],
+                "reviewer": "qa-001"
+              },
+              "dependency_packet": true,
+              "goal": "Return the order result",
+              "map_inputs": [],
+              "outputs": [
+                {
+                  "id": "source",
+                  "kind": "source",
+                  "paths": [
+                    "order.py"
+                  ],
+                  "version": 1
+                }
+              ],
+              "plan_id": "orders",
+              "prerequisites": [],
+              "repository": "repo",
+              "resources": [],
+              "workdir": "/fixture/hx",
+              "write_paths": [
+                "order.py"
+              ],
+              "write_scope": [
+                "order.py"
+              ]
+            }
+          ]
         }
-      ],
-      "dispatched": "2026-09-20T12:00:00Z",
-      "completed": null
-    },
-    {
-      "id": "eng-003",
-      "pod": "engineers",
-      "state": "complete",
-      "outcome": "decision",
-      "goal": "## Goal\nDecide where the seam threshold lives: per model in `config/models.json`, or per agent in\n`config/<id>/harness.json`. Write the recommendation and the losing option's cost.\n",
-      "addenda": [],
-      "dispatched": "2026-09-20T10:30:00Z",
-      "completed": "2026-09-20T12:47:31Z"
+      }
     }
-  ]
+  ],
+  "tasks": [
+    {
+      "task_id": "orders.work",
+      "revision": 1,
+      "parent_id": null,
+      "payload": {
+        "acceptance": [
+          "Result matches input"
+        ],
+        "check_policy": {
+          "required_checks": [
+            "unit"
+          ],
+          "reviewer": "qa-001"
+        },
+        "dependency_packet": true,
+        "goal": "Return the order result",
+        "map_inputs": [],
+        "outputs": [
+          {
+            "id": "source",
+            "kind": "source",
+            "paths": [
+              "order.py"
+            ],
+            "version": 1
+          }
+        ],
+        "plan_id": "orders",
+        "prerequisites": [],
+        "repository": "repo",
+        "resources": [],
+        "workdir": "/fixture/hx",
+        "write_paths": [
+          "order.py"
+        ],
+        "write_scope": [
+          "order.py"
+        ]
+      },
+      "created_at": 1.0,
+      "status": "implementing",
+      "active_run_id": "run-1",
+      "worker_id": "be-001",
+      "completion": null,
+      "binding": null
+    }
+  ],
+  "truncated": false
 }

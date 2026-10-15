@@ -1,12 +1,6 @@
-"""`hx flush <id>` — wait until the Companion has caught up (spec 08, 10).
+"""Signal or wait for the Partner's orchestration companion.
 
-Signal, then block until every stream's state `seq` equals its log head. No timeout: the
-remaining blocking callers — `hx complete` and `hx flush` itself, both deliberate acts at a
-known-quiet point — need the step state to be current before they compose or write a digest,
-and a flush that gave up early would hand the agent a context file missing its most recent
-work. The automatic paths never block: the `stop`-hook seam signals, checks readiness, and
-defers with a watcher record when the take is not ready, and `precompact` signals and
-returns.
+Workers drain durable observations through their native run controller.
 """
 
 from __future__ import annotations
@@ -23,7 +17,7 @@ POLL_SECONDS = 0.1
 def signal(root: Path, item_id: str, *, env=None) -> list[str]:
     """Wake the Companion for every stream that still has new records (spec 10)."""
     from . import companion as companion_mod
-
+    companion_mod.require_partner(item_id)
     return companion_mod.wake_due(root, item_id, force=True, env=env)
 
 
@@ -34,7 +28,8 @@ def flush(root: Path, item_id: str, *, env=None, wait: bool = True) -> bool:
     loop only when there is none, which is the case in every test that does not start one and
     in an instance whose Companion has not been launched yet.
     """
-    from .companion import is_caught_up
+    from .companion import is_caught_up, require_partner
+    require_partner(item_id)
 
     signal(root, item_id, env=env)
     if not wait or is_caught_up(root, item_id):
@@ -63,6 +58,8 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--no-wait", action="store_true", help="signal without blocking")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.id != "partner":
+        parser.error("worker capture drains through its native run")
     caught_up = flush(root, args.id, env=env, wait=not args.no_wait)
     print(f"HX-FLUSH {args.id} {'ok' if caught_up else 'no-companion'}")
     return 0

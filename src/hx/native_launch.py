@@ -19,6 +19,11 @@ from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
 from .ids import is_id
 
+INITIAL_INPUT_LIMIT = 8000
+# Pending startup evidence is addressed explicitly. Reserve its bounded inline
+# observation and capture metadata before installing or starting the native CLI.
+STARTUP_OBSERVATION_RESERVE = 1024
+
 
 def _bytes(path, limit=65536):
     with path.open("rb") as handle:
@@ -61,7 +66,7 @@ def _capsule(root, worker, capsule, configuration, system):
     # rendering one from the instance sources, so what was verified is what is delivered.
     files.atomic_write_text(capsule / "run" / worker / "persona.md", system)
     # The current package supplies adapter code; old installed scripts cannot
-    # silently select legacy hook behavior for a newly prepared assignment.
+    # silently bypass the native hook contract for an admitted assignment.
     shutil.copytree(Path(__file__).parent / "skeleton" / "adapters", capsule / "adapters")
     (capsule / "seed").symlink_to(root / "seed", target_is_directory=True)
     for command, module in (("hx", "hx.cli"), ("hx-hook", "hx.hooks"), ("hx-supervise", "hx.native_supervisor")):
@@ -119,13 +124,21 @@ def prepare(ledger, worker, run_id, request_id, *, env=None, resume_from=None):
             return previous
         # Charge custom system instructions as well as task context. This is a
         # conservative initial-input bound, not full provider request accounting.
-        packet_budget = 8000 - len(rendered["system"].encode())
+        from .native_controller import startup_overhead
+        from .runtime_policy import CONTEXT_BYTES
+        from .token_controls import limits
+        if len(rendered['system'].encode()) > CONTEXT_BYTES:
+            raise ValidationError('required system instructions exceed the runtime context file bound')
+        initial_limit = min(INITIAL_INPUT_LIMIT, limits(root, worker)['threshold'])
+        overhead = startup_overhead(capsule, run_id, launch_id, rendered['system'])
+        packet_budget = min(CONTEXT_BYTES, initial_limit - overhead - STARTUP_OBSERVATION_RESERVE)
         if packet_budget <= 0:
             raise ValidationError("required system instructions exhaust the initial context budget")
         payload = {"worker_id": worker, "capsule": str(capsule), "manifest": manifest["manifest_path"], 'workdir': task['payload']['workdir'],
                    "prompt_version": manifest["version"], "configuration": config_hashes,
+                   "required_files": manifest['required_files'],
                    "instruction_delivery": "prepared", "tool_visibility": "unverified",
-                   "checkpoint_id": None, "initial_input_limit": 8000, "resume_from": resume_from, "resume_workspace": state if resume_from else None}
+                   "checkpoint_id": None, "initial_input_limit": initial_limit, "resume_from": resume_from, "resume_workspace": state if resume_from else None}
         tx._change()
         tx.db.execute("INSERT INTO native_launch_contracts VALUES(?,?,?,?)",
                       (launch_id, run_id, worker, manifest["identity"]["runtime"]))
@@ -143,8 +156,9 @@ def prepare(ledger, worker, run_id, request_id, *, env=None, resume_from=None):
         packet_path = capsule.parent / "task-context.md"
         files.atomic_write_text(packet_path, packet["text"])
         payload.update(checkpoint_id=packet["checkpoint_id"], packet_path=str(packet_path),
+                       required_files=manifest['required_files'] + packet['required_files'],
                        packet_hash=packet["packet_hash"],
-                       charged_initial_tokens=packet["charged_tokens"] + len(rendered["system"].encode()))
+                       charged_initial_tokens=packet["charged_tokens"] + overhead)
         with ledger.transaction() as tx:
             unit_execution._run(tx, run_id)
             tx._change()
@@ -219,6 +233,8 @@ def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
     if unit_execution._prerequisites(tx, task, admission["workspace"]) != admission["prerequisites"]:
         raise Conflict("native launch prerequisite proof changed")
     packet = context_packets._read(tx, payload["checkpoint_id"], run_id)
+    if payload['required_files'] != manifest['required_files'] + packet['required_files']:
+        raise Conflict('native launch required material references changed')
     if packet["packet_hash"] != payload["packet_hash"] or _bytes(Path(payload["packet_path"]), 262144) != packet["text"].encode():
         raise Conflict("native launch context packet changed")
     cursors, pending = context_packets._pending(tx, run_id)

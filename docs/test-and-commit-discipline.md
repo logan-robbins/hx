@@ -20,7 +20,7 @@ Rules:
 
 - A task is not done when its unit tests pass if its tier table row requires
   more. `hx complete` runs the declared checks; the plan must declare the
-  tier-appropriate obligations. For version-2 packets the harness worker binds exact
+  tier-appropriate obligations. The harness worker binds exact
   checks and coverage before editing; an independent configured reviewer approves
   adequacy. The Partner schedules dependencies and does not author test procedures.
 - Full-suite green (`tools/milestone-check.sh` with no lane, the CI form) is
@@ -81,21 +81,16 @@ project already uses to reason about itself:
   (its behaviours, interfaces, and checks) sized so one assignment can own
   it and one commit can change it.
 
-## Stay current with dev
+## Preserve admitted source identity
 
-Workers pull from `dev` (or the repo's principal branch) frequently —
-at assignment start, before each new behaviour unit, and before sign-off.
-A long-lived branch that drifts from dev converts small reviews into
-archaeology and makes the granularity gate measure other people's work.
-The gate's base is the merge-base with `dev` first, then `main`: pulling
-often keeps that base close, so what sign-off measures is the unit's own
-change. Conflicts are resolved in small pulls by the worker, never in one
-large merge at the end.
+Prepare current source and resolve integration changes before admission. After admission,
+retain the exact branch/worktree and source boundary used by the approved worker binding.
+Do not pull or rebase newer source underneath active work. Changed dependencies require a
+stopped/revised assignment and current proof. Commit bounded changes within frozen ownership.
 
-Fixed post-merge/pre-deploy validation is a different source boundary: it retains the
-named candidate while main advances. Do not pull into that snapshot or restart it merely
-because another change landed. Complete scoped input identities preserve unrelated proof;
-an unknown closure retains the broad repository fingerprint.
+Fixed post-merge/pre-deploy validation retains its named candidate while main advances.
+Complete scoped input identities preserve unrelated proof; unknown closures use the broad
+repository fingerprint. The Partner schedules revised work when inputs change.
 
 ## Push, test, sign-off — more frequently
 
@@ -118,33 +113,26 @@ should land near the median and below soft; above hard is a split candidate.
 This is normal practice made explicit — the same distribution a reviewer
 already feels — not a universal quota imported from outside.
 
-## The discovery-and-orient phase
+## Dependency exploration and current evidence
 
-How hard it is for a model to get started is a goal-quality signal. Before
-dispatch, `hx discipline orient` estimates orientation load from the files
-the goal names, the candidate files the code index finds for its terms, and
-goal size. During work, the observable symptoms of too broad a goal are:
-many searches before the first edit, reads across many modules before any
-write, and clarifying questions that a brief should have answered. Broad
-orientation is the Partner's decomposition failure, not worker slowness:
-split the goal or attach a brief naming starting files and symbols.
+Every directive requires current graph/dependency exploration and search/reuse before
+construction. `hx discipline orient --goal FILE` can estimate candidate orientation load;
+it does not choose packet count or prove semantic understanding. Boundaries follow actual
+behavior, dependencies, shared contracts, ownership/resources, and useful parallelism.
+Resolve missing starting facts through targeted graph/map retrieval or discovery packets.
 
-## Measuring compliance
+## Inspecting recorded proof
 
-The harness can observe, per assignment: whether an index/map search
-preceded the first edit, lines written before the first test run, which
-test tiers ran before completion, scan-bound violations, and commit sizes.
-These belong in `hx metrics` as discipline signals beside the existing seam
-waste metrics. A repeated violation is a learnings proposal
-(`hx learn propose`), not a prompt reminder.
+`hx metrics [IDENTITY]` aggregates ledger packet/run, lease, receipt, checkpoint, milestone,
+and delivery state. `hx show ID --json` reads current task/run/worker/plan detail; immutable
+checkpoint/event references retain their exact scope. These views do not manufacture live
+readiness or prove that a search established a semantic relationship.
 
-Three of these signals are now commands. `hx discipline pull --repo . --expect fresh` is the
-check form of "stay current with dev": it reads local refs (fetch first), reports how many
-commits the principal branch has that `HEAD` lacks and which files they touched, and exits 3
-while that count is above zero, so a worker's definition of done (every engineer persona's
-standard set carries it) or a worker before sign-off can carry the rule as a lint. `hx discipline orient --post-seam ID` reports, after the last seam,
-the searches before the first edit, the distinct modules read before the first write and the
-`hx task` reprints; the same three numbers sit on every seam of `hx metrics <id>`, beside
-`reads_of_context_file` and `reads_of_working_set`. `hx metrics --commands` counts which `hx`
-commands each agent actually ran since its dispatch; it is the evidence for adding a command
-to a worker's list and for removing one.
+Use `hx plan ready` to revalidate assignment prerequisites and `hx change status` for current
+delivery proof. Evidence of source identity, approved check binding, receipts, source/output
+coverage, and managed drain supports the named boundary only. Pending or skipped broader
+checks remain explicit. A repeated supported mistake can become a reviewed learning rule;
+`hx learn propose` is not a replacement for repairing the implementation or proof.
+
+Partner observation can inspect its own context reset activity. Worker continuations use
+immutable ledger checkpoints and events, with no per-seam file-stream metric authority.

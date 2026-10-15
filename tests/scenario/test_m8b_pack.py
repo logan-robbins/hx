@@ -1,206 +1,33 @@
-"""The m8b scenario pack: a `decision` nobody scripted.
-
-m8 tells its worker to stop and ask, because a test pack needs one deterministic path through
-that outcome. m8b does not mention a decision anywhere. Its one goal paragraph contradicts
-itself in a single documented way and says nothing about which half wins, so a worker that
-writes its own definition of done has to either notice or quietly drop one half.
-
-What this module can assert is that the pack stays *set up* that way: that both halves of the
-contradiction are still in the goal paragraph, that nothing in it resolves either side, that
-nothing in the pack names the `decision` outcome at the worker, and that the four expected
-boards are what `hx board` really prints. Whether the ambiguity is actually noticed is M8's to
-find out with a live agent — that is the experiment, and it cannot be unit-tested.
-"""
-
-from __future__ import annotations
-
-import pathlib
-import re
-import shutil
-import sys
-
-import pytest
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
-
-import packlib  # noqa: E402
-
-PACK = pathlib.Path(__file__).resolve().parent / "m8b"
-GOALS = PACK / "goals"
-EXPECTED = PACK / "expected"
-CONFIG = PACK / "config"
-FIXTURE_REPO = pathlib.Path(__file__).resolve().parent / "m8" / "repo"
-
-WORKER = "eng-001"
-POD = "engineers"
-
-#: The six observation points of README.md's table.
-STEPS: list[tuple[str, dict[str, packlib.State]]] = [
-    ("01-eng-001-working", {WORKER: ("working", None, True)}),
-    ("02-eng-001-decision", {WORKER: ("complete", "decision", False)}),
-    ("03-eng-001-resumed", {WORKER: ("working", None, True)}),
-    ("04-eng-001-done", {WORKER: ("complete", "done", False)}),
-]
-
-ORDER_FILES = [GOALS / f"{WORKER}.md"]
+"""A correction changes packet revision after the active run relinquishes ownership."""
+import copy
+from hx import board, planning, progress, show, unit_execution as units
+from core.test_appmap import mapped
+from core.test_map_updates import active
+from core.test_unit_execution import fleet
+from core.test_planning import unit, plan
 
 
-def _ids(paths):
-    return [str(p.relative_to(PACK)) for p in paths]
-
-
-def _purpose() -> str:
-    """The worker's `purpose`: the per-id paragraph its rendered persona carries."""
-    import json
-
-    return json.loads((CONFIG / WORKER / "harness.json").read_text())["purpose"]
-
-
-def test_the_pack_config_is_a_worker_the_partner_would_write(tmp_path):
-    packlib.assert_pack_config(CONFIG / WORKER / "harness.json", tmp_path)
-
-
-# ------------------------------------------------------------------ the pack exists
-
-
-def test_the_pack_ships_what_the_readme_names():
-    assert (PACK / "README.md").is_file()
-    assert (PACK / "chat.md").is_file()
-    assert sorted(p.name for p in GOALS.iterdir()) == [
-        "eng-001.addendum.md", "eng-001.md",
-    ], "the Partner has no goal file of its own (spec 12, D25)"
-    assert sorted(p.name for p in CONFIG.iterdir()) == [WORKER]
-
-
-def test_it_reuses_m8s_fixture_repo_rather_than_shipping_a_second_one():
-    assert not (PACK / "repo").exists(), "m8b uses ../m8/repo; a second copy would drift"
-    assert FIXTURE_REPO.is_dir()
-    assert "--json" not in (FIXTURE_REPO / "greet.py").read_text(), (
-        "the fixture already has --json, so this goal would pass on arrival"
-    )
-
-
-def test_it_is_smaller_than_m8():
-    """The point of a second pack is that it is cheap enough to run on every prompt change."""
-    m8_steps = len(list((pathlib.Path(__file__).resolve().parent / "m8" / "expected").glob("*.txt")))
-    assert len(STEPS) < m8_steps, (len(STEPS), m8_steps)
-    assert len(list(CONFIG.iterdir())) == 1, "one worker, no `after` chain"
-
-
-# ---------------------------------------------------------------------- the goals
-
-
-@pytest.mark.parametrize("path", ORDER_FILES, ids=_ids(ORDER_FILES))
-def test_goal_is_a_paragraph_dispatch_accepts(path):
-    packlib.assert_goal_is_a_paragraph(path)
-
-
-def test_addendum_is_prose():
-    packlib.assert_addendum_is_prose(GOALS / f"{WORKER}.addendum.md")
-
-
-# ------------------------------------------------------------------ the ambiguity
-
-
-def test_both_halves_of_the_contradiction_are_still_there():
-    """The whole scenario is this one pair of sentences, in the one paragraph a goal is. If a
-    tidy-up removes either, m8b silently becomes an ordinary goal that anyone can finish."""
-    from hx import goals
-
-    goal = goals.parse_goal(GOALS / f"{WORKER}.md").goal
-    assert "and nothing else on stdout" in goal, "the goal no longer demands JSON and nothing else"
-    assert "still prints the human-readable greeting line first" in goal, (
-        "the goal no longer demands the greeting line first"
-    )
-
-
-def test_the_goal_does_not_resolve_the_ambiguity():
-    """Nothing may mark one half as the one that wins: a goal that did would let the worker
-    write a definition of done that drops the other half and finish without deciding."""
-    from hx import goals
-
-    goal = goals.parse_goal(GOALS / f"{WORKER}.md").goal
-    for resolving in ("unless", "takes precedence", "instead", "stderr", "except", "but not"):
-        assert resolving not in goal, f"{resolving!r} in the goal picks a reading"
-
-
-def test_nothing_in_the_pack_tells_the_worker_to_reach_decision():
-    """m8's goal says `hx complete decision` in as many words. m8b must not, anywhere the
-    worker can see — not in the goal, and not in its persona."""
-    worker_visible = {
-        GOALS / f"{WORKER}.md": (GOALS / f"{WORKER}.md").read_text(),
-        CONFIG / WORKER / "harness.json": _purpose(),
-    }
-    for path, text in worker_visible.items():
-        assert "hx complete decision" not in text, f"{path} instructs the decision outcome"
-        assert "complete decision" not in text, f"{path} instructs the decision outcome"
-
-
-def test_the_persona_teaches_the_behaviour_without_naming_the_answer():
-    """The behaviour under test lives in the persona and the hx-worker skill, so the persona
-    has to say what to do with a self-contradicting goal — in general terms, not about this
-    goal."""
-    text = _purpose()
-    assert "## Open decision" in text
-    assert "--json" not in text, "the persona must not know about this particular goal"
-    assert "greeting" not in text
-
-
-def test_the_addendum_withdraws_the_losing_half():
-    """The worker's `## Definition of done` is what it proves in `## Evidence`. An addendum that
-    answers the question without retracting the other half of the goal leaves the worker unable
-    to satisfy its own item."""
-    text = (GOALS / f"{WORKER}.addendum.md").read_text()
-    assert "withdraw" in text.lower(), text
-    assert "greeting line first" in text and "## Definition of done" in text
-    assert "JSON only" in text
-
-
-# --------------------------------------------------------------- README and expected
-
-
-def readme_steps() -> list[str]:
-    text = (PACK / "README.md").read_text()
-    return re.findall(r"`expected/([0-9]{2}-[a-z0-9-]+)\.txt`", text)
-
-
-def test_the_readme_and_expected_cover_the_same_steps():
-    named = readme_steps()
-    shipped = sorted(p.stem for p in EXPECTED.glob("*.txt"))
-    assert named, "the README names no expected/ file"
-    assert sorted(set(named)) == shipped, (sorted(set(named)), shipped)
-    assert [s for s, _ in STEPS] == shipped, "this module's STEPS has drifted from expected/"
-
-
-def test_the_readme_documents_the_two_ways_to_pass_and_the_one_way_to_fail():
-    text = (PACK / "README.md").read_text()
-    assert "before dispatching" in text, "the early-catch route is not documented"
-    assert "silent" in text.lower(), "the failure mode is not named"
-    for transition in ("idle → working", "working → complete", "complete → working"):
-        assert transition in text, f"the README does not show the {transition} transition"
-
-
-@pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
-def test_expected_board_is_what_hx_board_actually_prints(stem, states, tmp_path):
-    if shutil.which("tmux") is None:
-        pytest.skip("tmux is not on PATH; `hx board` cannot tell which sessions are live")
-
-    root = tmp_path / "hx"
-    packlib.build_instance(root, states, worker_pod=POD, pack_config=CONFIG)
-    lines, stderr = packlib.real_board(root, states)
-    expected = (EXPECTED / f"{stem}.txt").read_text().strip().splitlines()
-    assert lines == expected, (
-        f"{stem}: `hx board` printed\n  " + "\n  ".join(lines)
-        + "\nexpected/ holds\n  " + "\n  ".join(expected)
-        + f"\n\nstderr:\n{stderr}"
-    )
-
-
-@pytest.mark.parametrize("stem,states", STEPS, ids=[s for s, _ in STEPS])
-def test_expected_board_agrees_with_the_step(stem, states):
-    packlib.assert_expected_board(EXPECTED, stem, states, worker_pod=POD)
-
-
-def test_no_cut_feature_survives_in_the_steps():
-    packlib.assert_no_cut_features(STEPS)
+def test_blocker_is_progress_then_correction_is_a_new_packet_revision(fleet):
+    store,repo=fleet[:2]
+    definition=plan(fleet,[unit(repo,'behavior')])
+    planning.apply(store,definition)
+    run=units.assign(store,'behavior',1,'be-001')['run_id']
+    progress.update(store,{'task_id':'behavior','run_id':run,'expected_revision':0,'phase':'blocked',
+        'step_updates':[],'next':'Resolve the conflicting acceptance statement.',
+        'blocker':'The requested outputs conflict.','deliverables':[],'evidence_ids':[]},worker_id='be-001')
+    blocked=board.collect(store.root)
+    assert blocked['tasks'][0]['status']=='blocked'
+    assert blocked['progress'][0]['payload']['blocker']=='The requested outputs conflict.'
+    assert blocked['tasks'][0]['completion'] is None
+    units.stop(store,run)
+    revised=copy.deepcopy(definition)
+    revised['expected_revision']=1
+    revised['tasks'][0]['expected_revision']=1
+    revised['tasks'][0]['behavior']='Return the clarified behavior.'
+    planning.apply(store,revised)
+    next_run=units.assign(store,'behavior',2,'be-001')['run_id']
+    detail=show.collect(store.root,'behavior')
+    assert detail['tasks'][0]['revision']==2
+    assert detail['tasks'][0]['active_run_id']==next_run
+    frozen={r['run_id']:r['assignment']['goal'] for r in detail['runs']}
+    assert frozen[run]!=frozen[next_run]

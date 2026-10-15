@@ -10,18 +10,16 @@ second narrative summary when the companion state already covers the completed t
 
 Create one observable behavior or invariant per unit, including its implementation,
 fixtures, and tests. Preserve the parent goal and constraints. Name exact prerequisite
-output IDs/versions, allowed writes, and executable acceptance. Real dependencies remain
+output IDs/versions, allowed writes, and observable acceptance obligations. Workers bind executable checks for independent approval. Real dependencies remain
 dependencies: fixtures can prove local behavior but cannot replace integration evidence.
 
 Validate and apply the task graph with hx plan. Read its waves, level widths, and max
-parallelism: dispatch no more concurrent units than worktree-disjoint groups, free leases,
-and host capacity allow. Heed interface warnings: when a consumer builds on a source output,
+parallelism: schedule every justified ready unit within worktree-disjoint groups, free leases,
+resources, and host capacity. Request size does not determine packet count. Heed interface warnings: when a consumer builds on a source output,
 split an interface or stub unit ahead of it so other workers and Partners can search,
-discover, and stub against the published contract before the implementation lands. Before
-dispatch, run hx discipline orient on broad goals and split them instead of expecting a
-worker to discover its way through an oversized assignment. Assignment reserves a ledger run; native
+discover, and stub against the published contract before the implementation lands. Before admission, explore actual dependencies and search for existing capabilities. Assignment reserves a ledger run; native
 launch requires the controller's installed prompt, context, and capability gates. Never infer
-that a worker started from a reservation alone. Avoid unnecessary fan-out and repeated searches.
+that a worker started from a reservation alone. Maximize useful parallel work and reuse already established facts.
 
 Use the runtime's completion and readiness results to unlock dependants.
 Use `hx loop --status` for current owners, completion and changed inputs; it reads compact

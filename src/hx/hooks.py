@@ -1,19 +1,10 @@
-"""`hx-hook` — the hook entrypoint every agent home points at (spec 09).
+"""Route Partner observations and admitted native worker hooks.
 
-`adapters/claude/install.sh` writes `<hook_bin> --id <id> <event>` into
-`run/<id>/home/settings.json` for each hx event. This module is the plumbing they share: read
-the payload from stdin, resolve the root, dispatch, and — above all — never take a tool call
-down with it.
-
-**Legacy failure policy.** A hook that crashes must not break the agent. A malformed payload, a
-missing file, an unexpected exception: logged to `logs/<id>/hook-errors.log` and **allowed**
-(exit 0). The one hook that enforces anything is the Partner's `guard` (`PreToolUse`,
-`hook_guard.py`): it keeps this policy for its own crashes, but a rule it matches is never
-allowed — it exits 2 with its reason on stderr (spec 09.1). No timeouts, no network.
-
-Planned request and tool admission explicitly deny on errors. Observation-only
-failures retain a capture gap. Native hook crashes/timeouts outside this entrypoint
-can still fail open in the host; hooks alone cannot prove process quiescence.
+Partner observation failures are logged and return without blocking the turn.
+Its configured tool guard may explicitly deny an operation. Worker startup,
+request and tool admission errors deny execution; observation failures retain a
+capture gap instead of inventing successful evidence. Native host crashes and
+hook timeouts still require process reconciliation before ownership is released.
 """
 
 from __future__ import annotations
@@ -170,7 +161,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
             if not launch_id or not adapter:
                 raise HxError("planned hooks require the original launch identity and adapter")
             if event == "companion-stop":
-                raise HxError("planned executor capture cannot run a legacy companion handler")
+                raise HxError("native executor capture cannot run the Partner orchestration companion handler")
             child = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
             if child and not (payload.get("session_id") or payload.get("sessionId") or payload.get("transcript_path")):
                 from .continuity_store import digest
@@ -205,8 +196,10 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                     token_controls.observe(ledger, launch, event, payload)
             return 0
 
-        # These extra observation routes are consumed by the planned runtime.
-        # Legacy configurations continue to use their existing event handlers.
+        if item_id != "partner":
+            raise HxError("worker hooks require an admitted run and native launch identity")
+
+        # Partner observations maintain its orchestration context.
         if event in {"request", "tool-start", "message", "stop-failure", "stop-cancelled", "session-end", "model-response"}:
             return 0
         if event == "log-failure":
@@ -242,7 +235,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 except Exception:
                     pass  # Storage failure is still reported to the native hook.
         print(f"hx-hook: {event}: {detail}", file=sys.stderr)
-        return 2 if event in {"request", "tool-start"} and env.get("HX_CONTINUITY_RUN") else 0
+        return 2 if event in {"request", "tool-start", "context"} and item_id != "partner" else 0
 
 
 if __name__ == "__main__":

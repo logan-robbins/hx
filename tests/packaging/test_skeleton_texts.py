@@ -1,648 +1,97 @@
-"""The shipped texts, checked against the spec constraints they have to satisfy.
-
-These are prompts and templates: nothing imports them, so nothing else in the suite notices
-when one drifts out of the shape the spec (and `hx dispatch`) requires of it.
-
-Constraints checked here, with the section each comes from:
-
-* goal-shaped examples: `## Goal`, `## Definition of done`, and a non-empty fenced ``bash``
-  block under `### Checks` — spec 06, `CONTRACTS.md` "Goals", and what `hx dispatch` refuses
-* `templates/work-item.md`: the frontmatter keys and every body section of spec 06
-* every `AGENTS.md`: a persona, and no `## UPDATES BELOW ONLY` — the memory header is retired;
-  a lesson is a learnings proposal (docs/learnings.md)
-* both `SKILL.md` files: valid frontmatter with `name` and `description` — spec 17.5 and
-  code.claude.com/docs/en/skills
-
-The unit templates and the tested-versions list moved into the wheel at
-`src/hx/packaging/`; they are covered by `test_units.py`, which renders them first.
-"""
-
+"""Packaged instructions and templates describe the single packet product."""
 import json
-import pathlib
-import re
-
+from pathlib import Path
 import pytest
-
-REPO = pathlib.Path(__file__).resolve().parents[2]
-SKELETON = REPO / "src" / "hx" / "skeleton"
-SKILLS = REPO / "src" / "hx" / "skills"
-
-# Goal-shaped files: everything `hx dispatch` would have to accept. The work-item template
-# embeds a goal rather than being one, so it is checked separately below.
-GOAL_EXAMPLES = [SKELETON / "templates" / "goal.md"]
-
-#: Every skill that ships, for the checks that apply to any skill.
-SKILL_FILES = [
-    SKILLS / "hx-companion" / "SKILL.md",
-    SKILLS / "hx-conversion" / "SKILL.md",
-    SKILLS / "hx-memory" / "SKILL.md",
-    SKILLS / "hx-partner" / "SKILL.md",
-    SKILLS / "hx-setup" / "SKILL.md",
-    SKILLS / "hx-signoff" / "SKILL.md",
-    SKILLS / "hx-worker" / "SKILL.md",
-]
-
-#: The skills a *HarnessAgent* loads. The Companion is not one: it has no `/goal`, takes no
-#: seams, and never sees spec 09.1's context line — so the boundary-read checks below are
-#: about these two and would be meaningless against hx-companion.
-AGENT_SKILL_FILES = [
-    SKILLS / "hx-partner" / "SKILL.md",
-    SKILLS / "hx-worker" / "SKILL.md",
-]
-
-CONTRACTS = REPO / "CONTRACTS.md"
-
-MUTABLE_HEADER = "## UPDATES BELOW ONLY"
-
-
-def _ids(paths):
-    return [str(p.relative_to(REPO)) for p in paths]
-
-
-# --------------------------------------------------------------------------- goals
-
-
-@pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_is_what_dispatch_accepts(path):
-    """CONTRACTS.md "Goals": one `## Goal` section. The definition of done is the worker's
-    and `hx complete done` requires its `## Evidence`, so neither appears in a goal."""
-    from hx.goals import parse_goal
-
-    text = path.read_text()
-    assert re.search(r"^## Goal$", text, re.MULTILINE), f"{path}: no `## Goal` section"
-    assert "## Definition of done" not in text, f"{path}: a goal carries no definition of done"
-    assert "### Checks" not in text, f"{path}: a goal carries no checks"
-    assert parse_goal(path).goal.strip()
-
-
-@pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_is_one_paragraph(path):
-    from hx.goals import parse_goal
-
-    paragraphs = [p for p in re.split(r"\n\s*\n", parse_goal(path).goal.strip()) if p.strip()]
-    assert len(paragraphs) == 1, f"{path}: {len(paragraphs)} paragraphs; the example is one"
-
-
-@pytest.mark.parametrize("path", GOAL_EXAMPLES, ids=_ids(GOAL_EXAMPLES))
-def test_goal_example_has_only_the_goal_section(path):
-    headings = re.findall(r"^#{1,6} (.+)$", path.read_text(), re.MULTILINE)
-    assert headings == ["Goal"], f"{path}: {headings}"
-
-
-def test_goal_example_has_no_frontmatter():
-    """Spec 14 D25 cut `after` and with it the only reason a goal file had frontmatter. An
-    example that still carried some would teach the Partner to write a field nothing reads."""
-    text = (SKELETON / "templates" / "goal.md").read_text()
-    assert not text.startswith("---"), "templates/goal.md still opens with frontmatter"
-    assert "after:" not in text, "templates/goal.md still names `after`"
-
-
-def test_addendum_example_is_prose_that_lands_under_the_goal_heading():
-    # `hx resume` appends the file verbatim beneath `## Goal` as `## Goal addendum <ts>`
-    # (spec 06, 08). A `##` heading in the addendum would break the work item's structure.
-    text = (SKELETON / "templates" / "addendum.md").read_text()
-    assert text.strip(), "the addendum example is empty"
-    assert not re.search(r"^## ", text, re.MULTILINE), (
-        "the addendum must not introduce `##` headings: it is appended under `## Goal`"
-    )
-    assert not text.startswith("---\n"), "an addendum carries no frontmatter"
-
-
-# ----------------------------------------------------------------- work-item template
-
-
-def test_work_item_template_frontmatter_keys():
-    text = (SKELETON / "templates" / "work-item.md").read_text()
-    assert text.startswith("---\n"), "the template must open with frontmatter"
-    front = text.split("---\n", 2)[1]
-    assert "after:" not in front, "the work item still carries `after` (cut, spec 14 D25)"
-    for key in ("id:", "pod:", "outcome:", "dispatched:"):
-        assert re.search(rf"^{re.escape(key)}", front, re.MULTILINE), (
-            f"work-item.md frontmatter is missing `{key}`"
-        )
-
-
-def test_work_item_template_has_every_section_spec_06_names():
-    text = (SKELETON / "templates" / "work-item.md").read_text()
-    expected = [
-        "Definition of done",  # the worker's, before its first edit
-        "Orientation",  # the explorer's cited starting points
-        "Standing instructions",
-        "Tasks",
-        "Status",  # hx's half of session memory, rewritten at every boundary
-        "Evidence",  # what `hx complete done` requires
-        "Deliverables",
-        "Commands",
-        "Open decision",
-        "Digest",
-    ]
-    headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
-    assert headings == expected, f"work-item.md sections {headings} != {expected}"
-
-
-def test_work_item_template_standing_instructions_use_current_task_state():
-    """Current operator policy replaces historical personal-memory instructions."""
-    text = (SKELETON / "templates" / "work-item.md").read_text()
-    for fragment in (
-        "Keep `## Tasks` current",
-        "Commit coherent completed changes",
-        "Read only missing or changed source ranges",
-        "dependencies, write ownership and available resources",
-        "Do not write personal worker memory",
-        "Write `## Definition of done` before your first edit",
-        "`hx complete done` requires a clean workdir, no open subagent, and a `## Evidence` line",
-        "Your last action is `hx complete <outcome>`",
-    ):
-        assert fragment in text, f"work-item.md standing instructions lost: {fragment!r}"
-
-
-def test_work_item_template_placeholders_are_rendered_by_dispatch():
-    text = (SKELETON / "templates" / "work-item.md").read_text()
-    found = set(re.findall(r"\{\{(\w+)\}\}", text))
-    assert found == {"id", "pod", "dispatched", "goal"}, found
-
-
-# ----------------------------------------------------------------------- AGENTS.md
-
-
-def agents_files() -> list[pathlib.Path]:
-    return sorted(SKELETON.rglob("AGENTS.md"))
-
-
-def test_the_skeleton_ships_no_agents_files():
-    """Personas are `personas/<role>.md`; nothing per id and no `AGENTS.md` anywhere."""
-    assert agents_files() == [], [str(p.relative_to(SKELETON)) for p in agents_files()]
-
-
-def persona_files() -> list[pathlib.Path]:
-    return sorted((SKELETON / "personas").glob("*.md"))
-
-
-@pytest.mark.parametrize("path", persona_files(), ids=_ids(persona_files()))
-def test_persona_file_carries_no_memory_header(path):
-    """The whole file is persona: the `context` hook prints it whole. There is no memory below
-    a header any more — a lesson is a learnings proposal."""
-    lines = path.read_text().splitlines()
-    hits = [n for n, line in enumerate(lines, 1) if line.strip() == MUTABLE_HEADER]
-    assert hits == [], f"{path}: the retired `{MUTABLE_HEADER}` header on line(s) {hits}"
-    assert path.read_text().strip(), f"{path}: empty, so the role would have no persona"
-
-
-def test_every_shipped_persona_is_persona_only():
-    """`personas/<role>.md` is what the `context` hook hands every agent of the role, whole.
-    Nothing in one is about any single agent, and no role ships rules of its own."""
-    personas = sorted((SKELETON / "personas").iterdir())
-    assert [p.name for p in personas] == [
-        "backend-engineer.md", "frontend-engineer.md", "partner.md", "qa-engineer.md",
-        "release-engineer.md",
-    ], [p.name for p in personas]
-    for path in personas:
-        assert path.is_file(), f"{path.name} is not a file"
-        text = path.read_text()
-        assert MUTABLE_HEADER not in text, f"{path}: carries the retired memory header"
-        assert "below the header" not in text, f"{path}: still points at a memory section"
-
-
-def test_the_partner_persona_has_one_copy():
-    """`personas/partner.md` is the Partner's persona; nothing under `config/partner/` repeats it."""
-    assert (SKELETON / "personas" / "partner.md").is_file()
-    assert not (SKELETON / "config" / "partner" / "AGENTS.md").exists()
-
-
-def test_a_fresh_instance_installs_only_the_partner():
-    """CONTRACTS.md "Fresh instance contents" / spec 17.2 step 2: `hx install` creates
-    config/partner/ and no worker. The example worker ships as templates/worker/ for the
-    Partner to copy, so `hx doctor` and `hx board` see only `partner` in a fresh root."""
-    id_dirs = sorted(p.name for p in (SKELETON / "config").iterdir() if p.is_dir())
-    assert id_dirs == ["partner"], f"config/ installs worker ids: {id_dirs}"
-
-
-def test_every_config_id_dir_has_subagents_and_harness_json_only():
-    config = SKELETON / "config"
-    id_dirs = sorted(p for p in config.iterdir() if p.is_dir())
-    assert id_dirs, "no config/<id>/ directories in the skeleton"
-    for d in id_dirs:
-        assert sorted(p.name for p in d.iterdir()) == ["SUBAGENTS.md", "harness.json"], \
-            f"{d.relative_to(REPO)}: {sorted(p.name for p in d.iterdir())}"
-
-
-@pytest.mark.parametrize("kind", ["worker", "contributor"])
-def test_worker_template_is_a_config_and_the_shared_subagents_text(kind):
-    """A worker is its `harness.json`; its persona is the role's and its identity line carries
-    its `purpose`, and SUBAGENTS.md is shared and rendered at delivery. No per-id AGENTS.md."""
-    template = SKELETON / "templates" / kind
-    assert sorted(p.name for p in template.iterdir()) == [
-        "SUBAGENTS.md", "harness.json",
-    ], sorted(p.name for p in template.iterdir())
-
-
-def test_worker_template_is_templated_on_id_and_pod():
-    """The Partner copies this to config/<id>/ and substitutes. A leftover placeholder must
-    fail validation loudly rather than install a worker named `{{id}}`."""
-    worker = SKELETON / "templates" / "worker"
-    for name in ("SUBAGENTS.md", "harness.json"):
-        text = (worker / name).read_text()
-        assert "{{id}}" in text, f"templates/worker/{name}: nothing templated on the id"
-    cfg = json.loads((worker / "harness.json").read_text())
-    assert cfg["id"] == "{{id}}" and cfg["pod"] == "{{pod}}", cfg
-    # Spec 14 D25: hx manages no git, so there is no branch, and the workdir is an absolute
-    # path the Partner chooses — a placeholder here, so an unedited copy fails loudly.
-    assert "branch" not in cfg, "hx creates no branch; the template must not name one"
-    assert cfg["workdir"] == "{{workdir}}", cfg["workdir"]
-    role_file = SKELETON / "companion" / "roles" / f"{cfg['role']}.md"
-    assert role_file.is_file(), f"templates/worker: no role file for {cfg['role']}"
-
-
-def test_hx_partner_skill_tells_the_partner_how_to_create_a_worker():
-    text = (SKILLS / "hx-partner" / "SKILL.md").read_text()
-    assert "templates/worker/" in text, (
-        "the Partner is the only one who creates workers; the skill must name the template"
-    )
-    assert "hx launch" in text
-
-
-@pytest.mark.parametrize(
-    "path",
-    sorted((SKELETON / "config").rglob("harness.json")),
-    ids=_ids(sorted((SKELETON / "config").rglob("harness.json"))),
-)
-def test_harness_json_matches_spec_05(path):
-    cfg = json.loads(path.read_text())
-    assert cfg["id"] == path.parent.name, f"{path}: id != directory name"
-    for key in ("id", "pod", "role", "model", "effort", "companion"):
-        assert key in cfg, f"{path}: missing `{key}`"
-    assert cfg["effort"] in ("low", "medium", "high", "xhigh", "max"), cfg["effort"]
-    # Models are always full ids, never aliases, which drift (spec 08).
-    assert "-" in cfg["model"] and not cfg["model"].endswith("-latest"), cfg["model"]
-    comp = cfg["companion"]
-    for key in (
-        "provider", "model", "effort", "batch_records", "cache_ttl",
-        "state_budget_tokens", "seam_min_context_tokens", "seam_min_interval_s",
-    ):
-        assert key in comp, f"{path}: companion is missing `{key}`"
-    # Spec 05: the Partner has no workdir and no branch; a worker has both.
-    if cfg["id"] == "partner":
-        assert cfg["pod"] == "partner" and cfg["role"] == "partner", cfg
-        assert "workdir" not in cfg and "branch" not in cfg, f"{path}: partner has no worktree"
-    else:
-        assert cfg["workdir"] and cfg["branch"], f"{path}: a worker needs workdir and branch"
-    # Every role must have a companion role file (spec 05 validation).
-    role_file = SKELETON / "companion" / "roles" / f"{cfg['role']}.md"
-    assert role_file.is_file(), f"{path}: no {role_file.relative_to(REPO)} for role {cfg['role']}"
-
-
-# -------------------------------------------------------------------------- skills
-
-
-def parse_frontmatter(text: str) -> dict[str, str]:
-    """The subset of YAML a SKILL.md frontmatter uses: `key: value`, one per line.
-
-    Claude Code requires the opening `---` to be the file's very first line, or the whole
-    file is treated as content (code.claude.com/docs/en/skills).
-    """
-    assert text.startswith("---\n"), "frontmatter must start on the file's first line"
-    end = text.index("\n---\n", 3)
-    body = text[4:end + 1]
-    fields: dict[str, str] = {}
-    key = None
-    for line in body.splitlines():
-        if not line.strip():
-            continue
-        m = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)
-        if m:
-            key, value = m.group(1), m.group(2).strip()
-            fields[key] = value
-        else:
-            assert key is not None, f"frontmatter line is not `key: value`: {line!r}"
-            fields[key] += " " + line.strip()
-    return fields
-
-
-@pytest.mark.parametrize("path", SKILL_FILES, ids=_ids(SKILL_FILES))
-def test_skill_has_valid_frontmatter(path):
-    fields = parse_frontmatter(path.read_text())
-    assert fields.get("name"), f"{path}: no `name` in frontmatter"
-    assert fields.get("description"), f"{path}: no `description` in frontmatter"
-    # The name field is the display label; the invocation name is the directory (docs).
-    assert fields["name"] == path.parent.name, (
-        f"{path}: frontmatter name {fields['name']!r} != directory {path.parent.name!r}"
-    )
-    assert re.fullmatch(r"[a-z0-9][a-z0-9-]*", fields["name"]), fields["name"]
-    # description + when_to_use are capped at 1536 characters combined (docs).
-    combined = len(fields["description"]) + len(fields.get("when_to_use", ""))
-    assert combined <= 1536, f"{path}: description is {combined} chars, cap is 1536"
-
-
-@pytest.mark.parametrize("path", SKILL_FILES, ids=_ids(SKILL_FILES))
-def test_skill_body_is_present_and_within_the_recommended_length(path):
-    text = path.read_text()
-    body = text[text.index("\n---\n", 3) + 5:]
-    assert body.strip(), f"{path}: frontmatter but no instructions"
-    assert len(body.splitlines()) <= 500, (
-        f"{path}: {len(body.splitlines())} lines; the docs recommend keeping SKILL.md "
-        f"under 500 lines and moving reference material to sibling files"
-    )
-
-
-def test_the_skills_that_ship_are_the_ones_the_spec_names():
-    # `manifest.json` beside them says who gets each one (TOOL_SKILL_PLAN step 1).
-    assert sorted(p.name for p in SKILLS.iterdir() if p.is_dir() and p.name != "__pycache__") == [
-        "hx-companion", "hx-conversion", "hx-fleet", "hx-memory", "hx-partner", "hx-setup",
-        "hx-signoff", "hx-worker",
-    ], (
-        "spec 17.5 ships hx-worker into a worker home and hx-partner into the Partner's; "
-        "spec 10 adds hx-companion for the Companion's home; hx-fleet is the Partner's manual "
-        "for making and retiring agents, and is the Partner's alone; hx-memory is how either "
-        "kind of HarnessAgent searches the instance's episode store (docs/memory.md); "
-        "hx-setup is for the coding agent or harness that installs hx, and is never copied "
-        "into an agent home; hx-signoff is the release and QA engineers' sign-off loop, and "
-        "hx-conversion is optional, on only where config/hx.json lists it (TOOL_SKILL_PLAN "
-        "step 7)"
-    )
-    assert sorted(p.name for p in SKILLS.iterdir() if p.is_file()) == ["manifest.json"]
-    manifest = json.loads((SKILLS / "manifest.json").read_text())
-    assert manifest["hx-signoff"] == {"audiences": ["worker"],
-                                     "roles": ["release-engineer", "qa-engineer"], "optional": False}
-    assert manifest["hx-conversion"] == {"audiences": ["partner", "worker"], "roles": ["*"],
-                                        "optional": True}
-
-
-def test_the_setup_skill_is_not_installed_into_any_home():
-    """It is read by whoever sets hx up, on the human's machine — never by a HarnessAgent."""
-    install_sh = (SKELETON / "adapters" / "claude" / "install.sh").read_text()
-    assert "hx-setup" not in install_sh
-
-
-def test_the_setup_skill_keeps_the_token_step_the_humans():
-    text = (SKILLS / "hx-setup" / "SKILL.md").read_text()
-    for line in ("claude setup-token", "exit code 4", "never run it for them",
-                 "Never touch the human's own Claude", "hx install --root"):
-        assert line in text, line
-    for cut in ("claude -p ", "hx push", "bare mirror"):
-        assert cut not in text.replace("Use `claude -p`", ""), cut
-
-
-def test_no_smartypants_references_ship_in_hx():
-    """Smartypants lives outside hx: no docs, commands, or skills may name it, so no
-    setup path can send a user or an agent configuring a second product."""
-    surfaces = [
-        REPO / "README.md",
-        REPO / "docs" / "getting-started.md",
-        REPO / "docs" / "operating.md",
-        REPO / "commands" / "setup.md",
-        *(SKILLS.rglob("SKILL.md")),
-    ]
-    offenders = [p for p in surfaces if p.is_file() and "smartypants" in p.read_text().lower()]
-    assert not offenders, f"Smartypants references in: {[str(p) for p in offenders]}"
-
-
-FLEET_SKILL = SKILLS / "hx-fleet" / "SKILL.md"
-
-
-def test_the_fleet_skill_names_only_paths_that_exist():
-    """It is the Partner's manual for creating agents, so every path in it is one the Partner
-    will actually copy. A path that does not exist is a worker that cannot be made."""
-    text = FLEET_SKILL.read_text()
-    for relative in (
-        "templates/worker", "personas/backend-engineer.md",
-        "personas/frontend-engineer.md", "personas/release-engineer.md", "personas/qa-engineer.md",
-        "companion/roles/backend-engineer.md", "config/CLAUDE.md",
-    ):
-        assert relative in text, f"hx-fleet does not mention {relative}"
-        assert (SKELETON / relative).exists(), f"hx-fleet names {relative}, which does not ship"
-
-
-def test_the_fleet_skill_roles_match_the_personas_and_the_role_files():
-    text = FLEET_SKILL.read_text()
-    roles = sorted(p.stem for p in (SKELETON / "personas").glob("*.md") if p.stem != "partner")
-    for role in roles:
-        assert role in text, f"hx-fleet does not name the {role} role"
-        assert (SKELETON / "companion" / "roles" / f"{role}.md").is_file()
-
-
-def test_the_fleet_skill_sends_lessons_to_the_learnings():
-    """No worker keeps a memory file. What one learned is a proposal the Partner reviews into
-    the learnings of its role; the skill must say so, and must not send anyone to a header."""
-    text = FLEET_SKILL.read_text()
-    assert "## UPDATES BELOW ONLY" not in text
-    assert "below the header" not in text
-    assert "hx learn pending" in text and "purpose" in text
-
-
-# --------------------------------------------------------------- the Companion skill
-
-
-def companion_skill() -> str:
-    return (SKILLS / "hx-companion" / "SKILL.md").read_text()
-
-
-def companion_pointer() -> str:
-    """The fixed line hx pastes, taken from CONTRACTS.md itself.
-
-    Read out of the contract rather than hard-coded, for the same reason the boundary line is
-    read out of spec 09.1: when it is reworded, this fails and the skill gets updated, instead
-    of the skill quoting a line the Companion will never see.
-    """
-    text = CONTRACTS.read_text()
-    match = re.search(r"`(Companion pass: read [^`]+)`", text)
-    assert match, "CONTRACTS.md no longer carries the Companion pass pointer"
-    return match.group(1)
-
-
-def test_contracts_still_defines_the_companion_pointer():
-    pointer = companion_pointer()
-    assert pointer.startswith("Companion pass: read "), pointer
-    assert "do what it says" in pointer, pointer
-
-
-def test_the_companion_skill_quotes_the_pointer_verbatim():
-    assert companion_pointer() in companion_skill(), (
-        "hx-companion does not quote CONTRACTS.md's pass pointer verbatim; the Companion "
-        "would be looking for a line it never receives"
-    )
-
-
-def test_the_companion_skill_names_read_and_write_as_its_only_tools():
-    text = companion_skill()
-    assert "Read and Write" in text, "the skill does not name its two tools together"
-    # The tools it must refuse are named, not left to inference.
-    for forbidden in ("run a command",):
-        assert forbidden in text, f"the skill does not say it cannot {forbidden}"
-    assert "Bash" not in text, (
-        "hx-companion must not mention Bash as something it might use; its home denies it"
-    )
-
-
-def test_the_companion_skill_covers_the_pass_file_fields():
-    text = companion_skill()
-    for field in ("stream:", "state:", "log:", "from_seq:", "write:", "retry_reason:",
-                  "context_tokens:", "last_seam_ts:", "open_subagents:"):
-        assert field in text, f"hx-companion does not mention the pass field {field!r}"
-
-
-def test_the_companion_skill_forbids_reading_the_agents_files():
-    text = companion_skill()
-    for path in ("pods/", "goals/", "tasks.json", "worktree"):
-        assert path in text, f"hx-companion does not say it must not read {path}"
-
-
-def test_the_companion_skill_explains_retry_reason():
-    text = companion_skill()
-    assert "retry_reason" in text
-    assert "one retry" in text.lower(), (
-        "the skill does not say the retry happens once; a Companion that expects a loop will "
-        "not treat the first failure as expensive"
-    )
-
-
-def test_base_md_sends_the_object_to_the_write_path_not_to_stdout():
-    """The Companion is a tmux session now: its answer is a file written with the Write tool,
-    not something printed. A BASE.md still describing stdout would be describing the old
-    headless design."""
-    text = (SKELETON / "companion" / "BASE.md").read_text()
-    assert "Write tool" in text, "companion/BASE.md does not say the object is written"
-    assert "`write:` path" in text, "companion/BASE.md does not name the pass's write path"
-    assert "stdin" not in text and "stdout" not in text, (
-        "companion/BASE.md still describes the headless call: the Companion reads a pass file "
-        "and writes a file (CONTRACTS.md 'The Companion is a tmux session')"
-    )
-    for field in ("context_tokens", "last_seam_ts", "open_subagents"):
-        assert field in text, f"BASE.md's seam policy does not read {field} from the pass"
-
-
-# ---------------------------------------------------------------------- companion
-
-
-def test_companion_prompts_exist_for_every_role_that_ships():
-    base = SKELETON / "companion" / "BASE.md"
-    assert base.is_file() and base.read_text().strip(), "companion/BASE.md is missing or empty"
-    roles = sorted(p.stem for p in (SKELETON / "companion" / "roles").glob("*.md"))
-    personas = sorted(p.stem for p in (SKELETON / "personas").glob("*.md"))
-    assert roles == personas, (
-        f"every shipped persona needs a companion role file of the same name: "
-        f"roles {roles}, personas {personas}"
-    )
-
-
-def test_companion_base_carries_the_step_state_schema_keys():
-    """The Companion returns this object and nothing else; hx validates it (spec 07.2)."""
-    text = (SKELETON / "companion" / "BASE.md").read_text()
-    for key in (
-        "seq", "prompt_version", "goal", "constraints", "decisions", "open_steps",
-        "closed_steps", "dead_ends", "working_set", "blockers", "subagents_open",
-    ):
-        assert f'"{key}"' in text, f"companion/BASE.md does not name the `{key}` field"
-
-
-def test_companion_base_states_the_seam_policy_conditions():
-    text = (SKELETON / "companion" / "BASE.md").read_text()
-    for fragment in ("seam_min_context_tokens", "seam_min_interval_s", "subagents_open"):
-        assert fragment in text, f"companion/BASE.md seam policy is missing {fragment!r}"
-    assert "run/<id>/seam" in text, "companion/BASE.md does not name the seam marker path"
-
-
-def test_companion_base_puts_the_blocker_or_question_first_in_a_digest():
-    text = (SKELETON / "companion" / "BASE.md").read_text()
-    assert "blocker first" in text and "question first" in text, (
-        "spec 10: for `blocked` and `decision` the digest states the blocker or the question "
-        "first, so the Partner's addendum can answer it"
-    )
-
-
-# ------------------------------------------------------------------- global CLAUDE.md
-
-
-def test_there_is_exactly_one_claude_md_in_the_skeleton():
-    found = sorted(SKELETON.rglob("CLAUDE.md"))
-    assert [p.relative_to(SKELETON).as_posix() for p in found] == ["config/CLAUDE.md"], found
-
-
-def test_global_claude_md_covers_what_spec_17_5_requires_of_it():
-    text = (SKELETON / "config" / "CLAUDE.md").read_text()
-    for fragment in ("/goal", "work item", "hx complete"):
-        assert fragment in text, f"config/CLAUDE.md does not mention {fragment!r}"
-
-
-def test_global_claude_md_names_the_read_tool_and_forbids_cat():
-    """A live run (build-3, Claude Code 2.1.278) had an agent `Bash cat` the context file and
-    then `Read` it. "Read" as an English verb is satisfied by `cat`; naming the tool is what
-    makes the difference, and a `Bash` read spends the tokens without counting toward the M7
-    metric. This paragraph is what has to say so."""
-    text = (SKELETON / "config" / "CLAUDE.md").read_text()
-    boundary = next(
-        (para for para in text.split("\n\n") if "boundary" in para and "Read" in para), ""
-    )
-    assert boundary, "config/CLAUDE.md has no paragraph about the boundary read"
-    assert "Read tool" in boundary, (
-        "the boundary paragraph must name the Read *tool*, not just the action: "
-        f"{boundary!r}"
-    )
-    assert "`cat`" in boundary, "the boundary paragraph must forbid `cat` by name"
-    for forbidden in ("once", "before anything else"):
-        assert forbidden in boundary, f"the boundary paragraph does not say {forbidden!r}"
-    assert "working set" in text, (
-        "config/CLAUDE.md must say that files the working set already covers are not re-read"
-    )
-
-
-def test_global_claude_md_stays_short():
-    """It is loaded into every turn of every agent, so length is a running cost."""
-    lines = (SKELETON / "config" / "CLAUDE.md").read_text().splitlines()
-    assert len(lines) <= 60, f"config/CLAUDE.md is {len(lines)} lines; keep it short"
-
-
-def test_partner_md_ships_as_the_partners_initial_state_doc():
-    text = (SKELETON / "PARTNER.md").read_text()
-    assert text.strip(), "PARTNER.md is empty"
-    assert "## Open questions for the human" in text, text[:200]
-
-
-# ----------------------------------------------------------- the boundary hook line
-
-
-def code_context_line() -> str:
-    """The stdout line the `context` hook prints, taken from the code rather than retyped.
-
-    Reading it out of the hook rather than hard-coding it is the point: when the hook
-    rewords that line, these tests fail and the skills get updated, instead of quietly
-    quoting something the hook no longer prints.
-    """
+from hx import skill_manifest
+from hx.config_harness import validate_harness
+from hx.install import EXPECTED_SKELETON_FILES, skeleton_dir
+SKILLS=skill_manifest.package_dir()
+
+
+def test_all_required_package_inputs_exist():
+    assert all((skeleton_dir()/name).is_file() for name in EXPECTED_SKELETON_FILES)
+    for old in ('templates/work-item.md','templates/goal.md','templates/addendum.md'):
+        assert not (skeleton_dir()/old).exists()
+    assert not (SKILLS/'hx-memory').exists()
+
+
+def test_portable_skill_manifest_and_worker_command_inventory():
+    problems=[detail for status,detail in skill_manifest.check(SKILLS) if status!='ok']
+    assert not problems,problems
+    manifest=skill_manifest.load(SKILLS)
+    assert 'hx-worker' in skill_manifest.select(manifest,audience='worker',role='backend-engineer')
+    assert 'hx-signoff' in skill_manifest.select(manifest,audience='worker',role='qa-engineer')
+    assert 'hx-signoff' not in skill_manifest.select(manifest,audience='worker',role='backend-engineer')
+    assert 'hx-setup' not in skill_manifest.select(manifest,audience='worker',role='backend-engineer')
+    assert 'hx-conversion' not in skill_manifest.select(manifest,audience='worker',role='backend-engineer')
+    assert 'hx-conversion' in skill_manifest.select(manifest,audience='worker',role='backend-engineer',enabled=['hx-conversion'])
+
+
+@pytest.mark.parametrize('kind',['worker','contributor'])
+def test_worker_templates_remain_valid_current_role_configuration(kind):
+    text=(skeleton_dir()/'templates'/kind/'harness.json').read_text().replace('{{id}}','eng-001').replace('{{pod}}','engineers')
+    config=validate_harness(json.loads(text),'config/eng-001/harness.json',dir_name='eng-001')
+    assert (skeleton_dir()/'personas'/f'{config.role}.md').is_file()
+    assert (skeleton_dir()/'companion'/'roles'/f'{config.role}.md').is_file()
+
+
+def test_every_role_has_persona_and_companion_policy():
+    roles={p.stem for p in (skeleton_dir()/'personas').glob('*.md')}
+    assert roles=={p.stem for p in (skeleton_dir()/'companion'/'roles').glob('*.md')}
+
+
+def test_only_partner_is_preconfigured():
+    configs=[p.parent.name for p in (skeleton_dir()/'config').glob('*/harness.json')]
+    assert configs==['partner']
+
+
+@pytest.mark.parametrize('relative', [
+    'config/CLAUDE.md', 'personas/partner.md',
+    *[f'personas/{role}.md' for role in ('backend-engineer','frontend-engineer','release-engineer','qa-engineer')],
+    'templates/worker/SUBAGENTS.md', 'templates/contributor/SUBAGENTS.md',
+])
+def test_shipped_execution_policy_requires_dependency_search_reuse_and_useful_parallelism(relative):
+    text=(skeleton_dir()/relative).read_text().lower()
+    for obligation in ('graph','search','reuse','parallel'):
+        assert obligation in text,(relative,obligation)
+    assert 'task-size routes' in text or 'packet count' in text or relative.startswith('templates/')
+
+
+def test_partner_children_explore_dependencies_without_claiming_worker_ownership():
+    text=(skeleton_dir()/'config/partner/SUBAGENTS.md').read_text()
+    assert 'Partner orchestrates and has no worker assignment' in text
+    assert 'does not reserve a' in text and 'worker run' in text
+    assert 'Do not implement product changes or mutate plan/run state' in text
+    for obligation in ('graph','reuse','overlap','source paths/lines'):
+        assert obligation in text
+
+
+def test_packaged_instructions_cannot_reintroduce_removed_task_authorities():
+    removed=('hx dispatch','hx resume','hx amend','hx bench','hx memory','hx recall','tasks.json','simple path')
+    paths=[*SKILLS.glob('*/SKILL.md'),*(skeleton_dir()/'personas').glob('*.md'),skeleton_dir()/'config/CLAUDE.md']
+    for path in paths:
+        text=path.read_text()
+        assert not [name for name in removed if name in text],path
+
+
+def test_partner_skill_preserves_exact_current_boundary_read_instruction():
     from hx.hook_context import CONTEXT_LINE
-
-    return CONTEXT_LINE.format(path="<path>")
-
-
-def test_the_hook_still_names_a_context_line():
-    line = code_context_line()
-    assert "Read tool" in line, (
-        f"the hook line no longer names the Read tool: {line!r}. If that is "
-        "deliberate, the skills and config/CLAUDE.md need the same change."
-    )
+    text=(SKILLS/'hx-partner/SKILL.md').read_text()
+    assert CONTEXT_LINE.format(path='<path>') in text
 
 
-@pytest.mark.parametrize("path", AGENT_SKILL_FILES, ids=_ids(AGENT_SKILL_FILES))
-def test_skill_quotes_the_hook_line_verbatim(path):
-    """Both skills show the agent the line it will actually see. A paraphrase here is worse
-    than nothing: the agent would be looking for text that never appears."""
-    assert code_context_line() in path.read_text(), (
-        f"{path} does not quote the context line verbatim"
-    )
+def test_worker_mechanics_require_exact_independent_binding_and_typed_blockers():
+    text=(SKILLS/'hx-worker/SKILL.md').read_text()
+    for command in ('hx plan bind','hx plan binding','hx plan approve-binding','hx progress','hx plan audit','hx complete done'):
+        assert command in text
+    assert 'exact frozen hash' in text and 'cannot approve yourself' in text
+    assert 'Blockers retain ownership' in text and 'there is no blocked completion' in text
+    assert 'request is not completion' in ' '.join((SKILLS/'hx-signoff/SKILL.md').read_text().split())
 
 
-@pytest.mark.parametrize("path", AGENT_SKILL_FILES, ids=_ids(AGENT_SKILL_FILES))
-def test_skill_boundary_step_names_the_read_tool_and_forbids_cat(path):
-    text = path.read_text()
-    assert "Use the Read tool" in text, f"{path}: the boundary step does not name the Read tool"
-    assert "`cat`" in text, f"{path}: the boundary step does not forbid `cat` by name"
-
-
-def test_companion_base_records_a_bash_read_as_waste():
-    """spec 07.4 / 13 M7 count Read-tool calls, so a `Bash cat` is invisible to the metric
-    unless the Companion writes it down."""
-    text = (SKELETON / "companion" / "BASE.md").read_text()
-    assert "Read-tool calls" in text, "companion/BASE.md does not say the metric counts the tool"
-    assert "dead_ends" in text.split("Reads, and reads that do not count")[-1], (
-        "companion/BASE.md does not say where a Bash read of a tracked file is recorded"
-    )
-    for fragment in ("`cat`", "context file"):
-        assert fragment in text.split("Reads, and reads that do not count")[-1], fragment
+def test_partner_observation_transport_quotes_current_pointer_without_assigning_a_worker():
+    from hx.companion import POINTER
+    companion=(SKILLS/'hx-companion/SKILL.md').read_text()
+    contracts=(Path(__file__).resolve().parents[2]/'CONTRACTS.md').read_text()
+    assert POINTER.format(path='<path>') in companion and POINTER.format(path='<path>') in contracts
+    assert 'cannot' in companion and 'create a worker assignment' in companion

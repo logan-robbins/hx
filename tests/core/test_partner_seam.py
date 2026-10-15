@@ -14,7 +14,7 @@ import json
 import subprocess
 
 from .test_compose import run_hook
-from .test_streams import events, post_tool, transcript_with
+from .test_streams import events, pasted, post_tool, transcript_with
 
 
 def test_the_log_hook_marks_a_partner_seam_at_the_threshold(instance, tmp_path):
@@ -38,7 +38,6 @@ def test_stop_takes_a_pending_partner_seam(instance, launched, tmux_server):
     from hx.hook_log import seam_marker
 
     from .conftest import wait_for
-    from .test_transitions import pasted
 
     launched("partner")
     marker = seam_marker(instance, "partner")
@@ -57,14 +56,7 @@ def test_stop_takes_a_pending_partner_seam(instance, launched, tmux_server):
 def test_a_partner_seam_rehydrates_without_a_goal_pointer(instance, launched, tmux_server, monkeypatch):
     """The seam writes PARTNER.md's `## Status`, and the pane gets `/clear` only."""
     from hx.seam import seam
-    from hx import memory
 
-    def no_archive(*args, **kwargs):
-        raise AssertionError("Partner reset must not enqueue a memory episode")
-
-    monkeypatch.setattr(memory, "enqueue_quietly", no_archive)
-
-    from .test_transitions import pasted
 
     launched("partner")
     (instance / "PARTNER.md").write_text("# Partner state\n\nTwo workers idle.\n")
@@ -77,7 +69,7 @@ def test_a_partner_seam_rehydrates_without_a_goal_pointer(instance, launched, tm
     assert "/goal" not in pasted(instance, "partner")
 
 
-def test_partner_restores_decisions_while_workers_keep_debugging_state(instance, monkeypatch):
+def test_partner_checkpoint_restores_scheduling_decisions_without_debugging_chatter(instance):
     from hx import compose
     state = {'seq': 3, 'goal': 'Ship the parser.',
              'decisions': [{'d': 'Wait for the shared interface.', 'why': 'QA depends on it.'}],
@@ -87,16 +79,13 @@ def test_partner_restores_decisions_while_workers_keep_debugging_state(instance,
                              'files': [{'path': 'parser.py', 'note': 'The branch at :19 is under repair.'}]},
              'closed_steps': [{'id': 'old', 'outcome': 'INTERMEDIATE EXCHANGE'}],
              'dead_ends': ['Avoid regex parsing; nested input fails.']}
-    for item in ('partner', 'eng-001'):
+    for item in ('partner',):
         path = instance / 'state' / item / (item + '-main.json')
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state))
     partner = compose.step_state(instance, 'partner', 'partner-main')[1]
-    worker = compose.step_state(instance, 'eng-001', 'eng-001-main')[1]
     assert 'Assign QA after eng-001 completes.' in partner and 'QA depends on it.' in partner
     assert 'pytest tests/parser' not in partner and 'INTERMEDIATE EXCHANGE' not in partner
-    assert 'pytest tests/parser' in worker and 'Avoid regex parsing' in worker and 'parser.py' in worker
-    monkeypatch.setattr(compose, 'memory_episodes', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no episode lookup')))
     (instance / 'PARTNER.md').write_text('# Partner state\n\n## Notes\n\n- QA waits.\n')
     assert compose.compose(instance, 'partner') == instance / 'PARTNER.md'
     text = (instance / 'PARTNER.md').read_text()
@@ -109,7 +98,6 @@ def test_a_partner_reset_hands_its_persona_and_one_pointer_to_partner_md(instanc
     one Read of PARTNER.md, which already holds its `## Status`."""
     from hx import compose, hook_context
     (instance / 'PARTNER.md').write_text('Ship the parser. eng-001 owns implementation; QA waits.\n')
-    monkeypatch.setattr(compose, 'memory_episodes', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('no episode lookup')))
     code, output = hook_context.handle({'source': 'clear'}, 'partner', instance, env={})
     assert code == 0
     lines = [line for line in output.split('\n') if line.strip()]

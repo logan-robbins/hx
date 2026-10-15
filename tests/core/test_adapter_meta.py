@@ -106,18 +106,18 @@ def test_hook_end_to_end_writes_the_log_stream(instance):
     result = subprocess.run(
         [
             sys.executable, str(script),
-            "--id", "eng-001",
+            "--id", "partner",
             "--hook-bin", f"{sys.executable} -m hx.hooks",
             "--root", str(instance),
             "log",
         ],
         input=payload,
-        env=clean_env(),
+        env=clean_env(HX_TMUX="tmux -L hx-adapter-test-isolated", ),
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    record = json.loads(main_stream(instance, "eng-001").read_text().splitlines()[-1])
+    record = json.loads(main_stream(instance, "partner").read_text().splitlines()[-1])
     assert record["tool"] == "read_file"
     assert record["ref"]["tool_use_id"] == "call_1"
 
@@ -191,113 +191,3 @@ def test_meta_install_refuses_the_partner(instance):
     )
     assert result.returncode != 0
     assert "Partner" in result.stderr
-
-
-def test_meta_start_exec_is_yolo_bare_and_isolated(instance, tmp_path):
-    _meta_token(instance)
-    install = subprocess.run(
-        ["bash", str(instance / "adapters" / "meta" / "install.sh"), "eng-001"],
-        env=clean_env(HARNESS_ROOT=str(instance)),
-        capture_output=True,
-        text=True,
-    )
-    assert install.returncode == 0, install.stderr
-
-    recorded = tmp_path / "argv.json"
-    fake = tmp_path / "muse"
-    fake.write_text(
-        "#!/usr/bin/env python3\n"
-        "import json, os, sys\n"
-        "json.dump({'argv': sys.argv[1:], 'cwd': os.getcwd(),\n"
-        "           'env': {k: os.environ[k] for k in os.environ if k.startswith(('HARNESS', 'XDG_', 'META_'))}},\n"
-        "          open(os.environ['HX_ARGV_FILE'], 'w'))\n"
-    )
-    fake.chmod(0o755)
-    result = subprocess.run(
-        ["bash", str(instance / "adapters" / "meta" / "start.sh"), "--exec", "eng-001"],
-        env=clean_env(
-            HARNESS_ROOT=str(instance),
-            HX_META_BIN=str(fake),
-            HX_ARGV_FILE=str(recorded),
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    body = json.loads(recorded.read_text())
-    argv = body["argv"]
-    assert "--yolo" in argv
-    assert "-p" not in argv and "exec" not in argv
-    assert not any(arg.startswith("The goal") for arg in argv)
-    assert body["env"]["XDG_CONFIG_HOME"] == str(instance / "run" / "eng-001" / "home")
-    assert body["env"]["XDG_DATA_HOME"] == str(instance / "run" / "eng-001" / "home" / "data")
-    assert body["env"]["META_API_KEY"] == "meta-test-key"
-    assert body["env"]["HARNESS_ID"] == "eng-001"
-    assert body["cwd"] == str(instance / "wt" / "eng-001")
-    # Meta takes no system prompt: everything arrives through the `context` hook.
-    assert not (instance / "run" / "eng-001" / "persona.md").exists()
-    assert not any("persona" in arg for arg in argv)
-
-
-def test_meta_start_exec_uses_the_long_model_option(instance, tmp_path):
-    """Muse 1.4.0 accepts `--model` and rejects `-m` ("invalid TUI options:
-    unexpected argument '-m' found"); the launch argv must use the long form."""
-    import json as _json
-
-    _meta_token(instance)
-    install = subprocess.run(
-        ["bash", str(instance / "adapters" / "meta" / "install.sh"), "eng-001"],
-        env=clean_env(HARNESS_ROOT=str(instance)),
-        capture_output=True,
-        text=True,
-    )
-    assert install.returncode == 0, install.stderr
-
-    recorded = tmp_path / "argv.json"
-    fake = tmp_path / "muse"
-    fake.write_text(
-        "#!/usr/bin/env python3\n"
-        "import json, os, sys\n"
-        "json.dump({'argv': sys.argv[1:]},\n"
-        "          open(os.environ['HX_ARGV_FILE'], 'w'))\n"
-    )
-    fake.chmod(0o755)
-    result = subprocess.run(
-        ["bash", str(instance / "adapters" / "meta" / "start.sh"), "--exec", "eng-001"],
-        env=clean_env(
-            HARNESS_ROOT=str(instance),
-            HX_META_BIN=str(fake),
-            HX_ARGV_FILE=str(recorded),
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    argv = _json.loads(recorded.read_text())["argv"]
-    expected_model = _json.loads(
-        (instance / "config" / "eng-001" / "harness.json").read_text()
-    )["model"]
-    assert argv[argv.index("--model") + 1] == expected_model
-    assert "-m" not in argv
-
-
-def test_dispatch_keeps_meta_data(instance):
-    """Muse 1.4.2 refuses every submit after `home/data/` is deleted from under
-    the running TUI (goal store custody; live 2026-10-02), so a dispatch keeps it."""
-    from hx.config_harness import flavor_of
-    from hx.dispatch import _reset_run_dir
-
-    harness = instance / "config" / "eng-001" / "harness.json"
-    body = json.loads(harness.read_text())
-    body["flavor"] = "meta"
-    harness.write_text(json.dumps(body))
-    assert flavor_of(instance, "eng-001") == "meta"
-    sessions = instance / "run" / "eng-001" / "home" / "data" / "muse" / "sessions"
-    sessions.mkdir(parents=True)
-    (sessions / "old.jsonl").write_text("{}\n")
-    kept = instance / "run" / "eng-001" / "home" / "muse" / "settings.json"
-    kept.parent.mkdir(parents=True, exist_ok=True)
-    kept.write_text("{}\n")
-    _reset_run_dir(instance, "eng-001")
-    assert (instance / "run" / "eng-001" / "home" / "data").is_dir()
-    assert kept.is_file()

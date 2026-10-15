@@ -6,20 +6,17 @@ nothing else.
 ## What you are setting up
 
 `hx` is a control plane for a fleet of Claude Code sessions. Each one — including the
-supervising **Partner** — is a full Claude Code instance in its own tmux session, running under
-a `/goal`, with its own config directory and its own working directory.
+supervising **Partner** — is a full Claude Code instance in its own tmux session, using an admitted packet run, with its own config directory and its own working directory.
+The Partner itself orchestrates and does not own a worker run.
 
-Each is also paired with a small **Companion**: another Claude Code session, in the next tmux
-window, on the same pinned binary and the same instance token — no API key needed — in a config
-home of its own with no product skills and no CLAUDE.md, and with **two tools, Read and
-Write**. hx wakes it with `/clear` and one pointer to a pass file; it reads the agent's
-tool-call stream and writes one JSON object, the bounded step state that lets the agent's
-conversation be cut and rebuilt without losing what it knew. It cannot run a command, so the
-thing watching every agent is the one participant here that cannot act.
+Each participant has configured Companion observation. Worker passes receive frozen captured
+events and bounded evidence access, then submit structured task/map changes for validation.
+The Companion cannot execute worker commands or establish completion from a claim. Current
+ledger packets and native reset checkpoints carry the facts needed to continue.
 
 Two things exist and never mix:
 
-- The **package** `hx`: Python 3.14, zero runtime dependencies, published as `hx-harness`.
+- The **package** `hx`: Python 3.14 with declared runtime dependencies, published as `hx-harness`.
 - The **instance** `$HARNESS_ROOT`: your data. Created by `hx install`. `/srv/hx` on a server,
   `~/hx` on a workstation.
 
@@ -83,9 +80,6 @@ It refuses to run as root, checks `tmux`, `git` and Python, and records the `cla
    created  personas/partner.md
    created  personas/qa-engineer.md
    created  personas/release-engineer.md
-   created  templates/addendum.md
-   created  templates/goal.md
-   created  templates/work-item.md
    created  templates/worker/SUBAGENTS.md
    created  templates/worker/harness.json
    created  .gitignore
@@ -176,29 +170,21 @@ hx ui
 
 serves an observing UI on `127.0.0.1` (port from `config/ui.json`, default 8765), with a
 bearer token in `run/ui-token`. It shows the fleet graph with each worker's Companion beside
-it, a drawer per worker that is its work item file plus its Companion's status, a Session page
+it, a detail view per packet/run with current progress, binding, ownership, and proof, a Session page
 and a Compaction page (the Companion's last written state, verbatim) that open in their own
 window, the Task board, Activity, Goals, Archive, and the Partner chat. It observes; it does
 not operate. Full control — slash commands, interrupts — is `tmux attach -t partner`.
 
-## Upgrading
+## Package changes
 
-```bash
-uv tool upgrade hx-harness
-hx install --root "$HARNESS_ROOT"
-```
-
-`hx install` is idempotent: re-running it re-copies the package skeleton over the instance
-without touching anything you or the Partner have written under `config/<id>/`, and re-records
-the version your `claude` reports.
-
-**It does not restart anything.** Running sessions keep the binary and the skills they launched
-with until they are restarted, which is deliberate: a restart mid-turn throws that turn away.
-Ask the Partner to `hx restart <id>` one id at a time, at a boundary, once you are satisfied.
+Rebuild/install the current package and use its current instance/store schema. HX is unreleased;
+obsolete state is refused and replaced instead of migrated. Preserve any needed project source
+and evidence before replacing an obsolete instance. Package installation and instance creation
+remain separate operations. `hx doctor` checks current configuration and installed assets.
 
 ## What hx never touches
 
-Your `~/.claude`, your checkouts, and any remote. See [two-worlds.md](two-worlds.md) for the
+Your `~/.claude`, your checkouts, and any remote. See [operating HX](operating.md) for the
 line-by-line version.
 
 ## If something is wrong
@@ -210,7 +196,7 @@ hx board         # status rows plus scope lines; exits 0 always
 ```
 
 Both are safe to run yourself and neither changes anything. A board error is normally the
-Partner's to fix (`hx restart <id>`), and the heartbeat usually gets there first.
+Partner's to reconcile through the original run/request; heartbeat advances existing durable intents.
 
 Real `hx doctor` output from a finished install — every line `ok`, exit 0:
 
@@ -221,7 +207,6 @@ ok    tmux             tmux 3.7c
 ok    git              git version 2.50.1 (Apple Git-155)
 ok    root             ~/hx
 ok    claude           /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe at 2.1.278 (tested)
-ok    memory-model     ~/.cache/chroma/onnx_models/onnx
 ok    skeleton         PARTNER.md
 ok    skeleton         LEARNINGS/orientation.md
 ok    skeleton         LEARNINGS/ownership.md

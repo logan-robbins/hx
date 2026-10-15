@@ -72,21 +72,13 @@ _COMPANION_INT_FIELDS = (
     "batch_records",
     "state_budget_tokens",
     "seam_min_context_tokens",
-    # Episode memory (docs/memory.md): how many characters of each injected episode the
-    # context file carries, and the half life of the recency weight in hours. Both are
-    # meaningless at zero, so they go in the positive-integer group.
-    "memory_episode_chars",
-    "memory_half_life_h",
 )
 
-#: Zero is meaningful here: no minimum interval between seams, and `memory_inject_k: 0`
-#: is how an agent turns the "Memory episodes" section of its context file off entirely.
-_COMPANION_NON_NEGATIVE_FIELDS = ("seam_min_interval_s", "memory_inject_k")
+# Zero permits immediate checkpoint boundaries.
+_COMPANION_NON_NEGATIVE_FIELDS = ("seam_min_interval_s",)
 _COMPANION_STR_FIELDS = ("provider", "model", "cache_ttl", "effort")
 
-#: `disabled` is the only boolean: no Companion window, no passes, no step state.
-#: Dispatch, goal, board, show, flush and complete all work without one; the
-#: completion digest falls back to the agent's own Deliverables/Tasks section.
+#: `disabled` controls the optional native Companion session.
 _COMPANION_BOOL_FIELDS = ("disabled",)
 
 #: Spec 05: `claude-cli` goes through the pinned binary with the seed token and is the only one

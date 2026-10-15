@@ -69,92 +69,17 @@ def _connect(root, *, existing=False, trigram=None):
     conn.source_cache = {}
     conn.symbol_cache = {}
     conn.execute("PRAGMA journal_mode=WAL")
-    # The old index had no repository identity. It is derived, so rebuild it.
-    old = conn.execute("SELECT 1 FROM sqlite_master WHERE name='files'").fetchone()
-    if old and "repo" not in {r[1] for r in conn.execute("PRAGMA table_info(files)")}:
-        for table in ("files", "symbols", "edges", "code_search", "code_trigram"):
-            conn.execute("DROP TABLE IF EXISTS " + table)
-    conn.executescript(SCHEMA)
+    from .errors import ValidationError
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    existing_tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()
+    if version != 1 and (version != 0 or existing_tables):
+        conn.close()
+        raise ValidationError("unsupported code index schema; remove the derived index and rebuild with hx code index")
     from . import code_journal, code_snapshot
-
-    conn.executescript(code_snapshot.SCHEMA + code_journal.SCHEMA)
-    if "kind" not in {
-        r[1] for r in conn.execute("PRAGMA table_info(snapshot_ref_postings)")
-    }:
-        conn.execute(
-            "ALTER TABLE snapshot_ref_postings ADD COLUMN kind TEXT NOT NULL DEFAULT ''"
-        )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS snapshot_ref_kind ON snapshot_ref_postings(kind,repo,path,artifact)"
-    )
-    version = conn.execute(
-        "SELECT value FROM metadata WHERE key='snapshot_postings_version'"
-    ).fetchone()
-    if not version or version[0] != "4":
-        for row in conn.execute("SELECT identity,data FROM graph_objects").fetchall():
-            code_snapshot.put_postings(
-                conn, row["identity"], code_snapshot.unpacked(row["data"])
-            )
-        conn.execute(
-            "INSERT OR REPLACE INTO metadata VALUES('snapshot_postings_version','4')"
-        )
-    for column in ("files_count", "symbols_count"):
-        if column not in {
-            r[1] for r in conn.execute("PRAGMA table_info(code_snapshots)")
-        }:
-            conn.execute(
-                f"ALTER TABLE code_snapshots ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
-            )
-    if not conn.execute(
-        "SELECT 1 FROM metadata WHERE key='snapshot_counts_version'"
-    ).fetchone():
-        code_snapshot.backfill_counts(conn)
-        conn.execute("INSERT INTO metadata VALUES('snapshot_counts_version','1')")
-    if "dirty" not in {
-        r[1] for r in conn.execute("PRAGMA table_info(code_changesets)")
-    }:
-        conn.execute(
-            "ALTER TABLE code_changesets ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0"
-        )
-    symbol_schema = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE name='symbols'"
-    ).fetchone()[0]
-    if "line,column,signature" not in symbol_schema.replace(" ", "").replace("\n", ""):
-        conn.execute("ALTER TABLE symbols RENAME TO symbols_previous")
-        conn.executescript(SCHEMA)
-        columns = [r[1] for r in conn.execute("PRAGMA table_info(symbols_previous)")]
-        names = ",".join(columns)
-        conn.execute(
-            f"INSERT INTO symbols({names}) SELECT {names} FROM symbols_previous"
-        )
-        conn.execute("DROP TABLE symbols_previous")
-        conn.executescript(SCHEMA)
-    if "qualified_folded" not in {
-        r[1] for r in conn.execute("PRAGMA table_info(symbols)")
-    }:
-        conn.execute(
-            "ALTER TABLE symbols ADD COLUMN qualified_folded TEXT NOT NULL DEFAULT ''"
-        )
-    for row in conn.execute(
-        "SELECT rowid,qualified FROM symbols WHERE qualified_folded=''"
-    ).fetchall():
-        conn.execute(
-            "UPDATE symbols SET qualified_folded=? WHERE rowid=?",
-            (row["qualified"].casefold(), row["rowid"]),
-        )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS symbol_qualified_folded ON symbols(repo,qualified_folded)"
-    )
-    if "resolved" not in {
-        r[1] for r in conn.execute("PRAGMA table_info(code_changesets)")
-    }:
-        conn.execute("ALTER TABLE code_changesets ADD COLUMN resolved BLOB")
-    if "snapshot_base" not in {
-        r[1] for r in conn.execute("PRAGMA table_info(code_changesets)")
-    }:
-        conn.execute("ALTER TABLE code_changesets ADD COLUMN snapshot_base TEXT")
-    if "generation" not in {r[1] for r in conn.execute("PRAGMA table_info(files)")}:
-        conn.execute("ALTER TABLE files ADD COLUMN generation TEXT NOT NULL DEFAULT ''")
+    conn.executescript(SCHEMA + code_snapshot.SCHEMA + code_journal.SCHEMA)
+    conn.execute("CREATE INDEX IF NOT EXISTS snapshot_ref_kind ON snapshot_ref_postings(kind,repo,path,artifact)")
+    conn.execute("CREATE INDEX IF NOT EXISTS symbol_qualified_folded ON symbols(repo,qualified_folded)")
+    conn.execute("PRAGMA user_version=1")
     if trigram is None:
         option = conn.execute(
             "SELECT value FROM metadata WHERE key='config.trigram'"
@@ -172,11 +97,6 @@ def _connect(root, *, existing=False, trigram=None):
         present = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name=?", (table,)
         ).fetchone()
-        if present and "repo" not in {
-            r[1] for r in conn.execute("PRAGMA table_info(" + table + ")")
-        }:
-            conn.execute("DROP TABLE " + table)
-            present = None
         if table == "code_trigram" and not trigram:
             conn.execute("DROP TABLE IF EXISTS " + table)
             continue
@@ -197,13 +117,6 @@ def _connect(root, *, existing=False, trigram=None):
         lambda data: zlib.decompress(data).decode("utf-8", errors="replace"),
         deterministic=True,
     )
-    if not conn.execute(
-        "SELECT 1 FROM metadata WHERE key='source_search_version'"
-    ).fetchone():
-        conn.execute(
-            "INSERT INTO source_search(rowid,body) SELECT rowid,hx_source(data) FROM source_objects"
-        )
-        conn.execute("INSERT INTO metadata VALUES('source_search_version','1')")
     if trigram:
         present = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name='source_trigram'"
@@ -225,7 +138,7 @@ def _connect(root, *, existing=False, trigram=None):
 
 
 def connect(root, *, existing=False, trigram=None):
-    """Serialize migrations only; independent graph readers remain concurrent."""
+    """Serialize schema initialization; independent graph readers remain concurrent."""
     path = db_path(root)
     if existing and not path.is_file():
         return None

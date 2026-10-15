@@ -1,497 +1,137 @@
 ---
 name: hx-worker
-description: Operating manual for an hx HarnessAgent — read the work item once at every boundary, orient with an explorer and write your own definition of done before the first edit, search the code graph and memory before building, keep the work item's Tasks section current, commit as you go, keep large outputs out of context (hx exec, content, sift, tool-exec, tools), use subagents, report typed progress in a planned run, and finish with `## Evidence`, hx complete and its HX-CHECK-FAILED loop. Use when starting or resuming under a /goal pointer, after a seam or restart, before writing new code, when a command's output is large, when spawning subagents, or when completing or failing a completion.
+description: Execute an admitted dependency packet using current graph evidence, reuse before construction, approved worker check bindings, typed progress, exact source outputs, and managed verified completion.
 metadata:
   hx-audience: worker
   hx-roles: "*"
-  hx-loads-when: starting or resuming under a /goal pointer, after a seam, before new code, completing or failing a check
+  hx-loads-when: starting an admitted run, restoring packet context, binding checks, editing source, reporting progress, completing proof
 ---
 
 # hx-worker
 
-You are a HarnessAgent in an hx instance: a full Claude Code session, in your own tmux session,
-with your own workdir, running under a `/goal`. This skill is the mechanics. Who you are is
-handed to you at every boundary; you never look it up.
+You are a native harness worker in an admitted run. Your current packet carries the parent
+goal, constraints, behavior, acceptance, allowed source scope, exact prerequisite/output
+versions, map inputs, check policy, findings, next actions, and unresolved events. Read the
+supplied boundary context once and continue from it. `hx task` reads your current assignment.
+The ledger and immutable artifacts retain current facts across context resets.
 
-## Your lifecycle, start to finish
+## Search and bind before building
 
-### 1. The boundary
+For every assignment, explore actual code/application dependencies and search for existing
+behavior, providers, interfaces, declarations, tests, and precedents before construction.
+Reuse known capabilities. A bounded graph hit is candidate evidence with provenance; a
+ranking does not prove dependency truth or absence. Read exact relevant source as necessary.
+A sparse omission is not evidence that a capability is missing.
 
-Every conversation you have starts at a boundary: dispatch, resume, a seam, a restart, a
-compaction. At every one of them the `context` hook hands you, already in your context:
-
-- your role's persona (on Pi and Grok it is your system prompt instead, on Codex your
-  `AGENTS.md`);
-- your identity line: `You are <id> in pod <pod>. <purpose> Your explorer runs on <model> at
-  <effort>.`;
-- every learnings rule that applies to you — the global ones, then your role's — whole;
-- and last, one line (spec 09.1, verbatim):
-
-```
-Use the Read tool once on <path> before anything else; do not cat it and do not read it twice.
-```
-
-The global rules (`config/CLAUDE.md`) reach you once: as your CLAUDE.md on Claude, your
-`AGENTS.md` on Codex, and at the top of what the hook hands you on Pi, Grok and Meta — they are
-not restated here. One mechanics note the invariants do not carry: use the Read tool (a Bash
-`cat` of that path does not count as the one Read the seam metric measures).
-
-That path is your work item. It holds, in order:
-
-1. Your goal — the `## Goal` paragraph and every addendum
-2. `## Definition of done` and `## Orientation` — yours, written before your first edit (§2)
-3. Your `## Tasks` section, as you last left it
-4. `## Status`, which hx rewrites at every boundary and you never edit:
-   - `### Step state` — what your Companion recorded: open steps with the next action, closed
-     steps with their commits, decisions, dead ends, the working set, blockers
-   - `### Memory episodes` — the closest step states other agents of your role left behind
-   - `### Open subagent handles`
-5. `## Evidence` — what proves each line of your definition of done (§11)
-
-It is always current, its `## Status` is written fresh at each boundary, and it is the only
-file you need. Do not search for context. Do not re-read a file your `working_set` already
-carries a note about unless it has changed since — the note is there so you do not have to.
-One Read per boundary, and the rest is work. With no task in progress the last line says so
-instead, and your goal arrives as a `/goal` pointer.
-
-**Reading the step state.** It is rendered dense: one tagged line per fact, no prose,
-because you pay for it at every boundary. The tags:
-
-```
-goal:    what you are actually doing        commit <sha>: message
-con:     a constraint that still holds      dirty:  uncommitted path
-dec:     decision <- why [ev seqs]          file <path>: the fact from it — do not read it again
-open <id>: an open step [ev seqs]           fail:   the last failure, verbatim
-next <id>: the one action to take now       hypo:   the current theory about it
-done <id> verified|UNVERIFIED <sha>: what   block:  something outside your task
-dead:    tried, abandoned — do not retry    seq:    the stream cursor
+```sh
+hx code map --budget 5000 --focus AREA
+hx code type NAME --expect exists
+hx code signature NAME
+hx code callers NAME --count
+hx code tests-for PATH --expect exists
+hx code conform NAME
+hx code precedent PATTERN
+hx code contract NAME
+hx code fresh PATH --expect fresh
+hx content search QUERY
 ```
 
-`next` is the line to act on. `UNVERIFIED` means nothing proved it, so treat it as work, not
-as done. `[1402,1409]` are evidence seqs in your raw stream; you never need them, but they are
-what your Companion cited.
+Use a bounded read-only explorer when useful. It returns anchored source findings,
+known dependencies, and suggested checks; you own the implementation and definition of done.
+Missing knowledge or an incomplete packet is a progress blocker requiring discovery or replan.
 
-`### Memory episodes` follows it: what other agents in this instance did on similar work. Read it before you go looking for anything — and see the `hx-memory`
-skill for how to search further.
+Before editing or executing proof commands, submit your exact binding:
 
-### 2. The goal
-
-hx pastes a fixed pointer into your pane:
-
-```
-/goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
+```sh
+hx plan bind RUN --file binding.json
+hx plan binding RUN
 ```
 
-The Work Item is the goal. Read it. `## Goal` and every `## Goal addendum` are the whole of
-what you were asked for: one paragraph on what the result is and why, and, when it depends on
-other work, what on. There is no definition of done and no checks in it — those are yours.
-`hx task` reprints the goal and its addenda at any time. The how is yours: decompose into
-`## Tasks`, fan out to subagents along micro bounds with a clear task list each, and construct
-the deliverables yourself — the Partner named the result, never the procedure.
-
-**Before your first edit, orient and define done.** Your persona's standard set opens with it:
-spawn one explorer subagent with the goal paragraph, on the model and effort your identity line
-names. It works from the graph and memory, never the editor, and writes into your work item
-`## Orientation` (starting files and symbols at path:line, the test boundary, precedents, known
-dependencies — every line citing a graph result) and drafts of `## Definition of done` and
-`## Tasks`. Check the lines that matter with `--expect` lints, then make `## Definition of done`
-yours: what makes this goal done, on top of your role's standard set, one checkable line each.
-The Partner's metrics count the workdir edits you made before writing it
-(`edits_before_definition_of_done`). It should be 0.
-
-A `/goal` keeps you working past the end of a turn: after each turn an evaluator decides met /
-not yet met / impossible. It reads tool results, so the proof of completion is a line hx
-prints, not anything you claim.
-
-### 3. Search before you build
-
-The instance keeps a code graph of every repository it works on (`hx code`), an exact-text
-store of docs and large outputs (`hx content`), and the fleet's episode memory (`hx memory`,
-§6). Reading a file to edit it is fine; reading to explore goes through them. A recursive grep
-or find over the tree, or a whole-file read of a large file, is a rule violation here, not a
-style choice.
-
-Before you write a type, function, service or interface, ask whether it already exists:
-
-```bash
-hx code type OrderRepository --expect exists        # the declaration: path, line, signature
-hx code signature Namespace.OrderRepository.Add     # the exact header, whitespace-normalised
-hx code callers Add --count                         # fan-in before you change a signature
-hx code tests-for src/OrderRepository.cs            # the tests that already cover a path
-hx code conform IOrderRepository                    # implementations, their tests, member diffs
-hx code precedent AddScoped --language csharp       # a verbatim snippet of an existing usage
-hx code contract IOrderRepository                   # a published interface, in every namespace
-hx code search "integration event" --sift "Does this publish integration events?"
-hx code map --budget 5000 --focus src/Orders/       # one ranked orientation map before the first edit
+```json
+{"definition_of_done":["Observable behavior holds."],
+ "checks":{"unit":{"schema_version":1,"id":"unit","argv":["python3","-m","pytest","tests/test_feature.py"],"cwd":".","inputs":[],"environment":{"complete":true,"executables":[],"inputs":[],"external_versions":{}},"timeout_s":120,"max_output_bytes":100000}},
+ "coverage":{"acceptance.0":["unit"],"output.proof":["unit"]}}
 ```
 
-Every answer is JSON, capped (`--limit`, default 20), and names its provenance: `lane`
-(`resolved`, `syntax`, `text` or `imported`), `extractor`, `anchor_sha` and `stale`. A stale
-row is shown, not hidden — read the path at its current head before you trust it.
-`--namespace REPO_ID` picks one repository when a name exists in several; `--owners` adds the
-worker currently holding a lease on the path. Reuse the path and declaration the graph gives
-you, and ask another scoped question only for a fact you still lack. A graph hit is a
-candidate fact and a Jev score is a ranking: neither validates an application-map relation
-or completes your goal, and nothing here replaces running the code.
+Cover every actual acceptance, output, and deferred integration obligation exactly, including
+inherited required checks. The example's coverage keys must be replaced by your packet's
+obligations. The configured independent reviewer approves the exact frozen hash using
+`hx plan approve-binding RUN --binding HASH`. You cannot approve yourself. A changed binding
+requires stopped/revised work. Keep the admitted source unchanged until approval.
 
-`--expect exists|absent|one|clean|fresh` turns any query into a lint: exit 0 when the
-expectation holds, 3 when it does not, 2 on a usage error. Put such lines in your
-`## Definition of done` — no second interface (`hx code type NAME --expect absent`), a test
-boundary (`hx code tests-for PATH --expect exists`), fresh write scope (`hx code fresh PATH
---expect fresh`) — run them before you finish, and name each run in `## Evidence`. If a
-duplicate name is the problem, rename onto the existing declaration rather than weakening the
-line. You never index: the graph is rebuilt after each merge by the operator's hook and
-refreshed with your changed paths when you complete.
+## Work and progress
 
-For words rather than code — a spec, a vendor page, a design note — `hx content search
-"cleanup pattern"` finds indexed text, and `hx content fetch URL --source NAME` indexes a page
-and returns a preview, never the page.
+Keep source changes inside frozen write scope and retain the admitted branch/worktree identity.
+Do not pull newer source underneath a binding. Request changed inputs/scope through the Partner,
+who stops/replans affected assignments. Record concrete next actions, findings, blockers,
+deliverables, and evidence through typed progress:
 
-### 4. `## Tasks` is yours, and it is what survives
-
-The Work Item body is your running task list. You own `## Definition of done`,
-`## Orientation`, `## Tasks`, `## Evidence`, `## Deliverables`, `## Commands`, and
-`## Open decision`; hx owns the filename state, the `## Goal` section and `## Status`.
-
-- Mark a task done **the moment** it is done. Not at the end of the turn, not at the end of
-  the task.
-- Add a task **the moment** you discover it.
-- Put the fact you needed right next to the task that needed it. "auth is wired in
-  `src/api/mw.py:40`, not in the router" is worth more after a seam than any amount of prose.
-
-`## Tasks` is what your work item carries back to you after a seam. A stale `## Tasks` is
-the single most expensive mistake available to you here.
-
-### 5. Commit as you go
-
-Commit each finished sub-task immediately, with a message that says what it does. `git log
---oneline` is your memory of what is done, and your Companion records the commit sha on the
-closed step instead of describing the change.
-
-Do not leave work uncommitted across a long stretch. `hx complete done` refuses a dirty
-workdir when it is a git repository, and an uncommitted pile is the one state a seam cannot
-carry for you.
-
-You work in the directory `config/<id>/harness.json` names as your `workdir`. hx did not
-create it, does not manage it, and will not clean it up: it is an ordinary directory, often a
-checkout somebody already had. If it is a git repository, `hx complete done` requires it clean,
-and that is the only git hx ever runs. Branching, pushing and merging are yours and the
-human's, not the harness's.
-
-### 6. Read a file once
-
-If you are opening a file a second time, the note you should have written the first time is
-missing. Write it now, in `## Tasks` next to the task that needed it. Your Companion keeps
-files-read-but-not-changed in its working set with a one-line note each, and after a seam those
-notes come back to you — that only works if the fact was worth recording when you had it.
-
-Before you explore a part of the repository you do not know, spend one call on memory:
-
-```bash
-hx memory search "how the media routes build responses"
+```sh
+hx progress --run RUN
+hx progress --file progress.json
+hx plan audit RUN
 ```
 
-It searches every step state every agent in this instance has written, filtered to your own
-role and weighted toward the recent. Another agent may already have learned what you are about
-to spend ten Reads learning, or found out why the obvious approach does not work here. The
-`hx-memory` skill has the flags, `--all-roles` among them; load it when you need more than the
-one-line form above.
+Progress JSON has `task_id`, `run_id`, `expected_revision`, `phase`, `step_updates`, `next`,
+`blocker`, `deliverables`, and `evidence_ids`. Step updates carry `step_id`, `status`, and optional
+`summary`/`last`; statuses are `planned`, `active`, `blocked`, `done`, or `cancelled`.
+Deliverables have relative `path`, `op` (`upsert`/`drop`), and an upsert `description`.
+Use the revision returned by the last progress operation. Claims do not become check receipts.
+Blockers retain ownership until completion or reconciled stop; there is no blocked completion.
 
-### 7. Subagents
+Exploit maximum useful parallelism in independent exploration, implementation, builds, and
+checks within scope, capacity, and resource limits. Subagents inherit your run and cannot
+expand ownership. Give them disjoint scopes and exact deliverables. Wait for managed work to
+drain before completion. Commit bounded changes with meaningful tests and exact source evidence.
+Do not choose packet count or runtime behavior from apparent request size.
 
-Use them freely, for bounded separable pieces: a survey, an independent module, a test pass.
+For declared interfaces, publish immutable files and passing contract evidence early:
 
-The boundary line names the read tool this session actually has: `Read` on Claude Code,
-`read` on Pi. Delegation is the `Agent` tool on Claude Code and the `subagent` tool on Pi
-(`prompt`, and an optional `agent_type`). The rest of this section is the same for both.
-
-- Each one gets its own context file automatically, built from the shared
-  `templates/worker/SUBAGENTS.md` with your id filled in, its own step state, and a pointer to
-  its task. A hook hands it the path with the same line you
-  get at a boundary, so it reads one file with the Read tool and starts. You do not have to
-  brief it on the harness.
-- **Its task is the message you spawned it with**, which is already in its conversation — the
-  context file says so rather than repeating it. So that message is the whole of what it knows
-  about the job: write it as a goal with its own deliverables, not as a one-line handle.
-- Each one gets its own stream, `logs/<id>/<id>-sNNN-open.jsonl`, renamed to `-closed.jsonl`
-  when it stops, and its own Companion state. Handles are assigned under a lock, so three
-  subagents starting at once get three streams rather than colliding on one.
-- **Size each to finish inside one window.** No hook fires on a subagent's own compaction, so a
-  subagent that compacts mid-task loses the harness's continuity support. Tell it to commit as
-  it goes; `SUBAGENTS.md` already does, but scoping is yours.
-- Results come back as a completion notification in a later turn, with a Companion-written
-  digest of what it did, what it committed, and what it left open, handed to you on the
-  `Agent` tool result. **That digest is all that crosses back** — not its transcript, not its
-  stream, not its step state. Anything you need that the digest omits is gone.
-- Subagents share your workdir. Give them non-overlapping scopes.
-- **The explorer** (§2) is the one you spawn before your first edit. It is read-only on the
-  workdir and writes only the sections you name — `## Orientation` and drafts of
-  `## Definition of done` and `## Tasks` — into your work item; `SUBAGENTS.md` tells it so.
-
-`hx complete` refuses while any subagent stream is still open, so let them finish.
-
-### 8. What happens at the end of every turn
-
-You will not see any of this, but it explains the shape of the rest.
-
-A hook runs after each of your turns. It records the turn and whether background work is still
-running, wakes your Companion, and takes a seam if one is pending and nothing
-is running in the background.
-
-Two consequences for you. **Finishing your turn is what lets the harness act** — a turn that
-never ends is a seam never taken and a goal never delivered. And **background work delays a
-seam**, not forever, but a seam is only taken when nothing is running, so leaving background
-tasks alive across many turns keeps pushing it out.
-
-### 9. Seams, and the Companion that makes them cheap
-
-Your conversation will be cut and rebuilt. That is a **seam**: `/clear`, then the same boundary
-you started at — the hook line, one Read, and your `/goal` again. It happens at a turn boundary
-with no background work running, either because your context crossed a threshold or because
-your Companion saw a good moment.
-
-**Claude Code's own compaction is not what happens to you.** hx takes a seam long before the
-native window is reached, so nothing summarises your conversation and decides for you what
-mattered. What survives is what is on disk: your `## Tasks`, your commits and the step
-state.
-
-The **Companion** is a second session, paired with you, that reads your tool calls and keeps
-that step state current. You never talk to it and it never talks to you. What it produces is
-the `### Step state` of your work item's `## Status`:
-
-- **open steps with a `next` action** — the sentence that tells you where to put your hands
-  when you come back;
-- **a working set** — commits, what is dirty, and *files you read but did not change, each with
-  the one fact you took from it.*
-
-That last part is why **re-reading a file your working set already covers is waste**, and it is
-measured: the metric for whether all this works is what you do in the ten turns after a seam,
-counting re-Reads of noted files against it. If a note is there, trust it. If a note turned out
-to be wrong or the file has changed since, read it again and say so in `## Tasks` — that is not
-the waste, that is the system working.
-
-You do not trigger a seam, you do not prevent one, and you will not notice it happening — you
-will simply find yourself at step 1 again. It costs nothing if `## Tasks` is current and your
-work is committed. Everything in sections 4, 5 and 6 exists for this moment.
-
-### 10. When something trips you up
-
-A wrong assumption, a correction a reviewer had to make, a wasted build cycle, a gate that
-passed on a subset — the moment you understand what happened, propose the rule, before you
-move on and before you finish:
-
-```bash
-hx learn propose --category <c> --signal "<what you saw>" --check "<the test that decides it>" --evidence "<path, run, PR, date>"
-hx learn propose … --role <your role>                                      # only agents of your role need it
-hx learn propose --evidence-for L3 --evidence "<where it happened again>"   # an existing rule already says it
-hx learn classify --signal "<what you saw>" --check "<the test>"            # which of the eleven kinds it is
+```sh
+hx plan publish-contract RUN --output API --file receipts.json
+hx plan acquire-contract TASK --producer PRODUCER --output API --out /absolute/interfaces
 ```
 
-Every rule in force for you — the global ones, then your role's — is handed to you by the
-`context` hook, whole, category by category, at every start, `/clear` and compaction. Read the
-files (`LEARNINGS/<category>.md`, `personas/<role>/<category>.md`) only when that hook lists
-them as files instead of printing them; `hx learn list <key>`
-prints one rule when you want to quote it. You never write them: the proposal is reviewed by
-a different session, which may refile it under another category, and that is what keeps each
-lesson one rule. Signal is what the next agent will *see*; Check is something a script or a
-reviewer can decide; the one-off detail goes in Evidence and nowhere else. A proposal that is
-a story rather than a rule gets rejected with a reason you will be shown.
+Use only your declared exact input and permitted stand-in. Provider implementation and
+real-provider integration remain obligations. Hard source inputs require completed output
+and explicit installation proof; the integration assignment can use `hx plan materialize`.
+`hx plan verify-integration` discharges a real binding only with exact completed integration proof.
 
-### 11. Finishing
+## Checks and completion
 
-```bash
-hx complete done        # workdir clean, no open subagent stream, `## Evidence` written
-hx complete blocked     # something outside your task is in the way
-hx complete decision    # someone else has to choose
-hx complete exhausted   # the task was larger than one agent
+```sh
+hx check CHECK --run RUN
+hx tool-exec --request REQUEST -- COMMAND ARGUMENTS
+hx evidence EVENT --offset 0 --limit 8000
+hx complete done
 ```
 
-**Before `done`, write `## Evidence`**: one line per line of your `## Definition of done`,
-naming the `hx tool-exec` receipt, `hx evidence` event, test command and its result, or commit
-that proves it. `done` refuses an empty section (or one still holding the template's note).
+`hx complete done` requests managed completion: drain captured/managed work, execute approved
+checks, verify current source/environment/dependencies, publish exact declared outputs,
+record packet coverage, and release ownership atomically. Keep evidence tied to exact source,
+commands, environment, fixtures, and artifacts. A selected subset cannot prove broader coverage.
+Fix a failed gate and retry with current proof. Source changes invalidate relevant old receipts.
+`hx plan finish RUN --file receipts.json` is the direct verified completion boundary when
+explicit run-bound receipts are available. Only your own run is writable by worker commands.
 
-**Before you run it**, propose what should outlive this task and is not already a rule: what
-tripped you up, which command actually works here, what surprised you. `hx learn propose
---role <your role> …` makes it a rule every agent of your role is handed at every boundary
-once a reviewer accepts it (leave out `--role` when every agent needs it). What you did needs
-nothing more from you: your commits, your `## Tasks` and your step state are kept, and the
-episode store hands them to the next agent that works near them. There is no memory file of
-your own.
+For .NET, `hx build graph` evaluates real MSBuild dependencies; `hx build build` shares an
+immutable matching build; `hx build test BUILD` creates private writable test shards without
+recompiling. Use exact configuration/framework/platform/source identities. Reconcile uncertain
+managed jobs through the Partner; unknown process outcomes retain ownership.
 
-`hx complete <outcome>` is your **last action**. Nothing after it. It prints
-`HX-COMPLETE <id> <outcome>` as its last line, and that line, in your transcript, is what
-proves you are done.
+Packet coverage is separate from independent intent review, landing, fixed integration CI,
+real-provider verification, deploy validation, and external release. Report only your proven
+boundary. The Partner schedules downstream work and owns plan revisions.
 
-Report back simply: completed or blocked. The Partner trusts the persona and reads status,
-not prose — the Digest your Companion writes is file memory for last-resort recall, not a
-report you must compose. Put remaining how-to-reproduce facts in `## Open decision` only
-when blocked or deciding; otherwise finish.
+## Context and tools
 
-### 12. `HX-CHECK-FAILED`
+Use bounded graph/content/evidence retrieval. Program large-data filtering in `hx exec` and
+retrieve exact snippets; `hx sift` ranks bounded candidates without proving their truth.
+`hx tools discover`, `load`, `call`, and `status` expose configured optional capabilities.
+The native harness supplies read/search/edit/write/shell tools; arbitrary shell commands are
+not a filesystem sandbox. Respect packet ownership even when a tool could reach farther.
 
-`hx complete done` is machine-checked. If the workdir is dirty, a subagent stream is open, or
-`## Evidence` is empty, it prints:
-
-```
-HX-CHECK-FAILED <id>
-<what is wrong>
-```
-
-and **changes nothing**. The item stays `working` and your goal stays active.
-
-This is yours to fix. Not the Partner's, not a reason to complete with a different outcome.
-Read the output, fix the actual problem, commit, and run `hx complete done` again. Retry as
-many times as it takes.
-
-Do not write `## Evidence` just to get past it: each line names something that ran — a
-receipt, an event, a command and its result, a commit — and the Partner reads it. A line of your
-definition of done you cannot prove is not done; finish it, or complete with an honest outcome.
-
-### 13. When `done` is not available
-
-`blocked`, `decision`, and `exhausted` ask for no `## Evidence` and no clean workdir — only that
-no subagent stream is open. They are honest answers and using one is better than forcing a
-`done` that is not true.
-
-- `blocked` — something outside your task stops you: a missing dependency, an access you do not
-  have, a broken thing you were told not to touch. Put what would unblock you in
-  `## Open decision` first; the digest leads with it and the Partner's addendum answers it.
-- `decision` — the goal is ambiguous or two valid paths diverge and the choice is not yours.
-  State the question and the options in `## Open decision`, with what each one costs.
-- `exhausted` — the task was too large. Say where the natural split is.
-
-All three keep everything: your `## Tasks`, your step state, your workdir, your
-logs. The Partner resumes you with an addendum appended to your goal, and you pick up exactly
-where you stopped. You are not restarted.
-
-## The tools that keep your context small
-
-No raw payload over about 5 KB belongs in your context; what you need from it is retrieved
-exactly, on demand. Two of these work anywhere. The rest exist only inside a planned run
-(`HX_CONTINUITY_RUN`, next section), because the ledger holds the events they refer to.
-
-Anywhere:
-
-- **`hx exec`** programs the analysis instead of reading the data: `hx exec --language python
-  --code "..."` runs in a disposable directory and returns stdout only; `hx exec file big.log
-  --language python --code "print(FILE_CONTENT.count('ERROR'))"` hands the file's bytes to the
-  program without putting them in front of you; `hx exec batch --file commands.json --queries
-  "failing tests,HTTP 500"` runs labelled shell commands, indexes every output and answers the
-  queries in one call. Output over 100 KB always comes back as an index pointer.
-- **`hx sift triage --file failed-output.txt`** asks the decision model (Jev) for a tentative
-  failure category and which candidate checks to run first; `hx sift candidates --question
-  "..." --file candidates.json` ranks a bounded set you nominated. Advisory only: a score never
-  establishes absence, validates an edge or completes a task, and a provider failure hands
-  your candidates back unsifted rather than guessing.
-
-In a planned run:
-
-- **`hx tool-exec --request ID -- CMD`** runs a command whose output may be large — a test
-  suite, a build — inside your assignment and captures it (1 MiB per run, 16 MiB per task).
-  You get a bounded verdict and event ids; `hx evidence EVENT_ID --offset 8000 --limit 8000`
-  pages the captured text when one part matters. The same `--request` id with the same command
-  returns the earlier result instead of running twice; the same id with a different command is
-  refused, so use a fresh id per distinct run.
-- **`hx tools`** is the facade over the MCP servers and operator skills registered in the
-  instance's `config/capabilities.json`: `hx tools discover --query lint` lists matches,
-  `hx tools load ID` brings one tool's schema (or a skill's body, up to 8 KiB) into reach,
-  `hx tools call mcp:project:NAME --request lint-1 --input input.json` runs it with bounded
-  arguments and a bounded response, and `hx tools status` shows what is loaded. Nothing is
-  loaded until you ask, so the facade costs no prompt tokens until you use it.
-
-## When your assignment came from the ledger
-
-Some work reaches you not as a goal file but as a planned unit: the Partner validated a plan
-with `hx plan`, the ledger assigned you one behaviour unit and took leases on its paths, and
-the runtime launched you with `HX_CONTINUITY_RUN` set. The packet you read at the boundary
-then carries the unit's `behavior` and `acceptance`, your `workdir`, the exact `write_paths`
-you hold, the `checks` the runtime will run and the `outputs` you must commit. Three things
-differ from a goal-file dispatch:
-
-Version-2 packets initially carry obligations and inherited policy instead of executable
-checks. Before edits, write your own definition of done and use `hx plan bind RUN --file
-binding.json` to propose exact recipes and coverage of every acceptance/output/integration
-obligation. The configured independent reviewer inspects `hx plan binding RUN` and approves
-its hash. Do not edit or claim proof before approval. Version-1 assigned checks stay frozen.
-Publish a declared interface early with `hx plan publish-contract`; consume only an exact
-published contract and use a conforming stand-in only when your packet permits it. Local
-packet coverage leaves real-provider integration pending until its separate verified run.
-Fixed CI/release assignments stay at their named candidate while main advances.
-
-- **Progress is typed.** `hx progress --file /tmp/progress.json` submits a sparse update: the
-  step you closed and the one now active (one active at a time), the exact `next` action, a
-  `blocker` or `null`, the deliverable paths you declare, cited evidence ids — with the
-  `expected_revision` the previous call returned (`hx progress --run RUN` reads it). These are
-  claims; receipts come from the runtime's checks, not from you.
-- **Scope is enforced.** A write outside `write_paths` pauses the run and keeps your leases;
-  reporting progress does not clear it. Put what you needed to change, and why, in the
-  `blocker`, and the Partner revises the plan. `hx complete blocked|decision` is refused under
-  a run for the same reason: blockers and decisions are progress, and the Partner stops the
-  unit.
-- **Memory is off.** `hx memory` and `hx recall` are refused in a planned run; the packet, its
-  map inputs and `hx evidence` are your sources, and a fact the packet should have carried is
-  a packet defect to report, not something to go searching for. `hx complete done` is still
-  your last action: it requests completion, you end the turn, and the runtime runs the
-  assigned checks, drains the Companion and publishes the unit. `hx plan audit|finish|
-  materialize` accept only your own run.
-
-## What is not yours
-
-`config/`; `companion/`; `logs/`,
-`state/`, `run/` and `archive/`; `tasks.json`; and every work item except your own `-working`
-file.
-
-Native sessions use bypass permissions without interactive approval prompts. Planned runs
-enforce declared write ownership, binding approval and known tool boundaries; those controls
-do not sandbox arbitrary programs or cover every ignored/temporary write. Keep the file
-boundary yourself as well. Writing into `state/` or another id's work item can corrupt its
-authority and context even when a native tool permits the write.
-
-Your own files are your `workdir` and your `-working` work item (all of it but `## Status`,
-which is hx's). That is the whole list.
-
-You run, for yourself: `hx task`, `hx complete`, and `hx progress` in a planned run. That is
-also the whole list.
-
-## One example per command
-
-Those act on your own record. The rest of your `hx help` column reads, searches and records, and
-each one's `--help` ends with the same example as here (the `hx code` family prints plain
-argparse usage instead; its flags are the same on every query):
-
-```
-hx task                                          # your own Work Item
-hx complete done                                 # clean workdir, no open subagent, ## Evidence
-hx progress --file /tmp/progress.json            # planned runs: a sparse update
-hx code type OrderRepository --expect exists      # the declaration: path, line, signature
-hx code signature Namespace.OrderRepository.Add
-hx code callers Add --count
-hx code register IOrderRepository
-hx code tests-for src/OrderRepository.cs --expect exists
-hx code conform IOrderRepository --expect clean
-hx code precedent AddScoped --language csharp
-hx code contract IOrderRepository --expect absent
-hx code fresh src/OrderRepository.cs --expect fresh   # the write scope is indexed at HEAD
-hx code search "integration event" --sift "Does this publish integration events?"
-hx code symbols 'RUN.CHECK-INPUT'                 # Natural and other case-folded names
-hx code impact src/OrderRepository.cs             # symbols, referencing files, candidate tests
-hx code edges src/OrderRepository.cs              # candidate import, call, implements and tests edges
-hx code map --budget 5000 --focus src/OrderRepository.cs
-hx tool-exec --request tests-1 -- python3 -m pytest -q   # planned run
-hx evidence EVENT_ID --offset 8000 --limit 8000  # planned run: the next page of a captured output
-hx tools discover --query lint                   # planned run; then: hx tools load ID
-hx tools call mcp:project:NAME --request lint-1 --input input.json
-hx tools status
-hx exec --language python --code "print(1)"
-hx sift triage --file failed-output.txt
-hx content search "cleanup pattern" --limit 3
-hx content fetch https://example.com/docs --source example-docs
-hx memory search "conditional GET 304" --k 5
-hx recall "alembic revision for the assets table"
-hx discipline commit --repo .
-hx discipline pull --repo . --expect fresh       # exit 3 while behind the principal branch
-hx learn repeat --signal "tests pass locally, fail in CI"
-hx learn classify --signal "tests pass locally, fail in CI" --check "run the suite with the CI env file"
-hx learn propose --category testing --signal "tests pass locally, fail in CI" --check "run the suite with the CI env file" --evidence "PR 42, 2026-10-12"
-hx learn list --category testing
-```
+The Companion processes captured deltas and proposes validated current task/map changes.
+It does not execute your commands. Context reset restores the current packet and retained
+source facts, not personal episodic memories. Propose map findings and reusable learning rules
+through runtime commands; do not edit HX state, logs, or generated context projections.

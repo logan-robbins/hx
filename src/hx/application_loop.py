@@ -126,6 +126,8 @@ def tick(store, *, env=None):
     from .task_retention import retire_closed
     retire_closed(store)
     observed = observer.reconcile(store)
+    from .native_controller import reconcile_launches
+    reconcile_launches(store, env=env)
     changed = watch_map(store)
     from .native_completion import advance_one
     try:
@@ -196,27 +198,32 @@ def serve(root, *, env=None, stop=None, interval=5, idle_exit=False):
     with service_lock(root):
         with ContinuityStore(root) as store:
             _save(store, 'application-service', {'process': native_processes.probe(os.getpid())['identity'], 'ready': True})
-            while stop is None or not stop.is_set():
-                if idle_exit and not store.db.execute('SELECT 1 FROM runs WHERE ended_at IS NULL LIMIT 1').fetchone() and not store.db.execute("SELECT 1 FROM outbox WHERE status IN ('pending','claimed') LIMIT 1").fetchone():
-                    return
-                try:
-                    result = tick(store, env=env)
-                    if _state(store, 'service-error'):
-                        _save(store, 'service-error', {})
-                except (HxError, OSError) as exc:
-                    result = {'status': 'unresolved', 'error': str(exc)}
-                    _save(store, 'service-error', result)
-                brief = {key: result[key] for key in ('status', 'run_id', 'error', 'reason') if key in result}
-                failures = [item for item in result.get('map_changes', []) if 'error' in item]
-                if failures:
-                    brief['map_errors'] = failures[:4]
-                if _state(store, 'last-cycle') != brief:
-                    _save(store, 'last-cycle', brief)
-                if result['status'] in {'idle', 'waiting', 'unresolved'}:
-                    if stop is not None:
-                        stop.wait(interval)
-                    else:
-                        time.sleep(interval)
+            try:
+                while stop is None or not stop.is_set():
+                    if idle_exit and not store.db.execute('SELECT 1 FROM runs WHERE ended_at IS NULL LIMIT 1').fetchone() and not store.db.execute("SELECT 1 FROM outbox WHERE status IN ('pending','claimed') LIMIT 1").fetchone():
+                        return
+                    try:
+                        result = tick(store, env=env)
+                        if _state(store, 'service-error'):
+                            _save(store, 'service-error', {})
+                    except (HxError, OSError) as exc:
+                        result = {'status': 'unresolved', 'error': str(exc)}
+                        _save(store, 'service-error', result)
+                    brief = {key: result[key] for key in ('status', 'run_id', 'error', 'reason') if key in result}
+                    failures = [item for item in result.get('map_changes', []) if 'error' in item]
+                    if failures:
+                        brief['map_errors'] = failures[:4]
+                    if _state(store, 'last-cycle') != brief:
+                        _save(store, 'last-cycle', brief)
+                    if result['status'] in {'idle', 'waiting', 'unresolved'}:
+                        if stop is not None:
+                            stop.wait(interval)
+                        else:
+                            time.sleep(interval)
+            finally:
+                state = _state(store, 'application-service')
+                if state.get('process', {}).get('pid') == os.getpid():
+                    _save(store, 'application-service', {**state, 'ready': False})
 
 
 def main(argv, root, *, env=None):
@@ -252,7 +259,7 @@ def main(argv, root, *, env=None):
 def status(store, *, after=''):
     """Partner projection: indexed headers only, no model calls or receipt rereads."""
     rows = store.db.execute('''SELECT r.run_id,r.task_id,r.task_revision,r.worker_id,r.phase,
-        l.status AS native_status,
+        l.status AS native_status,l.error AS native_error,
         (SELECT count(*) FROM task_replan_queue q WHERE q.task_id=r.task_id AND q.task_revision=r.task_revision) AS changed_inputs,
         (SELECT coalesce(sum(head_seq-classified_seq),0) FROM cursors c WHERE c.run_id=r.run_id) AS unclassified,
         (SELECT count(*) FROM events e WHERE e.run_id=r.run_id AND e.disposition='pending') AS pending
@@ -267,6 +274,9 @@ def status(store, *, after=''):
         errors = store.db.execute("SELECT json_extract(payload,'$.error') FROM runtime_cycles WHERE scope LIKE ? AND json_extract(payload,'$.status')='unresolved' LIMIT 1", ('companion:' + row['run_id'] + ':%',)).fetchone()
         if errors and errors[0]:
             unit['blocker'] = errors[0]
+        launch_error = _state(store, 'launch-error:' + row['run_id'])
+        if launch_error:
+            unit['launch_error'] = launch_error['error']
         units.append(unit)
     completed = [dict(row) for row in store.db.execute('''SELECT c.task_id,c.task_revision,c.run_id FROM unit_completions c
         JOIN runs r USING(run_id) ORDER BY r.ended_at DESC LIMIT 8''')]
@@ -277,7 +287,10 @@ def status(store, *, after=''):
         FROM dotnet_jobs ORDER BY rowid DESC LIMIT 8''')]
     validations = [dict(row) for row in store.db.execute('''SELECT batch_id,head,boundary,status
         FROM delivery_validations ORDER BY rowid DESC LIMIT 8''')]
-    return {'active': units, 'replanning': changes(store, limit=4), 'recent_completions': completed, 'last_cycle': _state(store, 'last-cycle'),
+    service = _state(store, 'application-service')
+    running = bool(service.get('ready') and service.get('process') and native_processes.current(service['process']))
+    return {'service': {**service, 'running': running, 'ready': running},
+            'active': units, 'replanning': changes(store, limit=4), 'recent_completions': completed, 'last_cycle': _state(store, 'last-cycle'),
             'recent_milestones': milestones, 'build_jobs': builds, 'validation_snapshots': validations,
             'proof_note': 'Recorded lifecycle headers; plan ready/change status revalidate current proof before scheduling or release.',
             'service_error': _state(store, 'service-error'), 'completion_error': _state(store, 'completion-error'),
@@ -300,10 +313,12 @@ def ensure(root, *, env=None):
                 return prior
         child = dict(os.environ if env is None else env)
         child['PYTHONPATH'] = str(Path(__file__).resolve().parent.parent)
+        child['HARNESS_ROOT'] = str(root)
         child.pop('HARNESS_ID', None)
-        child.pop('HX_CONTINUITY_RUN', None)
-        child.pop('HX_CONTINUITY_LAUNCH', None)
-        process = subprocess.Popen([sys.executable, '-m', 'hx.cli', 'loop', '--root', str(root), '--idle-exit'],
+        for key in tuple(child):
+            if key.startswith('HX_CONTINUITY_'):
+                child.pop(key)
+        process = subprocess.Popen([sys.executable, '-m', 'hx.cli', 'loop', '--root', str(root)],
             cwd=root, env=child, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True)
         actual = native_processes.probe(process.pid)
@@ -320,4 +335,11 @@ def ensure(root, *, env=None):
             if state.get('ready') and ready.get('pid') == process.pid and native_processes.current(ready):
                 return ready
             time.sleep(.02)
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
         raise Conflict('application loop did not acknowledge service readiness')

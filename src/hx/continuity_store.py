@@ -2,7 +2,7 @@
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls and tool execution belong outside this boundary.
-Legacy files remain authoritative until the explicit migration cutover.
+The ledger is the sole assignment, run, proof and publication authority.
 """
 
 from __future__ import annotations
@@ -57,41 +57,40 @@ def _id(value: str) -> str:
 
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS ledger_meta (
+CREATE TABLE ledger_meta (
     singleton INTEGER PRIMARY KEY CHECK(singleton=1), revision INTEGER NOT NULL
 );
-INSERT OR IGNORE INTO ledger_meta VALUES(1,0);
-CREATE TABLE IF NOT EXISTS task_heads (
+CREATE TABLE task_heads (
     task_id TEXT PRIMARY KEY, revision INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS tasks (
+CREATE TABLE tasks (
     task_id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
     parent_id TEXT REFERENCES task_heads(task_id), payload TEXT NOT NULL,
     created_at REAL NOT NULL, PRIMARY KEY(task_id,revision)
 );
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE runs (
     run_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, task_revision INTEGER NOT NULL,
     worker_id TEXT NOT NULL, map_revision INTEGER NOT NULL, phase TEXT NOT NULL,
     checkpoint_id TEXT, outcome TEXT, started_at REAL NOT NULL, ended_at REAL,
     FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS active_worker ON runs(worker_id) WHERE ended_at IS NULL;
-CREATE TABLE IF NOT EXISTS artifacts (
+CREATE UNIQUE INDEX active_worker ON runs(worker_id) WHERE ended_at IS NULL;
+CREATE TABLE artifacts (
     hash TEXT PRIMARY KEY, size INTEGER NOT NULL CHECK(size>=0), created_at REAL NOT NULL
 );
-CREATE TABLE IF NOT EXISTS artifact_refs (
+CREATE TABLE artifact_refs (
     owner_type TEXT NOT NULL, owner_id TEXT NOT NULL, slot TEXT NOT NULL,
     hash TEXT NOT NULL REFERENCES artifacts(hash),
     PRIMARY KEY(owner_type,owner_id,slot)
 );
-CREATE INDEX IF NOT EXISTS artifact_ref_hash ON artifact_refs(hash);
-CREATE TABLE IF NOT EXISTS cursors (
+CREATE INDEX artifact_ref_hash ON artifact_refs(hash);
+CREATE TABLE cursors (
     run_id TEXT NOT NULL REFERENCES runs(run_id), stream_id TEXT NOT NULL,
     head_seq INTEGER NOT NULL DEFAULT 0, classified_seq INTEGER NOT NULL DEFAULT 0,
     revision INTEGER NOT NULL DEFAULT 0,
     CHECK(classified_seq>=0 AND classified_seq<=head_seq), PRIMARY KEY(run_id,stream_id)
 );
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE events (
     event_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, stream_id TEXT NOT NULL,
     seq INTEGER NOT NULL, capture_key TEXT NOT NULL, kind TEXT NOT NULL,
     payload TEXT NOT NULL, payload_hash TEXT NOT NULL, disposition TEXT,
@@ -100,24 +99,24 @@ CREATE TABLE IF NOT EXISTS events (
     UNIQUE(run_id,stream_id,seq), UNIQUE(run_id,capture_key),
     FOREIGN KEY(run_id,stream_id) REFERENCES cursors(run_id,stream_id)
 );
-CREATE INDEX IF NOT EXISTS pending_events ON events(run_id,stream_id,seq) WHERE disposition='pending';
-CREATE TABLE IF NOT EXISTS capture_sources (
+CREATE INDEX pending_events ON events(run_id,stream_id,seq) WHERE disposition='pending';
+CREATE TABLE capture_sources (
     source_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     stream_id TEXT NOT NULL, revision INTEGER NOT NULL, generation TEXT NOT NULL,
     committed_offset INTEGER NOT NULL CHECK(committed_offset>=0),
     decoder_version TEXT NOT NULL, payload TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS passes (
+CREATE TABLE passes (
     pass_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, stream_id TEXT NOT NULL,
     from_seq INTEGER NOT NULL, to_seq INTEGER NOT NULL CHECK(to_seq>=from_seq),
     task_revision INTEGER NOT NULL, cursor_revision INTEGER NOT NULL,
     event_digest TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL,
     FOREIGN KEY(run_id,stream_id) REFERENCES cursors(run_id,stream_id)
 );
-CREATE TABLE IF NOT EXISTS record_heads (
+CREATE TABLE record_heads (
     record_id TEXT PRIMARY KEY, version INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS records (
+CREATE TABLE records (
     record_id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0),
     task_id TEXT NOT NULL REFERENCES task_heads(task_id), kind TEXT NOT NULL,
     payload TEXT NOT NULL, evidence TEXT NOT NULL, inputs TEXT NOT NULL,
@@ -127,18 +126,18 @@ CREATE TABLE IF NOT EXISTS records (
     storage_bytes INTEGER NOT NULL CHECK(storage_bytes>=0),
     PRIMARY KEY(record_id,version)
 );
-CREATE INDEX IF NOT EXISTS task_records ON records(task_id,validity);
-CREATE TABLE IF NOT EXISTS map_heads (
+CREATE INDEX task_records ON records(task_id,validity);
+CREATE TABLE map_heads (
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, record_id TEXT NOT NULL,
     version INTEGER NOT NULL, PRIMARY KEY(repository,snapshot,record_id)
 );
-CREATE TABLE IF NOT EXISTS map_records (
+CREATE TABLE map_records (
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, record_id TEXT NOT NULL,
     version INTEGER NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
     evidence TEXT NOT NULL, inputs TEXT NOT NULL, applicability TEXT NOT NULL,
     PRIMARY KEY(repository,snapshot,record_id,version)
 );
-CREATE TABLE IF NOT EXISTS record_entities (
+CREATE TABLE record_entities (
     record_id TEXT NOT NULL, version INTEGER NOT NULL,
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, entity_id TEXT NOT NULL, entity_version INTEGER NOT NULL,
     PRIMARY KEY(record_id,version,repository,snapshot,entity_id),
@@ -146,7 +145,7 @@ CREATE TABLE IF NOT EXISTS record_entities (
     FOREIGN KEY(repository,snapshot,entity_id,entity_version)
         REFERENCES map_records(repository,snapshot,record_id,version)
 );
-CREATE TABLE IF NOT EXISTS receipts (
+CREATE TABLE receipts (
     receipt_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     check_id TEXT NOT NULL, check_version TEXT NOT NULL, payload TEXT NOT NULL,
     inputs_hash TEXT NOT NULL, environment_hash TEXT NOT NULL,
@@ -154,287 +153,237 @@ CREATE TABLE IF NOT EXISTS receipts (
     artifact_hash TEXT NOT NULL REFERENCES artifacts(hash), duration REAL NOT NULL,
     valid INTEGER NOT NULL CHECK(valid IN (0,1))
 );
-CREATE TABLE IF NOT EXISTS checkpoints (
+CREATE TABLE checkpoints (
     checkpoint_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     ledger_revision INTEGER NOT NULL, map_revision INTEGER NOT NULL,
     task_revision INTEGER NOT NULL, payload TEXT NOT NULL,
     packet_hash TEXT NOT NULL REFERENCES artifacts(hash), acknowledged INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS retrieval_runs (
+CREATE TABLE retrieval_runs (
     retrieval_id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES task_heads(task_id),
     input_hash TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(task_id,input_hash)
 );
-CREATE TABLE IF NOT EXISTS leases (
+CREATE TABLE leases (
     repository TEXT NOT NULL, canonical_path TEXT NOT NULL,
     run_id TEXT NOT NULL REFERENCES runs(run_id), payload TEXT NOT NULL,
     PRIMARY KEY(repository,canonical_path)
 );
-CREATE TABLE IF NOT EXISTS outbox (
+CREATE TABLE outbox (
     operation_id TEXT PRIMARY KEY, kind TEXT NOT NULL, idempotency_key TEXT NOT NULL,
     payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0, available_at REAL NOT NULL,
     lease_token TEXT, lease_until REAL, last_error TEXT,
     CHECK(status IN ('pending','claimed','delivered')), UNIQUE(kind,idempotency_key)
 );
-CREATE INDEX IF NOT EXISTS outbox_ready ON outbox(status,available_at,lease_until);
-"""
-
-MIGRATION_2 = """
-CREATE TABLE IF NOT EXISTS event_origins (
+CREATE INDEX outbox_ready ON outbox(status,available_at,lease_until);
+CREATE TABLE event_origins (
     event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
     source_id TEXT NOT NULL REFERENCES capture_sources(source_id),
     generation TEXT NOT NULL, byte_offset INTEGER NOT NULL,
     decoder_version TEXT NOT NULL,
     PRIMARY KEY(event_id,source_id,generation,byte_offset)
 );
-CREATE INDEX IF NOT EXISTS origin_source ON event_origins(source_id,generation,byte_offset);
-"""
-
-MIGRATION_3 = """
-CREATE TABLE IF NOT EXISTS artifact_chunks (
+CREATE INDEX origin_source ON event_origins(source_id,generation,byte_offset);
+CREATE TABLE artifact_chunks (
     hash TEXT NOT NULL REFERENCES artifacts(hash) ON DELETE CASCADE,
     offset INTEGER NOT NULL, size INTEGER NOT NULL, chunk_hash TEXT NOT NULL,
     PRIMARY KEY(hash,offset)
 );
-"""
-
-MIGRATION_4 = """
-CREATE TABLE IF NOT EXISTS native_bindings (
+CREATE TABLE native_bindings (
     binding_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     stream_id TEXT NOT NULL, adapter TEXT NOT NULL, session_id TEXT NOT NULL,
     decoder_version TEXT NOT NULL, latest_usage TEXT,
     UNIQUE(adapter,session_id,stream_id),
     FOREIGN KEY(run_id,stream_id) REFERENCES cursors(run_id,stream_id)
 );
-CREATE TABLE IF NOT EXISTS native_deliveries (
+CREATE TABLE native_deliveries (
     binding_id TEXT NOT NULL REFERENCES native_bindings(binding_id),
     delivery_id TEXT NOT NULL, payload_hash TEXT NOT NULL, event_ids TEXT NOT NULL,
     PRIMARY KEY(binding_id,delivery_id)
 );
-CREATE TABLE IF NOT EXISTS native_event_origins (
+CREATE TABLE native_event_origins (
     binding_id TEXT NOT NULL, delivery_id TEXT NOT NULL,
     event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
     PRIMARY KEY(binding_id,delivery_id,event_id),
     FOREIGN KEY(binding_id,delivery_id) REFERENCES native_deliveries(binding_id,delivery_id)
 );
-CREATE TABLE IF NOT EXISTS progress_heads (
+CREATE TABLE progress_heads (
     task_id TEXT PRIMARY KEY REFERENCES task_heads(task_id), revision INTEGER NOT NULL,
     run_id TEXT NOT NULL REFERENCES runs(run_id), cursor_id TEXT NOT NULL REFERENCES record_heads(record_id)
 );
-CREATE TABLE IF NOT EXISTS progress_steps (
+CREATE TABLE progress_steps (
     task_id TEXT NOT NULL REFERENCES task_heads(task_id), step_id TEXT NOT NULL,
     status TEXT NOT NULL, payload TEXT NOT NULL, evidence TEXT NOT NULL,
     PRIMARY KEY(task_id,step_id)
 );
-CREATE TABLE IF NOT EXISTS progress_deliverables (
+CREATE TABLE progress_deliverables (
     task_id TEXT NOT NULL REFERENCES task_heads(task_id), path TEXT NOT NULL,
     payload TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(task_id,path)
 );
-CREATE TABLE IF NOT EXISTS progress_updates (
+CREATE TABLE progress_updates (
     run_id TEXT NOT NULL REFERENCES runs(run_id), request_hash TEXT NOT NULL,
     payload TEXT NOT NULL, PRIMARY KEY(run_id,request_hash)
 );
-"""
-
-
-MIGRATION_5 = """
-CREATE TABLE IF NOT EXISTS check_executions (
+CREATE TABLE check_executions (
     execution_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     request_id TEXT NOT NULL, check_id TEXT NOT NULL, check_version TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('running','finished')),
     payload TEXT NOT NULL, UNIQUE(run_id,request_id)
 );
-CREATE INDEX IF NOT EXISTS reusable_receipts ON receipts(run_id,check_id,check_version,inputs_hash,environment_hash,valid);
-"""
-
-
-MIGRATION_6 = """
-CREATE TABLE IF NOT EXISTS map_snapshots (
+CREATE INDEX reusable_receipts ON receipts(run_id,check_id,check_version,inputs_hash,environment_hash,valid);
+CREATE TABLE map_snapshots (
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, base_commit TEXT NOT NULL,
     import_path TEXT NOT NULL, kind TEXT NOT NULL, map_hash TEXT NOT NULL,
     PRIMARY KEY(repository,snapshot)
 );
-CREATE TABLE IF NOT EXISTS map_anchor_cache (
+CREATE TABLE map_anchor_cache (
     repository TEXT NOT NULL, worktree TEXT NOT NULL, path TEXT NOT NULL,
     symbol TEXT NOT NULL, source_stamp TEXT NOT NULL, payload TEXT NOT NULL,
     PRIMARY KEY(repository,worktree,path,symbol)
 );
-"""
-
-
-MIGRATION_7 = """
-CREATE TABLE IF NOT EXISTS map_overlays (
+CREATE TABLE map_overlays (
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, baseline TEXT NOT NULL,
     head_commit TEXT NOT NULL, branch TEXT NOT NULL, git_dir TEXT NOT NULL,
     PRIMARY KEY(repository,snapshot),
     FOREIGN KEY(repository,snapshot) REFERENCES map_snapshots(repository,snapshot)
 );
-CREATE TABLE IF NOT EXISTS map_relations (
+CREATE TABLE map_relations (
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, source TEXT NOT NULL,
     kind TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL,
     PRIMARY KEY(repository,snapshot,source,kind,target)
 );
-CREATE INDEX IF NOT EXISTS map_incoming ON map_relations(repository,snapshot,target,source);
-INSERT OR IGNORE INTO map_relations
-    SELECT r.repository,r.snapshot,r.record_id,json_extract(e.value,'$.kind'),
-           json_extract(e.value,'$.to'),json_extract(e.value,'$.status')
-    FROM map_records r JOIN map_heads h USING(repository,snapshot,record_id,version),
-         json_each(r.payload,'$.edges') e;
-CREATE TABLE IF NOT EXISTS map_patches (
+CREATE INDEX map_incoming ON map_relations(repository,snapshot,target,source);
+CREATE TABLE map_patches (
     repository TEXT NOT NULL, patch_id TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES runs(run_id),
     request_hash TEXT NOT NULL, result TEXT NOT NULL,
     PRIMARY KEY(repository,patch_id)
 );
-CREATE TABLE IF NOT EXISTS map_evidence (
+CREATE TABLE map_evidence (
     repository TEXT NOT NULL, snapshot TEXT NOT NULL, record_id TEXT NOT NULL,
     version INTEGER NOT NULL, event_id TEXT NOT NULL REFERENCES events(event_id),
     PRIMARY KEY(repository,snapshot,record_id,version,event_id),
     FOREIGN KEY(repository,snapshot,record_id,version)
         REFERENCES map_records(repository,snapshot,record_id,version)
 );
-"""
-
-
-MIGRATION_8 = """
-CREATE TABLE IF NOT EXISTS map_sources (
+CREATE TABLE map_sources (
     repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,
     path TEXT NOT NULL,symbol TEXT NOT NULL,sha256 TEXT NOT NULL,
     PRIMARY KEY(repository,snapshot,record_id,path,symbol)
 );
-CREATE INDEX IF NOT EXISTS map_source_paths ON map_sources(repository,snapshot,path,record_id);
-INSERT OR IGNORE INTO map_sources
-    SELECT r.repository,r.snapshot,r.record_id,json_extract(a.value,'$.path'),
-           coalesce(json_extract(a.value,'$.symbol'),''),json_extract(a.value,'$.sha256')
-    FROM map_records r JOIN map_heads h USING(repository,snapshot,record_id,version),json_each(r.payload,'$.anchors') a;
-CREATE TABLE IF NOT EXISTS map_refresh_queue (
+CREATE INDEX map_source_paths ON map_sources(repository,snapshot,path,record_id);
+CREATE TABLE map_refresh_queue (
     repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,generation INTEGER NOT NULL,
     PRIMARY KEY(repository,snapshot,record_id)
 );
-CREATE INDEX IF NOT EXISTS entity_consumers ON record_entities(repository,snapshot,entity_id,entity_version);
-CREATE TABLE IF NOT EXISTS task_map_inputs (
+CREATE INDEX entity_consumers ON record_entities(repository,snapshot,entity_id,entity_version);
+CREATE TABLE task_map_inputs (
     task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,repository TEXT NOT NULL,
     snapshot TEXT NOT NULL,entity_id TEXT NOT NULL,entity_version INTEGER NOT NULL,
     PRIMARY KEY(task_id,task_revision,repository,snapshot,entity_id),
     FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision),
     FOREIGN KEY(repository,snapshot,entity_id,entity_version) REFERENCES map_records(repository,snapshot,record_id,version)
 );
-CREATE INDEX IF NOT EXISTS task_entity_consumers ON task_map_inputs(repository,snapshot,entity_id,entity_version);
-CREATE TABLE IF NOT EXISTS task_replan_queue (
+CREATE INDEX task_entity_consumers ON task_map_inputs(repository,snapshot,entity_id,entity_version);
+CREATE TABLE task_replan_queue (
     task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,repository TEXT NOT NULL,
     snapshot TEXT NOT NULL,entity_id TEXT NOT NULL,entity_version INTEGER NOT NULL,reason TEXT NOT NULL,
     PRIMARY KEY(task_id,task_revision,repository,snapshot,entity_id),
     FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
 );
-"""
-
-
-MIGRATION_9 = """
-CREATE TABLE IF NOT EXISTS map_search_keys (
+CREATE TABLE map_search_keys (
     rowid INTEGER PRIMARY KEY, repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,
     UNIQUE(repository,snapshot,record_id)
 );
-CREATE VIRTUAL TABLE IF NOT EXISTS map_search USING fts5(summary,semantic);
-INSERT OR IGNORE INTO map_search_keys(repository,snapshot,record_id) SELECT repository,snapshot,record_id FROM map_heads;
-INSERT OR REPLACE INTO map_search(rowid,summary,semantic)
-    SELECT k.rowid,json_extract(r.payload,'$.summary'),
-           r.record_id || ' ' || json_extract(r.payload,'$.data') || ' ' || json_extract(r.payload,'$.anchors') || ' ' || json_extract(r.payload,'$.attributes')
-    FROM map_records r JOIN map_heads h USING(repository,snapshot,record_id,version)
-    JOIN map_search_keys k USING(repository,snapshot,record_id);
-CREATE TABLE IF NOT EXISTS plan_heads(plan_id TEXT PRIMARY KEY,revision INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS plans (
+CREATE VIRTUAL TABLE map_search USING fts5(summary,semantic);
+CREATE TABLE plan_heads(plan_id TEXT PRIMARY KEY,revision INTEGER NOT NULL);
+CREATE TABLE plans (
     plan_id TEXT NOT NULL,revision INTEGER NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,
     PRIMARY KEY(plan_id,revision)
 );
-CREATE TABLE IF NOT EXISTS plan_units (
+CREATE TABLE plan_units (
     plan_id TEXT NOT NULL,plan_revision INTEGER NOT NULL,task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,
     PRIMARY KEY(plan_id,plan_revision,task_id),
     FOREIGN KEY(plan_id,plan_revision) REFERENCES plans(plan_id,revision),
     FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
 );
-CREATE TABLE IF NOT EXISTS plan_prerequisites (
+CREATE TABLE plan_prerequisites (
     task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,producer TEXT NOT NULL,output_id TEXT NOT NULL,output_version INTEGER NOT NULL,
     PRIMARY KEY(task_id,task_revision,producer,output_id),
     FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
 );
-CREATE TABLE IF NOT EXISTS unit_runs (
+CREATE TABLE unit_runs (
     run_id TEXT PRIMARY KEY REFERENCES runs(run_id),workdir TEXT NOT NULL,payload TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS unit_completions (
+CREATE TABLE unit_completions (
     task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,run_id TEXT NOT NULL UNIQUE REFERENCES runs(run_id),payload TEXT NOT NULL,
     PRIMARY KEY(task_id,task_revision),FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
 );
-CREATE TABLE IF NOT EXISTS unit_outputs (
+CREATE TABLE unit_outputs (
     task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,output_id TEXT NOT NULL,version INTEGER NOT NULL,payload TEXT NOT NULL,
     PRIMARY KEY(task_id,task_revision,output_id),
     FOREIGN KEY(task_id,task_revision) REFERENCES unit_completions(task_id,task_revision)
 );
-CREATE TABLE IF NOT EXISTS unit_materializations (
+CREATE TABLE unit_materializations (
     task_id TEXT NOT NULL,task_revision INTEGER NOT NULL,producer TEXT NOT NULL,output_id TEXT NOT NULL,
     integration_run TEXT NOT NULL REFERENCES runs(run_id),payload TEXT NOT NULL,
     PRIMARY KEY(task_id,task_revision,producer,output_id),FOREIGN KEY(task_id,task_revision) REFERENCES tasks(task_id,revision)
 );
-"""
-
-
-MIGRATION_10 = """
-CREATE TABLE IF NOT EXISTS context_requests (
+CREATE TABLE context_requests (
     run_id TEXT NOT NULL REFERENCES runs(run_id),request_id TEXT NOT NULL,
     checkpoint_id TEXT NOT NULL,request_hash TEXT NOT NULL,
     PRIMARY KEY(run_id,request_id)
 );
-"""
-
-
-MIGRATION_11 = """
-CREATE TABLE IF NOT EXISTS native_producer_queue (
+CREATE TABLE native_producer_queue (
     binding_id TEXT NOT NULL REFERENCES native_bindings(binding_id), delivery_id TEXT NOT NULL,
     payload_hash TEXT NOT NULL, payload TEXT NOT NULL, bytes INTEGER NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0, error TEXT,
     PRIMARY KEY(binding_id,delivery_id)
 );
-CREATE TABLE IF NOT EXISTS native_capture_gaps (
+CREATE TABLE native_capture_gaps (
     run_id TEXT PRIMARY KEY REFERENCES runs(run_id), reason TEXT NOT NULL
 );
-"""
-
-
-MIGRATION_12 = """
-CREATE TABLE IF NOT EXISTS native_launch_contracts (
+CREATE TABLE native_launch_contracts (
     launch_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     worker_id TEXT NOT NULL, adapter TEXT NOT NULL
 );
-"""
-
-
-MIGRATION_13 = """
-CREATE TABLE IF NOT EXISTS native_launches (
-    launch_id TEXT PRIMARY KEY REFERENCES native_launch_contracts(launch_id),
-    run_id TEXT NOT NULL UNIQUE REFERENCES runs(run_id), request_id TEXT NOT NULL,
-    request_hash TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, error TEXT
-);
-"""
-
-
-MIGRATION_14 = """
-CREATE TABLE IF NOT EXISTS native_tool_calls (
+CREATE TABLE native_tool_calls (
     launch_id TEXT NOT NULL REFERENCES native_launches(launch_id),
     session_id TEXT NOT NULL, actor_id TEXT NOT NULL, call_id TEXT NOT NULL,
     input_hash TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('admitted','settled','denied')),
     PRIMARY KEY(launch_id,session_id,actor_id,call_id)
 );
-CREATE INDEX IF NOT EXISTS native_tools_pending ON native_tool_calls(launch_id,status);
-CREATE TABLE IF NOT EXISTS native_children (
+CREATE INDEX native_tools_pending ON native_tool_calls(launch_id,status);
+CREATE TABLE native_children (
     launch_id TEXT NOT NULL REFERENCES native_launches(launch_id),
     actor_id TEXT NOT NULL, session_id TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('active','settled')),
     PRIMARY KEY(launch_id,actor_id)
 );
-CREATE INDEX IF NOT EXISTS native_child_sessions ON native_children(launch_id,session_id);
-"""
-
-
-MIGRATION_15 = """
-CREATE INDEX IF NOT EXISTS capture_run_sources ON capture_sources(run_id,source_id);
+CREATE INDEX native_child_sessions ON native_children(launch_id,session_id);
+CREATE INDEX capture_run_sources ON capture_sources(run_id,source_id);
+CREATE TABLE companion_jobs (
+                    job_id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES runs(run_id), pass_id TEXT UNIQUE NOT NULL REFERENCES passes(pass_id),
+                    worker_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL);
+CREATE UNIQUE INDEX companion_active_slot ON companion_jobs((1)) WHERE status='running';
+CREATE TABLE native_reads (
+                    launch_id TEXT NOT NULL, session_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+                    call_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL, read_key TEXT NOT NULL,
+                    source_stamp TEXT NOT NULL, success INTEGER NOT NULL,
+                    PRIMARY KEY(launch_id,session_id,actor_id,call_id));
+CREATE INDEX native_read_reuse ON native_reads(launch_id,session_id,actor_id,checkpoint_id,read_key,source_stamp);
+CREATE TABLE runtime_cycles(scope TEXT PRIMARY KEY,payload TEXT NOT NULL);
+CREATE TABLE tool_executions(run_id TEXT NOT NULL,request_id TEXT NOT NULL,input_hash TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(run_id,request_id));
+CREATE TABLE map_source_observations(repository TEXT NOT NULL,snapshot TEXT NOT NULL,path TEXT NOT NULL,stamp TEXT NOT NULL,PRIMARY KEY(repository,snapshot,path));
+CREATE TABLE map_publications(run_id TEXT NOT NULL REFERENCES runs(run_id),repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(run_id,repository,snapshot,record_id));
+CREATE INDEX map_publication_lookup ON map_publications(repository,snapshot,record_id,version);
+CREATE TABLE map_aliases(repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,term TEXT NOT NULL,PRIMARY KEY(repository,snapshot,record_id,term));
+CREATE INDEX map_alias_lookup ON map_aliases(repository,snapshot,term);
+CREATE TABLE search_coverage(repository TEXT NOT NULL,query_hash TEXT NOT NULL,source_hash TEXT NOT NULL,run_id TEXT NOT NULL,result TEXT NOT NULL,complete INTEGER NOT NULL,PRIMARY KEY(repository,query_hash));
+CREATE TABLE search_calls(launch_id TEXT NOT NULL,session_id TEXT NOT NULL,actor_id TEXT NOT NULL,call_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(launch_id,session_id,actor_id,call_id));
+CREATE TABLE "native_launches"(launch_id TEXT PRIMARY KEY REFERENCES native_launch_contracts(launch_id),run_id TEXT NOT NULL REFERENCES runs(run_id),request_id TEXT NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,error TEXT);
+CREATE UNIQUE INDEX active_native_launch ON native_launches(run_id) WHERE status<>'archived';
+INSERT INTO ledger_meta VALUES(1,0);
 """
 
 
@@ -458,115 +407,17 @@ class ContinuityStore:
             self.db.execute("PRAGMA cache_size=-2048")
             self.db.execute("PRAGMA temp_store=FILE")
             self.db.execute("PRAGMA mmap_size=0")
-            # Rebuild the launch table without rewriting the foreign-key targets.
-            if self.db.execute("PRAGMA user_version").fetchone()[0] < 19:
-                self.db.execute("PRAGMA foreign_keys=OFF")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (*range(SCHEMA_VERSION), SCHEMA_VERSION):
-                raise ValidationError(f"continuity: unsupported schema {version}; expected {SCHEMA_VERSION}")
+            if version not in (0, SCHEMA_VERSION):
+                raise ValidationError(f"continuity: unsupported schema {version}; recreate this prerelease instance with schema {SCHEMA_VERSION}")
             if version == 0:
-                # executescript commits implicitly; individual statements preserve the lock.
+                existing = self.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()
+                if existing:
+                    raise ValidationError("continuity: unversioned database is not a fresh instance")
                 for statement in SCHEMA.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
-            if version < 2:
-                for statement in MIGRATION_2.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 3:
-                self.db.execute(MIGRATION_3)
-                # One explicit schema-upgrade batch, never a normal capture read.
-                for row in self.db.execute("SELECT hash FROM artifacts"):
-                    with (self.artifacts / row[0]).open("rb") as handle:
-                        offset = 0
-                        hasher = hashlib.sha256()
-                        while chunk := handle.read(ARTIFACT_CHUNK_BYTES):
-                            hasher.update(chunk)
-                            self.db.execute("INSERT INTO artifact_chunks VALUES(?,?,?,?)",
-                                            (row[0], offset, len(chunk), hashlib.sha256(chunk).hexdigest()))
-                            offset += len(chunk)
-                        if hasher.hexdigest() != row[0]:
-                            raise ValidationError(f"corrupt artifact {row[0]} during schema upgrade")
-            if version < 4:
-                for statement in MIGRATION_4.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 5:
-                for statement in MIGRATION_5.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 6:
-                for statement in MIGRATION_6.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 7:
-                for statement in MIGRATION_7.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 8:
-                for statement in MIGRATION_8.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 9:
-                for statement in MIGRATION_9.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 10:
-                for statement in MIGRATION_10.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 11:
-                for statement in MIGRATION_11.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 12:
-                for statement in MIGRATION_12.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 13:
-                for statement in MIGRATION_13.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 14:
-                for statement in MIGRATION_14.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 15:
-                for statement in MIGRATION_15.split(";"):
-                    if statement.strip():
-                        self.db.execute(statement)
-            if version < 16:
-                self.db.execute("""CREATE TABLE IF NOT EXISTS companion_jobs (
-                    job_id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL,
-                    run_id TEXT NOT NULL REFERENCES runs(run_id), pass_id TEXT UNIQUE NOT NULL REFERENCES passes(pass_id),
-                    worker_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL)""")
-                self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS companion_active_slot ON companion_jobs((1)) WHERE status='running'")
-            if version < 17:
-                self.db.execute("""CREATE TABLE IF NOT EXISTS native_reads (
-                    launch_id TEXT NOT NULL, session_id TEXT NOT NULL, actor_id TEXT NOT NULL,
-                    call_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL, read_key TEXT NOT NULL,
-                    source_stamp TEXT NOT NULL, success INTEGER NOT NULL,
-                    PRIMARY KEY(launch_id,session_id,actor_id,call_id))""")
-                self.db.execute("CREATE INDEX IF NOT EXISTS native_read_reuse ON native_reads(launch_id,session_id,actor_id,checkpoint_id,read_key,source_stamp)")
-                self.db.execute("CREATE TABLE IF NOT EXISTS runtime_cycles(scope TEXT PRIMARY KEY,payload TEXT NOT NULL)")
-                self.db.execute("CREATE TABLE IF NOT EXISTS tool_executions(run_id TEXT NOT NULL,request_id TEXT NOT NULL,input_hash TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(run_id,request_id))")
-                self.db.execute("CREATE TABLE IF NOT EXISTS map_source_observations(repository TEXT NOT NULL,snapshot TEXT NOT NULL,path TEXT NOT NULL,stamp TEXT NOT NULL,PRIMARY KEY(repository,snapshot,path))")
-            if version < 18:
-                self.db.execute("CREATE TABLE IF NOT EXISTS map_publications(run_id TEXT NOT NULL REFERENCES runs(run_id),repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(run_id,repository,snapshot,record_id))")
-                self.db.execute("CREATE INDEX IF NOT EXISTS map_publication_lookup ON map_publications(repository,snapshot,record_id,version)")
-                self.db.execute("CREATE TABLE IF NOT EXISTS map_aliases(repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,term TEXT NOT NULL,PRIMARY KEY(repository,snapshot,record_id,term))")
-                self.db.execute("CREATE INDEX IF NOT EXISTS map_alias_lookup ON map_aliases(repository,snapshot,term)")
-                self.db.execute("CREATE TABLE IF NOT EXISTS search_coverage(repository TEXT NOT NULL,query_hash TEXT NOT NULL,source_hash TEXT NOT NULL,run_id TEXT NOT NULL,result TEXT NOT NULL,complete INTEGER NOT NULL,PRIMARY KEY(repository,query_hash))")
-                self.db.execute("CREATE TABLE IF NOT EXISTS search_calls(launch_id TEXT NOT NULL,session_id TEXT NOT NULL,actor_id TEXT NOT NULL,call_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(launch_id,session_id,actor_id,call_id))")
-            if version < 19:
-                self.db.execute("CREATE TABLE native_launches_next(launch_id TEXT PRIMARY KEY REFERENCES native_launch_contracts(launch_id),run_id TEXT NOT NULL REFERENCES runs(run_id),request_id TEXT NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,error TEXT)")
-                self.db.execute("INSERT INTO native_launches_next SELECT * FROM native_launches")
-                self.db.execute("DROP TABLE native_launches")
-                self.db.execute("ALTER TABLE native_launches_next RENAME TO native_launches")
-                self.db.execute("CREATE UNIQUE INDEX active_native_launch ON native_launches(run_id) WHERE status<>'archived'")
-            if version < 19 and self.db.execute("PRAGMA foreign_key_check").fetchone():
-                raise ValidationError("continuity migration has invalid foreign keys")
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             from . import dependency_packets, check_artifacts, change_delivery, dotnet_build
             dependency_packets.initialize(self.db)
@@ -711,9 +562,6 @@ class Transaction:
         if "plan_id" in task["payload"]:
             from .unit_execution import admit
             admission = admit(self, task)
-        else:
-            from .unit_execution import guard_legacy_admission
-            guard_legacy_admission(self, task)
         run_id = str(uuid.uuid4())
         self._change()
         self.db.execute(

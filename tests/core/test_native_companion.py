@@ -12,6 +12,11 @@ from hx.continuity_store import ContinuityStore, Conflict, SCHEMA_VERSION
 from hx.errors import ValidationError
 from .test_passes import answer, create
 from .test_prompt_compiler import configure
+from .test_appmap import mapped
+from .test_map_updates import active
+from .test_unit_execution import fleet
+from .test_context_packets import assignment
+from .test_native_launch import configured
 
 
 @pytest.fixture
@@ -163,15 +168,13 @@ def test_running_job_owns_single_slot_without_expiring(planned, monkeypatch):
         native.execute(store, other['job_id'])
 
 
-def test_schema_fifteen_upgrade_preserves_passes(planned):
+def test_schema_fifteen_reopen_preserves_passes(planned):
     store, _, _ = planned
     job = job_for(planned)
-    store.db.execute('DROP TABLE companion_jobs')
-    store.db.execute('PRAGMA user_version=15')
     with ContinuityStore(store.root) as reopened:
         assert reopened.db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
         assert reopened.db.execute('SELECT pass_id FROM passes').fetchone()[0] == job['pass_id']
-        assert reopened.db.execute('SELECT count(*) FROM companion_jobs').fetchone()[0] == 0
+        assert reopened.db.execute('SELECT count(*) FROM companion_jobs').fetchone()[0] == 1
 
 
 @pytest.mark.skipif(not os.environ.get('HX_CLAUDE_TEST_BIN'), reason='requires explicitly selected installed Claude; local provider fixture only')
@@ -244,9 +247,16 @@ def test_interrupted_execution_keeps_slot_and_does_not_resend(planned, monkeypat
     assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 0
 
 
-def test_cli_prepares_and_inspects_same_job_without_native_start(planned, capsys):
+def test_cli_prepares_and_inspects_same_job_without_native_start(configured, monkeypatch, capsys):
     from hx import companion
-    store, run, _ = planned
+    from hx import jev
+    store, _, run = configured
+    monkeypatch.setattr(jev, 'evaluate', lambda state, questions, **kwargs: {
+        'model': jev.MODEL, 'answers': {key: {'type': 'noul', 'noul': .95} for key in questions},
+        'usage': {'input_tokens': 100, 'output_tokens': 20}, 'latency_ms': 1})
+    (store.root / 'config/claude.json').write_text(json.dumps({'bin': sys.executable}))
+    with store.transaction() as tx:
+        tx.append_event(run, 'main', 'native-cli', 'tool_result', {'text': 'Current unit observation.'})
     args = ['eng-001', '--run', run, '--stream', 'main', '--request', 'cli', '--prepare-only']
     env = {'TYPESAFE_API_KEY': 'fixture-key'}
     assert companion.main(args, store.root, env=env) == 0
@@ -256,6 +266,14 @@ def test_cli_prepares_and_inspects_same_job_without_native_start(planned, capsys
     assert json.loads(capsys.readouterr().out) == first
     assert companion.main(['eng-001', '--job', first['job_id']], store.root, env=env) == 0
     assert json.loads(capsys.readouterr().out) == first
+
+
+def test_cli_cannot_prepare_worker_execution_for_a_raw_persistence_fixture(planned):
+    from hx import companion
+    store, run, _ = planned
+    with pytest.raises(Conflict, match='active planned run'):
+        companion.main(['eng-001', '--run', run, '--request', 'raw', '--prepare-only'], store.root, env={})
+    assert not store.db.execute('SELECT 1 FROM companion_jobs').fetchone()
 
 
 def test_success_after_one_rejected_patch_installs_only_the_valid_response(planned):

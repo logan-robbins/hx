@@ -68,18 +68,18 @@ def test_hook_end_to_end_writes_the_log_stream(instance):
     result = subprocess.run(
         [
             sys.executable, str(hook),
-            "--id", "eng-001",
+            "--id", "partner",
             "--hook-bin", f"{sys.executable} -m hx.hooks",
             "--root", str(instance),
             "log",
         ],
         input=json.dumps(body),
-        env=clean_env(PYTHONPATH=str(Path(__file__).resolve().parents[2] / "src")),
+        env=clean_env(HX_TMUX="tmux -L hx-adapter-test-isolated", PYTHONPATH=str(Path(__file__).resolve().parents[2] / "src")),
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    line = (instance / "logs" / "eng-001" / "eng-001-main.jsonl").read_text().strip()
+    line = (instance / "logs" / "partner" / "partner-main.jsonl").read_text().strip()
     record = json.loads(line)
     assert record["tool"] == "shell"
     assert record["ref"]["tool_use_id"] == "call_7"
@@ -262,6 +262,10 @@ def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_pat
     guards = config["hooks"].get("PreToolUse", [])
     assert len(guards) == 1 and guards[0]["matcher"] == "Bash|apply_patch|Edit|Write"
     assert "guard" in guards[0]["hooks"][0]["command"]
+    assert config['hooks']['SubagentStart'] and config['hooks']['SubagentStop']
+    result_hooks = [entry for entry in config['hooks']['PostToolUse']
+                    if any('subagent-result' in hook['command'] for hook in entry['hooks'])]
+    assert len(result_hooks) == 1 and result_hooks[0]['matcher'] == 'Agent|spawn_agent'
     assert config["projects"][str(instance)]["trust_level"] == "trusted"
 
 
@@ -319,54 +323,6 @@ def test_codex_start_exec_runs_the_partner_in_the_root(instance, tmp_path):
     assert body["cwd"] == str(instance)
 
 
-def test_codex_start_exec_is_bare_unattended_and_isolated(instance, tmp_path):
-    _codex_token(instance)
-    harness = instance / "config" / "eng-001" / "harness.json"
-    body = json.loads(harness.read_text())
-    body["model"] = "gpt-6-sol"
-    body["effort"] = "xhigh"
-    harness.write_text(json.dumps(body))
-    install = subprocess.run(
-        ["bash", str(instance / "adapters" / "codex" / "install.sh"), "eng-001"],
-        env=clean_env(
-            HARNESS_ROOT=str(instance),
-            HOME=str(_no_login_home(tmp_path)),
-            HX_CODEX_BIN=str(_fake_codex(tmp_path)),
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert install.returncode == 0, install.stderr
-
-    recorded = tmp_path / "argv.json"
-    result = subprocess.run(
-        ["bash", str(instance / "adapters" / "codex" / "start.sh"), "--exec", "eng-001"],
-        env=clean_env(
-            HARNESS_ROOT=str(instance),
-            HOME=str(_no_login_home(tmp_path)),
-            HX_CODEX_BIN=str(_fake_codex(tmp_path)),
-            HX_ARGV_FILE=str(recorded),
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    body = json.loads(recorded.read_text())
-    argv = body["argv"]
-    assert "--dangerously-bypass-approvals-and-sandbox" in argv
-    assert "--dangerously-bypass-hook-trust" in argv
-    assert argv[argv.index("-m") + 1] == "gpt-6-sol"
-    assert argv[argv.index("-c") + 1] == 'model_reasoning_effort="xhigh"'
-    assert argv == [
-        "--dangerously-bypass-approvals-and-sandbox",
-        "--dangerously-bypass-hook-trust",
-        "-s", "danger-full-access",
-        "-m", "gpt-6-sol",
-        "-c", 'model_reasoning_effort="xhigh"',
-    ], "bare: no prompt argument, flags only (no -a: the CLI rejects it with the bypass flag)"
-    assert body["env"]["CODEX_HOME"] == str(instance / "run" / "eng-001" / "home")
-    assert body["env"]["HARNESS_ID"] == "eng-001"
-    assert body["cwd"] == str(instance / "wt" / "eng-001")
 
 
 def test_codex_install_prefers_the_chatgpt_login_over_the_api_key(instance, tmp_path):
@@ -392,57 +348,3 @@ def test_codex_install_prefers_the_chatgpt_login_over_the_api_key(instance, tmp_
     copied = instance / "run" / "eng-001" / "home" / "auth.json"
     assert copied.read_text() == (login_home / ".codex" / "auth.json").read_text()
     assert os.stat(copied).st_mode & 0o77 == 0
-
-
-def test_codex_start_exec_runs_on_a_login_without_any_seed_token(instance, tmp_path):
-    """No `seed/codex-token` anywhere: the home's copied login is the auth."""
-    login_home = _login_home(tmp_path)
-    never = tmp_path / "must-not-run"
-    never.write_text("#!/usr/bin/env python3\nimport sys; sys.exit(1)\n")
-    never.chmod(0o755)
-    install = subprocess.run(
-        ["bash", str(instance / "adapters" / "codex" / "install.sh"), "eng-001"],
-        env=clean_env(
-            HARNESS_ROOT=str(instance),
-            HOME=str(login_home),
-            HX_CODEX_BIN=str(never),
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert install.returncode == 0, install.stderr
-
-    recorded = tmp_path / "argv.json"
-    result = subprocess.run(
-        ["bash", str(instance / "adapters" / "codex" / "start.sh"), "--exec", "eng-001"],
-        env=clean_env(
-            HARNESS_ROOT=str(instance),
-            HX_CODEX_BIN=str(_fake_codex(tmp_path)),
-            HX_ARGV_FILE=str(recorded),
-        ),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    assert json.loads(recorded.read_text())["env"]["HARNESS_ID"] == "eng-001"
-
-
-def test_dispatch_wipes_codex_sessions(instance):
-    from hx.config_harness import flavor_of
-    from hx.dispatch import _reset_run_dir
-
-    harness = instance / "config" / "eng-001" / "harness.json"
-    body = json.loads(harness.read_text())
-    body["flavor"] = "codex"
-    harness.write_text(json.dumps(body))
-    assert flavor_of(instance, "eng-001") == "codex"
-
-    sessions = instance / "run" / "eng-001" / "home" / "sessions"
-    sessions.mkdir(parents=True)
-    (sessions / "stale.json").write_text("{}\n")
-    kept = instance / "run" / "eng-001" / "home" / "config.toml"
-    kept.parent.mkdir(parents=True, exist_ok=True)
-    kept.write_text("{}\n")
-    _reset_run_dir(instance, "eng-001")
-    assert not sessions.exists()
-    assert kept.is_file()

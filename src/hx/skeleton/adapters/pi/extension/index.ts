@@ -1,10 +1,6 @@
-/**
- * hx's Pi extension. It translates Pi's events into the same `hx-hook` calls
- * Claude's settings.json makes, and it is the `/goal` capability Pi does not ship.
- *
- * Pi 0.84 (the binary this was written against) emits `agent_settled` as the idle
- * boundary and does not emit `agent_before_settle`. Newer docs add that event and
- * let it return `continue`. Both are subscribed; the first one in a run does the work.
+/** Translate Pi events into the admitted native run's capture and tool contract.
+ * Child sessions inherit the same run and frozen scope; each observation retains
+ * its child identity. Completion and continuation belong to the ledger runtime.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -21,12 +17,6 @@ const SOURCE: Record<string, string> = {
   new: "clear",
 };
 
-interface GoalState {
-  text: string;
-  active: boolean;
-}
-
-let goal: GoalState | null = null;
 let contextTokens: number | null = null;
 let settledThisRun = false;
 const inFlight = new Set<string>();
@@ -34,8 +24,8 @@ const inFlight = new Set<string>();
 // Snapshot once when the extension loads. A later worker installation must not
 // change the run identity of callbacks already owned by this native session.
 const hookContractPath = join(dirname(fileURLToPath(import.meta.url)), "hook-contract.json");
-function installedHook(): { command: string; args: string[] } | null {
-  if (!existsSync(hookContractPath)) return null;
+function installedHook(): { command: string; args: string[] } {
+  if (!existsSync(hookContractPath)) throw new Error("hx native hook contract is missing");
   if (statSync(hookContractPath).size > 8192) throw new Error("hx hook contract exceeds 8 KiB");
   const value = JSON.parse(readFileSync(hookContractPath, "utf8"));
   if (typeof value.command !== "string" || !Array.isArray(value.args) || value.args.length > 20 ||
@@ -43,7 +33,7 @@ function installedHook(): { command: string; args: string[] } | null {
   return value;
 }
 const nativeHook = installedHook();
-const nativeToolEnvironment = nativeHook && process.env.HX_CONTINUITY_CAPSULE && process.env.HX_CONTINUITY_RUN
+const nativeToolEnvironment = process.env.HX_CONTINUITY_CAPSULE && process.env.HX_CONTINUITY_RUN
   ? { ...process.env } : null;
 
 function required(name: string): string {
@@ -53,11 +43,11 @@ function required(name: string): string {
 }
 
 function hookBin(): string {
-  return nativeHook?.command ?? join(required("HARNESS_ROOT"), "bin", "hx-hook");
+  return nativeHook.command;
 }
 
 function callHook(event: string, payload: Record<string, unknown>): string {
-  const result = spawnSync(hookBin(), [...(nativeHook?.args ?? ["--id", required("HARNESS_ID")]), event], {
+  const result = spawnSync(hookBin(), [...nativeHook.args, event], {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: process.env,
@@ -65,7 +55,7 @@ function callHook(event: string, payload: Record<string, unknown>): string {
   if (result.status !== 0 && result.stderr) {
     process.stderr.write(result.stderr);
   }
-  if (nativeHook && (event === "request" || event === "tool-start") && result.status !== 0) {
+  if ((event === "request" || event === "tool-start") && result.status !== 0) {
     throw new Error("hx refused native admission; reconcile the assignment before continuing");
   }
   return result.stdout ?? "";
@@ -127,41 +117,10 @@ function publicMessage(message: any): Record<string, unknown> {
     errorMessage: typeof message.errorMessage === "string" ? message.errorMessage : undefined };
 }
 
-function rebuildGoal(ctx: { sessionManager: { getBranch: () => Array<{ type?: string; customType?: string; data?: GoalState }> } }): void {
-  goal = null;
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (entry.type === "custom" && entry.customType === "hx-goal" && entry.data) {
-      goal = entry.data.active ? { text: entry.data.text, active: true } : null;
-    }
-  }
-}
-
-function assistantHasComplete(ctx: { sessionManager: { getBranch: () => Array<{ type?: string; message?: { role?: string; content?: unknown } }> } }, id: string): boolean {
-  const needle = `HX-COMPLETE ${id}`;
-  const branch = ctx.sessionManager.getBranch();
-  for (let index = branch.length - 1; index >= 0; index -= 1) {
-    const entry = branch[index];
-    if (entry.type === "message" && entry.message?.role === "assistant") {
-      return textOf(entry.message).includes(needle);
-    }
-  }
-  return false;
-}
-
 function inject(pi: { sendMessage: (message: { customType: string; content: string; display: boolean }) => void }, stdout: string): void {
   const line = forPi(stdout.trim());
   if (!line || line.startsWith("{")) return;
   pi.sendMessage({ customType: "hx-context", content: line, display: true });
-}
-
-function additionalContext(stdout: string): string {
-  try {
-    const body = JSON.parse(stdout);
-    const text = body?.hookSpecificOutput?.additionalContext;
-    return typeof text === "string" ? forPi(text) : "";
-  } catch {
-    return "";
-  }
 }
 
 function contentText(content: Array<{ type?: string; text?: string }> | undefined): string {
@@ -173,15 +132,13 @@ export default function (pi: {
   on: (event: string, handler: (event: any, ctx: any) => any) => void;
   sendMessage: (message: { customType: string; content: string; display: boolean }, options?: { triggerTurn?: boolean }) => void;
   sendUserMessage: (content: string, options?: { deliverAs?: string }) => void;
-  appendEntry: (customType: string, data?: GoalState) => void;
-  registerCommand: (name: string, options: { description: string; handler: (args: string, ctx: any) => void }) => void;
   registerTool: (tool: Record<string, unknown>) => void;
   getAllTools: () => { name: string }[];
   getActiveTools: () => string[];
   setActiveTools: (names: string[]) => void;
 }): void {
   const subagent = process.env.PI_SUBAGENT === "1";
-  const childIdentity = nativeHook && subagent ? { agent_id: required("HX_PI_CHILD_ID") } : null;
+  const childIdentity = subagent ? { agent_id: required("HX_PI_CHILD_ID") } : null;
   const toolsetPath = join(dirname(fileURLToPath(import.meta.url)), "../../../toolset.json");
   let toolsetStamp = "";
   const syncTools = () => {
@@ -206,13 +163,13 @@ export default function (pi: {
 
   pi.on("message_end", (event, ctx) => {
     rememberUsage(event.message);
-    if (!nativeHook || !["user", "assistant"].includes(event.message?.role)) return;
+    if (!["user", "assistant"].includes(event.message?.role)) return;
     callHook("message", { type: "message_end", message: publicMessage(event.message),
       ...(childIdentity ?? { transcript_path: sessionFile(ctx) }) });
   });
 
   pi.on("input", (event, ctx) => {
-    if (!nativeHook || subagent) return;
+    if (subagent) return;
     try {
       callHook("request", { prompt: event.text, transcript_path: sessionFile(ctx) });
     } catch {
@@ -243,7 +200,6 @@ export default function (pi: {
   pi.on("session_start", (event, ctx) => {
     if (subagent) return;
     settledThisRun = false;
-    rebuildGoal(ctx);
     const stdout = callHook("context", {
       source: SOURCE[event.reason] ?? "startup",
       session_id: event.previousSessionFile,
@@ -273,7 +229,7 @@ export default function (pi: {
       trigger: event.reason,
       transcript_path: sessionFile(ctx),
     });
-    if (nativeHook && checkpoint.trim()) {
+    if (checkpoint.trim()) {
       // Pi's public hook supports replacing the summary. Keep its native cut
       // boundary and recent messages; the checkpoint holds current task state.
       return { compaction: {
@@ -285,7 +241,6 @@ export default function (pi: {
   });
 
   pi.on("tool_call", (event, ctx) => {
-    if (!nativeHook) return;
     try {
       callHook("tool-start", {
         tool_name: event.toolName,
@@ -299,7 +254,6 @@ export default function (pi: {
   });
 
   pi.on("tool_result", (event, ctx) => {
-    if (subagent && !nativeHook) return;
     callHook("log", {
       tool_name: event.toolName,
       tool_use_id: event.toolCallId,
@@ -314,29 +268,11 @@ export default function (pi: {
   const settle = async (event: { type?: string; entries?: unknown[] }, ctx: any) => {
     if (subagent || settledThisRun) return;
     settledThisRun = true;
-    const id = required("HARNESS_ID");
-    const marker = join(required("HARNESS_ROOT"), "run", id, "seam");
-    const seamPending = existsSync(marker);
     callHook("stop", {
       session_id: sessionFile(ctx),
       background_tasks: [...inFlight].map((agentId) => ({ agent_id: agentId })),
     });
-    if (seamPending || !goal?.active) return;
-    if (assistantHasComplete(ctx, id)) {
-      goal = { text: goal.text, active: false };
-      pi.appendEntry("hx-goal", goal);
-      return;
-    }
-    if (event.type === "agent_before_settle") {
-      return {
-        continue: true,
-        entries: [
-          ...(event.entries ?? []),
-          { type: "custom_message", customType: "hx-goal", content: goal.text, display: false },
-        ],
-      };
-    }
-    pi.sendUserMessage(goal.text);
+
   };
 
   pi.on("agent_before_settle", (event, ctx) => settle(event, ctx));
@@ -347,20 +283,10 @@ export default function (pi: {
 
   if (subagent) return;
 
-  pi.registerCommand("goal", {
-    description: "Keep working until hx complete prints HX-COMPLETE",
-    handler(args) {
-      const text = (args || "").trim();
-      goal = { text, active: true };
-      pi.appendEntry("hx-goal", goal);
-      if (text) pi.sendUserMessage(text);
-    },
-  });
-
   pi.registerTool({
     name: "subagent",
     label: "Subagent",
-    description: "Delegate one bounded task to a child Pi session. It gets its own context file and stream; the digest path comes back in the result.",
+    description: "Delegate one bounded task to a child Pi session. Its observations attach to the same admitted run and frozen scope; the child result comes back directly.",
     parameters: Type.Object({
       prompt: Type.String({ description: "The whole task: deliverables, bounds, and what done means" }),
       agent_type: Type.Optional(Type.String({ description: "A short role name, such as scout" })),
@@ -369,24 +295,17 @@ export default function (pi: {
       const agentId = randomUUID();
       inFlight.add(agentId);
       try {
-        const started = callHook("subagent-start", {
+        callHook("subagent-start", {
           agent_id: agentId,
           agent_type: params.agent_type || "subagent",
           tool_input: { prompt: params.prompt },
         });
-        const contextLine = additionalContext(started);
-        const childText = await runChild(params.prompt, contextLine, agentId, signal);
+        const childText = await runChild(params.prompt, agentId, signal);
         callHook("subagent-stop", {
           agent_id: agentId,
           last_assistant_message: childText,
         });
-        const finished = callHook("subagent-result", {
-          agent_id: agentId,
-          tool_response: { status: "completed", agentId, prompt: params.prompt },
-        });
-        const digest = additionalContext(finished);
-        const text = [childText, digest].filter(Boolean).join("\n\n");
-        return { content: [{ type: "text", text: text || "(no output)" }], details: { agentId } };
+        return { content: [{ type: "text", text: childText || "(no output)" }], details: { agentId } };
       } finally {
         inFlight.delete(agentId);
       }
@@ -394,42 +313,26 @@ export default function (pi: {
   });
 }
 
-// What a subagent is told: the id's own config/<id>/SUBAGENTS.md, else the shared
-// templates/worker/SUBAGENTS.md with {{id}} and {{pod}} filled in and its comments dropped —
-// the same text hx.persona.render_subagents puts in the child's context file.
-function subagentIdentity(root: string, id: string, harness: { pod?: unknown }): string {
-  const own = join(root, "config", id, "SUBAGENTS.md");
-  if (existsSync(own)) return readFileSync(own, "utf8");
-  const shared = join(root, "templates", "worker", "SUBAGENTS.md");
-  if (!existsSync(shared)) return "";
-  const pod = typeof harness.pod === "string" ? harness.pod : "";
-  return readFileSync(shared, "utf8")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .split("{{id}}").join(id)
-    .split("{{pod}}").join(pod)
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function runChild(prompt: string, contextLine: string, agentId: string, signal?: AbortSignal): Promise<string> {
-  const root = nativeHook ? required("HX_CONTINUITY_CAPSULE") : required("HARNESS_ROOT");
+function runChild(prompt: string, agentId: string, signal?: AbortSignal): Promise<string> {
+  const root = required("HX_CONTINUITY_CAPSULE");
   const id = required("HARNESS_ID");
   const home = join(root, "run", id, "home");
   const bin = process.env.HX_PI_BIN || "pi";
   const harness = JSON.parse(readFileSync(join(root, "config", id, "harness.json"), "utf8"));
-  const identity = subagentIdentity(root, id, harness);
-  const workdir = typeof harness.workdir === "string" && harness.workdir
-    ? (isAbsolute(harness.workdir) ? harness.workdir : join(root, harness.workdir))
-    : root;
+  const identity = "You are a child of this admitted assignment. Follow the parent's bounded request and frozen scope. " +
+    "Return findings and evidence to the parent; do not approve bindings or request unit completion.\n\n" +
+    readFileSync(join(root, "run", id, "persona.md"), "utf8");
+  if (typeof harness.workdir !== "string" || !isAbsolute(harness.workdir)) throw new Error("native child requires its admitted workdir");
+  const workdir = harness.workdir;
   const args = [
     "--mode", "json", "-p", "--no-session",
     "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
-    ...(nativeHook ? ["--extension", fileURLToPath(import.meta.url)] : []),
+    "--extension", fileURLToPath(import.meta.url),
     "--no-context-files", "--no-approve", "--offline",
     "--model", harness.model,
     "--thinking", harness.effort,
     "--append-system-prompt", identity,
-    contextLine ? `${contextLine}\n\n${prompt}` : prompt,
+    prompt,
   ];
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, {
@@ -459,18 +362,7 @@ function runChild(prompt: string, contextLine: string, agentId: string, signal?:
           if (event.type === "message_end" && event.message?.role === "assistant") {
             last = textOf(event.message);
           }
-          if (event.type === "tool_execution_end" && !nativeHook) {
-            const tokens = usageTokens(event.result?.usage);
-            callHook("log", {
-              agent_id: agentId,
-              tool_name: event.toolName,
-              tool_use_id: event.toolCallId,
-              tool_input: event.args,
-              tool_response: event.result,
-              context_tokens: tokens,
-              transcript_path: event.sessionFile,
-            });
-          }
+
         } catch {
           // A non-JSON line is Pi's own diagnostic. The stream stays the JSON events.
         }

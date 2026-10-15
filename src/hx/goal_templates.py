@@ -161,8 +161,6 @@ def replan(store, plan_id):
                 unknowns.append('Refresh the changed application record: ' + ref['id'])
                 continue
             ref['version'] = current['record']['version']
-            if current['record']['kind'] == 'check' and ref['id'] in unit.get('checks',{}):
-                unit['checks'][ref['id']] = current['record']['data']['recipe']
         # Facts may have introduced dependencies not originally pinned by the unit.
         pinned = {(r['repository'], r['snapshot'], r['id']) for r in unit['map_inputs']}
         for item in store.db.execute('SELECT * FROM task_replan_queue WHERE task_id=? AND task_revision=?', (unit['id'], head)):

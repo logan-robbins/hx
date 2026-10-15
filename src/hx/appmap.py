@@ -76,14 +76,14 @@ def _texts(value, field):
 def validate_record(record: dict) -> None:
     fields = {"schema_version", "id", "version", "kind", "claim", "summary", "data", "anchors", "edges", "attributes", "replaces"}
     if not isinstance(record, dict) or record.keys() != fields or type(record["schema_version"]) is not int or record["schema_version"] != SCHEMA_VERSION:
-        raise ValidationError("map record has unknown structure or schema; migration is required")
+        raise ValidationError("map record has unsupported structure or schema")
     if len(canonical(record).encode()) > RECORD_BYTES:
         raise ValidationError("map record exceeds 64 KiB; split its responsibility")
     identifier(record["id"])
     if type(record["version"]) is not int or record["version"] < 1:
         raise ValidationError("map version must be positive")
     if not isinstance(record["kind"], str) or record["kind"] not in KINDS or not isinstance(record["claim"], str) or record["claim"] not in CLAIMS:
-        raise ValidationError("map kind/claim is unknown; structural changes need migration")
+        raise ValidationError("map kind/claim is unsupported")
     _text(record["summary"], "summary")
     if not isinstance(record["data"], dict) or record["data"].keys() != DATA_FIELDS[record["kind"]]:
         raise ValidationError(f"map {record['kind']} has missing or unknown semantic fields")
@@ -144,7 +144,7 @@ def validate_record(record: dict) -> None:
             raise ValidationError("map edge requires kind, to, status, evidence")
         identifier(edge["to"])
         if not isinstance(edge["kind"], str) or edge["kind"] not in RELATIONS or not isinstance(edge["status"], str) or edge["status"] not in STATUSES:
-            raise ValidationError("map relation/status is unknown; structural changes need migration")
+            raise ValidationError("map relation/status is unsupported")
         key = (edge["kind"], edge["to"])
         if key in seen or edge["to"] == record["id"]:
             raise ValidationError("map has a duplicate or self edge")
@@ -299,7 +299,7 @@ def read_json(path: Path, limit=RECORD_BYTES) -> dict:
 def manifest(repository: Path) -> dict:
     body = read_json(_directory(repository) / "manifest.json", 4096)
     if body.keys() != {"schema_version", "repo_id"} or type(body["schema_version"]) is not int or body["schema_version"] != SCHEMA_VERSION:
-        raise ValidationError("unknown map manifest structure; migrate the schema")
+        raise ValidationError("unsupported map manifest structure")
     try:
         if str(uuid.UUID(body["repo_id"])) != body["repo_id"]:
             raise ValueError

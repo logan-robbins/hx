@@ -87,16 +87,16 @@ def test_every_malformed_goal_is_rejected_by_name(name, tmp_path):
 def test_the_old_two_section_contract_says_where_each_part_went(tmp_path):
     with pytest.raises(ValidationError) as exc:
         parse_goal_text(OLD_CONTRACT, "goal.md")
-    assert "the worker writes its own `## Definition of done`" in str(exc.value)
+    assert "the worker binds its own checks and definition of done" in str(exc.value)
     with pytest.raises(ValidationError) as exc:
         parse_goal_text(malformed()["a ### Checks"], "goal.md")
-    assert "`## Evidence`" in str(exc.value)
+    assert "approved packet binding" in str(exc.value)
 
 
 def test_a_missing_goal_file_is_rejected(tmp_path):
     with pytest.raises(ValidationError) as exc:
         parse_goal(tmp_path / "nope.md")
-    assert "goal file not found" in str(exc.value)
+    assert "planning goal input not found" in str(exc.value)
 
 
 def test_a_heading_inside_a_fence_is_not_a_section():
@@ -104,10 +104,8 @@ def test_a_heading_inside_a_fence_is_not_a_section():
     assert "## not a heading" in parse_goal_text(text, "goal.md").goal
 
 
-def test_the_skeleton_goal_template_passes_its_own_rules():
-    """`templates/goal.md` is the shape the Partner copies: one paragraph, nothing else."""
-    from hx.install import skeleton_dir
-
-    path = skeleton_dir() / "templates" / "goal.md"
+def test_planning_goal_input_is_one_paragraph(tmp_path):
+    path = tmp_path / "goal.md"
+    path.write_text("## Goal\nReturn the requested behavior through the published API.\n")
     goal = parse_goal(path)
-    assert goal.goal.strip() and "\n\n" not in goal.goal.strip()
+    assert goal.goal == "Return the requested behavior through the published API."

@@ -31,10 +31,6 @@ class SpySource(FixtureSource):
         self.calls.append(("goals", ()))
         return super().goals()
 
-    def archive(self):
-        self.calls.append(("archive", ()))
-        return super().archive()
-
     def wake_partner(self, text):
         self.calls.append(("wake_partner", (text,)))
         return super().wake_partner(text)
@@ -134,6 +130,6 @@ def test_a_refused_post_leaves_the_connection_usable(spy_ui):
 def test_no_endpoint_touches_the_instance(spy_ui):
     """Every read path, then the manifest again."""
     before = manifest(FIXTURES)
-    for path in ("/api/board", "/api/goals", "/api/archive", "/api/show/partner", "/api/show/eng-001", "/"):
+    for path in ("/api/board", "/api/goals", "/api/show/be-001", "/"):
         spy_ui.client.get(path)
     assert manifest(FIXTURES) == before

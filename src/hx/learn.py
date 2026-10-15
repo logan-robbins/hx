@@ -3,21 +3,10 @@
 `LEARNINGS/<category>.md` holds the rules an instance (or a whole fleet of instances) has paid
 for: what tripped an agent up, written so the next agent recognises it (**Signal**), can decide
 it mechanically (**Check**), and can see where it came from (**Evidence**). The categories are
-fixed (`CATEGORIES`): a rule is filed by the kind of mistake it prevents, the file name says
-which, and no agent invents a category. The learnings are deliberately apart from everything hx
-shards per agent — the goal, the work item, the step state, the episode store — because a
-correction one agent had to make is owed to every agent of its kind, and a thing owed to many
-lives in one place or it is lost. There is no per-agent memory file: this is where a lesson
-goes.
-
-Every rule reaches every agent it applies to, whole: `hx persona` renders them into the persona,
-which the adapters pass as the system prompt, so they are present at every start and after every
-compaction without a Read, and prompt-cached with the rest of the invariant prompt. A rule is
-global (every agent, `LEARNINGS/<category>.md`) or scoped to one role (`--role` on `propose` and
-`accept`), and a role's rules live next to its persona, `personas/<role>/<category>.md`: a lesson
-one backend engineer learned reaches every backend engineer, and nobody else pays its bytes. The
-region is the global rules, then the agent's role's rules. An older hx wrote a role's rule into
-the global file with `Role: <role>` in its line; `migrate_role_rules` moves it.
+fixed (`CATEGORIES`): rules are stored by the kind of mistake they prevent. Reviewed rules
+live in global `LEARNINGS/<category>.md` files or a role's `personas/<role>/<category>.md`
+files. They are shared invariants carried with current instructions; task-specific claims,
+progress and proof belong in the packet ledger.
 
 A file everyone writes grows with duplicates, so nobody writes it directly. Two steps, never in
 the same session:
@@ -62,7 +51,7 @@ from .errors import HxError, NotFound, ValidationError
 CATEGORIES: tuple[tuple[str, str], ...] = (
     ("orientation", "where answers live and what to open first: named entry files, what never to read, status from a tool run and never from memory"),
     ("ownership", "claims, selection and boundaries: what may be worked on or written, by whom, under which authorization"),
-    ("planning", "shaping a work item: lanes, contracts and stubs, gates to define, sizing, sequencing"),
+    ("planning", "shaping dependency packets: behavior, contracts, permitted stand-ins, proof, ownership, and useful parallelism"),
     ("domain", "the product under work: semantics decided from source, data access, what fixtures and seeds mean"),
     ("build", "the local build and test loop and the tools in it"),
     ("testing", "what a test must prove: fixtures, coverage scope, regressions from captures, never weakening a test"),
@@ -86,11 +75,6 @@ RULE_RE = re.compile(
 )
 FIELD_QUALIFIER = r"(?: [^·:]{0,40})?"
 FIELDS = ("Signal", "Check", "Evidence")
-#: The scope an older hx wrote into the line, first after the key:
-#: `**Rule T12** · Role: backend-engineer · Signal: …`. Read so `migrate_role_rules` can move it;
-#: a role's rule now lives in `personas/<role>/<category>.md` and its line carries no scope.
-#: Absent means global.
-ROLE_FIELD_RE = re.compile(r"^Role:\s*(?P<role>[a-z][a-z0-9-]*)\s*·\s*")
 ROLE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 GO_RE = re.compile(r"^GO \d{4}-\d{2}-\d{2}\b", re.M)
 RULES_HEADING = "## Rules"
@@ -127,7 +111,7 @@ def _hx_json(root: Path) -> dict:
 def learnings_path(root: Path, env: dict[str, str] | None = None) -> Path:
     """The learnings directory: `HX_LEARNINGS`, else `config/hx.json` `learnings`, else
     `<root>/LEARNINGS/`. A value naming a single `.md` file is the pre-directory layout and
-    is refused with the migration pointer."""
+    is refused."""
     env = os.environ if env is None else env
     value = env.get("HX_LEARNINGS") or _hx_json(root).get("learnings") or ""
     if value:
@@ -136,7 +120,7 @@ def learnings_path(root: Path, env: dict[str, str] | None = None) -> Path:
             raise ValidationError(
                 f"learnings {path} names one file; hx keeps learnings as a directory of category "
                 f"files (LEARNINGS/<category>.md). Point `learnings` at the directory "
-                f"(docs/learnings.md § Migration)"
+                f"(docs/learnings.md)"
             )
         return path
     return Path(root) / DIRECTORY_NAME
@@ -224,16 +208,13 @@ def _identity(root: Path, env: dict[str, str] | None) -> tuple[str, str]:
 
 def parse_rule(line: str) -> dict | None:
     """One rule line as `{prefix, number, key, role, signal, check, evidence, line}`, or None.
-    `role` is the scope an older hx wrote into the line (`Role:`), else None; `read_role_rules`
-    sets it from where the file lives."""
+    Role scope comes exclusively from the category file's directory."""
     match = RULE_RE.match(line.rstrip("\n"))
     if not match:
         return None
     body = match["body"]
-    scope = ROLE_FIELD_RE.match(body)
-    role = scope["role"] if scope else None
-    if scope:
-        body = body[scope.end():]
+    if body.startswith("Role:"):
+        return None
     fields: dict[str, str] = {}
     for name in FIELDS:
         found = re.search(
@@ -246,7 +227,7 @@ def parse_rule(line: str) -> dict | None:
         "prefix": match["prefix"],
         "number": int(match["number"]),
         "key": f"{match['prefix']}{match['number']}",
-        "role": role,
+        "role": None,
         "line": line.rstrip("\n"),
         **fields,
     }
@@ -269,7 +250,7 @@ def read_file_rules(path: Path) -> list[dict]:
 
 def read_rules(path: Path) -> list[dict]:
     """Every rule under the learnings directory, categories in taxonomy order; a single file
-    reads as itself (tests and migration)."""
+    reads as itself."""
     path = Path(path)
     if path.is_dir():
         rules: list[dict] = []
@@ -317,11 +298,6 @@ def render_rule(prefix: str, number: int, signal: str, check: str, evidence: str
         f"**Rule {prefix}{number}** · Signal: {_one_line(signal)} · Check: {_one_line(check)}"
         f" · Evidence: {_one_line(evidence)}"
     )
-
-
-def without_role_field(line: str) -> str:
-    """A rule line an older hx scoped in place, without its `Role:` field."""
-    return re.sub(r"^(\*\*Rule [A-Z]{1,3}\d+\*\*)\s*·\s*Role:\s*[a-z][a-z0-9-]*\s*·", r"\1 ·", line)
 
 
 def validate_role(role: str | None) -> str | None:
@@ -646,7 +622,7 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
 def propose_text(root: Path, *, text: str, author: str, source: str, category: str = "orientation",
                  role: str | None = None, env: dict[str, str] | None = None) -> dict:
     """A proposal that is prose, not yet a rule: what an agent wrote down before the learnings
-    were the channel (`hx.persona.migrate`), or the directives `hx distill` promoted.
+    need review as explicit invariant rules before being accepted.
 
     hx does not guess a Signal and a Check out of prose. The reviewer reads the text in
     `hx learn pending` and turns each lesson it holds into a rule — `hx learn accept ID
@@ -830,13 +806,6 @@ def check(root: Path, env: dict[str, str] | None = None) -> list[tuple[str, str]
                              f"({', '.join(CATEGORY_NAMES)}); move them"))
             else:
                 rows.append(("warn", f"{name} is not a category file; nothing reads it"))
-    scoped_in_place = [rule for rule in read_rules(path) if rule.get("role")]
-    if scoped_in_place:
-        own = path.resolve() == (Path(root) / DIRECTORY_NAME).resolve()
-        rows.append(("warn", f"{len(scoped_in_place)} rule(s) in {path} still carry `Role:` in the line "
-                     + ("(`hx install`, `hx up` or `hx launch` moves them to personas/<role>/)" if own else
-                        "(a shared directory: move each to the instance's personas/<role>/<category>.md "
-                        "and drop the field)")))
     seen: dict[str, str] = {}
     for rule in rules:
         where = f"{Path(rule['file']).name}:{rule['lineno']}"
@@ -1129,33 +1098,3 @@ def main(argv: list[str], root: Path, *, env: dict[str, str] | None = None) -> i
         return 0
 
     raise HxError(f"hx learn: unknown command {args.command}")  # pragma: no cover
-
-
-# --- migration ----------------------------------------------------------------------------------
-
-
-def migrate_role_rules(root: Path, env: dict[str, str] | None = None) -> int:
-    """Move every rule an older hx scoped with `Role: <role>` in its line out of
-    `LEARNINGS/<category>.md` into `personas/<role>/<category>.md`, without the field. Only the
-    instance's own `LEARNINGS/`: a fleet-shared directory is not one instance's to empty
-    (`hx learn check` warns there). Returns how many rules moved."""
-    path = learnings_path(root, env)
-    if not path.is_dir() or path.resolve() != (Path(root) / DIRECTORY_NAME).resolve():
-        return 0
-    moved = 0
-    with _locked(path):
-        for category in CATEGORY_NAMES:
-            file = category_file(path, category)
-            scoped = [rule for rule in read_file_rules(file) if rule.get("role")]
-            if not scoped:
-                continue
-            for rule in scoped:
-                _append_rule(category_file(role_dir(root, rule["role"]), category), category,
-                             without_role_field(rule["line"]), rule["role"])
-            drop = {rule["lineno"] - 1 for rule in scoped}
-            lines = file.read_text().split("\n")
-            store.atomic_write_text(file, "\n".join(line for index, line in enumerate(lines)
-                                                    if index not in drop))
-            moved += len(scoped)
-    return moved
-

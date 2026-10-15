@@ -20,9 +20,9 @@ from .conftest import SRC, clean_env
 #: spec 09.1, `<hx-hook> --id <id> <event>`, for a worker: no `guard`, which is the Partner's.
 HX_EVENTS = {
     "context", "log", "subagent-start", "subagent-stop",
-    "subagent-result", "stop", "precompact", "postcompact",
+    "stop", "precompact", "postcompact",
 }
-PARTNER_EVENTS = HX_EVENTS - {"subagent-start", "subagent-stop", "subagent-result"} | {"guard"}
+PARTNER_EVENTS = HX_EVENTS | {"guard", "subagent-result"}
 
 
 def run_install(instance, item_id, **env_extra):
@@ -135,7 +135,7 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
     assert by_event["context"] == ("SessionStart", "startup|resume|clear|compact")
     assert "PreToolUse" not in settings["hooks"], "a worker is never guarded (spec 09.1)"
     assert by_event["log"] == ("PostToolUse", "*")
-    assert by_event["subagent-result"] == ("PostToolUse", "Agent")
+    assert "subagent-result" not in by_event
     assert by_event["subagent-start"][0] == "SubagentStart"
     assert by_event["subagent-stop"][0] == "SubagentStop"
     assert by_event["stop"] == ("Stop", None), "Stop takes no matcher (docs/en/hooks)"
@@ -165,11 +165,15 @@ def test_guard_is_installed_for_the_partner_alone(instance):
         assert not any(c.endswith(" guard") for c in hook_commands(companion)), item_id
 
 
-def test_the_partner_gets_no_subagent_hooks(instance):
-    """Spec 09.1 marks the three subagent events "Non-Partner"."""
+def test_the_partner_observes_and_rehydrates_its_bounded_research_children(instance):
     assert run_install(instance, "partner").returncode == 0
     commands = hook_commands(settings_for(instance, "partner"))
     assert {c.rsplit(" ", 1)[1] for c in commands} == PARTNER_EVENTS
+    hooks = settings_for(instance, "partner")['hooks']
+    assert hooks['SubagentStart'][0]['hooks'][0]['command'].endswith(' subagent-start')
+    assert hooks['SubagentStop'][0]['hooks'][0]['command'].endswith(' subagent-stop')
+    assert any(block.get('matcher') == 'Agent' and block['hooks'][0]['command'].endswith(' subagent-result')
+               for block in hooks['PostToolUse'])
 
 
 # --- instruction files, excludes, permissions, messaging --------------------------------------
@@ -295,17 +299,10 @@ def test_a_worker_home_gets_hx_worker_only(instance):
     assert not (skills / "hx-partner").exists() and not (skills / "hx-fleet").exists()
 
 
-def test_both_kinds_of_harness_agent_get_hx_memory(instance):
-    """The episode store is one store for the whole instance (docs/memory.md): the Partner
-    searches it before writing a goal, a worker before exploring a part of the tree."""
-    for item_id in ("eng-001", "partner"):
-        assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
-        home_skills = instance / "run" / item_id / "home" / "skills"
-        assert (home_skills / "hx-memory" / "SKILL.md").is_file(), item_id
 
 
 def test_the_companion_home_does_not_get_hx_memory(instance):
-    """It writes episodes by writing step state and reads only the files its pass names."""
+    """A Companion receives only its configured observation instructions."""
     assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
     companion = instance / "run" / "eng-001" / "companion-home" / "skills"
     assert not (companion / "hx-memory").exists()
@@ -372,12 +369,11 @@ def test_an_optional_skill_installs_only_when_config_hx_json_names_it(instance, 
         assert (instance / "run" / item_id / "home" / "skills" / "hx-extra" / "SKILL.md").is_file()
 
 
-def test_a_planned_run_gets_no_memory_skill(instance):
-    """`"planned": false` (hx-memory): a ledger run has no episodic memory. The end-to-end
-    planned install is tests/core/test_native_launch.py's; this is the manifest's half."""
-    planned = _expected_skills_env(instance, "eng-001", HX_CONTINUITY_RUN="r1")
-    assert "hx-worker" in planned and "hx-memory" not in planned
-    assert "hx-memory" in _expected_skills(instance, "eng-001")
+def test_skill_selection_has_one_packet_runtime_for_every_worker(instance):
+    selected = _expected_skills_env(instance, "eng-001", HX_CONTINUITY_RUN="r1")
+    assert "hx-worker" in selected
+    assert "hx-memory" not in selected
+    assert selected == _expected_skills(instance, "eng-001")
 
 
 def _expected_skills_env(instance, item_id, **env):

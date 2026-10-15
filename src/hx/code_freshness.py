@@ -16,7 +16,9 @@ def in_scope(path, scopes):
 
 
 def scope(root, repository, paths, *, bootstrap=False, local=False):
-    paths = list(paths)
+    # Read-only and discovery packets still depend on actual repository graph
+    # evidence. An empty write set means repository orientation, not no evidence.
+    paths = list(paths) or ["."]
     if not local:
         from .repo_service import configured_socket, request
 
@@ -34,8 +36,6 @@ def scope(root, repository, paths, *, bootstrap=False, local=False):
     repo = Path(repository).resolve()
     identity = store.namespace(repo)
     paths = list(paths)
-    if not paths:
-        return dict(fresh=True, repo=identity, reasons=[], paths=[])
     conn = store.connect(root, existing=True)
     record = (
         conn.execute("SELECT * FROM repos WHERE repo=?", (identity,)).fetchone()

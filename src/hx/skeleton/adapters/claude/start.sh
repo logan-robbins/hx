@@ -62,6 +62,9 @@ fi
 [ -n "$python" ] || python=python3
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
 
+# Every worker executable descends from the controller's admitted run supervisor.
+"$python" -m hx.adapter_guard "$id" claude "$mode" "$role" || die "worker launch admission refused"
+
 if [ "$role" = companion ]; then
   home=$root/run/$id/companion-home
   window=companion
@@ -70,9 +73,8 @@ else
   window=main
 fi
 harness=$root/config/$id/harness.json
-# Only a planned launch has a persona file: the compiled planned system prompt in its private
-# root (`native_launch`). Every other launch gets its persona from the SessionStart `context`
-# hook at every boundary (`hx.persona.boundary`), with no system-prompt flag.
+# Workers receive the frozen system prompt from their private launch capsule.
+# Partner bootstrap receives its current orchestration persona at context boundaries.
 persona=$root/run/$id/persona.md
 companion_system=$root/run/$id/companion-system.md
 
@@ -187,12 +189,6 @@ if [ "$mode" = exec ]; then
   # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of
   # 2026-09-20 21:20 the Partner had to dig the absolute path out of config/hx.json.
   export PATH="$root/bin:$PATH"
-  # D26. A `/goal` keeps a turn from ending, and Claude Code caps that at nine consecutive
-  # blocks by default: "A hook blocked the turn from ending 9 consecutive times — overriding
-  # and ending turn", after which the goal pauses and the pane sits idle (live 2026-09-20,
-  # 01.1 E10). Nine turns is nothing for a real task, so the cap is raised out of the way and
-  # `hx heartbeat`'s re-paste stays as the fallback (spec 11, 17.4).
-  export CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
   if [ -n "${HX_MAX_OUTPUT_TOKENS:-}" ]; then
     export CLAUDE_CODE_MAX_OUTPUT_TOKENS="$HX_MAX_OUTPUT_TOKENS"
   fi
@@ -245,7 +241,6 @@ env_args=(
   -e DISABLE_AUTOUPDATER=1
   -e IS_SANDBOX=1
   -e PATH="$root/bin:$PATH"
-  -e CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=100000
 )
 if [ -n "$autocompact" ]; then
   env_args+=(-e CLAUDE_CODE_AUTO_COMPACT_WINDOW="$autocompact")
@@ -279,7 +274,7 @@ else
 fi
 
 # The pane capture, the UI's fallback for a dead session (spec 03, 11). Not a Companion
-# stream: `hx.streams` ignores it and `hx dispatch` archives it with the rest of logs/<id>/.
+# stream: `hx.streams` ignores it and the runtime retains it only as bounded execution diagnostics.
 if [ "$role" != companion ]; then
   "${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
   "${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"

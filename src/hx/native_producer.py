@@ -164,9 +164,7 @@ def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload):
     if event == "model-response" and adapter != "meta":
         raise ValidationError("model response capture requires the verified Muse hook contract")
     if event == "subagent-result":
-        # PostToolUse already captured this observation; this legacy hook exists
-        # solely to compose child digests and must not duplicate a tool result.
-        return None
+        raise ValidationError('native child results use the ordinary tool-result observation; file digest hooks belong to the Partner')
     session = payload.get("session_id") or payload.get("sessionId") or payload.get("transcript_path")
     child = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
     if not session:

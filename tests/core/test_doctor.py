@@ -67,11 +67,11 @@ def test_missing_skeleton_files_are_warnings_not_failures(instance, monkeypatch)
     """The gtm lane owns these; doctor reports each missing one (goal build-1 item 2)."""
     _no_live_server(monkeypatch)
     (instance / "PARTNER.md").unlink()
-    (instance / "templates" / "work-item.md").unlink()
+    (instance / "templates" / "worker" / "harness.json").unlink()
     checks = run_checks(instance)
     warned = {detail for status, check, detail in checks if check == "skeleton" and status == WARN}
     assert "PARTNER.md missing" in warned
-    assert "templates/work-item.md missing" in warned
+    assert "templates/worker/harness.json missing" in warned
     assert not [c for c in checks if c[0] == FAIL], [c for c in checks if c[0] == FAIL]
 
 
@@ -95,17 +95,11 @@ def test_a_missing_token_fails(instance):
 
 
 def test_a_home_without_settings_fails(instance):
-    home = instance / "run" / "eng-001" / "home"
+    home = instance / "run" / "partner" / "home"
     home.mkdir(parents=True)
-    assert ("home:eng-001", FAIL) in statuses(run_checks(instance))
+    assert ("home:partner", FAIL) in statuses(run_checks(instance))
 
 
-def test_it_does_not_inspect_work_items(instance, work_item, monkeypatch):
-    """spec 14 D25: `hx doctor` polices no work item; the board is a listing."""
-    _no_live_server(monkeypatch)
-    work_item("eng-001", "working", outcome="done")
-    (instance / "pods" / "engineers" / "eng-001-extra.md").write_text("---\nid: nope\n---\n")
-    assert [c for c in run_checks(instance) if c[0] == FAIL] == []
 
 
 def test_there_is_no_repo_check(instance):
@@ -154,7 +148,7 @@ def test_json_form(run_hx, instance):
 # --- build-8 item 9: the pre-seeded first-launch state ------------------------------------------
 
 
-def seed_home(instance, item_id="eng-001", **state):
+def seed_home(instance, item_id="partner", **state):
     import json
 
     home = instance / "run" / item_id / "home"
@@ -165,7 +159,7 @@ def seed_home(instance, item_id="eng-001", **state):
     return home
 
 
-def home_checks(instance, item_id="eng-001"):
+def home_checks(instance, item_id="partner"):
     return [c for c in run_checks(instance) if c[1] == f"home:{item_id}"]
 
 
@@ -296,12 +290,6 @@ def test_an_instance_on_a_shared_directory_is_not_asked_for_its_own_skeleton_fil
     assert str(shared) in detail_for(checks, "learnings")[0]
 
 
-def test_warns_on_the_single_file_layout(instance):
-    (instance / "LEARNINGS.md").write_text("# old\n")
-    checks = run_checks(instance)
-    assert ("learnings-legacy", WARN) in statuses(checks)
-    assert ("learnings", OK) in statuses(checks)
-    assert ("hook-size", WARN) not in statuses(checks)
 
 
 def test_hook_size_names_every_agent_whose_hook_output_passed_its_bound(instance, monkeypatch):
@@ -459,16 +447,3 @@ def test_a_partner_only_section_is_exempt_only_in_a_skill_the_partner_also_carri
     assert skill_manifest.refused_mentions(text, AUDIENCES, partner_sections=True) == []
     leaked = text + "\nAnd `hx code contracts --register d.jsonl` here.\n"
     assert skill_manifest.refused_mentions(leaked, AUDIENCES, partner_sections=True) == ["code contracts"]
-
-
-def test_the_memory_model_row_says_warm_when_the_cache_is_empty(instance, monkeypatch, tmp_path):
-    from hx import memory
-
-    checks = run_checks(instance)
-    assert ("memory-model", OK) in statuses(checks), detail_for(checks, "memory-model")
-
-    monkeypatch.setattr(memory, "model_missing", lambda: ["model.onnx"])
-    monkeypatch.setattr(memory, "model_dir", lambda: tmp_path / "onnx")
-    checks = run_checks(instance)
-    assert ("memory-model", WARN) in statuses(checks)
-    assert "hx memory warm" in detail_for(checks, "memory-model")[0]

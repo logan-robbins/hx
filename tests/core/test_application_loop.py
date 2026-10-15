@@ -157,3 +157,41 @@ def test_completion_error_does_not_starve_independent_companion_work(planned, mo
     monkeypatch.setattr(native_companion, 'execute', lambda *a, **kw: {'status': 'committed'})
     assert loop.tick(store)['status'] == 'committed'
     assert 'capture gap' in loop.status(store)['completion_error']['error']
+
+
+def test_root_service_is_resident_without_worker_reservations_and_recovers_after_exit(tmp_path):
+    import os
+    import signal
+    from hx.continuity_store import ContinuityStore
+    identities = []
+    try:
+        first = loop.ensure(tmp_path)
+        identities.append(first)
+        with ContinuityStore(tmp_path) as store:
+            view = loop.status(store)
+            assert view['service']['running'] and view['active'] == []
+        assert loop.ensure(tmp_path) == first
+        loop.native_processes.send(first, signal.SIGKILL)
+        os.waitpid(first['pid'], 0)
+        with ContinuityStore(tmp_path) as store:
+            assert not loop.status(store)['service']['ready']
+        second = loop.ensure(tmp_path)
+        identities.append(second)
+        assert second != first and loop.native_processes.current(second)
+        assert loop.ensure(tmp_path) == second
+    finally:
+        for identity in identities:
+            if loop.native_processes.current(identity):
+                loop.native_processes.send(identity, signal.SIGKILL)
+                os.waitpid(identity['pid'], 0)
+
+
+def test_graceful_service_exit_clears_readiness(tmp_path):
+    import threading
+    from hx.continuity_store import ContinuityStore
+    stop = threading.Event()
+    stop.set()
+    loop.serve(tmp_path, stop=stop)
+    with ContinuityStore(tmp_path) as store:
+        assert loop._state(store, 'application-service')['ready'] is False
+        assert loop.status(store)['service']['running'] is False

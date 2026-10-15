@@ -26,7 +26,7 @@ def require_partner_caller(command: str, env=None, *, owner: str | None = None) 
     if who is not None and who != PARTNER:
         raise Refused(
             f"refuse: `hx {command}` is {owner or 'the Partner' + chr(39) + 's'}, and HARNESS_ID "
-            f"is `{who}`. A worker asks the Partner through `hx complete blocked|decision` "
+            f"is `{who}`. A worker records blockers and decisions through `hx progress` "
             f"instead of acting for itself (spec 08; `hx help` lists your commands)"
         )
 

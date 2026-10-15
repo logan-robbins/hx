@@ -26,7 +26,7 @@ def configured(assignment):
     folder = store.root / "config" / "eng-001"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "harness.json").write_text(json.dumps({"id": "eng-001", "pod": "engineers",
-        "role": "backend-engineer", "model": "claude-opus-5", "effort": "high", "workdir": str(repo)}))
+        "role": "backend-engineer", "model": "claude-opus-5-5", "effort": "high", "workdir": str(repo)}))
     return store, repo, run
 
 
@@ -69,7 +69,13 @@ def test_private_installation_hooks_use_shared_authority(configured, child_env, 
     assert not (home / "skills" / "hx-memory").exists()
     assert not (home.parent / "companion-home").exists()
     assert native_launch.verify(store, run)["launch_id"] == launch["launch_id"]
-    command = next(command for command in commands(home, flavor) if command.endswith(" log"))
+    installed_commands = list(commands(home, flavor))
+    if flavor != 'pi':
+        assert any(command.endswith(' subagent-start') for command in commands(home, flavor, 'SubagentStart'))
+        assert any(command.endswith(' subagent-stop') for command in commands(home, flavor, 'SubagentStop'))
+    assert not any(command.endswith(' subagent-result') for command in installed_commands)
+    assert len([command for command in installed_commands if command.endswith(' log')]) == 1
+    command = next(command for command in installed_commands if command.endswith(" log"))
     result = subprocess.run(shlex.split(command), input=json.dumps({"session_id": "S", "tool_use_id": "C",
         "tool_name": "Bash", "tool_response": "Test callback reached the assigned ledger."}),
         env={"PATH": env["PATH"], "HOME": str(login.parents[1]), "PYTHONPATH": str(SRC)},
@@ -81,7 +87,7 @@ def test_private_installation_hooks_use_shared_authority(configured, child_env, 
         assert tx.db.execute("SELECT count(*) FROM native_bindings WHERE run_id=?", (run,)).fetchone()[0] == 1
     with pytest.raises(Conflict, match="newer execution evidence"):
         native_launch.verify(store, run)
-    assert launch["payload"]["charged_initial_tokens"] <= 8000
+    assert launch["payload"]["charged_initial_tokens"] <= launch['payload']['initial_input_limit'] <= native_launch.INITIAL_INPUT_LIMIT
     assert launch["payload"]["instruction_delivery"] == "prepared"
     assert launch["payload"]["tool_visibility"] == "unverified"
 
@@ -123,11 +129,9 @@ def test_failed_preparation_retains_ownership_and_does_not_retry_implicitly(conf
         native_launch.verify(store, run)
 
 
-def test_schema_twelve_upgrade_preserves_contracts(configured):
+def test_schema_twelve_reopen_preserves_contracts(configured):
     store, _, run = configured
     launch = prepare(configured)
-    store.db.execute("DROP TABLE native_launches")
-    store.db.execute("PRAGMA user_version=12")
     with ContinuityStore(store.root) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert upgraded.db.execute("SELECT run_id FROM native_launch_contracts WHERE launch_id=?",
@@ -168,3 +172,44 @@ def test_correction_after_preparation_blocks_stale_context(configured):
         tx.append_event(run, "main", "correction", "correction", {"text": "Use the new application state."})
     with pytest.raises(Conflict, match="newer execution evidence"):
         native_launch.verify(store, run)
+
+
+def test_preparation_charges_exact_startup_marker_and_pointer_before_spawn(configured):
+    from hx import native_controller, prompt_compiler
+    store, _, run = configured
+    row = prepare(configured, 'codex')
+    body = row['payload']
+    _, rendered = prompt_compiler.verified_bundle(store.root, 'eng-001', Path(body['manifest']), workdir=body['workdir'])
+    with store.transaction() as tx:
+        packet = native_launch.context_packets._read(tx, body['checkpoint_id'], run)
+    overhead = native_controller.startup_overhead(body['capsule'], run, row['launch_id'], rendered['system'])
+    assert body['charged_initial_tokens'] == packet['charged_tokens'] + overhead
+    assert body['initial_input_limit'] == native_launch.INITIAL_INPUT_LIMIT
+    assert body['charged_initial_tokens'] + native_launch.STARTUP_OBSERVATION_RESERVE <= body['initial_input_limit']
+    assert row['status'] == 'prepared' and 'session' not in body
+
+
+def test_required_context_overflow_is_refused_before_installation(configured, monkeypatch):
+    from hx.facts import RequiredContextOverflow
+    store, _, run = configured
+    def overflow(*a, **kw):
+        raise RequiredContextOverflow('required startup envelope exceeds its configured bound')
+    monkeypatch.setattr(native_launch.context_packets, 'issue', overflow)
+    with pytest.raises(RequiredContextOverflow):
+        prepare(configured, 'codex')
+    row = native_launch._row(store, run)
+    assert row['status'] == 'preparation_failed'
+    assert 'session' not in row['payload']
+    assert not Path(row['payload']['capsule']).exists()
+    assert store.db.execute('SELECT count(*) FROM leases WHERE run_id=?', (run,)).fetchone()[0]
+
+
+def test_initial_input_limit_respects_configured_context_threshold(configured):
+    store, _, _ = configured
+    path = store.root / 'config/models.json'
+    models = json.loads(path.read_text())
+    models['claude-opus-5-5']['threshold'] = 7000
+    path.write_text(json.dumps(models))
+    row = prepare(configured)
+    assert row['payload']['initial_input_limit'] == 7000
+    assert row['payload']['charged_initial_tokens'] <= 7000

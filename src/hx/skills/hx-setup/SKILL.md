@@ -16,13 +16,13 @@ the steps in order; each one says how to check it worked.
 ## What you are setting up, in one paragraph
 
 hx runs a small fleet of Claude Code sessions in tmux: one **Partner** that the human talks
-to, N **workers** the Partner creates and dispatches, and a **Companion** beside every one of
+to, N **workers** the Partner configures and assigns, and a **Companion** beside every one of
 them that keeps its state so it survives context cuts. Everything lives under one directory,
 the instance root (`HARNESS_ROOT`, default `~/hx`), with its Claude credential in `seed/token`
 and optional provider keys under `seed/`. After
 setup **the human only ever talks to the Partner** (`tmux attach -t partner`) and watches the
 UI. You do the one-time machine setup below and then stop. You are not the Partner, you do
-not create workers, and you do not dispatch work.
+not create workers, and you do not assign work.
 
 ## Two rules before you type anything
 
@@ -56,8 +56,7 @@ fleet runs the latest release; nothing refuses a version. The versions the live 
 passed on are listed in `src/hx/packaging/tested-claude-versions.json` (also inside the
 installed package), and `hx install` and `hx doctor` print `tested` or `untested` against it.
 The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
-missing credentials fall back to that file: `ANTHROPIC_API_KEY` (also the legacy typo
-`ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
+missing credentials fall back to that file: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
 credentials under `seed/` take precedence.
 
 Optional, for the code graph: `universal-ctags` (the `ctags` that ships with macOS is BSD
@@ -177,14 +176,14 @@ with the repository's `tools/claude-home-hash.sh ~/.claude`; the two manifests a
 
 `config/<id>/harness.json` carries each agent's `model` and `effort`; `config/models.json`
 carries each model's context `window`, `autocompact_window` and seam `threshold`. The shipped
-defaults are `claude-opus-5` at `xhigh` for the Partner and for every worker the Partner
+defaults are `claude-opus-5-5` at `xhigh` for the Partner and for every worker the Partner
 creates from `templates/worker/harness.json`. Models are always full ids, never aliases.
 
-For a trial or test instance, set both files to `claude-sonnet-5` and `medium` **before the
-second `hx install` run** (or restart the Partner afterwards):
+For a trial or test instance, set both files to `claude-sonnet-5-5` and `medium` **before the
+second `hx install` run** before starting the Partner:
 
 ```bash
-sed -i.bak 's/"claude-opus-5"/"claude-sonnet-5"/; s/"xhigh"/"medium"/' \
+sed -i.bak 's/"claude-opus-5-5"/"claude-sonnet-5-5"/; s/"xhigh"/"medium"/' \
   ~/hx/config/partner/harness.json ~/hx/templates/worker/harness.json && rm -f ~/hx/config/partner/harness.json.bak ~/hx/templates/worker/harness.json.bak
 ```
 
@@ -199,29 +198,22 @@ Give the human the Partner attachment command and the live UI URL:
 tmux attach -t partner
 ```
 
-and the UI at `http://127.0.0.1:8765/` (port from `config/ui.json`). From here on the Partner
-creates workers, writes goals, dispatches, reads completion states and reports in chat; the human
-describes what they want and where the code is. **The human never runs hx**, and neither do
-you after this point. Do not create `config/<id>/` directories, do not write goal files, do
-not run `hx launch` or `hx dispatch`: an agent that starts making agents is a bug, and the
-Partner has the skills (`hx-partner`, `hx-fleet`, `hx-memory`) for all of it.
+and the UI at the address reported by `hx up` (`config/ui.json` chooses the port).
+From here the Partner explores graph dependencies and searches/reuses existing capabilities
+for every directive, drafts schema-2 packets, schedules maximum useful parallel work, reserves
+ready runs, explicitly launches them, and reports verified outcomes. The human describes
+intent and unresolved choices; the setup operator does not create worker assignments.
+The Partner uses `hx-partner` and `hx-fleet`; workers use `hx-worker`.
 
-What the UI shows, so you can describe it: the fleet graph with the Partner at the root and
-each worker with its Companion beside it (pulsing while a pass runs); a worker's drawer, which
-is its work item file plus its Companion's status; a Session page and a Compaction page that
-open in their own window; Task board, Harness Agents, Activity, Goals, Archive, and a chat box
-that reaches the Partner exactly as `hx wake partner` does.
+The UI projects dependency packets, native execution/leases, progress, approved bindings,
+checks/checkpoints, and delivery candidates from the ledger. Its Partner chat sends the
+explicitly entered message; it does not create a task or override a proof gate.
 
 ## 7. Keeping it running
 
-hx ships no daemons, timers or launchd/systemd units. After a reboot:
-
-```bash
-HARNESS_ROOT=~/hx hx up        # hx launch for every config/<id>/, Partner first, then the UI
-```
-
-If the human wants unattended recovery, they put `hx heartbeat` in their own cron; it restarts
-dead sessions and wakes the Partner when the board moved. Offer it; do not install it for them.
+`HARNESS_ROOT=~/hx hx up` recovers the Partner, UI, and resident root service. `hx heartbeat`
+advances durable existing native launch/recovery intents; it does not launch unassigned workers
+or start reservations without explicit launch. Schedule recovery only if requested.
 
 The code graph is derived state under `<root>/state/code-index/`, never in a checkout. Each
 worker completion refreshes the paths it changed; the one full rebuild is the installed hook,
@@ -235,19 +227,13 @@ HARNESS_ROOT=~/hx HX_BIN="$(command -v hx)" HX_CODE_REPO=/path/to/repo ~/hx/bin/
 separate clean checkout to opt into the resolved (SCIP) lane when an indexer is installed.
 Offer the hook and the line above; do not edit their repository's hooks yourself.
 
-## 8. Upgrading
+## 8. Package changes
 
-```bash
-uv tool upgrade hx-harness          # or reinstall the new wheel
-HARNESS_ROOT=~/hx hx install --root ~/hx
-```
-
-Running sessions keep the code and skills they launched with, deliberately: a restart mid-turn
-throws that turn away. `hx restart <id>` relaunches the pane on the upgraded package but does
-not rewrite the home; hooks and skills are written by the adapter's `install.sh`, which runs
-at `hx launch` (and so at `hx up`) and not at restart. The Partner restarts its workers when
-it is ready, and ends and re-launches an idle worker's session when a skill or hook changed;
-the UI is restarted by ending tmux session `ui` and running `hx up`.
+Build/install the current package and use its current instance/store schemas. This unreleased
+product refuses obsolete state and replaces it rather than maintaining compatibility.
+Preserve needed project source/evidence before replacing an obsolete instance. Do not change
+active worker source or installed prompts mid-run: drain/reconcile through the original
+run/request, then stop/replan under the current package.
 
 ## 9. tmux, precisely
 
@@ -255,7 +241,7 @@ Target sessions by exact name: `tmux kill-session -t '=ui'`. A bare `-t ui` pref
 any session starting with `ui`, and the `=` must be quoted in zsh, which otherwise expands
 `=word` as a command lookup. Never send keys into an agent's pane: the Partner is spoken to
 through `tmux attach` by the human or `hx wake partner` by the UI, and workers only through
-`hx dispatch`, `hx resume` and `hx restart` run by the Partner.
+`hx plan assign`, explicit `hx launch ID --run RUN --request REQUEST`, and accepted plan revisions run by the Partner.
 
 ## 10. Several instances on one host
 
@@ -270,24 +256,22 @@ hxc() { local a=$1; shift; HARNESS_ROOT=/path/fleet/instances/$a HX_TMUX="tmux -
 Install and verify all of them before approval, and give every Partner persona a go-gate (no
 `GO <date>` line in its standing instructions → `READY`/`BLOCKED` row, then wait). Prefer an API
 key per instance: several Partners on a few OAuth seats hit usage limits within the hour, and a
-pane frozen by a limit hangs `hx restart`. The procedure, the recovery and the product-repository
+usage-limited native process requires owned-process reconciliation. The procedure, the recovery and the product-repository
 rules are in `docs/multi-instance.md`.
 
 ## 11. What only the operator runs
 
 `hx help` from your shell (no `HARNESS_ID`) prints the operator column; `hx help --all` prints
-every audience's. Besides install, up, doctor, ui, heartbeat and archive:
+every audience's. Besides install, up, doctor, ui and heartbeat:
 
 - `hx models [--provider P] [--expect current]`: each provider's live model list, diffed against
   `config/models.json` and `docs/models.md`; `unverified` for a provider with no key (Anthropic,
   on an OAuth seed); exit 3 with `--expect current` when a configured id is stale or its window
   is too large. It writes nothing; the human edits the registry.
-- `hx metrics --commands`: which `hx` commands each agent actually ran since its dispatch, the
-  evidence for adding a worker command or removing one. `hx cache report [ID]`: each agent's
+- `hx metrics`: recorded packet, run, ownership, check, checkpoint, and delivery counts. `hx cache report [ID]`: each agent's
   invariant prompt prefix against its model's budget.
 - `hx learn check|path|categories|invariant`: lint the `LEARNINGS/` files and say where they
   live. The Partner reviews proposals; the operator only checks the files.
-- `hx cache assess|budget`, `hx memory index` and `hx memory warm`: cache arithmetic, a forced episode reindex, and the one-time download of the embedding model (an agent never downloads it; `hx doctor` row `memory-model`).
 - `config/capabilities.json`: the MCP servers (`"servers": {NAME: {"command": [...]}}`) and
   operator skills (`"skills": {NAME: "/abs/SKILL.md"}`) workers may reach through `hx tools`;
   the Partner's `hx tools index` records each server's protocol version. `config/hx.json`
@@ -298,7 +282,7 @@ every audience's. Besides install, up, doctor, ui, heartbeat and archive:
 
 - Run `claude setup-token`, or read, print, paste or write the token. Relay the two steps.
 - Put the instance root inside `~/.claude`, or edit anything in `~/.claude`.
-- Use `claude -p`. Every hx participant is an interactive tmux session driven by hooks.
+- Bypass configured native controller, Companion, or process-ownership boundaries.
 - Add timeouts, kill a session mid-turn, or answer a trust or onboarding prompt by hand — hx
   pre-seeds each home so no such prompt appears; one that does is a bug to report.
 - Create workers, write goals, dispatch, or edit a worker's `workdir`. That is the Partner's.

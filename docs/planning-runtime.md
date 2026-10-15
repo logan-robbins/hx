@@ -1,207 +1,147 @@
-# Focused plans and verified unit execution
+# Dependency packet planning and verified execution
 
-The functional boundary is a complete behavior unit: relevant source context,
-implementation and fixtures, acceptance checks, and explicit outputs. The Partner
-chooses the decomposition. Deterministic gates enforce ownership, dependency order,
-and output evidence. Planned assignments use the continuity ledger and are connected
-to native dispatch, resume, capture, companion processing, and completion through the
-root service. Legacy state consumers still need coordinated migration.
+Every directive follows current code/application dependencies and the same accepted packet
+lifecycle. Search for existing behavior, providers, interfaces, callers, tests, and precedents
+before construction; reuse known capabilities. The Partner chooses decomposition and maximizes
+useful parallel work within exact dependencies, source ownership, resources, and host capacity.
+Request size does not determine packet count.
 
-The default draft path produces version-2 dependency packets. The Partner defines the
-behavior, scope, dependencies and output obligations; the harness worker defines and
-binds its own executable checks before edits. A separately configured reviewer approves
-the binding. Version-1 plans retain compatibility for existing explicit-check plans.
-See [agent-scale runtime](agent-scale-runtime.md) for the version-2 lifecycle.
+## Graph evidence and decomposition
 
-## Assignment brief
+The derived source graph records indexed declarations, reference/caller candidates, source
+snapshots, and extraction provenance. The curated application map records anchored semantic
+responsibilities and validated relationships. The executable packet DAG declares accepted
+work and exact prerequisite/output versions. These graphs serve different purposes.
+Freshness establishes current evidence, not complete semantic understanding. Unknown/dynamic
+relationships remain discovery obligations. For conversion, index existing source first and
+keep source and target namespaces distinct so shared providers are reused.
 
 ```sh
-hx map plan-context --repo /absolute/worktree --snapshot SNAPSHOT --goal goal.md
-hx map plan-context --repo /absolute/worktree --snapshot SNAPSHOT --goal goal.md --require contract-id
+hx code index --repo WT
+hx code map --budget 5000 --focus AREA
+hx code contract NAME
+hx code callers NAME --count
+hx code tests-for PATH
+hx map plan-context --repo WT --snapshot SNAP --goal goal.txt
+hx plan draft --file request.json --repo WT --snapshot SNAP --out plan.json
 ```
 
-The brief returns current responsibilities, anchors, contracts, check recipes,
-active write owners, and explicit discovery gaps. Lookup uses exact IDs/paths and
-SQLite FTS over current semantic records. It selects up to three seeds, their
-adjacent relationships, and consumers of selected interfaces. It does not recursively
-explore consumers' implementations or search the filesystem. Missing/stale facts
-never become invented dependency links.
+The assignment brief returns responsibilities, anchors, contracts, consumers, owners, recipe
+suggestions, and discovery gaps. It retrieves bounded exact/FTS selections, not an exhaustive
+filesystem search. Resolve its unknowns and investigate omitted relationships as needed.
+Graph candidates and Jev rankings do not validate semantic edges or prove absence.
 
-Optional expansion stops at 24 considered records, 32 inspected edges, or 1.5
-seconds. Each relation/direction group contributes at most four candidates; the
-groups are interleaved so a common relation does not consume every slot. The
-default response budget is 16,000 UTF-8 bytes (`--max-bytes` permits 2,000–64,000).
-Up to 16 required IDs bypass ranking; missing or oversized mandatory context fails
-explicitly. Coverage reports available, inspected, and omitted relationships.
-These are bounded deterministic retrieval foundations. Current plan drafts and
-replanning use the application map and required Jev judgments for bounded routing
-decisions. Token limits are enforced by hooks, context reset/autocompaction, and
-adapter model-output caps; the plan brief is not a financial budget mechanism.
+## Current plan contract
 
-Use selected IDs/versions as `map_inputs` in the plan. The plan revalidates them
-before persistence, assignment, and completion. Exact commands, conditions, and
-contracts retain their original text.
+Only `schema_version: 2` is accepted. Top-level fields are exactly:
 
-## Plan contract
+```text
+schema_version, plan_id, expected_revision, repository, goal, constraints, tasks
+```
 
-`hx plan validate --file plan.json` validates without persisting.
-`hx plan apply --file plan.json` atomically records a validated revision.
-`hx plan unit TASK` retrieves the current unit assignment.
+A plan contains 1–32 observable behavior units, a matching repository UUID, up to 32 complete
+constraints, and at most 256 KiB. Each unit contains exactly:
 
-The top-level JSON object has exactly these fields:
+```text
+id, expected_revision, behavior, acceptance, workdir, write_paths, map_inputs,
+outputs, prerequisites, resources, check_policy
+```
 
-| Field | Contract |
-|---|---|
-| `schema_version` | `1` (explicit checks) or `2` (worker-bound packet) |
-| `plan_id` | Stable plan ID |
-| `expected_revision` | `0` for creation; current revision for an amendment |
-| `repository` | UUID from `.hx/map/manifest.json` |
-| `goal` | Parent goal, a nonempty statement |
-| `constraints` | Up to 32 complete statements |
-| `tasks` | 1–32 behavior units |
+- `acceptance`: 1–32 observable obligations. The Partner defines what must hold, not scripts.
+- `workdir`: an absolute Git worktree with matching portable-map repository identity.
+- `write_paths`: up to 64 normalized repository-relative files/reserved prefixes. Symlink
+  escapes and conflicting case aliases cannot obtain separate ownership.
+- `map_inputs`: exact `{repository,snapshot,id,version}` references, revalidated at boundaries.
+- `outputs`: 1–32 `{id,version,kind,obligation}` records. Source/contract outputs include exact
+  `paths`; receipt outputs are bound to check coverage rather than an initial check recipe.
+- `prerequisites`: exact `{task_id,output_id,version,need}` records. `need` is `hard`, `contract`,
+  or `substitutable`. Early inputs add `provider_output`, `provider_version`, and boolean
+  `stand_in`; substitution requires explicit true permission and retains real-provider proof.
+- `resources`: up to 32 `{id,mode}` entries, `shared` or `exclusive`.
+- `check_policy`: independent configured `reviewer` and 1–16 unique `required_checks` IDs.
 
-Each version-1 unit has exactly `id`, `expected_revision`, `behavior`, `acceptance`, `workdir`,
-`write_paths`, `map_inputs`, `checks`, `outputs`, and `prerequisites`.
-
-- `acceptance` has 1–32 statements describing observable results.
-- `workdir` is an absolute Git worktree root with the matching repository UUID.
-- `write_paths` names up to 64 repository-relative files or reserved prefixes.
-  Symlink resolution must stay inside the worktree. Scopes are frozen and
-  conservatively case-folded, which can serialize some distinct Linux paths.
-- `map_inputs` contains exact `{repository,snapshot,id,version}` references.
-- `checks` maps 1–16 check IDs to exact [check recipes](continuity-runtime.md#check-receipts).
-  A recipe key must equal its `id`.
-- `outputs` contains 1–32 versioned outputs. A source output is
-  `{id,version,kind:"source",paths:[...]}`; paths name exact files, not directories.
-  A receipt output is `{id,version,kind:"receipt",check_id}`.
-- `prerequisites` contains up to 64 `{task_id,output_id,version}` references to
-  outputs declared by other units in the same plan.
-
-The plan is at most 256 KiB, and an individual assignment body at most 16,000 bytes.
-Version-2 units replace `checks` with `check_policy: {reviewer, required_checks}` and
-`resources: [{id, mode}]` (`shared` or `exclusive`). Outputs add an observable `obligation`;
-receipt outputs omit `check_id`. Contract outputs use `kind: "contract"` and exact `paths`.
-Every prerequisite adds `need: "hard"|"contract"|"substitutable"`. Early prerequisites
-also name `provider_output`, `provider_version`, and boolean `stand_in` permission.
-Worker coverage maps each acceptance/output/integration obligation to exact check IDs.
-
-These are structural bounds, not a complete native prompt/token budget. Validation
-rejects cycles, missing checks/outputs, mismatched versions, invalid source scope,
-and unordered units with equal or ancestor/descendant write paths. Ordered units
-may reuse a scope after the prior assignment stops. Static dependency levels and
-possible parallel groups are planning aids; actual readiness is checked separately.
-The validator does not claim to prove the semantic quality of a behavior or test.
-
-## Readiness, ownership, and completion
+An assignment body is at most 16 KiB. Validation rejects cycles, mismatched versions,
+missing/unknown contract fields, invalid source scope, and unordered overlapping write scopes.
+It cannot prove the semantic quality of decomposition or acceptance checks.
 
 ```sh
+hx plan validate --file plan.json
+hx plan apply --file plan.json
+hx plan unit TASK
 hx plan ready PLAN
-hx plan assign TASK --revision REVISION --worker eng-001
-hx plan audit RUN
-hx check CHECK --run RUN
-hx plan finish RUN --file receipts.json
-hx plan stop RUN
 ```
 
-`receipts.json` maps every assigned check ID to one receipt ID. Assignment returns
-the exact unit packet and a run ID. The root service starts and monitors the configured
-native worker after admission. `ready` gives a bounded plan snapshot with a reason for
-each blocked unit; `assign` rechecks admission in the same transaction that acquires
-leases.
+Validation reports dependency levels, possible parallel groups, widths, interface/size
+warnings, and structural bounds. These aid judgment; actual readiness is checked independently.
+Maximize justified concurrency without waiting for an entire static wave. Early immutable
+interfaces can admit a consumer while provider implementation continues. Resource contention
+and worktree/write ownership can serialize otherwise independent work.
 
-Admission requires current map inputs, a clean committed worktree, proven
-prerequisites, and free write ownership. A worktree can have only one active
-assignment. Leases use repository UUID plus canonical relative path/prefix, so
-overlaps conflict across branches, worktrees, and plans. Independent units can run
-in separate worktrees. This does not automatically launch every ready unit or
-override future controller RAM/concurrency budgets.
+## Source preparation and admission
 
-Leases survive restart and have no time-based expiry. Completion or reconciled stop
-releases them. The controller stops its recorded worker before applying stop; uncertain
-process ownership keeps the assignment unresolved. A revision cannot replace an active
-assignment or a contract used by an active downstream assignment.
-
-Audit compares Git-visible changes against the frozen scope and pauses unexpected
-writes while retaining leases. A paused run requires stop/reconciliation; deleting
-the offending file does not silently resume it. Git-visible auditing does not
-detect arbitrary ignored writes or changes made and reverted within one tool call.
-Source changes invalidate indexed consumers, and the root service refreshes changed
-inputs. Detection remains limited to registered sources and observable repository
-state.
-
-Completion requires a clean committed worktree, current passing receipts for all
-checks assigned to local packet coverage, unchanged prerequisite proofs, and explicit source outputs covering
-all committed changed paths. It rechecks source/environment identities and declared
-ignored inputs at the final boundary. Source proofs contain the commit/tree and
-exact per-path Git mode/object identity, including verified deletions. Receipt
-outputs retain their content-addressed evidence artifact. Completion, output
-publication, lease release, and the dependent-work notification commit atomically.
-An exact completion retry returns its existing result. Revised completed units must
-publish greater output versions and update dependent contracts.
-
-Partner/operator commands own planning, assignment, and stop. Workers may audit,
-finish, or materialize only their own run. Run acceptance checks and completion in
-the same environment: changing environment values invalidates reusable receipts.
-
-## Installing prerequisites
-
-A producer's completed source output does not mean the consumer has its files. This
-section describes hard source dependencies. Early version-2 contract dependencies use
-immutable publication/acquisition and defer real-provider verification as described in
-[agent-scale runtime](agent-scale-runtime.md#worker-bindings-and-early-interfaces).
-An explicit integration unit installs and commits those exact files in the consumer
-worktree, then records a materialization receipt:
+Materialize sparse source before admission, then accept its workdir in the plan. Provisioning
+never moves ownership or silently changes a packet's workdir:
 
 ```sh
-hx plan materialize CONSUMER --integration-run RUN --producer PRODUCER --output OUTPUT
+hx repo assignment TASK --out /absolute/assignment-copy
+hx repo expand --namespace REPO --at COMMIT --out /absolute/assignment-copy --paths PATH
+hx plan replan PLAN --out revised-plan.json
+# Review the correct workdir and revisions, validate, then apply.
+hx plan assign TASK --revision REVISION --worker ID
+hx launch ID --run RUN --request REQUEST
 ```
 
-The command checks installed object identities; it does not merge branches or
-resolve conflicts. It requires a separate active integration assignment in the
-consumer worktree and an explicit consumer prerequisite on that integration unit's
-acceptance output. The consumer remains blocked until integration completes
-successfully at the attested commit, its checks remain valid, and its own current
-tree contains the exact prerequisite file versions. Failed/stopped integration does
-not unlock consumers. Receipt artifacts are already present in the shared ledger
-and need no file installation.
+Admission requires current graph/map inputs, clean committed source, current prerequisite
+proof, and free write/resource leases. Read-only/discovery packets with no writes still
+require a current repository graph; an empty write set cannot bypass orientation evidence.
+A sparse omission does not prove a capability absent. Unknown closures remain explicit.
 
-A useful graph is: producer emits `source` plus `proof`; integration depends on the
-producer's `proof`, installs `source`, verifies it, and emits its own proof; consumer
-depends on the producer's `source` and the integration proof. Its own implementation,
-fixtures, and tests remain together in that consumer unit. After admission, the
-consumer may intentionally change its input files within its owned scope; the
-entry snapshot and acceptance checks preserve what it actually started from.
+Assignment reserves an authoritative run and leases. Explicit launch advances native startup
+with one stable request identity. Reservation alone does not mean a worker received its packet.
+Read returned controller state and reconcile uncertainty using that same request.
 
-The serial tests cover the ledger/CLI path, stale and failed proof, failed integration,
-worker ownership, task version changes, worktree isolation, scoped writes, restart,
-and concurrent prefix-reservation writers. Native transport and lifecycle fixtures
-cover launch, reset, tool expansion, drain, checks, publication, and recovery; they do
-not establish general model extraction accuracy or certify untracked remote jobs.
+## Worker binding and proof
 
-## Parallelism, interface-first, and graph building
+Before edits/proof, the worker proposes exact definition of done, check recipes, and coverage
+for every acceptance/output/deferred-integration obligation plus required policy checks:
 
-`hx plan validate` reports `waves`, `level_widths`, `max_parallelism`
-(worktree-disjoint groups), and `interface_warnings`. Max useful parallelism
-depends on current readiness, worktree-disjoint groups, free write/resource leases,
-and host capacity. Static waves summarize the publication graph; early contracts
-can unlock consumers while providers are still active. Admission rechecks actual
-readiness rather than enforcing a wait for an entire static wave.
+```sh
+hx plan bind RUN --file binding.json
+hx plan binding RUN
+hx plan approve-binding RUN --binding HASH
+hx check CHECK --run RUN
+hx plan audit RUN
+```
 
-Interface-first is a validation warning, not a refusal: when a consumer
-depends on another unit's source output, the plan names the coupling and
-recommends splitting an interface/stub unit ahead of the producer, so the
-contract is committed, searchable (`hx code search`, map interface records),
-and stub-able before the implementation exists. Across instances this is
-the contract-goal-first wave rule of docs/multi-instance.md; duties between
-Partners are mapped by instance area in each Partner persona, the contract
-branch, and the shared learnings directory — there is no cross-instance
-ledger, by design.
+Only the independently configured reviewer can approve that exact frozen binding. Source must
+remain unchanged through approval. Revised recipes require stopped/revised work. Check receipt
+reuse requires complete matching source, recipe, environment, toolchain, fixture, platform,
+and external identities; unknown closures use broad source fingerprints rather than guessed
+completeness. Native shell tools are not a filesystem sandbox.
 
-For existing codebases the graph is built in two layers. `hx code index`
-derives it mechanically (on hx itself: 401 of 415 tracked files, 3,384
-symbols, 766 resolvable candidate import edges) — Python symbols are exact
-from the AST, other languages are best-effort definitions, callers are
-mention-based, and there is no call graph or dynamic-dispatch resolution.
-That layer is candidate knowledge. The curated application map remains the
-validated layer: only anchored, versioned records promote an edge to
-validated, and planning traverses validated edges only.
+Workers report current actions, blockers, findings, and evidence through `hx progress`.
+A blocker does not release ownership. Audit pauses unexpected writes and retains leases;
+restoring a file does not silently resume a paused run. The Partner stops/replans affected
+assignments. Leases survive restart and do not expire on time alone.
+
+`hx complete done` requests managed completion; `hx plan finish RUN --file receipts.json`
+performs the direct verified boundary with exact receipts. Completion requires approved/current
+passing checks, managed work/capture drain, clean source, unchanged prerequisites, and explicit
+outputs covering all committed changed paths. Output proof names exact commit/tree/mode/blob
+identities including verified deletions. Publication, coverage, release, and notification are
+atomic; exact retries return existing completion. Revised completed units need newer outputs.
+
+## Interfaces, integration, and delivery
+
+`hx plan publish-contract` publishes immutable interface files with scoped passing proof.
+`hx plan acquire-contract` exports only a declared exact input with its stand-in permission.
+A contract can unlock permitted consumers early; local coverage does not discharge the real
+provider obligation. An explicit completed integration unit installs and verifies exact hard
+source inputs using `hx plan materialize`. `hx plan verify-integration` requires current
+consumer/provider source and frozen integration check identity.
+
+Covered packets release worker capacity while outstanding integration remains visible.
+Independent intent review, short expected-head landing, fixed integration CI, and fixed
+pre-deploy checks follow. Deployment eligibility names a tested immutable artifact and retains
+all required real bindings. The configured product release system performs external deployment.
+See [agent-scale runtime](agent-scale-runtime.md) and [contracts](../CONTRACTS.md).

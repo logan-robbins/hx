@@ -8,9 +8,8 @@
 # stop for the seed token — and a worker launched into tmux, inside a HOME that did not exist a
 # moment ago, ending with the real `~/.claude` proved untouched.
 #
-# That is the whole of deployment. hx ships no launchd plist and no systemd unit, creates no
-# repository, cuts no worktree, and pushes nothing (spec 14 D25): `hx up` and `hx heartbeat`
-# are ordinary commands a human puts in their own cron if they want them.
+# Instance setup creates no product repository or worktree and installs no OS service units.
+# Packet execution materializes its declared repository inputs after admission.
 #
 # Auth is one long-lived token per instance at `seed/token` (spec 11 Auth, CONTRACTS.md). hx
 # reads nothing from any user Claude home, on any platform, so this script plants a fake
@@ -185,7 +184,7 @@ PY
 
 # --------------------------------------------------------------------------- the mirror
 
-step "10. hx creates no repository, no worktree, and no unit files"
+step "10. instance setup creates no repository, worktree, or OS service units"
 # Spec 14 D25: working directories are not hx's business and hx ships no unit files. An
 # instance that grew any of these would mean the cut did not take.
 for stray in repos wt; do
@@ -200,37 +199,66 @@ for unit_dir in "$HOME/Library/LaunchAgents" "$HOME/.config/systemd/user"; do
 done
 ok "no repos/, no wt/, no config/repo.json, no unit files written anywhere"
 
-step "11. hx launch eng-001 into the workdir its harness.json names"
-# From here on, act the way the Partner does: HARNESS_ROOT selects the instance, and the
-# worker's workdir is a directory somebody chose — not one hx created (spec 17.2).
+step "11. plan, admit and launch a worker packet through the installed runtime"
 export HARNESS_ROOT="$ROOT"
 WORKDIR="$SCRATCH/work/eng-001"
-mkdir -p "$WORKDIR"
-mkdir -p "$ROOT/config/eng-001"
-# A worker is its harness.json (role, workdir, purpose); nothing else is copied per id.
-sed -e 's/{{id}}/eng-001/g' -e 's/{{pod}}/engineers/g' \
-  "$ROOT/templates/worker/harness.json" > "$ROOT/config/eng-001/harness.json"
-python3 - "$ROOT/config/eng-001/harness.json" "$WORKDIR" <<'PY'
-import json, sys
-path, workdir = sys.argv[1], sys.argv[2]
-cfg = json.load(open(path))
-cfg["workdir"] = workdir
-cfg["purpose"] = "Proves that a fresh deploy launches a worker from its harness.json alone."
-cfg.pop("branch", None)
-with open(path, "w") as handle:
-    json.dump(cfg, handle, indent=2)
-    handle.write("\n")
-PY
-"$HX" launch eng-001 > "$SCRATCH/launch.log" 2>&1 \
-  || { tail -30 "$SCRATCH/launch.log" >&2; die "hx launch eng-001 failed"; }
-sed 's/^/   | /' "$SCRATCH/launch.log" | tail -8
-$HX_TMUX has-session -t "=eng-001" 2>/dev/null || die "no tmux session eng-001 on the private server"
-ok "tmux session eng-001 is live on the private server"
-[ -f "$ROOT/pods/engineers/eng-001-idle.md" ] || die "no idle work item at pods/engineers/eng-001-idle.md"
-ok "work item pods/engineers/eng-001-idle.md, workdir $WORKDIR"
+mkdir -p "$WORKDIR/.hx/map" "$ROOT/config/eng-001"
+git -C "$WORKDIR" init -q
+git -C "$WORKDIR" config user.name "Packaging proof"
+git -C "$WORKDIR" config user.email "packaging@example.invalid"
+printf 'def proof():\n    return True\n' > "$WORKDIR/proof.py"
+printf '{"schema_version":1,"repo_id":"55b3d70b-9af1-4839-88da-cbc65b284ef9"}\n' > "$WORKDIR/.hx/map/manifest.json"
+git -C "$WORKDIR" add .
+git -C "$WORKDIR" commit -qm "Fixture source for installed packet proof"
+python3 - "$ROOT" "$WORKDIR" "$SCRATCH/plan.json" <<'PY_PACKET'
+import json, pathlib, sys
+root, workdir, target = pathlib.Path(sys.argv[1]), sys.argv[2], pathlib.Path(sys.argv[3])
+config = json.loads((root/'templates/worker/harness.json').read_text())
+config.update(id='eng-001',pod='engineers',workdir=workdir,purpose='Prove installed dependency packet execution.')
+(root/'config/eng-001/harness.json').write_text(json.dumps(config))
+unit = dict(id='deploy-proof.work',expected_revision=0,behavior='Inspect the committed fixture behavior.',
+    acceptance=['The installed runtime admits and launches the exact packet.'],workdir=workdir,
+    write_paths=['proof.py'],map_inputs=[],resources=[],prerequisites=[],
+    check_policy={'reviewer':'qa-001','required_checks':['unit']},
+    outputs=[{'id':'proof','version':1,'kind':'receipt','obligation':'Verify installed execution.'}])
+target.write_text(json.dumps(dict(schema_version=2,plan_id='deploy-proof',expected_revision=0,
+    repository='55b3d70b-9af1-4839-88da-cbc65b284ef9',goal='Verify the installed worker runtime.',constraints=[],tasks=[unit])))
+PY_PACKET
+"$HX" code index --repo "$WORKDIR" > "$SCRATCH/index.log" 2>&1 \
+  || { tail -20 "$SCRATCH/index.log" >&2; die "source graph indexing failed"; }
+"$HX" plan apply --file "$SCRATCH/plan.json" > "$SCRATCH/plan.log" 2>&1 \
+  || { tail -20 "$SCRATCH/plan.log" >&2; die "packet plan application failed"; }
+"$HX" plan assign deploy-proof.work --revision 1 --worker eng-001 > "$SCRATCH/assignment.json" \
+  || die "packet admission failed"
+RUN_ID=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["run_id"])' "$SCRATCH/assignment.json")
+if "$HX" launch eng-001 > "$SCRATCH/unassigned-launch.log" 2>&1; then
+  die "worker launch without a run was accepted"
+fi
+"$HX" launch eng-001 --run "$RUN_ID" --request deploy-proof > "$SCRATCH/launch.log" 2>&1 \
+  || { tail -30 "$SCRATCH/launch.log" >&2; die "admitted native launch failed"; }
+CAPSULE=$(python3 - "$ROOT" "$RUN_ID" <<'PY_CAPSULE'
+import json, pathlib, sqlite3, sys
+root=pathlib.Path(sys.argv[1])
+with sqlite3.connect(root/'state/continuity.sqlite') as db:
+    payload=json.loads(db.execute("SELECT payload FROM native_launches WHERE run_id=? AND status<>'archived'",(sys.argv[2],)).fetchone()[0])
+print(payload['capsule'])
+PY_CAPSULE
+)
+"$HX" board --json > "$SCRATCH/board.json"
+python3 - "$SCRATCH/board.json" "$RUN_ID" <<'PY_BOARD'
+import json,sys
+view=json.load(open(sys.argv[1]))
+assert view['schema_version']==2
+assert any(run['run_id']==sys.argv[2] for run in view['runs'])
+assert view['tasks'][0]['payload']['dependency_packet'] is True
+assert view['leases'], 'admitted packet has no ownership lease'
+PY_BOARD
+[ ! -e "$ROOT/tasks.json" ] || die "old task authority was written"
+[ ! -d "$ROOT/pods" ] || die "old Work Item directory was created"
+ok "source graph, planned packet, exact admitted run, private native capsule"
 
 step "12. the agent home was written from the package, and holds no credential"
-AGENT_HOME="$ROOT/run/eng-001/home"
+AGENT_HOME="$CAPSULE/run/eng-001/home"
 [ -f "$AGENT_HOME/settings.json" ] || die "no $AGENT_HOME/settings.json"
 # Auth is the instance token exported at launch, so an agent home holds no credential at all.
 [ ! -e "$AGENT_HOME/.credentials.json" ] || die \
@@ -281,9 +309,11 @@ events = sorted(s["hooks"])
 print("   ok  hook events: " + ", ".join(events))
 print("   ok  instructionFiles=claude-md, %d claudeMdExcludes globs" % len(s["claudeMdExcludes"]))
 PY
-[ -d "$AGENT_HOME/skills/hx-worker" ] || die "no hx-worker skill in the agent home (spec 17.5)"
-[ ! -d "$AGENT_HOME/skills/hx-partner" ] || die "hx-partner is the Partner's skill alone"
-ok "skills/hx-worker only"
+[ -s "$CAPSULE/run/eng-001/persona.md" ] || die "the frozen worker instructions are missing"
+[ -f "$CAPSULE/run/eng-001/toolset.json" ] || die "the native tool selection is missing"
+[ -s "$(dirname "$CAPSULE")/task-context.md" ] || die "the assigned task checkpoint is missing"
+[ ! -d "$AGENT_HOME/skills/hx-partner" ] || die "Partner instructions leaked into the worker home"
+ok "frozen worker instructions, explicit native tool selection and exact packet checkpoint"
 
 # --------------------------------------------------------------------------- the units
 

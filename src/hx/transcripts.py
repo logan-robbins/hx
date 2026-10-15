@@ -23,7 +23,7 @@ def last_usage(transcript: str | Path | None) -> dict | None:
     if not path.is_file():
         return None
     try:
-        # Legacy hook consumers need only the latest usage. Read a bounded tail;
+        # Partner orchestration hooks need only the latest usage. Read a bounded tail;
         # planned execution gets usage from the incremental observer instead.
         with path.open('rb') as handle:
             end = handle.seek(0, 2)

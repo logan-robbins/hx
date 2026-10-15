@@ -319,19 +319,21 @@ def hx(instance, tmux_server):
 
 @pytest.fixture
 def launched(instance, hx, tmux_server):
-    """Launch ids on the private tmux server with the fake `claude`, and wait for the prompt."""
+    """Bootstrap the Partner. Worker tests use explicit admitted native runs."""
 
     def _launch(*ids: str, companion: bool = False):
-        # Without `--no-companion` every launch starts a Companion loop that polls and calls
-        # the model; the Companion has its own tests, which start it deliberately.
-        flags = [] if companion else ["--no-companion"]
         for item_id in ids:
-            result = hx("launch", *flags, item_id)
+            if item_id != "partner":
+                raise AssertionError("worker tests must admit a dependency packet and launch its run")
+            result = hx("launch", item_id)
             assert result.returncode == 0, f"launch {item_id}: {result.stdout}{result.stderr}"
             wait_for(
                 (instance / "run" / item_id / "fake-ready").is_file,
                 what=f"{item_id}'s fake pane to come up",
             )
+            if companion:
+                result = hx("companion", item_id)
+                assert result.returncode == 0, result.stdout + result.stderr
         return instance
 
     return _launch

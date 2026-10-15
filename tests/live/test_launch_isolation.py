@@ -1,101 +1,85 @@
-"""build-8 items 0 and 11, live: what a launched agent does and does not load.
+"""Prove admitted native launch configuration with a real private tmux and fake CLI.
 
-Item 0 is the blocking finding of 2026-09-20 21:20 — a worker loaded its product repo's own
-`.claude/settings.json`, whose deny-all `PreToolUse` hook denied every tool, so it could never
-reach `hx complete`. Item 11 is `hx` on the agent's `PATH`.
+These tests inspect installed settings, the actual executable argv and capsule contents.
+They do not claim a paid provider's implementation obeyed a flag, and never invoke one.
+Native compaction/reset correctness is covered in core/test_compaction_policy.py and
+core/test_token_controls.py; graph execution and corrections are in tests/scenario.
 """
-
-from __future__ import annotations
-
 import json
-import shutil
-import subprocess
 from pathlib import Path
+import pytest
+from hx import native_launch
+from core.test_appmap import mapped as mapped_fixture, git
+from core.test_map_updates import active
+from core.test_unit_execution import fleet
+from core.test_context_packets import assignment
+from core.test_native_launch import configured
+from core.test_native_controller import runtime, ready
 
-from .conftest import REPO, pane_text, wait_for, work_item
-
-TRIPWIRE = "TRIPWIRE-REPO-CLAUDE-DIR-LOADED"
-
-
-def tripwired_workdir(live_root) -> Path:
-    """A copy of `tests/scenario/m8/repo`, whose `.claude/` is a deny-all tripwire.
-
-    A copy: the checkout's own `.claude/` is never edited, which is the point of the fixture.
-    """
-    workdir = live_root / "work" / "be-001"
-    workdir.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(REPO / "tests" / "scenario" / "m8" / "repo", workdir, dirs_exist_ok=True)
-    for cache in workdir.rglob("__pycache__"):
-        shutil.rmtree(cache, ignore_errors=True)
-    settings = json.loads((workdir / ".claude" / "settings.json").read_text())
-    assert TRIPWIRE in json.dumps(settings), "the fixture is supposed to be a tripwire"
-    assert settings["permissions"]["defaultMode"] == "plan"
-    return workdir
+TRIPWIRE='PROJECT-INSTRUCTIONS-MUST-NOT-LOAD'
 
 
-def test_the_workdirs_own_claude_settings_never_reach_the_agent(live_root, live_env, worker):
-    """spec 11, 17.4: `--setting-sources user`, so only the home's settings load."""
-    from hx.lifecycle import launch
-
-    workdir = tripwired_workdir(live_root)
-    item_id, _ = worker("be-001", workdir=workdir)
-    work_item(live_root, item_id)
-    launch(live_root, item_id, companion=False, env=live_env)
-
-    from hx import goal
-
-    goal.wait_for_prompt(item_id, live_env)
-    goal.paste(item_id, "Use the Bash tool to run exactly: echo ok > PROOF.txt", live_env)
-
-    proof = workdir / "PROOF.txt"
-    wait_for(proof.is_file, what="the agent's Bash tool call to create PROOF.txt")
-    assert proof.read_text().strip() == "ok"
-    assert TRIPWIRE not in pane_text(item_id, live_env), "the repo's PreToolUse hook loaded"
-
-
-def test_the_pinned_binary_takes_setting_sources_user(live_root, live_env, worker):
-    """The flag is in the argv the binary actually got, not only in start.sh."""
-    from hx.lifecycle import launch
-
-    item_id, _ = worker("be-001")
-    work_item(live_root, item_id)
-    launch(live_root, item_id, companion=False, env=live_env)
-
-    pane_pid = subprocess.run(
-        [*live_env["HX_TMUX"].split(), "list-panes", "-t", f"={item_id}:main", "-F", "#{pane_pid}"],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip().splitlines()[0]
-
-    def argv_of_the_binary():
-        children = subprocess.run(["pgrep", "-P", pane_pid], capture_output=True, text=True).stdout.split()
-        for pid in [pane_pid, *children]:
-            command = subprocess.run(
-                ["ps", "-o", "command=", "-p", pid], capture_output=True, text=True
-            ).stdout
-            if "--setting-sources" in command:
-                return command
-        return None
-
-    command = wait_for(argv_of_the_binary, what="the exec'd claude process")
-    assert "--setting-sources user" in " ".join(command.split())
-    assert "--dangerously-skip-permissions" in command
+@pytest.fixture
+def mapped(tmp_path):
+    generator=mapped_fixture.__wrapped__(tmp_path)
+    value=next(generator)
+    repo=value[1]
+    (repo/'.claude').mkdir()
+    (repo/'.claude/settings.json').write_text(json.dumps({'permissions':{'defaultMode':'plan'},'marker':TRIPWIRE}))
+    (repo/'CLAUDE.md').write_text(TRIPWIRE+'\n')
+    (repo/'.claude/skills/project-only').mkdir(parents=True)
+    (repo/'.claude/skills/project-only/SKILL.md').write_text(TRIPWIRE)
+    git(repo,'add','.')
+    git(repo,'commit','-qm','Instruction isolation fixture')
+    try:
+        yield value
+    finally:
+        try: next(generator)
+        except StopIteration: pass
 
 
-def test_hx_is_on_the_agents_path(live_root, live_env, worker):
-    """build-8 item 11: `$HARNESS_ROOT/bin` first, so an agent runs `hx board`."""
-    from hx.lifecycle import launch
+def observations(runtime):
+    store,repo,run,env=runtime
+    return [json.loads(line) for line in (store.root/'run/eng-001/native-test.jsonl').read_text().splitlines()]
 
-    item_id, workdir = worker("be-001")
-    work_item(live_root, item_id)
-    launch(live_root, item_id, companion=False, env=live_env)
 
-    assert (live_root / "bin" / "hx").is_symlink()
+def test_admitted_worker_uses_frozen_capsule_and_user_settings_only(runtime):
+    store,repo,run,env=runtime
+    row=ready(runtime)
+    actual=observations(runtime)[0]
+    assert actual['cwd']==str(repo)
+    assert actual['home'].startswith(row['payload']['capsule'])
+    assert actual['argv'][actual['argv'].index('--setting-sources')+1]=='user'
+    assert '--dangerously-skip-permissions' in actual['argv']
+    home=Path(actual['home'])
+    settings=json.loads((home/'settings.json').read_text())
+    assert settings['claudeMdExcludes']
+    assert 'project-only' not in str(list(home.rglob('SKILL.md')))
+    assert TRIPWIRE not in (home/'CLAUDE.md').read_text()
+    assert not (store.root/'tasks.json').exists()
+    assert not (store.root/'pods').exists()
 
-    from hx import goal
 
-    goal.wait_for_prompt(item_id, live_env)
-    goal.paste(item_id, "Use the Bash tool to run exactly: hx board > BOARD.txt 2>&1", live_env)
+def test_worker_hx_path_and_hooks_bind_the_same_admitted_run(runtime):
+    store,repo,run,env=runtime
+    binary=Path(json.loads((store.root/'config/claude.json').read_text())['bin'])
+    binary.write_text(binary.read_text().replace("'home': str(home)","'home': str(home), 'hx': __import__('shutil').which('hx')"))
+    row=ready(runtime)
+    actual=observations(runtime)[0]
+    assert actual['hx']==str(Path(row['payload']['capsule'])/'bin/hx')
+    settings=json.loads((Path(actual['home'])/'settings.json').read_text())
+    commands=[hook['command'] for entries in settings['hooks'].values() for entry in entries for hook in entry['hooks']]
+    assert all('--continuity-run '+run in command for command in commands)
+    assert all(row['launch_id'] in command for command in commands)
 
-    board = workdir / "BOARD.txt"
-    wait_for(board.is_file, what="the agent to run `hx board` off its PATH")
-    assert item_id in board.read_text(), board.read_text()
+
+def test_prior_worker_home_is_not_a_native_launch_input(runtime):
+    store,repo,run,env=runtime
+    old=store.root/'run/eng-001/home'
+    old.mkdir(parents=True,exist_ok=True)
+    (old/'CLAUDE.md').write_text('OBSOLETE-ROOT-HOME')
+    (old/'history.jsonl').write_text('OBSOLETE-WORKER-HISTORY')
+    row=ready(runtime)
+    home=Path(row['payload']['capsule'])/'run/eng-001/home'
+    assert not (home/'history.jsonl').exists()
+    assert 'OBSOLETE-ROOT-HOME' not in (home/'CLAUDE.md').read_text()

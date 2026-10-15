@@ -58,44 +58,10 @@ def test_newer_schema_refused_without_rewrite(tmp_path):
         assert db.execute("PRAGMA user_version").fetchone()[0] == 999
 
 
-def test_schema_one_migrates_without_losing_existing_tasks(ledger):
-    store, _ = ledger
-    store.db.execute("DROP TABLE event_origins")
-    store.db.execute("DROP TABLE artifact_chunks")
-    store.db.execute("PRAGMA user_version=1")
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        with upgraded.transaction() as tx:
-            assert tx.task("T1")["payload"]["goal"] == "preserve late events"
-        assert upgraded.db.execute("SELECT count(*) FROM event_origins").fetchone()[0] == 0
 
 
-def test_agent_scale_schema_preserves_existing_authority_and_advances_version(ledger):
-    store, _ = ledger
-    store.db.execute('DROP TABLE delivery_validations')
-    store.db.execute('PRAGMA user_version=19')
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
-        with upgraded.transaction() as tx:
-            assert tx.task('T1')['payload']['goal'] == 'preserve late events'
-        assert upgraded.db.execute('SELECT count(*) FROM delivery_validations').fetchone()[0] == 0
 
 
-def test_schema_fourteen_indexes_existing_capture_without_resetting_offsets(ledger, tmp_path):
-    from hx import observer
-    store, run = ledger
-    path = tmp_path / "source.jsonl"
-    path.write_text('{"event":"stop"}\n')
-    source = observer.register(store, run_id=run, stream_id="native", path=path, decoder="hook-v1", session_id="S")
-    observer.drain(store, source)
-    before = tuple(store.db.execute("SELECT * FROM capture_sources WHERE source_id=?", (source,)).fetchone())
-    store.db.execute("DROP INDEX capture_run_sources")
-    store.db.execute("PRAGMA user_version=14")
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert tuple(upgraded.db.execute("SELECT * FROM capture_sources WHERE source_id=?", (source,)).fetchone()) == before
-        query = upgraded.db.execute("EXPLAIN QUERY PLAN SELECT * FROM capture_sources WHERE run_id=? ORDER BY source_id LIMIT 17", (run,))
-        assert any("capture_run_sources" in row[3] for row in query)
 
 
 def test_atomic_rollback_covers_records_cursor_outbox_and_artifacts(ledger):
@@ -355,3 +321,13 @@ def test_transaction_cannot_escape_context_or_nest(ledger):
         tx.put_task("T2", {}, expected_revision=0)
     with pytest.raises(ValidationError, match="invalid JSON"):
         canonical({"probability": float("nan")})
+
+@pytest.mark.parametrize("version", [1, 14, 19])
+def test_older_schema_is_refused_without_migration(ledger, version):
+    store, run = ledger
+    store.db.execute(f"PRAGMA user_version={version}")
+    before = tuple(store.db.execute("SELECT * FROM runs WHERE run_id=?", (run,)).fetchone())
+    with pytest.raises(ValidationError, match="recreate this prerelease instance"):
+        ContinuityStore(store.root)
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == version
+    assert tuple(store.db.execute("SELECT * FROM runs WHERE run_id=?", (run,)).fetchone()) == before

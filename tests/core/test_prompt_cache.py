@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from hx.errors import ValidationError
 
 import pytest
 
@@ -45,136 +47,110 @@ def test_invariant_budget_leaves_working_room():
     assert budget["working_room_tokens"] >= 800_000
 
 
-# --- hx cache report (TOOL_SKILL_PLAN step 8) ----------------------------------------------------
-
-
-def _skill(home, name, description):
-    (home / "skills" / name).mkdir(parents=True, exist_ok=True)
-    (home / "skills" / name / "SKILL.md").write_text(
-        f"---\nname: {name}\ndescription: {description}\n---\n\nThe body is not invariant.\n" + "x" * 4000)
-
-
-def _seam(root, item_id, ts):
-    from hx import streams
-
-    path = streams.main_stream(root, item_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as handle:
-        handle.write(json.dumps({"seq": 1, "ts": ts, "event": "seam", "source": "clear",
-                                 "context_file_bytes": 10}) + "\n")
+# Worker reports use frozen native inputs; provider residency stays unmeasured.
+from hx import native_launch
+from .test_native_launch import configured
+from .test_context_packets import assignment
+from .test_map_updates import active
+from .test_appmap import mapped
+from .test_unit_execution import fleet
 
 
 @pytest.fixture
-def cached(instance):
-    """eng-001 launched: a role persona, the one CLAUDE.md, two installed skills, a seam."""
-    run = instance / "run" / "eng-001"
-    run.mkdir(parents=True, exist_ok=True)
-    (instance / "personas" / "engineer.md").write_text("P" * 3000)
-    (instance / "config" / "CLAUDE.md").write_text("C" * 1000)
-    home = run / "home"
-    _skill(home, "hx-worker", "Operating manual.")
-    _skill(home, "hx-memory", "Search episodes.")
-    harness = instance / "config" / "eng-001" / "harness.json"
-    harness.write_text(json.dumps({**json.loads(harness.read_text()), "cache_ttl": "1h"}))
-    return instance
+def cached(configured):
+    store,repo,run=configured
+    launch=native_launch.prepare(store,'eng-001',run,'cache-report',env={})
+    return store,repo,run,launch
 
 
-def _valid(root, **fields):
-    """harness.json as `config_harness.validate_harness` accepts it, which `hx persona` needs:
-    the fixture's top-level `cache_ttl`, which only the report reads, is not a harness field."""
-    harness = root / "config" / "eng-001" / "harness.json"
-    body = {key: value for key, value in json.loads(harness.read_text()).items() if key != "cache_ttl"}
-    harness.write_text(json.dumps({**body, **fields}))
+def test_worker_report_counts_frozen_channels_and_exact_checkpoint(cached):
+    store,repo,run,launch=cached
+    row=prompt_cache.agent_report(store.root,'eng-001')
+    manifest=json.loads(Path(launch['payload']['manifest']).read_text())
+    assert row['kind']=='packet' and row['launch']['launch_id']==launch['launch_id']
+    assert row['run']['run_id']==run
+    assert row['invariant']['prompt_version']==launch['payload']['prompt_version']
+    assert row['invariant']['prefix_bytes']==sum(channel['bytes'] for channel in manifest['delivery'].values())
+    assert row['checkpoint']['checkpoint_id']==launch['payload']['checkpoint_id']
+    assert row['checkpoint']['packet_hash']==launch['payload']['packet_hash']
+    assert row['checkpoint']['size']>0 and row['checkpoint']['charged_tokens']>0
+    assert row['tools']['launch_selection']==launch['payload']['tool_selection']
+    assert row['budget']['model']=='claude-opus-5-5'
+    assert row['budget']['within'] is None
+    assert row['cache']['state']=='unmeasured'
+    assert row['context_usage']=='unmeasured'
+    assert row['invariant']['native_tool_schemas']=='unmeasured'
 
 
-def test_report_sums_the_invariant_prefix_and_says_what_is_unmeasured(cached):
-    from hx import learn, persona
-
-    _valid(cached)
-
-    proposal = learn.propose(cached, signal="s", check="c", evidence="e", category="build",
-                             env={"HARNESS_ID": "eng-001"})
-    learn.accept(cached, proposal["id"], env={"HARNESS_ID": "partner"})
-    (row,) = prompt_cache.report(cached, "eng-001", now="2026-10-12T12:00:00Z")["agents"]
-    invariant = row["invariant"]
-    handed = persona.boundary(cached, "eng-001")
-    sizes = {name: size for name, _source, size in handed["parts"]}
-    assert invariant["persona_bytes"] == 3000 and invariant["persona_source"] == "personas/engineer.md"
-    assert (invariant["persona_channel"], invariant["claude_md_channel"]) == ("hook", "home")
-    assert invariant["claude_md_bytes"] == 1000
-    assert invariant["identity_bytes"] == sizes["identity"] > 0
-    assert invariant["learnings_bytes"] == sizes["rules"] > 0 and invariant["learnings_as_files"] == []
-    assert (invariant["hook_bytes"], invariant["hook_bound"]) == (handed["bytes"], 10_000)
-    assert invariant["skills"] == ["hx-memory", "hx-worker"] and invariant["skills_source"] == "installed"
-    assert invariant["skill_descriptions_bytes"] == len("Operating manual.") + len("Search episodes.")
-    assert invariant["prefix_bytes"] == (3000 + 1000 + sizes["identity"] + sizes["rules"]
-                                         + invariant["skill_descriptions_bytes"])
-    assert invariant["native_tool_schemas"] == "unmeasured"
-    assert invariant["host_context"] == "unmeasured"
-    budget = row["budget"]
-    assert budget["model"] == "claude-opus-5"
-    assert budget["invariant_ceiling_tokens"] == 200000
-    assert budget["within"] is True
-    assert budget["share"] == round(invariant["prefix_bytes"] / 200000, 4)
-    assert row["seam"] is None  # no seam yet: nothing to age
+def test_worker_report_does_not_rebuild_from_root_persona_or_file_streams(cached):
+    store,repo,run,launch=cached
+    before=prompt_cache.agent_report(store.root,'eng-001')
+    (store.root/'personas/backend-engineer.md').write_text('changed current instructions')
+    (store.root/'config/CLAUDE.md').write_text('changed current invariants')
+    old=store.root/'run/eng-001/home/skills/obsolete'
+    old.mkdir(parents=True)
+    (old/'SKILL.md').write_text('injected stale skill')
+    logs=store.root/'logs/eng-001';logs.mkdir(parents=True,exist_ok=True)
+    (logs/'eng-001-main.jsonl').write_text('{"event":"seam","ts":"2026-10-15T12:00:00Z"}\n')
+    after=prompt_cache.agent_report(store.root,'eng-001')
+    assert after==before
 
 
-@pytest.mark.parametrize("flavor,claude_md,role_persona", [
-    ("claude", "home", "hook"), ("codex", "agents", "agents"), ("pi", "hook", "flag"),
-    ("meta", "hook", "hook"),
-])
-def test_report_counts_each_source_once_whatever_its_channel(cached, flavor, claude_md, role_persona):
-    _valid(cached, flavor=flavor)
-    (row,) = prompt_cache.report(cached, "eng-001")["agents"]
-    invariant = row["invariant"]
-    assert (invariant["claude_md_channel"], invariant["persona_channel"]) == (claude_md, role_persona)
-    assert invariant["prefix_bytes"] == (invariant["persona_bytes"] + invariant["claude_md_bytes"]
-                                         + invariant["identity_bytes"] + invariant["learnings_bytes"]
-                                         + invariant["skill_descriptions_bytes"])
+def test_worker_report_preserves_scoped_captured_usage_without_guessing_residency(cached):
+    store,repo,run,launch=cached
+    usage={'input_tokens':100,'cache_read_input_tokens':80,'output_tokens':20}
+    with store.transaction() as tx:
+        tx.db.execute('INSERT INTO native_bindings VALUES(?,?,?,?,?,?,?)',
+            ('usage-binding',run,'main','claude','session','claude-jsonl-v1',json.dumps(usage)))
+        tx.db.execute('INSERT INTO runtime_cycles VALUES(?,?)',('tokens:'+launch['launch_id'],json.dumps({'tokens':180,'reset':'none'})))
+    result=prompt_cache.agent_report(store.root,'eng-001')
+    assert result['provider_usage'][0]['latest_usage']==usage
+    assert result['context_usage']['tokens']==180
+    assert result['cache']['state']=='unmeasured'
 
 
-def test_report_ages_the_last_seam_against_the_harness_cache_ttl(cached):
-    _seam(cached, "eng-001", "2026-10-12T11:50:00Z")
-    (row,) = prompt_cache.report(cached, "eng-001", now="2026-10-12T12:00:00Z")["agents"]
-    seam = row["seam"]
-    assert seam["last_seam_ts"] == "2026-10-12T11:50:00Z"
-    assert seam["age_s"] == 600
-    assert (seam["cache_ttl"], seam["ttl_source"]) == ("1h", "harness.json cache_ttl")
-    assert seam["ttl_s"] == 3600 and seam["state"] == "warm"
-    assert seam["prefix_tokens"] == row["invariant"]["prefix_bytes"]
+def test_tampered_frozen_input_is_reported_instead_of_falling_back(cached):
+    store,repo,run,launch=cached
+    from pathlib import Path
+    (Path(launch['payload']['capsule'])/'config/models.json').write_text('{}')
+    with pytest.raises(ValidationError,match='altered'):
+        prompt_cache.agent_report(store.root,'eng-001')
 
 
-def test_report_reads_the_sources_and_the_manifest_before_launch(instance):
-    (row,) = prompt_cache.report(instance, "eng-001")["agents"]
-    invariant = row["invariant"]
-    # The conftest instance ships no `personas/engineer.md`: no persona, and none invented.
-    assert invariant["persona_bytes"] is None and invariant["persona_source"] is None
-    assert invariant["identity_bytes"] > 0 and invariant["hook_bytes"] > 0
-    assert not (instance / "run" / "eng-001" / "persona.md").exists(), "the report never writes"
-    assert invariant["skills_source"] == "manifest"
-    assert "hx-worker" in invariant["skills"]
-    assert invariant["claude_md_bytes"] is None or isinstance(invariant["claude_md_bytes"], int)
+def test_unassigned_worker_has_no_file_prefix_fallback(instance):
+    result=prompt_cache.agent_report(instance,'eng-001')
+    assert result['status']=='unassigned'
+    assert result['invariant']['prefix_bytes'] is None
+    assert result['budget']['model'] is None
 
 
-def test_report_covers_every_configured_agent_and_the_cli_forms(cached, capsys):
-    doc = prompt_cache.report(cached)
-    assert [row["id"] for row in doc["agents"]] == ["eng-001", "partner"]
-    assert prompt_cache.main(["report", "--json"], cached) == 0
-    assert json.loads(capsys.readouterr().out)["agents"][0]["id"] == "eng-001"
-    assert prompt_cache.main(["report", "eng-001"], cached) == 0
-    text = capsys.readouterr().out
-    assert text.splitlines()[-1].startswith("HX-CACHE-REPORT agents=1 ")
-    assert "unmeasured" in text
+def test_partner_orchestration_report_and_cli_remain_available(instance,capsys):
+    result=prompt_cache.report(instance,'partner')
+    assert result['agents'][0]['kind']=='partner'
+    assert result['agents'][0]['invariant']['identity_bytes']>0
+    assert prompt_cache.main(['report','partner','--json'],instance)==0
+    assert json.loads(capsys.readouterr().out)['schema_version']==2
+    assert prompt_cache.main(['report','eng-001'],instance)==0
+    assert 'unmeasured' in capsys.readouterr().out
 
 
-def test_report_of_an_unknown_id_is_not_found(cached):
+def test_cache_report_help_and_unknown_identity(instance,capsys):
     from hx.errors import NotFound
+    with pytest.raises(NotFound): prompt_cache.report(instance,'eng-404')
+    with pytest.raises(SystemExit): prompt_cache.main(['report','--help'],None)
+    assert 'example' in capsys.readouterr().out
 
-    with pytest.raises(NotFound):
-        prompt_cache.report(cached, "eng-404")
 
-
-def test_cache_report_help_carries_an_example(capsys):
-    with pytest.raises(SystemExit):
-        prompt_cache.main(["report", "--help"], None)
-    assert "example" in capsys.readouterr().out
+def test_required_full_text_is_counted_separately_and_never_reported_as_read(configured):
+    store,repo,run=configured
+    (store.root/'personas/backend-engineer.md').write_text('# Backend engineer\n\n## Domain judgment\n'+('Preserve the declared provider contract.\n'*700))
+    row=native_launch.prepare(store,'eng-001',run,'referenced-cache-report',env={})
+    result=prompt_cache.agent_report(store.root,'eng-001')
+    invariant=result['invariant']
+    assert invariant['inline_bytes']==invariant['prefix_bytes']
+    assert invariant['referenced_full_text_bytes']>20000
+    assert invariant['inline_bytes']<invariant['referenced_full_text_bytes']
+    assert invariant['required_files'][0]['integrity']=='verified'
+    assert invariant['required_files'][0]['read_status']=='unmeasured'
+    assert invariant['reference_read_status']=='unmeasured'
+    assert result['cache']['state']=='unmeasured'

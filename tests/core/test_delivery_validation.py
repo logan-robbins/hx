@@ -12,7 +12,7 @@ from hx.errors import Refused
 from .test_change_delivery import covered
 from .test_checks import definition
 from .test_unit_execution import fleet, source_unit, finish, commit
-from .test_planning import plan
+from .test_planning import plan, bind
 from .test_map_updates import active
 from .test_appmap import git, mapped
 
@@ -53,6 +53,7 @@ def next_change(fleet,repo,bare,expected,*,name='later',path='later.py'):
     body['plan_id']=name
     planning.apply(store,body)
     run=unit_execution.assign(store,name,1,'eng-002')['run_id']
+    bind(store,run)
     base=git(repo,'rev-parse','HEAD')
     (repo/path).write_text('later_value = 7\n')
     commit(repo)
@@ -276,12 +277,12 @@ def test_real_completed_integration_worker_must_execute_exact_candidate_policy(f
     git(repo,'reset','--hard',land['head'])
     task=source_unit(repo,'integration-worker')
     recipe=validation.policy(store,'integration')['recipes']['integration']
-    task['checks']={'integration':recipe}
-    task['outputs'][0]['check_id']='integration'
+    task['check_policy']={'reviewer':'rel-001','required_checks':['integration']}
     proposal=plan(fleet,[task])
     proposal['plan_id']='integration-worker'
     planning.apply(store,proposal)
     run=unit_execution.assign(store,'integration-worker',1,'qa-001')['run_id']
+    bind(store,run,recipes={'integration':recipe})
     execution_env={**os.environ,'HARNESS_ID':'qa-001'}
     receipt=checks.run_check(store,run,'integration',allow_reuse=False,env=execution_env)
     unit_execution.complete(store,run,{'integration':receipt['receipt_id']},env=execution_env)

@@ -33,11 +33,9 @@ from .root import resolve_root
 #: Directories of spec 03 that exist in every instance from the moment it is created.
 LAYOUT_DIRS = (
     "adapters",
-    "archive",
     "bin",
     "config",
     "logs",
-    "pods",
     "run",
     "seed",
     "state",
@@ -45,11 +43,9 @@ LAYOUT_DIRS = (
 
 #: Spec 03: everything but `config/` is runtime state, so the instance ignores it in git.
 GITIGNORE = """# Written by `hx install` (spec 03). Only config/ is worth committing.
-pods/
 logs/
 state/
 run/
-tasks.json
 """
 
 #: Exactly what spec 17.2 step 2 says a fresh instance is created with, plus the adapters.
@@ -96,7 +92,13 @@ EXPECTED_SKELETON_FILES = (
     "config/partner/SUBAGENTS.md",
     "config/partner/harness.json",
     "personas/partner.md",
-    "templates/work-item.md",
+    "templates/worker/harness.json",
+    "templates/worker/SUBAGENTS.md",
+    "templates/contributor/harness.json",
+    "templates/contributor/SUBAGENTS.md",
+    "adapters/codex/install.sh",
+    "adapters/codex/start.sh",
+    "adapters/codex/hook.py",
 )
 
 
@@ -338,15 +340,6 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
         print(f"   kept     {name}")
     for name in result["missing"]:
         print(f"   missing  {name}")
-    # An instance on an older layout: personas/<role>/AGENTS.md and config/partner/AGENTS.md
-    # become personas/<role>.md, rules scoped in place move to personas/<role>/, and each
-    # worker's per-id AGENTS.md moves into harness.json `purpose` and a learnings proposal
-    # (`hx.persona`).
-    from . import persona
-
-    for migrated in persona.migrate_all(root, env=env):
-        print(f"   migrated {persona.describe_migration(migrated)}")
-
     from . import envfile
     if args.env_file:
         envfile.configure(root, args.env_file)

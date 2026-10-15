@@ -122,7 +122,7 @@ def test_transfer_rejects_uninstalled_sources_without_partial_map(active, tmp_pa
 
 
 def test_generated_replan_preserves_acceptance_and_refreshes_only_changed_units(active):
-    from .test_planning import plan, unit
+    from .test_planning import plan, unit, bind
     store, repo, info, component, _, _, snapshot, *_ = active
     task = unit(repo, 'change')
     task['map_inputs'] = [dict(repository=info['repo_id'], snapshot=snapshot, id='compiler', version=1)]
@@ -211,7 +211,7 @@ def test_draft_cli_writes_plan_and_returns_small_actionable_result(active, tmp_p
 
 def test_owner_finishes_mapped_edit_while_other_consumers_require_replan(active):
     from hx import map_refresh
-    from .test_planning import plan, unit
+    from .test_planning import plan, unit, bind
     store, repo, info, component, _, _, snapshot, runs, _ = active
     with store.transaction() as tx:
         for run in runs:
@@ -220,10 +220,11 @@ def test_owner_finishes_mapped_edit_while_other_consumers_require_replan(active)
     refs = [dict(repository=info['repo_id'], snapshot=snapshot, id='compiler', version=1)]
     owner['map_inputs'] = copy.deepcopy(refs)
     consumer['map_inputs'] = copy.deepcopy(refs)
-    owner['outputs'].append(dict(id='source', version=1, kind='source', paths=['compiler.py']))
-    consumer['prerequisites'] = [dict(task_id='owner', output_id='proof', version=1)]
+    owner['outputs'].append(dict(id='source', version=1, kind='source', paths=['compiler.py'], obligation='Compiler source preserves current context.'))
+    consumer['prerequisites'] = [dict(task_id='owner', output_id='proof', version=1, need='hard')]
     planning.apply(store, plan(active, [owner, consumer]))
     run = unit_execution.assign(store, 'owner', 1, 'eng-001')['run_id']
+    bind(store, run)
     (repo / 'compiler.py').write_text("class Compiler:\n    def build(self):\n        return 'improved context'\n")
     map_refresh.queue_sources(store, repo, snapshot, ['compiler.py'])
     map_refresh.drain(store, repo, snapshot)

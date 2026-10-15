@@ -6,7 +6,7 @@ import json
 
 
 NOTIFY = {"plan_changed", "unit_completed", "unit_scope_violation", "contract_published",
-          "packet_covered", "integration_verified", "deployable"}
+          "packet_covered", "integration_verified", "deployable", "native_launch_unresolved"}
 
 
 def drain(store, *, wake=None, limit=8):

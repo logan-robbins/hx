@@ -4,59 +4,19 @@ from __future__ import annotations
 
 import pytest
 
-from hx.cli import COMMANDS, IMPLEMENTED, NOT_IMPLEMENTED
+from hx.cli import COMMANDS, IMPLEMENTED
 
-#: Spec 08's table, plus install/up/doctor/ui/show from 17.2. The v1 cut (spec 14 D25)
-#: removed `repo`, `push` and `upgrade`.
-SPEC_08_COMMANDS = {
-    "launch", "install", "doctor", "show", "ui", "up",
-    "dispatch", "goal", "task", "compose", "seam", "restart", "complete", "resume", "amend",
-    "read", "bench", "board", "flush", "companion", "wake", "heartbeat", "metrics",
-    "goals", "archive",
-    # Episode memory (docs/memory.md), not in spec 08's own table.
-    "memory",
-    # File memory (CONTRACTS.md `hx read` and `hx recall`), likewise post-spec-08.
-    "recall",
-    # What the `context` hook hands an agent at every boundary, from the role persona, the
-    # identity line and the learnings; likewise post-spec-08.
-    "persona",
-    # Addenda distillation: shrinks the Work Item and tasks.json record back
-    # down after resumes and amends accumulate; likewise post-spec-08.
-    "distill",
-    # Continuity v2: registered incremental capture and its resident observer.
-    "observe",
-    "capture",
-    "progress",
-    "check",
-    "map",
-    "plan",
-    "evidence",
-    "loop", "tool-exec", "tools",
-    # Central learnings (docs/learnings.md) and the handoff contract (docs/multi-instance.md §6).
-    "learn", "handoff",
-    # Context economy: code index, content store, isolated execution, Jev sift
-    # (docs/search-and-retrieval.md), likewise post-spec-08.
-    "code", "content", "exec", "sift", "discipline", "cache",
-    # Provider model lists against the registry (TOOL_SKILL_PLAN step 3).
-    "models",
-    "repo", "change", "build",
+CURRENT_COMMANDS = {
+    "board", "build", "cache", "capture", "change", "check", "code", "companion",
+    "complete", "compose", "content", "discipline", "doctor", "evidence", "exec", "flush",
+    "goals", "handoff", "heartbeat", "install", "launch", "learn", "loop", "map", "metrics",
+    "models", "observe", "persona", "plan", "progress", "read", "repo", "seam", "show",
+    "sift", "task", "tool-exec", "tools", "ui", "up", "wake",
 }
 
 
-def test_every_spec_08_command_is_dispatched():
-    assert set(COMMANDS) == SPEC_08_COMMANDS, set(COMMANDS) ^ SPEC_08_COMMANDS
-
-
-def test_no_command_is_both_implemented_and_not():
-    assert not (set(IMPLEMENTED) & set(NOT_IMPLEMENTED))
-
-
-@pytest.mark.parametrize("command", sorted(NOT_IMPLEMENTED))
-def test_unimplemented_commands_exit_2_with_the_build_goal(run_hx, tmp_path, command):
-    result = run_hx(command, env_extra={"HARNESS_ROOT": str(tmp_path / "instance")})
-    assert result.returncode == 2
-    assert result.stderr.strip() == f"hx: {command}: not implemented (build-{NOT_IMPLEMENTED[command]})"
-    assert result.stdout == ""
+def test_current_commands_are_reachable():
+    assert set(COMMANDS) == CURRENT_COMMANDS, set(COMMANDS) ^ CURRENT_COMMANDS
 
 
 def test_unknown_command_exits_2(run_hx, tmp_path):
@@ -164,8 +124,9 @@ def test_the_partner_and_the_operator_are_not_gated(monkeypatch, instance):
 
 def test_the_capability_resolver_reads_subcommands_and_flags():
     resolve = cli_mod.resolve_capability
-    assert resolve("memory", ["search", "q", "--all-roles"]) == "memory search --all-roles"
-    assert resolve("memory", ["search", "q"]) == "memory search"
+    inventory = {"worker": {"code search", "code search --owners"}}
+    assert resolve("code", ["search", "q", "--owners"], inventory) == "code search --owners"
+    assert resolve("code", ["search", "q"], inventory) == "code search"
     assert resolve("map", ["--root", "/tmp/x", "publish", "--file", "f"]) == "map publish"
     assert resolve("plan", ["frobnicate"]) is None
     assert cli_mod.worker_may_run("plan", None) is True, "packet binding and proof actions are worker-scoped; modules enforce identity"
@@ -229,7 +190,7 @@ def test_hx_help_all_prints_every_column(run_hx, instance):
 @pytest.mark.parametrize('command', ['memory', 'recall'])
 def test_planned_workers_cannot_import_or_create_episodic_memory(run_hx, tmp_path, command):
     result = run_hx(command, env_extra={'HARNESS_ROOT': str(tmp_path / 'planned'), 'HX_CONTINUITY_RUN': 'current-run'})
-    assert result.returncode == 2 and 'no episodic memory' in result.stderr
+    assert result.returncode == 2 and 'unknown command' in result.stderr
     assert not (tmp_path / 'planned/state').exists()
 
 
@@ -248,7 +209,7 @@ def test_every_worker_command_help_has_an_example(entry, tmp_path, capsys):
     with pytest.raises(SystemExit) as exit_info:
         IMPLEMENTED[words[0]](words[1:] + ["--help"], tmp_path, env={})
     assert exit_info.value.code == 0
-    assert "example" in capsys.readouterr().out, entry
+    assert "example" in capsys.readouterr().out.lower(), entry
 
 
 def test_the_help_example_sweep_covers_the_worker_column():

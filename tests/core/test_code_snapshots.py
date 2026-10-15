@@ -600,30 +600,17 @@ def test_caller_count_excludes_all_definition_files_beyond_symbol_output_cap(tmp
     assert len(rows) == 3 and all(r["path"].startswith("reference_") for r in rows)
 
 
-def test_existing_snapshots_backfill_indexed_postings_without_reextracting(
-    tmp_path, monkeypatch
-):
+def test_index_storage_has_no_schema_migration(tmp_path):
+    from hx.errors import ValidationError
     repo = repository(tmp_path)
     root = tmp_path / "state"
-    indexed = code_index.index_repo(root, repo)
+    code_index.index_repo(root, repo)
     conn = connect(root)
-    for table in (
-        "snapshot_symbol_postings",
-        "snapshot_ref_postings",
-        "snapshot_edge_postings",
-        "snapshot_file_postings",
-    ):
-        conn.execute("DROP TABLE " + table)
-    conn.execute("DELETE FROM metadata WHERE key='snapshot_postings_version'")
+    conn.execute("PRAGMA user_version=0")
     conn.commit()
     conn.close()
-    monkeypatch.setattr(
-        code_build.code_extract,
-        "extract",
-        lambda *a: pytest.fail("posting upgrade must not parse source"),
-    )
-    assert code_index.symbols_for(root, "original", at=indexed["snapshot"])
-    assert code_index.callers(root, "original", count=True)["count"] == 1
+    with pytest.raises(ValidationError, match="unsupported code index schema"):
+        connect(root)
 
 
 def test_named_reuse_and_impact_avoid_global_json_views(tmp_path, monkeypatch):

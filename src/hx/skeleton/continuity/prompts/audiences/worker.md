@@ -21,3 +21,9 @@ Report missing prerequisites or ambiguous acceptance to the Partner; do not weak
 
 Before new code, query `hx code type`, `signature`, `contract` or `precedent`
 for reuse. Use `--expect` lints; `--owners` reads ledger leases.
+
+Every directive follows actual code/application graph dependencies. Search for existing
+behavior, providers, interfaces, callers, tests, and precedents before building; reuse known
+capabilities. Maximize useful independent parallel work within inherited ownership, resources,
+and host capacity. Apparent request size does not select packet count. Worker edits/proof
+require the exact binding's independent approval; do not infer it from a proposed check list.

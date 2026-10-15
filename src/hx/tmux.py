@@ -58,9 +58,7 @@ def has_session(name: str, env: dict[str, str] | None = None) -> bool:
 def pane_log(root, item_id: str):
     """`logs/<id>/<id>-pane.log`: the raw pane capture (spec 03, 11).
 
-    It is the UI's fallback for a dead session, not a Companion stream, so
-    `hx.streams` ignores it and only `hx dispatch` (which archives all of `logs/<id>/`)
-    ever moves it.
+    Human-readable process diagnostics are separate from authoritative ledger capture.
     """
     return root / "logs" / item_id / f"{item_id}-pane.log"
 
@@ -68,8 +66,7 @@ def pane_log(root, item_id: str):
 def arm_pane_log(root, item_id: str, env: dict[str, str] | None = None) -> bool:
     """Point `tmux pipe-pane -o` at the pane log, replacing any pipe already running.
 
-    `start.sh` arms this at launch; `hx dispatch` re-arms it after archiving `logs/<id>/`,
-    because a pipe started before the archive keeps writing into the moved file.
+    The adapter arms this when its owned native session starts.
     """
     if not has_session(item_id, env):
         return False

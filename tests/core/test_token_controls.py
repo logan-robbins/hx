@@ -43,7 +43,7 @@ def test_model_cap_is_validated_and_carried_to_private_environment(configured):
     store, _, _ = configured
     path = store.root / 'config/models.json'
     config = json.loads(path.read_text())
-    config['claude-opus-5']['max_output_tokens'] = 4096
+    config['claude-opus-5-5']['max_output_tokens'] = 4096
     path.write_text(json.dumps(config))
     row = prepare(configured)
     env = native_launch.environment(store.root, row, env={})

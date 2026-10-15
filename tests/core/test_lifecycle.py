@@ -1,7 +1,4 @@
-"""`hx goal`, `hx launch`, `hx restart`, `hx up`, `hx heartbeat`, `hx wake`, and who may call what."""
-
-from __future__ import annotations
-
+"""Ledger lifecycle, root recovery, and generic pane transport contracts."""
 import json
 import socket
 import subprocess
@@ -11,333 +8,78 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import wait_for, write_evidence
-
-PARTNER_ONLY = [
-    ("dispatch", ["eng-001", "run/goal-eng-001.md"]),
-    ("resume", ["eng-001", "run/addendum-eng-001.md"]),
-    ("bench", ["eng-001"]),
-    ("launch", ["eng-001"]),
-    ("restart", ["eng-001"]),
-    ("read", ["eng-001"]),
-]
-
-
-def pasted(root, item_id):
-    log = root / "run" / item_id / "fake-input.log"
-    return log.read_text() if log.is_file() else ""
-
-
-# --- who may call what (spec 08) ----------------------------------------------------------------
-
-
-@pytest.mark.parametrize("command,args", PARTNER_ONLY, ids=[c for c, _ in PARTNER_ONLY])
-def test_partner_commands_refuse_a_worker(instance, hx, command, args):
-    result = hx(command, *args, harness_id="eng-001")
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "refuse" in result.stderr
-    assert "HARNESS_ID is `eng-001`" in result.stderr
-
-
-@pytest.mark.parametrize("command,args", PARTNER_ONLY, ids=[c for c, _ in PARTNER_ONLY])
-def test_partner_commands_allow_a_system_caller(instance, hx, command, args):
-    """`hx up` and `hx heartbeat` run from systemd and cron with no HARNESS_ID (spec 08)."""
-    result = hx(command, *args, harness_id=None)
-    assert "refuse: `hx" not in result.stderr
-
-
-# --- hx goal -------------------------------------------------------------------------------------
-
-
-def test_goal_pastes_at_the_idle_prompt(instance, hx, launched, goals):
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-
-    result = hx("goal", "eng-001")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "HX-GOAL eng-001 pasted"
-    wait_for(lambda: "/goal The goal for" in pasted(instance, "eng-001"), what="the pointer")
-    assert (instance / "run" / "eng-001" / "goal").is_file()
-
-
-def test_goal_waits_for_the_idle_prompt(instance, hx, launched, goals, tmux_server):
-    """spec 08: `hx goal` waits for the pane, with no timeout. `goal-pending` is gone (D25)."""
-    import threading
-
-    from .test_transitions import hold_pane
-
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-    hold_pane(tmux_server, "eng-001")
-
-    held = {}
-
-    def send():
-        held["result"] = hx("goal", "eng-001")
-
-    thread = threading.Thread(target=send)
-    thread.start()
-    try:
-        # It is still waiting: nothing was pasted and no pending marker was left behind.
-        thread.join(1.0)
-        assert thread.is_alive(), "hx goal returned instead of waiting for the prompt"
-        assert not (instance / "run" / "eng-001" / "goal-pending").exists()
-        assert "/goal The goal for" not in pasted(instance, "eng-001")
-    finally:
-        subprocess.run(
-            [*tmux_server, "send-keys", "-t", "=eng-001:main", "/fake-release", "Enter"],
-            check=True,
-        )
-        thread.join(30)
-
-    assert held["result"].stdout.strip() == "HX-GOAL eng-001 pasted"
-    wait_for(lambda: "/goal The goal for" in pasted(instance, "eng-001"), what="the pointer")
-
-
-def test_goal_now_does_not_claim_submission_in_a_busy_pane(instance, hx, launched, goals, tmux_server):
-    """`--now` skips the readiness wait, but an unsubmitted paste is not an ACK."""
-    from .test_transitions import hold_pane
-
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-    marker = instance / "run" / "eng-001" / "goal"
-    marker.unlink()
-    hold_pane(tmux_server, "eng-001")
-
-    result = hx("goal", "eng-001", "--now")
-    assert result.returncode == 2, result.stderr
-    assert "not submitted; session preserved" in result.stderr
-    assert "HX-GOAL" not in result.stdout
-    assert not marker.exists()
-    wait_for(lambda: "/goal The goal for" in pasted(instance, "eng-001"), what="the pointer")
-
-
-def test_goal_without_a_pane_says_so(instance, hx):
-    from hx.lifecycle import ensure_work_item
-
-    ensure_work_item(instance, "eng-001")
-    result = hx("goal", "eng-001")
-    assert result.returncode == 2
-    assert "no tmux pane" in result.stderr
-
-
-def test_the_pointer_never_carries_the_order(instance, hx, launched, goals):
-    """spec 06: what `hx goal` pastes is a fixed short form that never grows with the task."""
-    launched("eng-001")
-    goals("eng-001", goal="A very long order " * 50)
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
-    pointer = [line for line in pasted(instance, "eng-001").split("\n") if line.startswith("/goal")][0]
-    assert "A very long order" not in pointer
-    assert len(pointer) < 500
-
-
-# --- hx restart, up, heartbeat ---------------------------------------------------------------------
-
-
-def test_restart_relaunches_and_resends_the_goal(instance, hx, launched, goals, tmux_server):
-    launched("eng-001")
-    # `hx dispatch` clears `run/<id>/` except home/ and persona.md (spec 08), so the launch
-    # record has to be read before it.
-    first = json.loads((instance / "run" / "eng-001" / "fake-argv.json").read_text())
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the first pointer")
-    assert not (instance / "run" / "eng-001" / "fake-argv.json").exists()
-
-    result = hx("restart", "eng-001")
-    assert result.returncode == 0, result.stderr
-    assert "goal=pasted" in result.stdout
-    wait_for(
-        (instance / "run" / "eng-001" / "fake-argv.json").is_file, what="the relaunched agent"
-    )
-    second = json.loads((instance / "run" / "eng-001" / "fake-argv.json").read_text())
-    assert second["pid"] != first["pid"], "restart relaunches the process"
-    assert "/goal The goal for" in pasted(instance, "eng-001")
-
-
-def test_restart_of_an_idle_item_sends_no_goal(instance, hx, launched):
-    launched("eng-001")
-    result = hx("restart", "eng-001")
-    assert result.returncode == 0, result.stderr
-    assert "goal=none" in result.stdout
-
-
-def test_launch_re_records_the_binary_version(instance, hx, tmux_server):
-    """A launch boundary records what the pinned binary reports now (the fake answers
-    `HX_FAKE_CLAUDE_VERSION`), so the fleet runs the latest release from its next launch."""
-    before = json.loads((instance / "config" / "claude.json").read_text())
-    result = hx("launch", "partner", "--no-companion", HX_FAKE_CLAUDE_VERSION="9.9.9")
-    assert result.returncode == 0, result.stdout + result.stderr
-    after = json.loads((instance / "config" / "claude.json").read_text())
-    assert after == {"bin": before["bin"], "version": "9.9.9"}, after
-
-
-def test_restart_re_records_the_binary_version(instance, hx, launched):
-    """`hx restart` is a launch boundary as well: the record follows the binary there too."""
-    launched("eng-001")
-    before = json.loads((instance / "config" / "claude.json").read_text())
-    result = hx("restart", "eng-001", HX_FAKE_CLAUDE_VERSION="9.9.9")
-    assert result.returncode == 0, result.stdout + result.stderr
-    after = json.loads((instance / "config" / "claude.json").read_text())
-    assert after == {"bin": before["bin"], "version": "9.9.9"}, after
-
-
-def test_up_launches_every_config_id_partner_first(instance, hx, agent):
-    agent("eng-002")
-    result = hx("up")
-    assert result.returncode == 0, result.stderr
-    lines = [l for l in result.stdout.strip().split("\n") if l.startswith("HX-LAUNCH")]
-    launched_ids = [line.split()[1] for line in lines]
-    assert launched_ids[0] == "partner", "partner first (spec 08)"
-    assert set(launched_ids) == {"partner", "eng-001", "eng-002"}
-    for item_id in launched_ids:
-        assert (instance / "run" / item_id / "home" / "settings.json").is_file()
-
-
-def test_heartbeat_restarts_a_dead_session(instance, hx, launched, goals, tmux_server):
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
-    subprocess.run([*tmux_server, "kill-session", "-t", "=eng-001"], check=True)
-
-    result = hx("heartbeat")
-    assert result.returncode == 0, result.stderr
-    assert "restarted=eng-001" in result.stdout
-    assert subprocess.run(
-        [*tmux_server, "has-session", "-t", "=eng-001"], capture_output=True
-    ).returncode == 0
-
-
-def test_heartbeat_launches_a_dead_partner(instance, hx, launched, tmux_server):
-    """spec 08, build-8 item 9: the Partner is not a board item, so it is checked on its own."""
-    launched("partner")
-    subprocess.run([*tmux_server, "kill-session", "-t", "=partner"], check=True)
-
-    result = hx("heartbeat")
-    assert result.returncode == 0, result.stderr
-    assert "partner=launched" in result.stdout
-    assert subprocess.run(
-        [*tmux_server, "has-session", "-t", "=partner"], capture_output=True
-    ).returncode == 0
-
-
-def test_heartbeat_leaves_a_live_partner_alone(instance, hx, launched):
-    launched("partner")
-    assert "partner=alive" in hx("heartbeat").stdout
-
-
-def test_heartbeat_repastes_the_goal_to_an_idle_working_agent(instance, hx, launched, goals):
-    """build-8 item 12: a `/goal` evaluator that cleared itself leaves the agent stranded."""
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
-    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-
-    result = hx("heartbeat")
-    assert result.returncode == 0, result.stderr
-    assert "regoaled=eng-001" in result.stdout
-    wait_for(lambda: "/goal The goal for" in pasted(instance, "eng-001"), what="the pointer again")
-
-
-def test_heartbeat_does_not_repaste_to_an_agent_that_completed(instance, hx, launched, goals):
-    """A current control-plane completion receipt, not transcript text, means done."""
-
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
-    write_evidence(instance, "eng-001")
-    assert hx("complete", "done", harness_id="eng-001").returncode == 0
-    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-
-    assert "regoaled=none" in hx("heartbeat").stdout
-    assert "/goal" not in pasted(instance, "eng-001")
-
-
-def test_heartbeat_does_not_repaste_to_a_busy_agent(instance, hx, launched, goals, tmux_server):
-    from .test_transitions import hold_pane
-
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    wait_for(lambda: "/goal" in pasted(instance, "eng-001"), what="the pointer")
-    hold_pane(tmux_server, "eng-001")
-    (instance / "run" / "eng-001" / "fake-input.log").write_text("")
-
-    assert "regoaled=none" in hx("heartbeat").stdout
-
-
-def test_heartbeat_wakes_the_partner_only_when_the_board_changed(instance, hx, launched, goals):
-    launched("partner", "eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-
-    first = hx("heartbeat")
-    assert first.returncode == 0
-    assert "changed=false" in first.stdout, "the first heartbeat has nothing to compare against"
-
-    second = hx("heartbeat")
-    assert "changed=false" in second.stdout, "nothing moved between the two"
-
-    write_evidence(instance, "eng-001")
-    assert hx("complete", "done", harness_id="eng-001").returncode == 0
-    third = hx("heartbeat")
-    assert "changed=true" in third.stdout
-
-
-# --- build-8 item 8: the UI is a tmux session hx starts --------------------------------------
-
-
-def test_up_starts_the_ui_session_and_prints_the_url(instance, hx, tmux_server):
-    """spec 16.1, 17.2: `hx up` brings up the read-only view with the fleet."""
-    result = hx("up")
-    assert result.returncode == 0, result.stderr
-    assert "HX-UI http://127.0.0.1:8765/" in result.stdout
-    assert subprocess.run(
-        [*tmux_server, "has-session", "-t", "=ui"], capture_output=True
-    ).returncode == 0
-
-
-def test_starting_the_ui_is_idempotent(instance, hx, tmux_server):
-    from hx.lifecycle import start_ui
-
-    env = {"HX_TMUX": " ".join(tmux_server)}
-    assert start_ui(instance, env=env) is True
-    assert start_ui(instance, env=env) is False, "a live UI session is left alone"
+from hx import lifecycle, application_loop
+from hx.continuity_store import Conflict, ContinuityStore
+
+
+def test_every_worker_launch_requires_explicit_run_and_request(tmp_path):
+    for run, request in ((None, None), ('run', None), (None, 'request')):
+        with pytest.raises(Conflict, match='requires --run'):
+            lifecycle.launch(tmp_path, 'eng-001', run_id=run, request_id=request, env={})
+    assert not (tmp_path / 'state').exists()
+    assert not (tmp_path / 'pods').exists()
+
+
+def test_launch_requires_partner_before_admission(tmp_path):
+    with pytest.raises(Exception, match='HARNESS_ID is `eng-001`'):
+        lifecycle.launch(tmp_path, 'eng-001', run_id='R', request_id='Q', env={'HARNESS_ID': 'eng-001'})
+
+
+def test_worker_launch_advances_only_named_ledger_identity(tmp_path, monkeypatch):
+    from hx import native_controller
+    calls = []
+    def advance(ledger, worker, run, request, **kw):
+        calls.append((ledger.root, worker, run, request))
+        return {'run_id': run, 'status': 'ready'}
+    monkeypatch.setattr(native_controller, 'advance', advance)
+    assert lifecycle.launch(tmp_path, 'eng-001', run_id='R', request_id='Q', env={})['run_id'] == 'R'
+    assert calls == [(tmp_path, 'eng-001', 'R', 'Q')]
+    assert not (tmp_path / 'pods').exists()
+    assert not (tmp_path / 'tasks.json').exists()
+
+
+def test_partner_cannot_be_assigned_a_worker_run(tmp_path):
+    with pytest.raises(Conflict, match='cannot own a worker run'):
+        lifecycle.launch(tmp_path, 'partner', run_id='R', request_id='Q', env={})
+
+
+def test_up_recovers_services_without_launching_configured_workers(tmp_path, monkeypatch):
+    for worker in ('partner', 'eng-001', 'qa-001'):
+        (tmp_path / 'config' / worker).mkdir(parents=True)
+    launches = []
+    monkeypatch.setattr(lifecycle.tmux, 'has_session', lambda *a, **kw: False)
+    monkeypatch.setattr(lifecycle, 'launch', lambda root, worker, **kw: launches.append(worker) or {'id': worker, 'session': 'started'})
+    monkeypatch.setattr(lifecycle, 'start_ui', lambda *a, **kw: True)
+    monkeypatch.setattr(application_loop, 'ensure', lambda *a, **kw: {'pid': 77})
+    result = lifecycle.up(tmp_path, env={})
+    assert launches == ['partner']
+    assert result['service'] == {'pid': 77}
+    assert result['status']['active'] == []
+    assert not (tmp_path / 'pods').exists()
+
+
+def test_gated_heartbeat_does_not_start_services(tmp_path, monkeypatch):
+    monkeypatch.setattr(lifecycle, '_recover', lambda *a, **kw: pytest.fail('gated root must stay stopped'))
+    assert lifecycle.heartbeat(tmp_path, env={}, require_go=True)['gated']
+
+
+def test_heartbeat_recovers_the_same_root_service(tmp_path, monkeypatch):
+    monkeypatch.setattr(lifecycle, '_recover', lambda *a, **kw: {'service': {'pid': 42}, 'status': {'active': []}})
+    result = lifecycle.heartbeat(tmp_path, env={})
+    assert not result['gated'] and result['service']['pid'] == 42
+
+
+def test_launch_cli_does_not_admit_an_unassigned_worker(tmp_path, capsys):
+    with pytest.raises(SystemExit) as failed:
+        lifecycle.main_launch(['eng-001'], tmp_path, env={})
+    assert failed.value.code == 2
+    assert 'hx plan assign' in capsys.readouterr().err
+    assert not (tmp_path / 'state').exists()
 
 
 def test_the_url_follows_config_ui_json(instance):
-    import json
-
-    from hx.lifecycle import ui_url
-
-    assert ui_url(instance) == "http://127.0.0.1:8765/"
-    (instance / "config" / "ui.json").write_text(json.dumps({"port": 9111}))
-    assert ui_url(instance) == "http://127.0.0.1:9111/"
-
-
-def test_heartbeat_restarts_the_ui_when_it_is_dead(instance, hx, launched, tmux_server):
-    launched("partner")
-    assert "ui=started" in hx("heartbeat").stdout
-    assert "ui=alive" in hx("heartbeat").stdout
-
-    subprocess.run([*tmux_server, "kill-session", "-t", "=ui"], check=True)
-    assert "ui=started" in hx("heartbeat").stdout
-    assert subprocess.run(
-        [*tmux_server, "has-session", "-t", "=ui"], capture_output=True
-    ).returncode == 0
-
-
-# --- hx wake ----------------------------------------------------------------------------------------
+    (instance / 'config/ui.json').write_text(json.dumps({'port': 18473}))
+    assert lifecycle.ui_url(instance).endswith(':18473/')
 
 
 def test_wake_partner_returns_false_without_a_socket_file(instance):
@@ -444,29 +186,6 @@ def test_wake_cli_accepts_and_exits_0(instance, hx):
     assert result.stdout.strip().split("\n")[-1] == "HX-WAKE partner accepted"
     assert result.returncode == 0
 
-
-def test_a_failed_wake_is_a_warning_not_a_failure(instance, hx, launched, goals):
-    """`hx complete` still succeeds and still prints HX-COMPLETE last (spec 08)."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    result = hx("complete", "blocked", harness_id="eng-001")
-    assert result.returncode == 0
-    assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE eng-001 blocked"
-    assert "the Partner was not woken (no-socket)" in result.stderr
-
-
-def test_complete_done_is_silent_when_the_partner_is_unreachable(instance, hx, launched, goals):
-    """Quiet protocol: `done` attempts no wake, so an unreachable Partner warns nothing."""
-    from .test_transitions import dispatch_working
-
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
-    result = hx("complete", "done", harness_id="eng-001")
-    assert result.returncode == 0
-    assert result.stdout.strip().split("\n")[-1] == "HX-COMPLETE eng-001 done"
-    assert "not woken" not in result.stderr
 
 
 # --- readiness detection, against the real TUI's chrome ------------------------------------------
@@ -659,33 +378,3 @@ def test_the_fake_pane_reads_the_same_way():
 def test_a_pane_with_no_prompt_yet_holds_everything():
     """Before the TUI draws, there is no box; the paste cannot have been submitted."""
     assert holds("starting up\n", "starting up")
-
-
-# --- the fleet go-gate (docs/multi-instance.md §3) -------------------------------------------------
-
-
-def test_heartbeat_require_go_leaves_a_gated_instance_untouched(instance, hx, tmux_server):
-    """No GO line in PARTNER.md: nothing launched, nothing restarted, nobody woken."""
-    result = hx("heartbeat", "--require-go")
-    assert result.returncode == 0, result.stderr
-    assert "gated=no-GO-line" in result.stdout
-    assert subprocess.run(
-        [*tmux_server, "has-session", "-t", "=partner"], capture_output=True
-    ).returncode != 0, "the Partner must not have been launched"
-
-
-def test_heartbeat_require_go_runs_once_the_human_wrote_go(instance, hx, tmux_server):
-    partner_md = instance / "PARTNER.md"
-    partner_md.write_text(partner_md.read_text() + "\n## Authorization lines\n\nGO 2026-10-11\n")
-    result = hx("heartbeat", "--require-go")
-    assert result.returncode == 0, result.stderr
-    assert "gated" not in result.stdout
-    assert "partner=launched" in result.stdout
-
-
-def test_heartbeat_reports_pending_learnings(instance, hx, launched):
-    launched("partner")
-    assert "learnings_pending=0" in hx("heartbeat").stdout
-    from hx import learn
-    learn.propose(instance, signal="s", check="c", evidence="e", category="harness", env={"HARNESS_ID": "eng-001"})
-    assert "learnings_pending=1" in hx("heartbeat").stdout

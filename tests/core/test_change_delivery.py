@@ -10,7 +10,7 @@ from hx.continuity_store import Conflict
 from hx.errors import Refused, ValidationError
 from .test_map_updates import active
 from .test_unit_execution import fleet, source_unit, finish, commit
-from .test_planning import plan
+from .test_planning import plan, bind
 from .test_appmap import git, mapped
 
 
@@ -20,6 +20,7 @@ def covered(fleet, tmp_path):
     planning.apply(store, plan(fleet, [task]))
     from hx import unit_execution
     run = unit_execution.assign(store, "feature", 1, "eng-001")["run_id"]
+    bind(store, run)
     base = git(repo, "rev-parse", "HEAD")
     (repo / "feature.py").write_text("def feature():\n    return 1\n")
     commit(repo)

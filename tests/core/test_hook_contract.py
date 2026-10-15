@@ -121,11 +121,9 @@ def test_launch_identity_cannot_be_reassigned_and_partial_contract_refuses(insta
             hook_contract.validate(ledger, run_id=newer, launch_id="launch-one", adapter="meta", worker_id="eng-001")
 
 
-def test_schema_eleven_upgrade_retains_existing_runs_and_adds_launch_contracts(tmp_path):
+def test_schema_eleven_reopen_retains_existing_runs_and_adds_launch_contracts(tmp_path):
     with ContinuityStore(tmp_path) as ledger:
         run = start(ledger)
-        ledger.db.execute("DROP TABLE native_launch_contracts")
-        ledger.db.execute("PRAGMA user_version=11")
     with ContinuityStore(tmp_path) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert upgraded.db.execute("SELECT 1 FROM runs WHERE run_id=?", (run,)).fetchone()

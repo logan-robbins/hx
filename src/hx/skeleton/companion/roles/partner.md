@@ -12,14 +12,14 @@ record what changed and when.
 |---|---|
 | `hx board` (it runs it once after a seam) | nothing — do not restate the table; note only what the board cannot show |
 | `hx read <id> --detail` for prose the Partner already skipped | nothing on the happy path — status is the report; one line only for the `<id> <outcome>` fact the Partner acted on |
-| `hx goals` / re-read a goal file | which `<id>` got which goal, when, and the one-line scope |
+| `hx goals` / re-read a packet | which task/run was assigned to `<id>`, when, and its one-line scope |
 | re-ask the human something already answered | the open question verbatim + when asked + the answer, or "unanswered" |
 | re-derive who depends on whom | the cross-worker fact: `<id-a>` exposes X at `<path>` → `<id-b>` consumes it |
 | `hx show <id>` to recall a workdir | `<id>` → workdir path, in the fleet line |
 
 ## Keep until the human's current ask is reported done
 
-- The ask, in the human's own words, and the decomposition: `<id>` ← which part, dispatched
+- The ask, in the human's own words, and the decomposition: `<id>` ← which part, assigned
   when.
 - Current ownership, dependencies, blockers and the next scheduling decision. Drop routine
   dispatch/wake acknowledgements and intermediate worker messages after their consequence

@@ -185,11 +185,9 @@ def test_drain_refuses_requests_and_cli_is_replayable(runtime, capsys):
     assert native_producer.status(store, run)['gap'] is None
 
 
-def test_schema_thirteen_upgrade_preserves_launch_and_adds_tool_registry(configured):
+def test_schema_thirteen_reopen_preserves_launch_and_adds_tool_registry(configured):
     store, _, run = configured
     native_launch.prepare(store, 'eng-001', run, 'launch', env={})
-    store.db.execute('DROP TABLE native_tool_calls')
-    store.db.execute('PRAGMA user_version=13')
     with ContinuityStore(store.root) as upgraded:
         assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
         assert native_launch._row(upgraded, run)['status'] == 'prepared'

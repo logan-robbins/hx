@@ -7,7 +7,7 @@
 # the installed `hx` against a fresh instance, and proves three things:
 #
 #   1. the wheel actually carries the package data `hx install` needs (skeleton, skills, the
-#      unit templates, the tested-versions list) — a package-data glob that silently stops
+#      native launch inputs, the tested-versions list) — a package-data glob that silently stops
 #      matching ships an hx whose install has nothing to copy, and no unit test notices;
 #   2. every skeleton file the gtm lane authored lands in the instance byte-identical;
 #   3. nothing in the whole sequence touches a Claude home — not the fresh one (Claude Code is
@@ -122,9 +122,6 @@ hx/skeleton/personas/backend-engineer.md
 hx/skeleton/personas/frontend-engineer.md
 hx/skeleton/personas/release-engineer.md
 hx/skeleton/personas/qa-engineer.md
-hx/skeleton/templates/work-item.md
-hx/skeleton/templates/goal.md
-hx/skeleton/templates/addendum.md
 hx/skeleton/templates/worker/SUBAGENTS.md
 hx/skeleton/templates/worker/harness.json
 hx/skeleton/adapters/claude/install.sh
@@ -147,9 +144,11 @@ hx/skeleton/config/partner/harness.json
 hx/skills/hx-partner/SKILL.md
 hx/skills/hx-fleet/SKILL.md
 hx/skills/hx-worker/SKILL.md
-hx/skills/hx-memory/SKILL.md
 hx/skills/hx-companion/SKILL.md
 hx/packaging/tested-claude-versions.json
+hx/adapter_guard.py
+hx/native_controller.py
+hx/continuity_store.py
 hx/ui/static/index.html
 hx/ui/static/app.js
 hx/ui/static/style.css

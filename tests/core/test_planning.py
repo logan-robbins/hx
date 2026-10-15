@@ -20,21 +20,35 @@ def unit(repo, name="implement", *, paths=None, prerequisites=None):
         "behavior": "Continuation preserves events arriving after its frozen boundary.",
         "acceptance": ["A late event appears in the next pass and is never acknowledged early."],
         "workdir": str(repo), "write_paths": paths if paths is not None else [f"src/{name}.py", f"tests/test_{name}.py"],
-        "map_inputs": [], "checks": {"unit": definition()},
-        "outputs": [{"id": "proof", "version": 1, "kind": "receipt", "check_id": "unit"}],
-        "prerequisites": prerequisites or []}
+        "map_inputs": [], "check_policy": {"reviewer": "qa-001", "required_checks": ["unit"]}, "resources": [],
+        "outputs": [{"id": "proof", "version": 1, "kind": "receipt", "obligation": "Checks prove the declared behavior."}],
+        "prerequisites": [{"need": "hard", **need} for need in (prerequisites or [])]}
 
 
 def plan(active, tasks=None):
-    return {"schema_version": 1, "plan_id": "continuation", "expected_revision": 0,
+    return {"schema_version": 2, "plan_id": "continuation", "expected_revision": 0,
         "repository": active[2]["repo_id"], "goal": "Preserve current obligations across continuation.",
         "constraints": ["Do not acknowledge events arriving after the frozen boundary."],
         "tasks": tasks or [unit(active[1])]}
 
 
 def dependency(task):
-    return {"task_id": task, "output_id": "proof", "version": 1}
+    return {"task_id": task, "output_id": "proof", "version": 1, "need": "hard"}
 
+
+
+def bind(store, run, *, recipes=None):
+    from hx import dependency_packets
+    task = store.db.execute("SELECT t.payload FROM tasks t JOIN runs r ON r.task_id=t.task_id AND r.task_revision=t.revision WHERE run_id=?", (run,)).fetchone()
+    payload = json.loads(task[0])
+    recipes = recipes or {"unit": definition()}
+    primary = next(iter(recipes))
+    body = {"definition_of_done": ["Every packet obligation has current proof."],
+            "checks": recipes,
+            "coverage": {name: [primary] for name in dependency_packets.obligations(payload)}}
+    proposed = dependency_packets.bind_checks(store, run, body)
+    dependency_packets.approve_binding(store, run, proposed["binding_hash"], payload["check_policy"]["reviewer"])
+    return body
 
 def test_brief_returns_exact_contract_check_and_ownership_without_filesystem_search(active, monkeypatch):
     store, repo, _, component, _, _, snapshot, runs, _ = active
@@ -95,17 +109,18 @@ def test_search_index_tracks_new_semantics_and_isolates_baseline(active):
     assert retrieval.plan_context(store, repo, baseline, "Zephyrunique")["coverage"]["seed_ids"] == []
 
 
-def test_apply_focuses_unit_and_preserves_constraints_and_exact_check(active):
+def test_apply_focuses_unit_and_preserves_constraints_and_worker_check_policy(active):
     store, repo, _, _, _, _, _, _, _ = active
     body = plan(active)
-    body["tasks"][0]["checks"]["unit"]["argv"][-1] = "assert 'a  b' != 'a b'\nprint('not lost')"
     validated = planning.validate(store, body)
     assert validated["initial_units"] == ["implement"]
     result = planning.apply(store, body)
     assert planning.apply(store, body) == result
     assigned = planning.assignment(store, "implement")
     assert assigned["constraints"] == body["constraints"]
-    assert assigned["checks"] == body["tasks"][0]["checks"]
+    assert assigned["checks"] == {}
+    assert assigned["binding_status"] == "unbound"
+    assert assigned["check_policy"] == body["tasks"][0]["check_policy"]
     assert assigned["goal"] == body["tasks"][0]["behavior"]
     assert assigned["revision"] == 1
 
@@ -134,7 +149,7 @@ def test_invalid_decomposition_is_rejected(active, fault):
         b["prerequisites"] = [dependency("a")]
         b["prerequisites"][0]["output_id" if fault == "missing-output" else "version"] = "absent" if fault == "missing-output" else 2
     elif fault == "missing-check":
-        a["checks"] = {}
+        a["check_policy"]["required_checks"] = []
     elif fault in {"overlap", "prefix", "case"}:
         b["write_paths"] = ["src/a.py" if fault == "overlap" else "src" if fault == "prefix" else "SRC/A.PY"]
     elif fault == "outside-output":
@@ -194,13 +209,12 @@ def test_brief_to_plan_cli_has_operator_boundary(active, tmp_path, run_hx):
         planning.main(["apply", "--file", str(source)], store.root, env={"HARNESS_ID": "eng-001"})
 
 
-def test_schema_eight_upgrade_builds_search_index(active):
-    store, repo, _, _, _, _, snapshot, _, _ = active
-    store.db.execute("DELETE FROM map_search")
+def test_old_schema_is_refused_without_migration(active):
+    store = active[0]
     store.db.execute("PRAGMA user_version=8")
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert retrieval.plan_context(upgraded, repo, snapshot, "compiler")["nodes"]
+    with pytest.raises(ValidationError, match="schema|version"):
+        ContinuityStore(store.root)
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_graph_freshness_refuses_changed_scope_and_rebuild_unlocks(active):
@@ -264,3 +278,32 @@ def test_plan_final_scope_check_refuses_source_changed_after_cold_preparation(ac
     with pytest.raises(Conflict,match='stale code scope'):
         planning.apply(store,plan(active,[unit(repo,paths=['compiler.py'])]))
     assert not store.db.execute('SELECT 1 FROM plan_heads').fetchone()
+
+
+@pytest.mark.parametrize("version", [1, 0, 3, True])
+def test_only_current_packet_schema_is_accepted(active, version):
+    body = plan(active)
+    body["schema_version"] = version
+    with pytest.raises(ValidationError, match="schema_version=2"):
+        planning.apply(active[0], body)
+    assert not active[0].db.execute("SELECT 1 FROM plan_heads").fetchone()
+
+
+def test_read_only_packet_prepares_real_graph_and_refuses_stale_repository(active):
+    from hx import code_store
+    store, repo = active[:2]
+    body = plan(active, [unit(repo, paths=[])])
+    assert not code_store.db_path(store.root).exists()
+    planning.apply(store, body)
+    assert code_store.db_path(store.root).is_file()
+    (repo / "compiler.py").write_text("def changed_after_read_only_plan(): pass\n")
+    with pytest.raises(Conflict, match="stale code scope"):
+        planning.validate(store, body)
+
+
+def test_read_only_scope_without_index_is_not_fresh(active):
+    from hx import code_freshness
+    store, repo = active[:2]
+    result = code_freshness.scope(store.root, repo, [], bootstrap=False)
+    assert not result["fresh"]
+    assert "scope index is missing" in result["reasons"]

@@ -339,12 +339,9 @@ def post_seam_counts(records: list[dict], item_id: str | None = None) -> dict:
 
     `searches_before_first_edit` and `modules_read_before_first_write` stop at the first
     edit (the whole window when there is none); `task_reprints` counts every `hx task`.
-    A read of the agent's work item (`PARTNER.md` for the Partner) is not a module read: it is
-    the one read the boundary asks for.
+    A read of PARTNER.md is orchestration context, not a source module read.
     """
-    from .compose import boundary_name
-
-    own = boundary_name(item_id) if item_id else None
+    own = "PARTNER.md" if item_id == "partner" else None
     calls = [r for r in records if r.get("event") == "post_tool"]
     searches, modules, reprints = 0, set(), 0
     first_edit = None
@@ -366,7 +363,9 @@ def post_seam_counts(records: list[dict], item_id: str | None = None) -> dict:
 
 
 def post_seam(root, item_id: str) -> dict:
-    """`hx discipline orient --post-seam ID`: the main stream after its last seam record."""
+    """Partner orchestration orientation after its last context reset."""
+    if item_id != "partner":
+        raise ValidationError("worker context is ledger-owned; inspect its checkpoints with hx show RUN")
     from . import streams
 
     path = streams.main_stream(Path(root), item_id)

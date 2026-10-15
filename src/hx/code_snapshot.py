@@ -1,7 +1,7 @@
 """Immutable graph snapshots backed by compressed objects and a persistent treap.
 
 Only changed paths and their O(log paths) ancestors are written for a new map.
-The mutable graph tables are a compatibility projection, never revision storage.
+Current checkout query tables are derived from immutable source snapshots.
 """
 
 from __future__ import annotations
@@ -900,33 +900,6 @@ def test_candidates(conn, names, references, *, repo=None):
     return selected_facts(conn, "symbols", rows)
 
 
-def backfill_counts(conn):
-    """Once per schema upgrade, memoize shared subtrees across all old snapshots."""
-    tree = PathMap(conn)
-    memo = {}
-
-    def total(identity):
-        if not identity:
-            return (0, 0)
-        if identity not in memo:
-            node = tree.node(identity)
-            leaf = conn.execute(
-                "SELECT files,symbols FROM snapshot_object_counts WHERE artifact=?",
-                (node["artifact"],),
-            ).fetchone()
-            left = total(node["left_node"])
-            right = total(node["right_node"])
-            memo[identity] = (
-                leaf["files"] + left[0] + right[0],
-                leaf["symbols"] + left[1] + right[1],
-            )
-        return memo[identity]
-
-    for row in conn.execute("SELECT identity,map_root FROM code_snapshots").fetchall():
-        conn.execute(
-            "UPDATE code_snapshots SET files_count=?,symbols_count=? WHERE identity=?",
-            (*total(row["map_root"]), row["identity"]),
-        )
 
 
 def path_info(conn, repo, path):

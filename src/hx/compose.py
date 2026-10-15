@@ -1,30 +1,4 @@
-"""`hx compose <id> [<stream>]` — session memory at every boundary.
-
-The main stream has no context file: its boundary read is the work item itself. hx keeps the
-work item's `## Status` (`PARTNER.md`'s for the Partner) current — rewritten at every
-main-stream compose, which runs at a boundary, so the agent is not writing the file — and the
-`context` hook points the agent at it (`hx.persona.boundary`). The agent keeps `## Tasks`.
-`## Status` holds, as `###` subsections (`status_parts`):
-
-  Step state       — `state/<id>/<stream>.json`, rendered (written by the Companion)
-  Memory episodes  — the closest episodes other agents left behind (`docs/memory.md`);
-                     never the Partner's, none with `companion.memory_inject_k: 0`
-  Open subagent handles — `run/<id>/subagents.json` and every `-open` stream
-
-A subagent stream gets one context file, `run/<id>/<stream>.context.md`, which the
-`SubagentStart` hook names (spec 02 "Single-file context"), sections in this order:
-
-  Invariants       — `config/CLAUDE.md` whole, on the flavors whose invariants reach the
-                     parent through the `context` hook (`config_harness.INVARIANTS_CHANNEL`
-                     `hook`: Pi, Grok, Meta), which a subagent does not see; Claude and
-                     Codex subagents load the same file their parent does
-  Who your subagents are — the shared `templates/worker/SUBAGENTS.md` rendered with this
-                     agent's identity (`hx.persona.render_subagents`; `templates/contributor/`
-                     for Meta), or its own `config/<id>/SUBAGENTS.md`
-  Task             — the spawn prompt
-  Step state, Memory episodes, Open subagent handles — the stream's own status
-"""
-
+"""Immutable ledger context for workers and bounded Partner orchestration notes."""
 from __future__ import annotations
 
 import argparse
@@ -35,17 +9,11 @@ from . import store, streams
 from .config_harness import flavor_of, invariants_channel
 from .errors import NotFound, Refused, ValidationError
 from .ids import PARTNER
-from .workitems import (
-    SECTION_GOAL,
-    SECTION_STATUS,
-    SECTION_TASKS,
-    find_work_item,
-    section_bounds,
-    section_text,
-    split_frontmatter_text,
-)
+
 
 MAIN_SUFFIX = "-main"
+SECTION_STATUS = "## Status"
+SECTION_TASKS = "## Tasks"
 
 #: Written where a section has nothing to show, so the agent sees the section exists and is
 #: empty rather than wondering whether hx failed to compose it.
@@ -62,11 +30,6 @@ def main_stream_name(item_id: str) -> str:
 
 def is_main_stream(item_id: str, stream: str) -> bool:
     return stream == main_stream_name(item_id)
-
-
-def boundary_name(item_id: str) -> str:
-    """The name of the file a boundary's one Read is of: `PARTNER.md`, else the work item."""
-    return "PARTNER.md" if item_id == PARTNER else f"{item_id}-working.md"
 
 
 def _relative(root: Path, path: Path) -> str:
@@ -118,34 +81,6 @@ SUBAGENT_TASK = (
 )
 
 
-def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[str | None, str]:
-    """The goal as dispatched, plus every addendum `hx resume` appended: what memory is asked
-    about before the Companion has written a step state.
-
-    For a subagent stream it is the spawn prompt instead: that *is* its task, and the parent's
-    goal is not its business (spec 07.3).
-    """
-    if subagent_prompt is not None:
-        if subagent_prompt.strip():
-            return "the spawn prompt", subagent_prompt
-        return None, SUBAGENT_TASK
-    work_item = find_work_item(root, item_id)
-    if work_item is not None:
-        _, body = split_frontmatter_text(work_item.read_text())
-        goal = section_text(body, SECTION_GOAL)
-        if goal:
-            return _relative(root, work_item), goal
-
-    # Before the first dispatch there is no rendered Work Item; `tasks.json` still has the
-    # goal once one has been recorded.
-    from .tasks import load_tasks
-
-    entry = load_tasks(root).get(item_id) or {}
-    parts = [entry.get("goal") or ""]
-    for addendum in entry.get("addenda") or []:
-        parts.append(f"### Goal addendum {addendum.get('ts', '')}\n\n{addendum.get('text', '')}")
-    text = "\n\n".join(part.strip("\n") for part in parts if part.strip())
-    return ("tasks.json" if text else None), text
 
 
 #: The tag vocabulary of the rendered step state. The reader of this section is an LLM
@@ -284,38 +219,6 @@ def step_state(root: Path, item_id: str, stream: str) -> tuple[str | None, str]:
     return _relative(root, path), render_step_state(state)
 
 
-def memory_episodes(
-    root: Path, item_id: str, stream: str, *, fallback: str = ""
-) -> tuple[str | None, str] | None:
-    """What other agents already worked out about this, from episode memory.
-
-    Everything the Companions of this instance ever compacted lives in one searchable
-    collection (`docs/memory.md`). The query is built from this stream's own step state — goal,
-    what is next, the current hypothesis — falling back to the goal text before the Companion
-    has written anything, and this agent's own id is excluded, because its own state is the
-    section directly above.
-
-    Returns `None` when the agent has `companion.memory_inject_k: 0`, which is how the section
-    is turned off. Chroma being absent or broken is not an error here: the body says so in one
-    line and the rest composes exactly as before.
-    """
-    from . import memory as memory_mod
-
-    try:
-        path = root / "state" / item_id / f"{stream}.json"
-        state: dict = {}
-        if path.is_file():
-            try:
-                loaded = json.loads(path.read_text())
-                state = loaded if isinstance(loaded, dict) else {}
-            except json.JSONDecodeError:
-                state = {}
-        if memory_mod.companion_settings(root, item_id)[0] <= 0:
-            return None
-        body = memory_mod.section_text(root, item_id, stream, state, fallback=fallback)
-    except Exception as exc:  # noqa: BLE001 — the context file is composed whatever happens
-        body = f"_memory unavailable: {exc}_"
-    return _relative(root, memory_mod.chroma_dir(root)), body
 
 
 def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
@@ -346,14 +249,8 @@ def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
 def status_parts(
     root: Path, item_id: str, stream: str, *, fallback: str = ""
 ) -> list[tuple[str, str | None, str]]:
-    """`(title, source, body)` for each part of a stream's status: its step state, the
-    closest memory episodes (never the Partner's, none with `memory_inject_k: 0`), and its
-    open subagent handles. Computed once per compose: the episode lookup opens chroma."""
+    """Partner orchestration step state and open research children."""
     parts = [("Step state", *step_state(root, item_id, stream))]
-    if not (item_id == PARTNER and is_main_stream(item_id, stream)):
-        injected = memory_episodes(root, item_id, stream, fallback=fallback)
-        if injected is not None:
-            parts.append(("Memory episodes", *injected))
     parts.append(("Open subagent handles", *open_handles(root, item_id)))
     return parts
 
@@ -369,17 +266,6 @@ def status_text(parts: list[tuple[str, str | None, str]]) -> str:
     return "\n\n".join(blocks)
 
 
-def status_file(root: Path, item_id: str) -> Path | None:
-    """Where the agent's session memory lives: `PARTNER.md` for the Partner, else the
-    `-working` work item. None when there is none (no task in progress, or a completed item,
-    which is a record and stays as the agent left it)."""
-    if item_id == PARTNER:
-        path = root / "PARTNER.md"
-        return path if path.is_file() else None
-    path = find_work_item(root, item_id)
-    if path is None or not path.name.endswith("-working.md"):
-        return None
-    return path
 
 
 def _trimmed(lines: list[str]) -> list[str]:
@@ -391,8 +277,7 @@ def _trimmed(lines: list[str]) -> list[str]:
 def with_status(text: str, body: str) -> str:
     """`text` with its `## Status` section's content replaced by `body`; without one, the
     section goes right after `## Tasks`, or at the end when there is no `## Tasks`."""
-    # A work item opens with frontmatter; PARTNER.md does not.
-    front, rest = split_frontmatter_text(text) if text.startswith("---") else ("", text)
+    rest = text
     lines = rest.split("\n")
     block = [SECTION_STATUS, "", *body.strip("\n").split("\n")]
     bounds = section_bounds(rest, SECTION_STATUS) or section_bounds(rest, SECTION_TASKS)
@@ -404,12 +289,14 @@ def with_status(text: str, body: str) -> str:
         head, tail = lines[: bounds[1]], lines[bounds[1]:]
     head = _trimmed(head)
     updated = (head + [""] if head else []) + block + ([""] + tail if tail else [""])
-    return front + "\n".join(updated)
+    return "\n".join(updated)
 
 
 def write_status(root: Path, item_id: str, parts: list[tuple[str, str | None, str]]) -> Path | None:
     """Rewrite `## Status` in the agent's session-memory file (`status_file`); the file is
     left untouched when nothing changed. Returns the file, or None when there is none."""
+    if item_id != PARTNER:
+        raise Refused("worker checkpoints are immutable; compose a new ledger checkpoint")
     path = status_file(root, item_id)
     if path is None:
         return None
@@ -430,10 +317,10 @@ def compose_text(
     status: list[tuple[str, str | None, str]] | None = None,
 ) -> str:
     """A subagent stream's context file, sections in order. `status` is the parts already
-    computed (`status_parts`). The main stream has none: its boundary read is the work item."""
+    computed (`status_parts`). The Partner main stream reads PARTNER.md."""
     if is_main_stream(item_id, stream):
         raise ValidationError(f"{stream}: the main stream has no context file; the `context` "
-                              f"hook points {item_id} at its work item (`hx persona {item_id}`)")
+                              f"hook points {item_id} at PARTNER.md")
     parts = [f"# Context for {stream}", "", SUBAGENT_INTRO, ""]
     if carries_invariants(root, item_id):
         parts.append(_section("Invariants", *invariants(root)))
@@ -449,13 +336,13 @@ def compose_text(
 def compose(
     root: Path, item_id: str, stream: str | None = None, *, subagent_prompt: str | None = None, env=None
 ) -> Path | None:
-    """The main stream: rewrite `## Status` in the work item (`PARTNER.md`) and return that
-    file, or None when there is none (no task in progress). A subagent stream: write its
-    context file and return its path (spec 08 `hx compose`)."""
+    """Refresh Partner orchestration notes or its bounded research child context."""
     root = Path(root)
     stream = stream or main_stream_name(item_id)
-    if not (root / "config" / item_id).is_dir() and find_work_item(root, item_id) is None:
-        raise NotFound(f"{item_id}: no work item and no config/{item_id}/; unknown id")
+    if item_id != PARTNER:
+        raise Refused("worker context requires --run and an immutable checkpoint request")
+    if not (root / "config" / item_id).is_dir():
+        raise NotFound(f"{item_id}: missing harness configuration")
     if is_main_stream(item_id, stream):
         status = status_parts(root, item_id, stream, fallback=task(root, item_id)[1])
         return write_status(root, item_id, status)
@@ -465,6 +352,47 @@ def compose(
     )
     return path
 
+
+
+def section_bounds(text: str, heading: str) -> tuple[int, int] | None:
+    lines = text.split("\n")
+    fence = None
+    start = None
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            fence = None if fence == marker else marker if fence is None else fence
+        if fence is None and line.rstrip() == heading and start is None:
+            start = index
+        elif start is not None and fence is None and line.startswith("## "):
+            return start, index
+    return (start, len(lines)) if start is not None else None
+
+
+def task(root: Path, item_id: str, subagent_prompt: str | None = None) -> tuple[str | None, str]:
+    if subagent_prompt is not None:
+        return "spawn prompt", subagent_prompt or SUBAGENT_TASK
+    if item_id == PARTNER:
+        return "PARTNER.md", "Maintain the current directive and dependency scheduling decisions."
+    from .task import task as assignment
+    return "continuity ledger", assignment(root, item_id)
+
+
+def status_file(root: Path, item_id: str) -> Path | None:
+    if item_id == PARTNER:
+        path = root / "PARTNER.md"
+        return path if path.is_file() else None
+    import sqlite3
+    path = root / "state" / "continuity.sqlite"
+    if not path.is_file():
+        return None
+    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        row = connection.execute("SELECT c.packet_hash FROM runs r JOIN checkpoints c ON c.checkpoint_id=r.checkpoint_id AND c.run_id=r.run_id WHERE r.worker_id=? AND r.ended_at IS NULL", (item_id,)).fetchone()
+        return root / "state" / "artifacts" / row[0] if row else None
+    finally:
+        connection.close()
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx compose", add_help=True)

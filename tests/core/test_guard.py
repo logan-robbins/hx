@@ -94,7 +94,7 @@ DENIED = {
 
 ALLOWED = {
     "hx-board": bash("hx board"),
-    "allow-regex-wins-in-its-segment": bash("hx dispatch eng-001 goal-with-pytest-in-name.md"),
+    "allow-regex-wins-in-its-segment": bash("hx plan show plan-with-pytest-in-name"),
     "separator-inside-quotes": bash('hx wake partner "eng-001 done; pytest ran green"'),
     "a-sibling-of-the-root": bash("cat /deny/treehouse/a.md"),
     "a-longer-path-containing-the-root": bash("ls /x/deny/tree/a"),
@@ -146,10 +146,10 @@ def test_guard_is_inactive_and_logged_without_a_valid_file(root, contents):
     assert "inactive:" in (root / "logs" / "partner" / "guard.log").read_text()
 
 
-def test_guard_never_denies_a_worker(root):
-    """The adapter installs it for the Partner only; a worker id reaching it is inert."""
+def test_worker_cannot_use_partner_guard_as_a_task_route(root):
+    """An invalid observation is logged; worker admission uses native tool-start."""
     result = run_guard(root, bash("dotnet test"), item_id="eng-001")
-    assert result.returncode == 0 and result.stderr == ""
+    assert result.returncode == 0 and "worker hooks require an admitted run" in result.stderr
 
 
 def test_guard_denial_stands_when_its_log_cannot_be_written(root):

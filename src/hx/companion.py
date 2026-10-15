@@ -1,21 +1,8 @@
-"""`hx companion <id>` and `hx wake companion` — the Companion as a tmux session (spec 10).
+"""Partner orchestration passes and native ledger companion command routing.
 
-Every model call in hx is a Claude Code session in tmux, operated by pasting. There is no
-`claude -p`, no headless call, no API client (spec 02 "Model calls";
-`tests/guard/test_no_headless.py` enforces it).
-
-The Companion of `<id>` runs in window `<id>:companion` with its own home, launched by
-`start.sh <id> --companion`. hx drives it one pass at a time:
-
-  1. `hx wake companion <id> <stream>` writes `run/<id>/companion/<stream>.pass.md`, naming
-     the state file, the log file, the first new `seq`, and where to write the answer.
-  2. It pastes `/clear` — which makes every pass stateless, the system prompt being the
-     cached prefix — and then the fixed pointer to the pass file. Nothing else is ever
-     pasted, and no task text is ever a command-line argument.
-  3. The Companion reads those files with its Read tool and writes `out.json` with Write.
-  4. Its own `stop` hook validates that file against the 07.2 schema, stamps it, and moves it
-     to `state/<id>/<stream>.json`. On a validation failure it rewrites the pass with
-     `retry_reason` and re-wakes once; a second failure keeps the prior state.
+The Partner's optional companion maintains its bounded conversation notes through
+an explicit tmux pass. Worker observations and semantic patches use native
+companion jobs tied to their admitted run and frozen event range.
 """
 
 from __future__ import annotations
@@ -29,7 +16,8 @@ from pathlib import Path
 
 from . import goal as goal_mod, store, streams, timestamps
 from .config_harness import HarnessConfig, load_harness
-from .errors import HxError, NotFound
+from .errors import HxError, NotFound, Refused
+from .ids import PARTNER
 from .stepstate import InvalidState, empty, evict, load as load_state, validate
 
 #: Spec 10, verbatim: the only thing hx ever pastes into a Companion pane besides `/clear`.
@@ -53,6 +41,12 @@ open_subagents: {open_subagents}
 
 #: How many times hx re-wakes a Companion for the same pass before giving up (spec 10).
 MAX_ATTEMPTS = 2
+
+
+def require_partner(item_id: str) -> None:
+    """File passes maintain only the orchestrator's conversation state."""
+    if item_id != PARTNER:
+        raise Refused('worker companions require a ledger run and native companion job')
 
 
 def companion_dir(root: Path, item_id: str) -> Path:
@@ -124,6 +118,7 @@ def compose_system_prompt(root: Path, config: HarnessConfig) -> Path:
     This is the cached prefix: identical on every pass for this agent, and shared as far as
     the role file with every other Companion on this model.
     """
+    require_partner(config.id)
     base = root / "companion" / "BASE.md"
     role = root / "companion" / "roles" / f"{config.role}.md"
     for path in (base, role):
@@ -171,7 +166,10 @@ def is_running(item_id: str, env=None) -> bool:
 
 def launch(root: Path, item_id: str, *, env=None) -> bool:
     """Start the Companion session. Idempotent: a live window is left alone (spec 10)."""
+    require_partner(item_id)
     config = config_for(root, item_id)
+    if is_disabled(root, item_id):
+        raise Refused('the Partner companion is disabled in harness configuration')
     compose_system_prompt(root, config)
     companion_dir(root, item_id).mkdir(parents=True, exist_ok=True)
     if is_running(item_id, env):
@@ -252,6 +250,7 @@ def write_pass(root: Path, item_id: str, stream: str, *, retry_reason: str = "")
     condition: an instance that has never seamed should take its first at the first quiet
     step close, not be blocked until one has somehow already happened.
     """
+    require_partner(item_id)
     state = state_path(root, item_id, stream)
     is_main = stream == f"{item_id}-main"
     last_seam = last_seam_ts(root, item_id)
@@ -312,6 +311,7 @@ def ingest(root: Path, item_id: str, stream: str, *, env=None) -> dict | None:
     prior state standing, which is the rule that matters: a corrupted step state is worse
     than a stale one (spec 10).
     """
+    require_partner(item_id)
     if is_disabled(root, item_id):
         return None
     out = out_path(root, item_id, stream)
@@ -360,15 +360,6 @@ def ingest(root: Path, item_id: str, stream: str, *, env=None) -> dict | None:
     store.atomic_write_json(state_path(root, item_id, stream), candidate)
     out.unlink(missing_ok=True)
     _clear_pass(root, item_id, stream)
-
-    # Each installed state is one episode chunk. `enqueue_quietly` only writes a small JSON
-    # file to the memory queue — no chromadb, no lock — and swallows anything that goes wrong
-    # (docs/memory.md): a memory failure must never cost the agent a pass.
-    from . import memory as memory_mod
-
-    memory_mod.enqueue_quietly(
-        root, item_id, stream, "pass", candidate, role=config.role, pod=config.pod
-    )
 
     if stream == f"{item_id}-main" and seam_is_due(root, config, candidate):
         from .hook_log import seam_marker
@@ -452,15 +443,8 @@ def activity(root: Path, item_id: str) -> dict:
 
 
 def seam_is_due(root: Path, config: HarnessConfig, state: dict) -> bool:
-    """Spec 10's seam policy, all four conditions, on the main stream only.
-
-    Never for the Partner: spec 12 says nothing the harness does to a worker — dispatch, goal,
-    seams, restart, completion — is done to the Partner, and `hx seam` refuses an id with no
-    work item. A marker here would only make its `stop` hook traceback every turn (seen live
-    2026-09-21, eighteen times); its context is bounded by the autocompact window instead.
-    """
-    if config.is_partner:
-        return False
+    """The Partner's soft seam needs closed work, budget, interval and no children."""
+    require_partner(config.id)
     companion = config.companion or {}
     if not state.get("closed_steps") or state.get("subagents_open"):
         return False
@@ -495,11 +479,14 @@ def wake_due(root: Path, item_id: str, *, force: bool = False, env=None) -> list
     A no-op with no Companion: writing a pass file nobody will take would leave
     the board showing a pass in flight forever.
     """
+    require_partner(item_id)
     if is_disabled(root, item_id):
         return []
     try:
         config = config_for(root, item_id)
     except NotFound:
+        return []
+    if not is_running(item_id, env):
         return []
     batch = 1 if force else (config.companion or {}).get("batch_records", 20)
     woken = []
@@ -546,7 +533,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         from .continuity_store import ContinuityStore, canonical
         from . import native_companion
         if args.wake or args.ingest or (args.job and args.run):
-            parser.error("planned companion requests cannot use legacy wake/ingest or combine job and run")
+            parser.error("native companion requests cannot use Partner wake/ingest or combine job and run")
         with ContinuityStore(root) as ledger:
             if args.job:
                 from .companion_protocol import row
@@ -556,6 +543,11 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             else:
                 if not args.request:
                     parser.error("planned companion requires --request")
+                from . import unit_execution
+                with ledger.transaction() as tx:
+                    run, _, _ = unit_execution._run(tx, args.run)
+                    if run['worker_id'] != args.id:
+                        raise Refused('native companion run belongs to another worker')
                 job = native_companion.prepare(ledger, args.id, args.run, args.stream, args.request, record_ids=args.record,
                     map_snapshot=args.map_snapshot, map_record_ids=args.map_record, env=env)
                 result = ({"status": "no_work"} if job is None else native_companion.status(ledger, job["job_id"])
@@ -564,6 +556,9 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         return 0
     if args.request or args.record or args.prepare_only or args.map_snapshot or args.map_record:
         parser.error("planned companion options require --run")
+
+    if args.id != "partner":
+        parser.error("worker companions require a ledger run or job")
 
     if args.ingest:
         state = ingest(root, args.id, args.ingest, env=env)

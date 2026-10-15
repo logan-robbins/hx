@@ -1,6 +1,6 @@
 # Repository, packet, and delivery runtime
 
-The Partner uses the application/code graph to find work that can overlap. It dispatches
+The Partner uses the application/code graph to find work that can overlap. It frames
 one paragraph naming the result, responsibility, dependencies, and any permitted stand-in.
 The harness worker owns implementation, definition of done, and exact execution checks.
 Review, landing, integration, and release validation have separate authorities and proof.
@@ -14,6 +14,14 @@ shared callees, dependencies, contract boundaries and target counterparts. Estab
 capabilities should be built once and which consumers can proceed against published
 interfaces. Source candidates and unresolved dynamic calls remain explicit; the harness
 workers establish implementation/parity evidence within their assigned packets.
+
+Every directive follows current graph exploration and search/reuse before construction.
+Choose packet boundaries from behavior/dependencies and maximize useful parallel work within
+ownership, source safety, resources, and capacity. Request size does not select packet count.
+The only assignment contract is the current schema-2 packet with approved worker bindings.
+Materialize source and accept the correct workdir before admission. `hx plan assign` reserves
+a run; then explicitly `hx launch ID --run RUN --request REQUEST` advances native startup.
+A reservation alone does not prove packet delivery or execution.
 
 ## Immutable code and shared repository queries
 
@@ -77,7 +85,7 @@ it retains prior paths and refuses dirty or different-source copies.
 
 ## Worker bindings and early interfaces
 
-Version-2 plans replace initial executable `checks` with `check_policy` and `resources`.
+Current schema-2 plans declare `check_policy` and `resources`; workers bind executable checks.
 Behavior/acceptance and output obligations remain fixed. Policy names an independent
 reviewer and required check IDs. Worker bindings supply exact recipes and a coverage map
 for every `acceptance.N`, `output.ID`, and deferred `integration.PRODUCER/CONTRACT`.

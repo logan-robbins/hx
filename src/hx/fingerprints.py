@@ -122,7 +122,7 @@ def source(workdir: Path, extra_inputs: list[str], env: dict, *, contract: dict 
     """Identify sources, using a declared dependency closure only when complete.
 
     The caller asserts that inputs plus dependencies include every source the
-    command can observe. Legacy and incomplete contracts retain repository scope.
+    command can observe. Incomplete source closures retain repository scope.
     Absolute workspace identity is intentionally retained: programs may observe it.
     """
     fingerprint = Fingerprint()

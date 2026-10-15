@@ -230,8 +230,8 @@ def receipt_intact(store, row):
     try:
         payload = json.loads(row["payload"])
         provenance = payload.get("provenance")
-        if payload.get("schema_version", 1) < 2 and provenance is None:
-            return True  # Existing receipts remain readable after an upgrade.
+        if payload.get("schema_version") != 2:
+            return False
         return (check_artifacts.intact(store, provenance)
                 and provenance["artifact_hash"] == row["artifact_hash"]
                 and provenance["identity_hash"] == check_artifacts.identity(row["check_version"],
@@ -270,7 +270,7 @@ def current(store: ContinuityStore, run_id: str, receipt_id: str, *,
     if not _artifact_intact(store, row["artifact_hash"]):
         reasons.append("output_missing_or_corrupt")
     provenance = payload.get("provenance")
-    if (payload.get("schema_version", 1) >= 2 or provenance is not None) and (
+    if payload.get("schema_version") != 2 or (
             not check_artifacts.intact(store, provenance)
             or provenance["artifact_hash"] != row["artifact_hash"]
             or provenance["identity_hash"] != check_artifacts.identity(row["check_version"],
@@ -313,7 +313,7 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
                           "reasons": [*result["reasons"], "output_missing_or_corrupt"]}
             if result["valid"] and receipt is not None:
                 payload = json.loads(receipt["payload"])
-                if payload.get("schema_version", 1) >= 2 and not check_artifacts.intact(store, payload.get("provenance")):
+                if payload.get("schema_version") != 2 or not check_artifacts.intact(store, payload.get("provenance")):
                     result = {**result, "valid": False, "reusable": False,
                               "reasons": [*result["reasons"], "execution_provenance_missing_or_corrupt"]}
             return result

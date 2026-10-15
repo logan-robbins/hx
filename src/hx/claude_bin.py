@@ -4,7 +4,7 @@
 `config/claude.json` is `{"bin": "<abs path>", "version": "2.1.278"}`, the version bare — the
 output of `claude --version` with the ` (Claude Code)` suffix stripped (CONTRACTS.md). The
 version is a record, not a gate: `hx install` pins whatever `claude` it finds, and every launch
-boundary (`hx launch`, `hx restart`, `hx up`) re-records the version the binary reports now, so
+boundary (`hx launch`, `hx up`) re-records the version the binary reports now, so
 a fleet runs the latest release from its next launch and never changes mid-session
 (`DISABLE_AUTOUPDATER=1` in `start.sh`). The package still ships the list of versions its live
 suite last passed on; `hx doctor` says `tested` or `untested` against it, and nothing refuses.

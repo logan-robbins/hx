@@ -41,6 +41,9 @@ fi
 [ -n "$python" ] || python=python3
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
+# Every worker executable descends from the controller's admitted run supervisor.
+"$python" -m hx.adapter_guard "$id" codex "$mode" agent || die "worker launch admission refused"
+
 home=$root/run/$id/home
 harness=$root/config/$id/harness.json
 # A planned launch's compiled system prompt (`native_launch`); nothing else writes it.

@@ -134,14 +134,16 @@ def entry(event, matcher=None):
     return block
 
 
-# Spec 09.1. The subagent events are non-Partner: the Partner spawns no harness subagents
-# that hx tracks as streams.
+# Both audiences observe native child starts/stops. Only the Partner composes
+# bounded research digests; worker results use the ordinary ledger tool log.
 hooks = {
     "SessionStart": [entry("context", "startup|resume|clear|compact")],
     "PostToolUse": [entry("log", "*")],
     "Stop": [entry("stop")],
     "PreCompact": [entry("precompact", "*")],
     "PostCompact": [entry("postcompact", "*")],
+    "SubagentStart": [entry("subagent-start", "*")],
+    "SubagentStop": [entry("subagent-stop", "*")],
 }
 if continuity:
     hooks["UserPromptSubmit"] = [entry("request")]
@@ -155,10 +157,7 @@ if continuity:
 # read (spec 09.1). The matcher is `hook_guard.MATCHER`.
 if is_partner:
     hooks["PreToolUse"] = [entry("guard", "Bash|Read|Edit|Write|Grep|Glob")]
-else:
     hooks["PostToolUse"].append(entry("subagent-result", "Agent"))
-    hooks["SubagentStart"] = [entry("subagent-start", "*")]
-    hooks["SubagentStop"] = [entry("subagent-stop", "*")]
 
 settings = {
     "hooks": hooks,
@@ -234,9 +233,8 @@ if [ -f "$root/config/CLAUDE.md" ]; then
   cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
 fi
 
-# The Partner gets hx-partner and hx-fleet, a worker gets hx-worker plus its role's skills, a
-# Companion gets hx-companion. Both kinds of HarnessAgent also get hx-memory, except in a
-# planned run. The Companion does not. The manifest says so; this file names no skill.
+# Audience, role and enabled optional capabilities determine installed skills.
+# Native packet launches load task-specific capabilities through the bounded catalog.
 wants=$(manifest_skills) || exit 1
 copy_skills "$home/skills" $wants
 fi

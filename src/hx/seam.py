@@ -1,16 +1,8 @@
-"""`hx seam <id>` — cut the conversation and hand the agent its context file (spec 08, 09.2).
+"""Reset the Partner conversation at a quiet, checkpointed boundary.
 
-A seam is the planned end of a conversation: the Companion is at the head of the stream, the
-context file is recomposed from what it recorded, `/clear` is pasted, and the `context` hook
-on `source=clear` sends the `/goal` pointer again. The agent's first action in the new
-conversation is one Read of that file. Native compaction is never reached on this path.
-
-Called from the `stop` hook when `run/<id>/seam` exists (spec 09.1). The one refusal is
-background work: a turn that ended with `background_tasks` still running is not a boundary,
-so the marker stays and the next `stop` tries again (spec 09.2 step 2).
-
-`hx seam` cannot wait for the `/clear` to take effect: the queued slash command only runs
-once the `Stop` hook has returned, and this runs inside it.
+The Partner's companion catches up, PARTNER.md receives its current Status,
+and the pane receives the adapter's reset command. The startup hook supplies
+its configured persona and a pointer to PARTNER.md for the next conversation.
 """
 
 from __future__ import annotations
@@ -24,10 +16,9 @@ from pathlib import Path
 
 from . import compose as compose_mod, flush as flush_mod, goal as goal_mod, streams, tmux
 from .config_harness import flavor_of
-from .errors import NotFound
+from .errors import Refused
 from .hook_log import seam_marker
 from .ids import PARTNER
-from .workitems import find_work_item
 
 #: What the `context` hook sees as `source` when the queued `/clear` runs (spec 09.1).
 SEAM_SOURCE = "clear"
@@ -104,8 +95,8 @@ def step_state(root: Path, item_id: str) -> dict:
 
 def seam_record(root: Path, item_id: str, context_file: Path | None, *, source: str = SEAM_SOURCE) -> dict:
     """The `seam` record of spec 07.4, which `hx metrics` reads (CONTRACTS.md).
-    `context_file_bytes` is the size of the file the boundary reads: the work item
-    (`PARTNER.md` for the Partner), with the `## Status` hx just wrote."""
+    `context_file_bytes` is the size of the file the boundary reads: `PARTNER.md`,
+    with the `## Status` hx just wrote."""
     state = step_state(root, item_id)
     working_set = state.get("working_set") or {}
     files = working_set.get("files") if isinstance(working_set, dict) else None
@@ -131,6 +122,8 @@ def seam_slash(root: Path, item_id: str) -> str:
 
 def seam(root: Path, item_id: str, *, env=None) -> dict:
     """Take the seam, or defer it. Returns `{"id", "outcome", "seq", "background_tasks"}`."""
+    if item_id != PARTNER:
+        raise Refused("worker resets are managed through native run checkpoints")
     marker = seam_marker(root, item_id)
     pending = background_tasks(root, item_id)
     if pending:
@@ -138,10 +131,6 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
         # stays exactly where it is and the next `stop` retries (spec 09.2 step 2).
         return {"id": item_id, "outcome": DEFERRED, "seq": None, "background_tasks": pending}
 
-    if find_work_item(root, item_id) is None and item_id != PARTNER:
-        raise NotFound(f"{item_id}: no work item; a seam belongs to a dispatched agent (spec 06)")
-    # The Partner has no work item and no goal: its seam is /clear + rehydrate from
-    # PARTNER.md, and the `context` hook on `clear` sends no `/goal` for it.
 
     # Readiness gate (spec 09.2): take only when the pane can receive `/clear` and the
     # Companion is caught up. Otherwise signal once, append a watcher record, and leave
@@ -157,8 +146,7 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     from . import companion as companion_mod
 
     # The Partner's own PARTNER.md is its checkpoint. An unlaunched Companion must
-    # not strand the Partner until Claude's native compactor runs. Workers still
-    # require their configured Companion to be caught up.
+    # not strand the Partner until the native compactor runs.
     partner_file = root / "PARTNER.md"
     partner_checkpoint = item_id == PARTNER and partner_file.is_file() and bool(
         partner_file.read_text().strip()
@@ -178,15 +166,6 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
 
     goal_mod.paste(pane_target(item_id, env), seam_slash(root, item_id), env)
     seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
-
-    # Legacy workers retain their seam episode. The Partner restores current scheduling
-    # state and does not need an additional conversation archive here.
-    from . import memory as memory_mod
-
-    if item_id != PARTNER:
-        memory_mod.enqueue_quietly(
-            root, item_id, f"{item_id}-main", "seam", step_state(root, item_id), seq=seq
-        )
 
     marker.unlink(missing_ok=True)
     return {"id": item_id, "outcome": TAKEN, "seq": seq, "background_tasks": []}

@@ -66,10 +66,10 @@ def test_a_touched_fixture_is_pushed_within_a_second(scratch_tree, stream):
 
 
 def test_the_changed_scope_is_the_agent_id(scratch_tree, stream):
-    touch(scratch_tree / "show-eng-001.json")
+    touch(scratch_tree / "show-be-001.json")
     event = next_event(stream, BUDGET)
     assert event is not None
-    assert "eng-001" in event["changed"]
+    assert "be-001" in event["changed"]
 
 
 def test_nothing_is_pushed_while_nothing_changes(stream):
@@ -91,5 +91,5 @@ def test_the_sweep_survives_an_unreadable_source(scratch_tree, scratch_ui, strea
     """A half-written instance must not kill the watcher."""
     (scratch_tree / "board.json").unlink()
     assert next_event(stream, BUDGET) is not None  # the removal itself is a change
-    touch(scratch_tree / "archive.json")
-    assert "archive" in (next_event(stream, BUDGET) or {}).get("changed", [])
+    touch(scratch_tree / "goals.json")
+    assert "goals" in (next_event(stream, BUDGET) or {}).get("changed", [])

@@ -57,5 +57,4 @@ New skeletons suggest: Partner and workers on `claude-opus-5-5`, companion
 on `claude-haiku-5-5` (low effort, 8k output cap), tests on
 `claude-sonnet-5-5`, and contributor-mode workers from
 `templates/contributor/` on `muse-wonder-1.0-contributor` via the Meta
-adapter. Existing instances keep their configured IDs; the legacy rows in
-skeleton `models.json` exist so they keep validating.
+adapter. Configure other supported provider model IDs explicitly in the instance model registry.

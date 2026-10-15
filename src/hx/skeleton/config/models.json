@@ -1,9 +1,22 @@
 {
-  "claude-fable-5-1":  { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
-  "claude-opus-5-5":   { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
-  "claude-sonnet-5-5": { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
-  "claude-haiku-5-5":  { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
-  "claude-opus-5":     { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
-  "claude-sonnet-5":   { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 },
-  "claude-fable-5":    { "window": 1000000, "autocompact_window": 250000, "threshold": 200000 }
+  "claude-fable-5-1": {
+    "window": 1000000,
+    "autocompact_window": 250000,
+    "threshold": 200000
+  },
+  "claude-opus-5-5": {
+    "window": 1000000,
+    "autocompact_window": 250000,
+    "threshold": 200000
+  },
+  "claude-sonnet-5-5": {
+    "window": 1000000,
+    "autocompact_window": 250000,
+    "threshold": 200000
+  },
+  "claude-haiku-5-5": {
+    "window": 1000000,
+    "autocompact_window": 250000,
+    "threshold": 200000
+  }
 }

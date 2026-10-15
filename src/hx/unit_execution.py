@@ -48,7 +48,7 @@ def workspace(payload, *, clean=False):
 
 def _task(tx, task_id, *, active_run=None):
     task = tx.task(task_id)
-    if task is None or "plan_id" not in task["payload"]:
+    if task is None or not task["payload"].get("dependency_packet") or "plan_id" not in task["payload"]:
         raise ValidationError("unknown planned unit")
     validate_task(tx, task, active_run=active_run)
     from .dependency_packets import effective_task
@@ -81,14 +81,13 @@ def guard_revision(tx, previous, payload):
         "SELECT output_id,max(version) AS version FROM unit_outputs WHERE task_id=? GROUP BY output_id", (previous["task_id"],))}
     published.update({row["output_id"]: max(published.get(row["output_id"],0),row["version"]) for row in tx.db.execute(
         "SELECT output_id,max(version) AS version FROM unit_contracts WHERE task_id=? GROUP BY output_id", (previous["task_id"],))})
-    if previous["payload"].get("dependency_packet"):
-        from .dependency_packets import effective_task, summary
-        pending = set(summary(tx,effective_task(tx,previous))["pending_integration"])
-        retained = {need["task_id"]+"/"+need["output_id"] for need in payload.get("prerequisites",[]) if need.get("need","hard") != "hard"}
-        if pending - retained:
-            raise Conflict("revised packet cannot discard pending real-provider integration obligations")
-        if set(published) - {output["id"] for output in payload.get("outputs",[])}:
-            raise Conflict("revised packet cannot discard published output obligations")
+    from .dependency_packets import effective_task, summary
+    pending = set(summary(tx,effective_task(tx,previous))["pending_integration"])
+    retained = {need["task_id"]+"/"+need["output_id"] for need in payload.get("prerequisites",[]) if need.get("need","hard") != "hard"}
+    if pending - retained:
+        raise Conflict("revised packet cannot discard pending real-provider integration obligations")
+    if set(published) - {output["id"] for output in payload.get("outputs",[])}:
+        raise Conflict("revised packet cannot discard published output obligations")
     for output in payload.get("outputs", []):
         if output["id"] in published and output["version"] <= published[output["id"]]:
             raise Conflict("revising a completed unit requires new output versions")
@@ -162,23 +161,12 @@ def _scope(payload):
     return scopes
 
 
-def guard_legacy_admission(tx, task):
-    """A legacy run cannot enter a worktree currently held by a planned run."""
-    root = task["payload"].get("workdir")
-    if not root:
-        return
-    for row in tx.db.execute("SELECT u.workdir FROM unit_runs u JOIN runs r USING(run_id) WHERE r.ended_at IS NULL"):
-        try:
-            if Path(root).samefile(row[0]):
-                raise Conflict("worktree is owned by an active planned assignment")
-        except OSError:
-            pass
-
-
 def admit(tx, task):
     """Called inside start_run's writer transaction before any run is inserted."""
     from .planning import overlaps
     payload = task["payload"]
+    if not payload.get("dependency_packet"):
+        raise ValidationError("assignment requires a current dependency packet plan")
     if not tx.db.execute("SELECT 1 FROM plan_units u JOIN plan_heads h ON h.plan_id=u.plan_id AND h.revision=u.plan_revision WHERE u.task_id=? AND u.task_revision=?", (task["task_id"], task["revision"])).fetchone():
         raise Conflict("current plan does not include this task revision")
     if tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", (task["task_id"], task["revision"])).fetchone():
@@ -233,7 +221,7 @@ def ready(store, plan_id):
                 if task["revision"] != row["task_revision"]:
                     raise Conflict("plan no longer names the current task revision")
                 if tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", tuple(row)).fetchone():
-                    result.append({"task_id": row["task_id"], "status": ("deployable" if packet_readiness["deployable"] else "packet_covered") if task["payload"].get("dependency_packet") else "completed", "readiness": packet_readiness})
+                    result.append({"task_id": row["task_id"], "status": ("deployable" if packet_readiness["deployable"] else "packet_covered"), "readiness": packet_readiness})
                     continue
                 admit(tx, task)
                 result.append({"task_id": row["task_id"], "status": "ready", "readiness": packet_readiness})
@@ -246,7 +234,7 @@ def assign(store, task_id, revision, worker_id):
     if store.db.in_transaction:
         raise Conflict('unit source preparation requires an unheld continuity writer')
     current=store.db.execute('SELECT t.* FROM tasks t JOIN task_heads h USING(task_id,revision) WHERE task_id=?',(task_id,)).fetchone()
-    if current is None or 'plan_id' not in json.loads(current['payload']):
+    if current is None or not json.loads(current['payload']).get('dependency_packet') or 'plan_id' not in json.loads(current['payload']):
         raise ValidationError('unknown planned unit')
     if current['revision']!=revision:
         raise Conflict('planned assignment changed before source preparation')
@@ -287,7 +275,7 @@ def audit(store, run_id):
                 if not any(candidate == scope or candidate.startswith(scope + "/") for scope in scopes):
                     unexpected.append(path)
             reason = "writes exceed the frozen assignment scope" if unexpected else None
-            if payload.get("dependency_packet") and payload.get("binding_status") != "approved" and (changed or state != admission["workspace"]):
+            if payload.get("binding_status") != "approved" and (changed or state != admission["workspace"]):
                 reason = "worker must bind and independently approve checks before the first edit"
         except (Conflict, ValidationError) as exc:
             changed, unexpected, reason = [], [], str(exc)
@@ -325,12 +313,11 @@ def complete(store, run_id, receipt_ids, *, env=None):
         result = checks.current(store, run_id, receipt_id, check_id=check_id, env=child)
         if not result["current"]:
             raise Conflict("acceptance receipt is no longer current: " + ", ".join(result["reasons"]))
-    if task["payload"].get("dependency_packet"):
-        from .dependency_packets import publish_contract
-        for output in task["payload"]["outputs"]:
-            if output["kind"] == "contract" and not store.db.execute("SELECT 1 FROM unit_contracts WHERE task_id=? AND output_id=? AND version=?", (task["task_id"],output["id"],output["version"])).fetchone():
-                names = task["payload"]["check_coverage"]["output."+output["id"]]
-                publish_contract(store,run_id,output["id"],{name:receipt_ids[name] for name in names},env=child)
+    from .dependency_packets import publish_contract
+    for output in task["payload"]["outputs"]:
+        if output["kind"] == "contract" and not store.db.execute("SELECT 1 FROM unit_contracts WHERE task_id=? AND output_id=? AND version=?", (task["task_id"],output["id"],output["version"])).fetchone():
+            names = task["payload"]["check_coverage"]["output."+output["id"]]
+            publish_contract(store,run_id,output["id"],{name:receipt_ids[name] for name in names},env=child)
     with store.transaction() as tx:
         run, task, admission = _run(tx, run_id)
         payload = task["payload"]
@@ -368,12 +355,10 @@ def complete(store, run_id, receipt_ids, *, env=None):
                 if any(entry is None and path not in changed for path, entry in files.items()):
                     raise Conflict("absent output path is not a verified deletion")
                 proof.update(commit=state["commit"], tree=state["tree"], files=files)
-            elif payload.get("dependency_packet"):
+            else:
                 from .dependency_packets import receipt_output
                 proof["obligation_checks"] = receipt_output(payload, output, receipt_ids)
                 proof["artifact_hashes"] = {name: tx.db.execute("SELECT artifact_hash FROM receipts WHERE receipt_id=?", (receipt,)).fetchone()[0] for name, receipt in proof["obligation_checks"].items()}
-            else:
-                proof["artifact_hash"] = tx.db.execute("SELECT artifact_hash FROM receipts WHERE receipt_id=?", (receipt_ids[output["check_id"]],)).fetchone()[0]
             proofs[output["id"]] = proof
         if workspace(payload, clean=True) != state:
             raise Conflict("source changed before output publication")
@@ -385,12 +370,11 @@ def complete(store, run_id, receipt_ids, *, env=None):
         tx.db.execute("INSERT INTO unit_completions VALUES(?,?,?,?)", (task["task_id"], task["revision"], run_id, canonical(result)))
         for output_id, proof in proofs.items():
             tx.db.execute("INSERT INTO unit_outputs VALUES(?,?,?,?,?)", (task["task_id"], task["revision"], output_id, proof["version"], canonical(proof)))
-        if payload.get("dependency_packet"):
-            from .dependency_packets import covered, summary
-            covered(tx, task, {"run_id":run_id,"checks":receipt_ids,"commit":state["commit"],"outputs":result["outputs"]})
-            result["state"] = "packet_covered"
-            result["readiness"] = summary(tx, task)
-            tx.db.execute("UPDATE unit_completions SET payload=? WHERE run_id=?", (canonical(result),run_id))
+        from .dependency_packets import covered, summary
+        covered(tx, task, {"run_id":run_id,"checks":receipt_ids,"commit":state["commit"],"outputs":result["outputs"]})
+        result["state"] = "packet_covered"
+        result["readiness"] = summary(tx, task)
+        tx.db.execute("UPDATE unit_completions SET payload=? WHERE run_id=?", (canonical(result),run_id))
         tx.finish_run(run_id, "completed")
         tx.enqueue("unit_completed", f"complete:{run_id}", result)
     from .code_freshness import refresh_completion

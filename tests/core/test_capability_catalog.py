@@ -56,9 +56,8 @@ def test_skill_source_change_requires_reindex(indexed):
         capabilities.load(store, run, 'skill:checks')
 
 
-def test_the_new_shipped_skills_load_through_the_facade_under_8_kib(tmp_path):
-    """TOOL_SKILL_PLAN step 7: hx-signoff and hx-conversion fit `hx tools load skill:NAME`,
-    so an advisory adapter can carry them whole."""
+def test_shipped_skills_load_whole_with_current_catalog_purposes(tmp_path):
+    """Both delivery and conversion instructions reach the worker without truncation."""
     from pathlib import Path
 
     package = Path(capabilities.__file__).resolve().parent / 'skills'
@@ -77,7 +76,7 @@ def test_the_new_shipped_skills_load_through_the_facade_under_8_kib(tmp_path):
             assert loaded['body'] == text
             assert len(loaded['body'].encode()) <= 8192, name
             assert capabilities.read(tmp_path)['entries']['skill:' + name]['purpose'].startswith(
-                'Sign-off procedure' if name == 'hx-signoff' else 'How to run a code conversion')
+                'Verify packet proof' if name == 'hx-signoff' else 'How to run a code conversion')
 
 
 def test_index_records_the_protocol_version_each_server_answers_with(indexed):

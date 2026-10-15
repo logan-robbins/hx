@@ -8,8 +8,7 @@ that need it. `src/hx/skills/manifest.json` is the one place that says so —
 
 — and every adapter's `install.sh` asks `python -m hx.skill_manifest select` for its list
 instead of naming skills itself. `optional` skills install only when the instance's
-`config/hx.json` names them in `skills`; `"planned": false` keeps a skill out of a planned
-(ledger) run, which has no episodic memory.
+`config/hx.json` names them in `skills`. All assignments use the same packet runtime.
 
 The same module validates what ships, for `hx doctor`'s `skills` row: the Agent Skills
 frontmatter rules (agentskills.io/specification: `name` 1-64 lowercase letters, digits and
@@ -51,7 +50,7 @@ MAX_SKILL_BYTES = 32 * 1024
 #: (`capability_catalog.load`).
 FACADE_BYTES = 8 * 1024
 
-_ROW_KEYS = {"audiences", "roles", "optional", "planned"}
+_ROW_KEYS = {"audiences", "roles", "optional"}
 
 
 def package_dir() -> Path:
@@ -92,10 +91,10 @@ def load(directory: Path) -> dict[str, dict]:
                                   f"{', '.join(AUDIENCE_NAMES)}")
         if not isinstance(roles, list) or any(not isinstance(r, str) or not r for r in roles):
             raise ValidationError(f"{path}: `{name}` roles must be a list of role names or \"*\"")
-        if not isinstance(row["optional"], bool) or not isinstance(row.get("planned", True), bool):
-            raise ValidationError(f"{path}: `{name}` optional and planned must be true or false")
+        if not isinstance(row["optional"], bool):
+            raise ValidationError(f"{path}: `{name}` optional must be true or false")
         manifest[name] = {"audiences": list(audiences), "roles": list(roles),
-                          "optional": row["optional"], "planned": row.get("planned", True)}
+                          "optional": row["optional"]}
     return manifest
 
 
@@ -117,7 +116,7 @@ def enabled(root: Path) -> list[str]:
 
 
 def select(manifest: dict[str, dict], *, audience: str, role: str | None,
-           enabled: list[str] | tuple[str, ...] = (), planned: bool = False) -> list[str]:
+           enabled: list[str] | tuple[str, ...] = ()) -> list[str]:
     """The skills one home receives, in manifest order."""
     chosen = []
     for name, row in manifest.items():
@@ -126,8 +125,6 @@ def select(manifest: dict[str, dict], *, audience: str, role: str | None,
         if "*" not in row["roles"] and (role or "") not in row["roles"]:
             continue
         if row["optional"] and name not in enabled:
-            continue
-        if planned and not row["planned"]:
             continue
         chosen.append(name)
     return chosen
@@ -148,7 +145,7 @@ def for_agent(directory: Path, root: Path, item_id: str, *, companion: bool = Fa
     env = os.environ if env is None else env
     audience = "companion" if companion else ("partner" if item_id == "partner" else "worker")
     return select(load(directory), audience=audience, role=role_of(root, item_id),
-                  enabled=enabled(root), planned=bool(env.get("HX_CONTINUITY_RUN")))
+                  enabled=enabled(root))
 
 
 # --- validation (hx doctor `skills`) -------------------------------------------------------------
@@ -281,11 +278,15 @@ def refused_mentions(text: str, audiences: dict[str, set[str]], *,
         for match in _MENTION_RE.finditer(line):
             command, sub = match.group(1), match.group(2)
             rest = [sub] if sub else []
-            # A flag-level entry (`memory search --all-roles`) counts when the flag sits on
+            # A flag-level inventory entry counts when the flag sits on
             # the same line as the command it qualifies.
             rest += re.findall(r"(?<![\w-])(--[a-z][a-z-]*)", line[match.end():])
             capability = resolve_capability(command, rest, audiences)
-            if capability is not None and not worker_may_run(command, capability, audiences):
+            if capability is None:
+                # Command examples must not advertise removed or misspelled entry points.
+                if match.start() == 0 or line[match.start()-1] == "`":
+                    found.add(command)
+            elif not worker_may_run(command, capability, audiences):
                 found.add(capability)
     return sorted(found)
 

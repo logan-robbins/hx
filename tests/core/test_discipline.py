@@ -228,7 +228,7 @@ SEAM = {"event": "seam", "ts": "2026-09-20T12:50:00Z", "source": "clear",
         "context_file_bytes": 4200}
 
 POST_SEAM = [
-    _tool("Read", file_path="/w/pods/engineers/eng-001-working.md"),
+    _tool("Read", file_path="/w/pods/engineers/PARTNER.md"),
     _tool("Bash", command="hx task"),
     _tool("Grep", pattern="def pull"),
     _tool("Read", file_path="/w/src/a.py"),
@@ -244,9 +244,9 @@ POST_SEAM = [
 
 def test_post_seam_counts_orientation_after_the_last_seam(tmp_path):
     before = [_tool("Grep", pattern="before the seam"), _tool("Bash", command="hx task")]
-    _write_stream(tmp_path, "eng-001", before + [SEAM] + POST_SEAM)
-    doc = discipline.post_seam(tmp_path, "eng-001")
-    assert doc["id"] == "eng-001" and doc["seam_seq"] == 3 and doc["source"] == "clear"
+    _write_stream(tmp_path, "partner", before + [SEAM] + POST_SEAM)
+    doc = discipline.post_seam(tmp_path, "partner")
+    assert doc["id"] == "partner" and doc["seam_seq"] == 3 and doc["source"] == "clear"
     assert doc["tool_calls"] == len(POST_SEAM)
     assert doc["searches_before_first_edit"] == 2      # Grep + hx code search; not the later one
     assert doc["modules_read_before_first_write"] == 3  # a, b, c; the context file is not one
@@ -255,20 +255,20 @@ def test_post_seam_counts_orientation_after_the_last_seam(tmp_path):
 
 
 def test_post_seam_uses_only_the_last_seam(tmp_path):
-    _write_stream(tmp_path, "eng-001", [SEAM] + POST_SEAM + [SEAM, _tool("Edit", file_path="x")])
-    doc = discipline.post_seam(tmp_path, "eng-001")
+    _write_stream(tmp_path, "partner", [SEAM] + POST_SEAM + [SEAM, _tool("Edit", file_path="x")])
+    doc = discipline.post_seam(tmp_path, "partner")
     assert (doc["tool_calls"], doc["searches_before_first_edit"], doc["task_reprints"]) == (1, 0, 0)
 
 
 def test_post_seam_without_a_seam_is_a_validation_error(tmp_path):
-    _write_stream(tmp_path, "eng-001", POST_SEAM)
+    _write_stream(tmp_path, "partner", POST_SEAM)
     with pytest.raises(ValidationError, match="no seam"):
-        discipline.post_seam(tmp_path, "eng-001")
+        discipline.post_seam(tmp_path, "partner")
 
 
 def test_orient_post_seam_cli_prints_the_document(tmp_path, capsys):
-    _write_stream(tmp_path, "eng-001", [SEAM] + POST_SEAM)
-    assert discipline.main(["orient", "--post-seam", "eng-001"], tmp_path) == 0
+    _write_stream(tmp_path, "partner", [SEAM] + POST_SEAM)
+    assert discipline.main(["orient", "--post-seam", "partner"], tmp_path) == 0
     doc = json.loads(capsys.readouterr().out)
     assert {"searches_before_first_edit", "modules_read_before_first_write",
             "task_reprints"} <= set(doc)
@@ -280,3 +280,9 @@ def test_classify_call_reads_codex_style_shell_and_truncated_inputs():
     truncated = {"tool": "Bash", "input": '{"command": "sed -i s/a/b/ src/a.py && echo done', "output": ""}
     assert discipline.classify_call(truncated)[0] == "edit"
     assert discipline.classify_call({"tool": "Bash", "input": json.dumps({"command": "ls"})}) == ("other", [])
+
+
+def test_post_seam_refuses_worker_file_stream(tmp_path):
+    _write_stream(tmp_path, "eng-001", [SEAM] + POST_SEAM)
+    with pytest.raises(ValidationError, match="ledger-owned"):
+        discipline.post_seam(tmp_path, "eng-001")

@@ -1,250 +1,71 @@
-# Operating hx
+# Operating HX
 
-What you see and do day to day, once [getting started](getting-started.md) is behind you.
+The human gives the Partner an outcome in chat. The Partner preserves priorities, corrections,
+constraints, and authorization, and operates the fleet through dependency packets.
 
-The short version: **you talk to the Partner and nothing else.** Everything below is either
-something the Partner does for you, or something you are reading rather than running.
+Every directive starts with current code/application dependency exploration and search for
+existing behavior, providers, interfaces, callers, tests, and precedents. Reuse capabilities.
+For conversions, graph existing source before target decomposition and retain distinct source
+and target namespaces. Unknown relationships become discovery work.
 
-## Talking to the Partner
+The Partner chooses observable packet boundaries and maximizes useful parallelism according
+to actual dependencies, safe write scopes, resources, and capacity. Apparent request size
+does not determine packet count. Static waves do not delay an early-contract consumer once
+current readiness permits it.
 
-```bash
-tmux attach -t partner
+```sh
+hx board --json
+hx loop --status
+hx code index --repo WT
+hx map plan-context --repo WT --snapshot SNAP --goal goal.txt
+hx plan draft --file request.json --repo WT --snapshot SNAP --out plan.json
+hx plan validate --file plan.json
+hx plan apply --file plan.json
+hx plan ready PLAN
 ```
 
-That is the interface. Tell it what you want in plain language; it asks back what is unclear,
-decomposes the work, creates and dispatches workers, and reports when the ask is met. Detach
-with `Ctrl-b d` — the fleet keeps working.
+Current plans use schema 2. The Partner names behavior, acceptance, allowed writes, current
+map references, exact output/dependency versions, resources, and check policy. Workers own
+implementation and executable checks; a configured independent reviewer approves their binding.
 
-The Partner has no goal file, no `/goal` and no work item. **Your message is its goal.** There
-is nothing to complete and no check to run against it: when it says the ask is met, that is the
-end of the ask, and the next thing you type starts the next one.
+Configure workers through `config/ID/harness.json`, with a matching role and absolute workdir.
+Use separate worktrees for concurrent workers. If sparse provisioning is needed, run
+`hx repo assignment TASK --out DIR`, then revise/accept the task workdir before admission.
 
-**If the Partner ever tells you to run an hx command, that is a bug in its behaviour, not an
-instruction.** Running the fleet is its job; every command on this page is one it runs, or one
-you run to *look*.
-
-## What a `decision` looks like
-
-A worker that hits something only a human can settle stops and completes `decision` rather than
-guessing. You will see it as a message from the Partner, in chat, containing the question and
-what each answer costs. For example:
-
-> `be-001` has the `--json` flag working, but the goal asks for two things that cannot both be
-> true: the object on stdout and nothing else, *and* the human-readable line still printed
-> first. Which wins? JSON only makes the pipeline work and breaks scripts that grep for
-> `Hello,`; keeping the line breaks the pipeline, which was the point of the flag.
-
-You answer in chat, in your own words. The Partner turns that into an addendum file and runs
-`hx resume be-001 <file>`; the worker picks up from its own `## Tasks` and step state with the
-answer appended to its goal. It does not start again.
-
-Two things worth knowing about that exchange:
-
-- **The Partner should not have a recommendation it has already acted on.** If it tells you
-  what it chose rather than asking, say so — the whole point of `decision` is that the choice
-  was not the agent's to make.
-- **Your answer should retract whatever it replaces.** "JSON only; drop the text form" is a
-  better answer than "JSON only", because the worker rewrites its own definition of done from
-  the goal and every addendum, and two contradictory instructions make it unsatisfiable.
-
-## What a seam looks like in a pane
-
-If you attach to a worker (`tmux attach -t be-001` — read-only curiosity, nothing more), you
-will eventually watch its conversation vanish and immediately restart. That is a **seam**, and
-it is normal: hx cut the context on purpose at a quiet moment and handed the agent one file to
-come back from.
-
-What you see, in order: the agent finishes a turn; `/clear` runs; a line appears telling it to
-read one path; the agent makes exactly one `Read` call; its `/goal` is pasted again; it carries
-on. No summary, no "continuing from where we left off", no re-reading the files it had already
-read.
-
-The `/goal` you will see pasted is always the same fixed line, whatever the task is:
-
-```
-/goal The goal for <id> is in <abs path to work item>; read it first. Done when `hx complete <outcome>` has been run and its output line `HX-COMPLETE <id> <outcome>` appears.
+```sh
+hx plan assign TASK --revision REVISION --worker ID
+hx launch ID --run RUN --request REQUEST
 ```
 
-It is a **pointer**, not the task. The goal itself never travels through the pane — it lives
-in the work item that line names, which is why a seam costs nothing to re-send and why a pane
-capture never leaks what an agent was asked to do. The same line is pasted on every
-conversation start of a working item: dispatch, resume, seam, `hx restart`, and `hx launch` of
-an item that was already working.
+Assignment reserves ownership. Explicit launch advances native startup; repeat the original
+request to reconcile uncertainty. A reservation or visible pane alone does not prove delivery.
 
-That last part is the whole design. If you see an agent after a seam re-opening files it
-worked on before the cut, the Companion's notes were not good enough — that is the thing the
-[Companion evaluation](companion-eval.md) measures, and it is worth mentioning rather than
-shrugging at.
+Workers explore/reuse, bind their exact checks with `hx plan bind`, obtain independent approval,
+implement within frozen scope, and record typed progress. They retain admitted source identity;
+changed contracts or scope require the Partner to stop/replan affected work. `hx complete done`
+requests managed checks, drain, output proof, publication, and ownership release.
 
-Claude Code's own compaction should never happen to a worker. hx seams long before the native
-window is reached; if you ever see a compaction summary in a pane, something is wrong.
+Use `hx show ID --json` for bounded task/run/worker/plan details, `hx goals --json` for accepted
+plan/task state, and `hx metrics` for proof/execution counts. These projections do not mutate
+ledger state or independently prove current prerequisites. Deduplicate milestone operation IDs
+and query current `hx plan ready` before scheduling newly unblocked work.
 
-## Looking without touching
+Blockers and decisions use `hx progress`; the Partner asks the human only for unresolved
+choices. Safe stop uses `hx plan stop RUN`; uncertain owned processes retain ownership until
+reconciled. Drain/shutdown name the original launch identity:
 
-Everything here is read-only and safe to run yourself.
-
-```bash
-hx board
+```sh
+hx launch ID --run RUN --request REQUEST --drain
+hx launch ID --run RUN --request REQUEST --shutdown
+hx plan stop RUN
 ```
 
-One line per worker id. There are no invariants and no error lines: it is a listing of what is
-on disk, and it always exits 0.
+Packet coverage can free capacity before real-provider integration. Use declared early
+interfaces and stand-ins only with explicit permission; retain exact real binding, intent
+review, expected-head landing, fixed integration/deploy validation, and tested-artifact proof.
+Local landing does not push remotely. Deployment uses the product's configured release tool
+within the human's authorization.
 
-```
-be-001  backend  working  -  2026-09-21T03:19:45Z  alive  subagents=0  context=-  seams=-
-```
-
-That is: id, pod, state, outcome, when it was dispatched, whether its tmux session is alive,
-open subagent streams, the context size of its last record, and seams taken this dispatch. A
-fresh instance prints nothing at all, because it has no workers yet — the Partner is not a row
-on the board.
-
-```bash
-hx show be-001          # everything hx knows about one id, including the pane
-hx read be-001          # the Digest its Companion wrote, and any open decision
-hx doctor               # what is here, what is missing, what is broken
-```
-
-```bash
-hx memory search "csv importer streaming" --all-roles   # what any agent worked out about it
-hx memory stats                                          # episodes by role and kind, queue length
-```
-
-Every Companion compaction is kept as a searchable **episode** with its time, agent, pod and
-role (`docs/memory.md`). Agents get the closest same-role episodes in their work item's `## Status`
-at every boundary without asking; from a shell you have no role, so `search` looks across all of them.
-Results are recency-weighted: yesterday's episode about the same file outranks last month's
-unless the older one matches much better.
-
-`hx doctor` on a healthy instance is all `ok` and exits 0. The lines worth reading are the
-`sandbox:` ones, because they check the *running* session rather than the configuration meant
-to produce it:
-
-```
-ok    token            seed/token present, mode 0600
-ok    home:be-001      settings.json
-ok    home:partner     settings.json
-ok    sandbox:be-001   IS_SANDBOX=1 on the tmux session
-ok    sandbox:be-001   --dangerously-skip-permissions in the pane's argv
-ok    sandbox:partner  IS_SANDBOX=1 on the tmux session
-ok    sandbox:partner  --dangerously-skip-permissions in the pane's argv
-```
-
-`doctor` fails only on things that are actually broken — a missing `tmux` or `git`, a Python
-below 3.14, a pinned `claude` that is not executable, a token that is missing or readable by
-anyone else. Everything else is a `warn` naming the step that clears it.
-
-### The UI
-
-```bash
-hx ui
-```
-
-serves a read-only view on `127.0.0.1` (port from `config/ui.json`, default 8765). The fleet
-graph is the home page: the Partner at the root, every worker as a card with its Companion
-beside it, the Companion pulsing while a pass runs, and the memory store's episode count in the
-header. Click a worker and its drawer opens: the work item file as the agent keeps it (goal,
-the definition of done it wrote, live `## Tasks`, evidence, deliverables, open decision,
-digest) and its Companion's
-status. Two links open in their own window — **Open session** (the pane, step state, what
-the `context` hook hands the agent, stream tails, subagents, metrics) and **Open last compaction** (what the Companion last
-wrote for a stream, rendered and then verbatim as the master reads it; the Companion node in
-the graph opens the same page). Across pods: Task board, Harness Agents, Activity, Goals (every
-dispatched goal and its addenda, from `tasks.json`), Archive, and the Partner chat, whose box
-sends a message exactly as `hx wake partner` does. Reach for it when you want to see what an
-agent *believes* it is doing without reading a transcript.
-
-It observes. Full control, including slash commands and interrupts, is `tmux attach`.
-
-## Keeping it running
-
-`hx up` launches everything; `hx heartbeat` restarts dead sessions and wakes the Partner when
-the board has moved. **hx ships no timer.** These are ordinary commands, and if you want them
-at boot or on a schedule that is your cron, not something hx installed behind your back:
-
-```cron
-@reboot     hx up
-*/15 * * * * hx heartbeat
-```
-
-`HARNESS_ROOT` has to be set in that environment, the same as it is in yours. The heartbeat
-also prints `learnings_pending=<n>` and wakes the Partner once per new batch of proposed
-learnings (docs/learnings.md); `--require-go` makes it do nothing at all until `PARTNER.md`
-carries a `GO <date>` line, which is how a fleet's cron is installed before approval
-(docs/multi-instance.md §3).
-
-## Stopping everything
-
-```bash
-tmux kill-session -t be-001      # one worker
-tmux kill-server                 # the lot, Partner included
-```
-
-Nothing is lost by killing a session. The work item, the goal, the step state, the logs and
-the learnings are all files; `hx launch <id>` brings a worker back, and a `working` item
-gets its `/goal` again on the way up. What you do lose is the conversation the agent was in the
-middle of, so prefer stopping between completions when you have the choice.
-
-A worker whose session dies on its own is not a crisis either: `hx heartbeat` restarts it, or
-the Partner does with `hx restart <id>`.
-
-## When something looks wrong
-
-| What you see | What it usually is |
-|---|---|
-| A worker `working` with a dead session | Nothing restarted it yet. The Partner runs `hx restart <id>`; so does `hx heartbeat` |
-| A worker that has been `working` a long time | Look at `hx show <id>` — its `## Tasks` and open steps say what it thinks it is doing. Long is not the same as stuck |
-| `HX-CHECK-FAILED` in a pane | Working as intended. Its workdir was dirty, a subagent was still open, or its `## Evidence` was empty; it fixes and retries. Nothing to do |
-| The Partner idle with work outstanding | It is waiting for a wake, which arrives when a worker completes. If a worker has completed and nothing happened, `hx show <id>` and tell the Partner |
-| A compaction summary in a worker's pane | Should not happen: hx seams first. Worth reporting |
-| `hx restart partner` does not return | The pane is frozen by a provider usage limit, so the restart's wait never ends. `tmux kill-session -t '=partner'` (with the instance's `HX_TMUX`), then `hx launch partner`; prefer an API key for that instance (`docs/multi-instance.md` §2) |
-
-## What the Partner is told
-
-The Partner's instructions live in two files you can read, and edit if you mean to:
-
-- `$HARNESS_ROOT/personas/partner.md` — its persona. The `context` hook hands it to the
-  Partner at every boundary, followed by its identity line, the learnings and the pointer to
-  `PARTNER.md` (`hx persona partner` prints it).
-- `$HARNESS_ROOT/PARTNER.md` — what it has learned: the fleet, open questions, decisions,
-  what has shipped. Read this when you want to know what the Partner thinks the state of the
-  world is.
-
-A persona edit takes effect at that agent's next boundary (`/clear`, compaction, restart),
-not immediately.
-
-## Who can run what
-
-`hx help` prints the commands the caller's audience sees, and `hx help --all` prints every
-audience's list: from your shell (no `HARNESS_ID`) that is the operator view, inside the
-Partner's session the Partner's, inside a worker's session the worker's short list. The same
-table backs a refusal: a worker that runs a Partner or operator command (`hx dispatch`,
-`hx map publish`, `hx learn accept`, `hx persona`, `hx doctor`, …) gets `refuse:` and exit 1,
-and asks the Partner through `hx complete blocked|decision` instead. Which skills each home
-gets is `src/hx/skills/manifest.json`; an optional skill is turned on for an instance by
-naming it in `config/hx.json` `skills`; it reaches each home at that agent's next
-`hx launch`, which runs the adapter's `install.sh` (`hx restart` does not), and `hx doctor`'s `skills` row says which are on and whether every skill is well-formed.
-
-## Keeping model IDs current
-
-`hx models` asks Anthropic, OpenAI, xAI and Meta which models they serve now and prints, per
-provider, what is new, gone or deprecated against `config/models.json` and `docs/models.md`,
-with each model's input window; TypeSafe's decision model is printed as `pinned`. It reads
-keys from your environment, the instance's env file or its `seed/` files and never prints
-one; a provider without a key is `unverified`, which is expected for Anthropic when the
-instance runs on a Claude subscription token. It changes nothing: `hx models --expect current`
-exits 3 when a configured model is no longer active or its window is larger than the provider
-allows, which is the cue to edit the registry yourself (the Partner's `hx-fleet` skill §7 says
-the same to the Partner).
-
-## Command examples and registered MCP servers
-
-Every command in a worker's `hx help` column ends its `--help` with one example invocation, and
-the `hx-worker` skill lists the same examples. An agent that is unsure of a flag should copy the
-example, not guess. `hx code` is the exception for now; its help belongs to the code-graph work.
-`hx tools index` now records, per registered MCP server, the `protocolVersion` it answered with
-(`servers` in `state/capabilities.json` and in the command's output). hx's client still opens
-with the `2024-11-05` handshake. If a server refuses that handshake (an MCP 2026-07-28 server
-that dropped backward compatibility), indexing calls `server/discover` once, stops, and names
-the versions the server supports. Unregister that server rather than expecting the client to
-change mid-release.
+`hx up` and `hx heartbeat` recover the Partner/UI/root service and advance existing durable
+native intents. They do not start unlaunched reservations. Current packet/store schemas are
+required; this unreleased product replaces obsolete state instead of maintaining old workflows.

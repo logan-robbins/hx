@@ -100,7 +100,7 @@ def _admit(store, run_id, launch_id, payload):
     from . import runtime_policy
     with store.transaction() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
-    reading = runtime_policy.inspect_call(snapshot, task['payload'], payload)
+    reading = runtime_policy.inspect_call(snapshot, task['payload'], payload, root=store.root)
     from . import search_coverage
     search = search_coverage.prepare(store, snapshot, task['payload'], payload)
     with store.transaction() as tx:
@@ -110,11 +110,14 @@ def _admit(store, run_id, launch_id, payload):
             raise AdmissionDenied("tool execution requires a prepared native launch")
         if row["launch_id"] != launch_id:
             raise AdmissionDenied("tool call belongs to another native launch")
-        run, _, _ = unit_execution._run(tx, run_id)
+        run, current_task, _ = unit_execution._run(tx, run_id)
         if run["phase"] == "paused" or row["status"] != "submitted" or not row["payload"].get("startup_observed"):
             raise AdmissionDenied("native tool admission is closed; reconcile the assignment before continuing")
         if row["payload"].get("pane") != pane:
             raise AdmissionDenied("native pane ownership changed before tool admission")
+        if any(row['payload'][field] != snapshot['payload'][field] for field in ('checkpoint_id', 'required_files')):
+            raise AdmissionDenied('native context checkpoint changed before tool admission; inspect its current required material')
+        runtime_policy.verify_material_read(tx, row, current_task['payload'], payload, reading)
         actor = _actor(tx, row, session, actor, admission=True)
         key = (launch_id, session, actor, call)
         previous = tx.db.execute("SELECT input_hash,status FROM native_tool_calls WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?", key).fetchone()

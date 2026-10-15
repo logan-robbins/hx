@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import re
 import shlex
 from pathlib import Path
 
 from .continuity_store import digest
 from .native_tools import AdmissionDenied
+from .errors import HxError
 
 CONTEXT_BYTES = 8192
 MEMORY_BYTES = 4096
@@ -30,9 +32,6 @@ def check_files(row, *, replacing=None):
              (capsule / 'run' / worker / 'persona.md', CONTEXT_BYTES)]
     home = capsule / 'run' / worker / 'home'
     paths += [(home / name, MEMORY_BYTES) for name in ('MEMORY.md', 'memory.md', 'context.md')]
-    if payload.get('workdir'):
-        repository = Path(payload['workdir'])
-        paths += [(repository / name, CONTEXT_BYTES) for name in ('AGENTS.md', 'CLAUDE.md', '.claude/CLAUDE.md')]
     for path, bound in paths:
         if path.resolve() != replacing and path.exists() and path.stat().st_size > bound:
             raise AdmissionDenied(f'{path.name} exceeds {bound} bytes; compress current task state before continuing')
@@ -46,7 +45,12 @@ def _source(payload, task):
     return (Path(task['workdir']) / path).resolve() if not path.is_absolute() else path.resolve()
 
 
-def inspect_call(row, task, observation):
+def _material_reference(row, path):
+    return next((material for material in row['payload']['required_files']
+                 if Path(material['path']).resolve() == path), None)
+
+
+def inspect_call(row, task, observation, *, root=None):
     """Return a bounded read identity, or None when this is not a source read."""
     name = observation.get('tool_name', observation.get('toolName', ''))
     name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
@@ -62,12 +66,21 @@ def inspect_call(row, task, observation):
     check_files(row, replacing=replacing)
     if len(canonical(args).encode()) > INPUT_BYTES:
         raise AdmissionDenied('tool arguments exceed 16384 bytes; split the operation')
+    if name == 'apply_patch':
+        patch = args if isinstance(args, str) else args.get('patch', args.get('input', '')) if isinstance(args, dict) else ''
+        if isinstance(patch, str):
+            for target in re.findall(r'^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$', patch, re.M):
+                path = _source({'path': target.strip()}, task)
+                if path == Path(row['payload']['packet_path']).resolve() or _material_reference(row, path) is not None:
+                    raise AdmissionDenied('structured patches cannot mutate runtime-owned checkpoints or required material')
     if not isinstance(args, dict):
         return None  # Native patch tools can carry a string.
     if name in {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace'}:
         path = _source(args, task)
         if path == Path(row['payload']['packet_path']).resolve():
             raise AdmissionDenied('the task checkpoint is runtime-owned; use typed progress updates')
+        if _material_reference(row, path) is not None:
+            raise AdmissionDenied('required instruction material is immutable and runtime-owned')
         if path.name.lower() in {'memory.md', 'context.md', 'agents.md', 'claude.md'}:
             content = args.get('content', args.get('new_string', args.get('newText', '')))
             old = args.get('old_string', args.get('oldText', ''))
@@ -83,6 +96,30 @@ def inspect_call(row, task, observation):
         offset = args.get('offset', 1)
         if type(offset) is not int or offset < 1:
             raise AdmissionDenied('source read offset must be a positive line number')
+        required = _material_reference(row, path)
+        if required is not None:
+            if root is None:
+                raise AdmissionDenied('required material reads need the native authority root')
+            try:
+                if required.get('kind') == 'assignment':
+                    from .context_packets import verify_material
+                    from .continuity_store import ContinuityStore
+                    with ContinuityStore(root) as store:
+                        verified = verify_material(store, row['run_id'], path,
+                                                   checkpoint_id=row['payload']['checkpoint_id'])
+                else:
+                    from .prompt_compiler import verify_material
+                    verified = verify_material(root, row['payload']['worker_id'], Path(row['payload']['manifest']),
+                                               path, workdir=task['workdir'])
+            except (HxError, OSError) as exc:
+                raise AdmissionDenied('required instruction material failed bundle or content verification') from exc
+            if verified != required:
+                raise AdmissionDenied('required instruction material differs from the admitted launch')
+            if limit is not None and (type(limit) is not int or limit < 1):
+                raise AdmissionDenied('required material read limits must be positive line counts')
+            # Complete immutable instructions are an admitted source. Reading
+            # all of them, or every page in order, must remain possible.
+            return digest([str(path), offset, limit]), _stamp(path)
         if limit is not None and (type(limit) is not int or not 1 <= limit <= READ_LINES):
             raise AdmissionDenied('source reads allow at most 160 lines; select the needed symbol range')
         # Small files are already bounded. Large files require explicit slices.
@@ -115,6 +152,39 @@ def inspect_call(row, task, observation):
             if parts and parts[0] in {'rg', 'grep'}:
                 raise AdmissionDenied('use scoped Grep with head_limit, or hx tool-exec --request ID -- rg PATTERN PATH for bounded output')
     return None
+
+
+def verify_material_read(tx, row, task, observation, reading):
+    """Recheck a verified immutable read at the final admission transaction."""
+    if reading is None:
+        return
+    name = observation.get('tool_name', observation.get('toolName', ''))
+    name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
+    if name not in {'Read', 'read', 'read_file'}:
+        return
+    args = observation.get('tool_input', observation.get('toolInput'))
+    path = _source(args, task)
+    required = _material_reference(row, path)
+    if required is None:
+        return
+    if required.get('kind') == 'assignment':
+        from .context_packets import _read
+        current = tx.db.execute('SELECT checkpoint_id FROM runs WHERE run_id=?', (row['run_id'],)).fetchone()
+        try:
+            packet = _read(tx, row['payload']['checkpoint_id'], row['run_id'])
+        except (HxError, OSError) as exc:
+            raise AdmissionDenied('required assignment changed before native tool admission') from exc
+        if current is None or current[0] != row['payload']['checkpoint_id'] or required not in packet['required_files']:
+            raise AdmissionDenied('required assignment checkpoint changed before native tool admission')
+    try:
+        before = _stamp(path)
+        with path.open('rb') as handle:
+            data = handle.read(required['bytes'] + 1)
+        after = _stamp(path)
+    except OSError as exc:
+        raise AdmissionDenied('required material disappeared before native tool admission') from exc
+    if before != reading[1] or after != before or len(data) != required['bytes'] or hashlib.sha256(data).hexdigest() != required['sha256']:
+        raise AdmissionDenied('required material changed before native tool admission')
 
 
 def remember_read(tx, row, session, actor, call, reading):

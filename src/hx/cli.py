@@ -1,12 +1,6 @@
-"""`hx` — subcommand dispatch for the whole command set of spec 08.
+"""Audience-scoped commands for the current graph, packet and delivery lifecycle.
 
-Every command resolves HARNESS_ROOT through `hx.root.resolve_root` before doing anything
-else, so the standing refusal (a root that is, or resolves inside, the user's `~/.claude`)
-applies to all of them, implemented or not.
-
-Commands that a later milestone delivers exit 2 with
-`hx: <cmd>: not implemented (build-N)`, where N is the build-lane goal that delivers it —
-spec 13's milestone plus one, since goal build-1 is M0.
+All commands resolve the instance root and enforce caller authority before execution.
 """
 
 from __future__ import annotations
@@ -26,21 +20,14 @@ from . import search_sift as sift_cmd
 from . import discipline as discipline_cmd
 from . import prompt_cache as cache_cmd
 from . import application_loop as loop_cmd
-from . import amend as amend_cmd
-from . import archive as archive_cmd
-from . import bench as bench_cmd
 from . import board as board_cmd
 from . import complete as complete_cmd
 from . import companion as companion_cmd
 from . import compose as compose_cmd
-from . import dispatch as dispatch_cmd
-from . import distill as distill_cmd
 from . import doctor as doctor_cmd
 from . import flush as flush_cmd
-from . import goal as goal_cmd
 from . import install as install_cmd
 from . import lifecycle
-from . import memory as memory_cmd
 from . import observer as observer_cmd
 from . import persona as persona_cmd
 from . import native_capture as capture_cmd
@@ -54,8 +41,6 @@ from . import goals as goals_cmd
 from . import handoff as handoff_cmd
 from . import learn as learn_cmd
 from . import read as read_cmd
-from . import recall as recall_cmd
-from . import resume as resume_cmd
 from . import seam as seam_cmd
 from . import show as show_cmd
 from . import task as task_cmd
@@ -64,16 +49,7 @@ from . import models_cmd
 from . import wake as wake_cmd
 from .errors import HxError, ValidationError
 
-#: Every command of spec 08, plus `install`, `up`, `doctor`, `ui` and `show`. The v1 cut
-#: The original install cut removed repository creation, push and self-upgrade.
-#: Repository queries and explicitly requested local landing are separate features;
-#: installation still creates no product repository or remote publication.
-NOT_IMPLEMENTED: dict[str, int] = {}
-
 IMPLEMENTED = {
-    "amend": amend_cmd.main,
-    "archive": archive_cmd.main,
-    "bench": bench_cmd.main,
     "board": board_cmd.main,
     "companion": companion_cmd.main,
     "capture": capture_cmd.main,
@@ -81,14 +57,9 @@ IMPLEMENTED = {
     "map": map_cmd.main,
     "plan": planning_cmd.main,
     "complete": complete_cmd.main,
-    # `hx compose` and `hx flush` are call sites the hooks and `hx complete` already use;
-    # what they do arrives at M2 and M5 (spec 13).
     "compose": compose_cmd.main,
-    "dispatch": dispatch_cmd.main,
-    "distill": distill_cmd.main,
     "doctor": doctor_cmd.main,
     "flush": flush_cmd.main,
-    "goal": goal_cmd.main,
     "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
     "launch": lifecycle.main_launch,
@@ -104,7 +75,6 @@ IMPLEMENTED = {
     "sift": sift_cmd.main,
     "discipline": discipline_cmd.main,
     "cache": cache_cmd.main,
-    "memory": memory_cmd.main,
     "observe": observer_cmd.main,
     "persona": persona_cmd.main,
     "progress": progress_cmd.main,
@@ -114,9 +84,6 @@ IMPLEMENTED = {
     "handoff": handoff_cmd.main,
     "learn": learn_cmd.main,
     "read": read_cmd.main,
-    "recall": recall_cmd.main,
-    "restart": lifecycle.main_restart,
-    "resume": resume_cmd.main,
     "seam": seam_cmd.main,
     "show": show_cmd.main,
     "task": task_cmd.main,
@@ -127,90 +94,34 @@ IMPLEMENTED = {
     "models": models_cmd.main,
 }
 
-COMMANDS = sorted(set(IMPLEMENTED) | set(NOT_IMPLEMENTED))
+COMMANDS = sorted(IMPLEMENTED)
 
 USAGE = f"""usage: hx <command> [options]
 
-hx is the control plane for a HarnessAgent fleet. HARNESS_ROOT
-selects the instance; it defaults to ~/hx and may never be inside the user's ~/.claude.
+Every directive uses the code/application graph and a dependency packet plan.
+Search existing capabilities before building. Schedule all ready independent packets
+subject to dependency proofs, source ownership, resource leases and host capacity.
 
-the control plane:
-  launch ID                    idle work item, home, tmux session, goal if working
-  launch ID --run RUN --request REQUEST  advance a planned native launch once
-    --drain                    close native request/tool admission; retain leases
-    --shutdown                 stop observed owned processes; retain unreconciled leases
-  dispatch ID GOAL [ID GOAL]   validate the goals, then working; the files are consumed
-  goal ID [--now]              paste the pointer into a worker's pane
-  task                         print your own goal and its addenda
-  progress --file JSON         commit a sparse typed progress update
-  progress --run RUN           read the progress revision and current cursor
-  plan draft/replan/changes     compile assignments and inspect changed dependencies
-  plan validate/apply/unit     validate behavior units and inspect their assignments
-  plan ready/assign            admit ready units with prerequisites and write leases
-  plan audit/finish/materialize/stop  verify scope, outputs, and integration
-  check CHECK [--run RUN]      execute or reuse an input-bound verification receipt
-  map init/check/anchor/import/export/publish/get/overlay/propose/refresh  manage the semantic application map
-  map plan-context            retrieve a bounded assignment brief for a goal
-  capture bind/enqueue         bind and durably capture native execution events
-  capture pending/retry        inspect delivery gaps and retry a bounded producer batch
-  complete OUTCOME             the agent's last action; checks run here
-  resume ID ADDENDUM           continue a blocked or decision item
-  amend ID ADDENDUM            append an addendum to a working or completed goal
-  distill ID FILE              shrink goal addenda; the distilled directives become a learnings proposal
-  bench ID                     archive the body and free the id
-  seam ID                      flush, recompose, and cut the conversation
-  read ID [--detail|--full]      status; prose only with --detail, body with --full
-  recall [QUERY] [--id ID]       last-resort file-memory search over completed items
-  companion ID [--once]        the Companion loop, one per agent
-  companion ID --run RUN --request ID [--stream STREAM]  execute one frozen ledger pass
-  persona ID [--summary]       print what the context hook hands ID at every boundary
-  flush ID                     wait for the Companion to reach the log head
-  restart ID / up / heartbeat  relaunch, boot, and the human's own cron
-  wake partner TEXT            the one way anything reaches the Partner
-  memory search QUERY          what other agents already learned; see `hx memory --help`
-  learn propose/pending/accept/reject/check/list  the central LEARNINGS file: propose a rule, a
-                               different session accepts or merges it; see `hx learn --help`
-  handoff check/capture/pushed/sums  what a handoff carries before another session acts on it
-  loop [--once]                capture, refresh mapped sources, and run one companion at a time
-  observe register/drain/serve/status  incremental continuity source capture
-  evidence EVENT [--offset N --limit N]  retrieve a bounded slice of retained evidence
-  code index --repo PATH       index symbols, imports, and source text for code search
-  repo serve/status/file/diff  shared host source queries; code --at pins an immutable snapshot
-  repo materialize             materialize exact dependency paths outside the source checkout
-  build graph/build/test       evaluated .NET graph, shared immutable builds and test shards
-  change submit/review/land    intent approval and optimistic publication with durable evidence
-  code search QUERY            exact-symbol and FTS code search (porter + trigram, RRF)
-  code type/signature NAME     case-folded structural definitions and exact source signatures
-  code callers/tests-for/conform NAME  bounded reuse, tests and signature parity
-  code fresh PATH... --expect fresh  complete scope freshness lint (failed expectation: exit 3)
-  code register/precedent/contract NAME  registrations, exact snippets and shared interfaces
-  code map --budget BYTES      ranked orientation; code submaps proposes candidate boundaries
-  code symbols NAME            symbol definitions; code impact PATH... for change impact
-  content index/search/fetch   persistent exact-text knowledge store for docs and web
-  exec --language L --code C   isolated execution: program the analysis, only stdout returns
-  exec file PATH --language L --code C  run code over a file without reading it into context
-  exec batch --file F.json     run many commands, auto-index output, search in one call
-  sift candidates/triage       Jev semantic sifting over deterministic candidates (advisory)
-  discipline profile/orient/commit  repo-derived size bounds, orientation load, committable check
-  discipline pull --repo DIR        commits the principal branch has that HEAD lacks (--expect fresh)
+  plan draft/validate/apply     define and record graph-driven dependency packets
+  plan ready/assign            inspect readiness and admit a packet
+  launch ID --run RUN --request REQUEST  advance the admitted native worker
+  launch partner               start the Partner orchestrator
+  plan bind/approve-binding    freeze worker checks and independent approval
+  plan publish-contract/acquire-contract  release consumers against exact interfaces
+  check CHECK --run RUN        execute or reuse source-bound proof
+  complete done                request verified completion of the caller's run
+  progress --file JSON         record task findings, blockers and decisions
+  plan finish/materialize/verify-integration  publish outputs and verify dependencies
+  change submit/review/land    review intent and publish a short expected-head update
+  change candidate/run-validation  validate fixed integration and deployment candidates
+  board/show/task/goals        project current task and run state from the ledger
+  code                         query the shared code graph and source snapshots
+  repo                         metadata queries and exact source materialization
+  build                        reusable .NET builds and isolated test shards
+  help [--all | --audience A]   inspect the tool inventory for an audience
 
-read-only views:
-  board [--json]                          a plain listing of what is on disk
-  show ID [--json]                        everything hx knows about one id
-  metrics [ID] [--json] [--watch]         seam metrics, or the fleet rollup
-  metrics --commands [--since TS]         hx invocations per command and agent
-  cache report [ID] [--json]              invariant prompt prefix per agent vs its budget
-  goals [--json] / archive [--json]       the goal records, and what has been archived
-  ui [--port N]                           the read-only web view on 127.0.0.1
-  doctor [--json]                         what is here, what is missing, what is broken
-  help [--all | --audience A] [--json]    the commands your audience sees (HARNESS_ID)
-  models [--provider P] [--expect current] [--json]
-                                        provider model lists vs config/models.json; writes nothing
-  install --root PATH [--env-file PATH]
-                                        create the instance (spec 17.2)
-
-every command of spec 08:
-  {chr(10) + '  '}{'  '.join(COMMANDS)}
+commands:
+  {'  '.join(COMMANDS)}
 """
 
 
@@ -238,11 +149,10 @@ def _root_for(argv: list[str], env) -> Path:
 #: `refuse:` exit, every entry that is not worker, subagent or runtime (`gate`).
 AUDIENCES: dict[str, set[str]] = {
     "operator": {
-        "install", "up", "doctor", "ui", "heartbeat", "archive",
+        "install", "up", "doctor", "ui", "heartbeat",
         "learn check", "learn path", "learn categories", "learn invariant",
-        "cache assess", "cache budget", "memory index", "memory warm",
+        "cache assess", "cache budget",
         "models",
-        "metrics --commands",
         "cache report",
         "repo serve", "repo register", "repo status",
         "change status", "change land", "change validate", "change reconcile",
@@ -252,8 +162,8 @@ AUDIENCES: dict[str, set[str]] = {
         "code journal",
     },
     "partner": {
-        "launch", "dispatch", "goal", "resume", "amend", "bench", "distill", "restart", "read",
-        "board", "show", "metrics", "goals", "recall",
+        "launch",        "read",
+        "board", "show", "metrics", "goals",
         "plan draft", "plan replan", "plan changes", "plan validate", "plan apply", "plan unit",
         "plan ready", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
         "map init", "map import", "map export", "map overlay", "map propose", "map refresh",
@@ -263,13 +173,12 @@ AUDIENCES: dict[str, set[str]] = {
         "handoff check", "handoff capture", "handoff pushed", "handoff sums",
         "handoff delivery",
         "discipline profile", "discipline orient",
-        "memory search --all-roles", "memory stats", "memory list",
+
         "content index", "content stats",
         # GRAPH_PLAN steps 2-8 (the graph lane builds them; the gate covers them already).
         "code contracts", "code submaps", "code stats", "code import",
         "code journal",
         "models",
-        "metrics --commands",
         "cache report",
         "repo status", "repo register", "repo diff", "repo merge-base", "repo history", "repo file",
         "repo materialize",
@@ -281,7 +190,7 @@ AUDIENCES: dict[str, set[str]] = {
     "worker": {
         "task", "complete", "progress",
         "learn propose", "learn classify", "learn repeat", "learn list",
-        "memory search", "recall",
+
         "code search", "code symbols", "code impact", "code edges",
         "content search", "content fetch",
         "exec", "sift", "tool-exec",
@@ -303,7 +212,7 @@ AUDIENCES: dict[str, set[str]] = {
     },
     "subagent": {
         "code search", "code type", "code signature", "code callers",
-        "content search", "content fetch", "exec", "memory search", "evidence",
+        "content search", "content fetch", "exec",  "evidence",
         "repo diff", "repo history", "repo file",
     },
     # The Companion is a Read + Write session: no `hx` command at all.
@@ -469,24 +378,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     command, rest = argv[0], argv[1:]
-    if command not in IMPLEMENTED and command not in NOT_IMPLEMENTED:
+    if command not in IMPLEMENTED:
         print(f"hx: {command}: unknown command; try `hx --help`", file=sys.stderr)
         return 2
 
     try:
         # The standing refusal runs before anything else, for every command (ORCHESTRATION.md).
         root = _root_for(rest, env)
-        import os
-        if (os.environ if env is None else env).get('HX_CONTINUITY_RUN') and command in {'memory', 'recall'}:
-            raise ValidationError('planned workers have no episodic memory; use current task progress, map inputs and bounded evidence')
         # Authority backs visibility: a worker caller is refused anything outside its column.
         gate(command, rest, env)
-        if command in NOT_IMPLEMENTED:
-            print(
-                f"hx: {command}: not implemented (build-{NOT_IMPLEMENTED[command]})",
-                file=sys.stderr,
-            )
-            return 2
         if command == "code" and not any(a in {"-h", "--help"} for a in rest):
             shared = repo_cmd.code_request(root, rest, env)
             if shared is not None:

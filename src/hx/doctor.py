@@ -4,9 +4,8 @@ Every line is `<status>  <check>  <detail>`. It checks exactly what spec 08 list
 the Python floor, the pinned `claude` binary and version, the paths in `config/hx.json`, the
 seed token, each `run/<id>/home/settings.json`, and the sandbox flags of every running agent.
 
-It does not inspect work items (spec 14 D25): the board is a listing and the doctor is not a
-policeman. `warn` is for what a milestone has not delivered yet, so `hx doctor` on a freshly
-created skeleton exits 0.
+Worker homes come from admitted native launch capsules. Checks never infer assignment
+state from worker files or boot a process.
 """
 
 from __future__ import annotations
@@ -110,7 +109,7 @@ def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
             found.append((
                 FAIL,
                 f"{key} is {environment.get(key, 'unset')!r} on session {item_id}, not {value!r}; "
-                f"every agent runs sandboxed (spec 11). Relaunch it: `hx restart {item_id}`",
+                f"every agent runs sandboxed. Inspect `hx show {item_id}` and reconcile its native launch.",
             ))
 
     command = pane_command(item_id, env)
@@ -131,7 +130,7 @@ def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
         found.append((
             FAIL,
             f"{item_id} is running without {REQUIRED_FLAG}; every agent bypasses permissions "
-            f"(spec 11). Relaunch it: `hx restart {item_id}`",
+            f"Inspect `hx show {item_id}` and reconcile its native launch.",
         ))
     return found
 
@@ -639,21 +638,27 @@ def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
         rows.append((WARN, f"persona:{item_id}",
                      f"personas/{role}.md is missing; the agent gets its identity line, the "
                      "learnings and the pointer alone"))
-    if isinstance(role, str) and (root / "personas" / role / "AGENTS.md").is_file():
-        rows.append((WARN, f"persona:{item_id}",
-                     f"personas/{role}/AGENTS.md is the persona layout before personas/{role}.md; "
-                     f"`hx launch {item_id}` (or `hx up`, `hx install`) moves it"))
-    if (root / "config" / item_id / "AGENTS.md").is_file():
-        rows.append((WARN, f"persona:{item_id}",
-                     f"config/{item_id}/AGENTS.md is a per-id persona from before the persona came "
-                     f"from its sources; `hx launch {item_id}` (or `hx up`, `hx install`) "
-                     "moves it into harness.json `purpose` and a learnings proposal"))
     if (root / "config" / item_id / "SUBAGENTS.md").is_file():
-        rows.append((WARN, f"subagents:{item_id}",
-                     f"config/{item_id}/SUBAGENTS.md replaces the shared templates/worker/SUBAGENTS.md "
-                     "for this id (a copy of the template is removed at launch, so this one says "
-                     "something else); fold it into the template unless it is meant for this id alone"))
+        rows.append((OK, f"subagents:{item_id}",
+                     f"config/{item_id}/SUBAGENTS.md supplies this worker's custom subagent instructions"))
     return rows
+
+
+def _agent_home(root: Path, item_id: str) -> Path | None:
+    """Only a Partner bootstrap or an active ledger launch owns an agent home."""
+    if item_id == "partner":
+        return root / "run" / item_id / "home"
+    from .board import ledger_reader
+    with ledger_reader(root) as db:
+        if db is None:
+            return None
+        row = db.execute("""SELECT l.payload FROM native_launches l JOIN runs r USING(run_id)
+            JOIN unit_runs u USING(run_id) WHERE r.worker_id=? AND r.ended_at IS NULL
+            AND l.status<>'archived' ORDER BY l.rowid DESC LIMIT 1""", (item_id,)).fetchone()
+        if row is None:
+            return None
+        capsule = Path(json.loads(row[0])["capsule"])
+        return capsule / "run" / item_id / "home"
 
 
 def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
@@ -710,7 +715,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                         WARN,
                         "claude",
                         f"{binary} now reports {installed_version}; config/claude.json recorded "
-                        f"{pinned_version}. The next `hx launch`, `hx restart` or `hx up` "
+                        f"{pinned_version}. The next `hx launch` or `hx up` "
                         f"re-records it ({claude_bin.describe(installed_version)})",
                     ))
                 else:
@@ -726,23 +731,6 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
 
     if not root.is_dir():
         return checks
-
-    # Episode memory's embedding model (docs/memory.md): on disk, or every `hx memory` and the
-    # Memory episodes section report unavailable until the operator warms it. Never downloaded
-    # by an agent.
-    from . import memory as memory_mod
-
-    try:
-        missing = memory_mod.model_missing()
-    except memory_mod.MemoryUnavailable as exc:
-        checks.append((WARN, "memory-model", str(exc)))
-    else:
-        if missing:
-            checks.append((WARN, "memory-model",
-                           f"{memory_mod.model_dir()} lacks {missing[0]}; `hx memory warm` "
-                           "downloads it once (~80 MB); until then episode memory is unavailable"))
-        else:
-            checks.append((OK, "memory-model", str(memory_mod.model_dir())))
 
     # Central learnings (docs/learnings.md): where the directory is, how many rules, what waits.
     from . import learn as learn_mod
@@ -783,12 +771,6 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             # Every agent is handed the global rules and its role's at every boundary
             # (docs/learnings.md); past the hook's bound they go as files to read.
             checks.extend(_hook_size(root, env))
-        legacy = root / "LEARNINGS.md"
-        if legacy.is_file():
-            checks.append((WARN, "learnings-legacy",
-                           "LEARNINGS.md is the pre-directory layout; move its rules into "
-                           "LEARNINGS/<category>.md (docs/learnings.md § Migration) and remove it"))
-
     # Every adapter records its binary as `bin`; a versioned path dies with the next auto-update
     # (the launcher deletes the old version), so the path must be the stable launcher.
     for adapter_json in sorted((root / "config").glob("*.json")):
@@ -895,7 +877,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         checks.append((WARN, "agents", "no config/<id>/ yet"))
     for item_id in ids:
         checks.extend(_persona_sources(root, item_id))
-        home = root / "run" / item_id / "home"
+        home = _agent_home(root, item_id)
+        if home is None:
+            continue
         flavor = flavor_of(root, item_id)
         if item_id == "partner" and flavor not in PARTNER_FLAVORS:
             checks.append((
@@ -905,7 +889,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         if not home.is_dir():
             checks.append((
                 WARN, f"home:{item_id}",
-                f"run/<id>/home absent; `hx launch` runs adapters/{flavor}/install.sh",
+                f"{home} absent; inspect the native launch preparation",
             ))
             continue
         # Homes hold no credentials: auth is the instance token (spec 11 Auth).
@@ -955,7 +939,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     # argv of the process in the pane, because either one alone can be stale.
     # A Pi session has neither flag; it is checked for its own config dir and --no-approve.
     for item_id in ids:
-        if not tmux.has_session(item_id, env):
+        if item_id != "partner" or not tmux.has_session(item_id, env):
             continue
         if flavor_of(root, item_id) == "pi":
             for status, detail in live_pi_checks(root, item_id, env):

@@ -79,32 +79,27 @@ Tell it what you want, in plain language, and where the code is. For example:
 > The repo is at /Users/me/src/shop. Add a `--json` flag to the `report` command and make the
 > frontend's Reports page call it. Backend first, then frontend.
 
-The Partner decomposes that into goals, creates a backend and a frontend worker if none exist
-(`be-001`, `fe-001`), points each at the directory you named, launches them, dispatches, and
-waits. Each worker is its own Claude Code session (`tmux attach -t be-001` to watch one) with a
-Companion session beside it keeping its state. When a worker finishes, the Partner is woken,
-reads the digest, dispatches what comes next, and reports to you in chat when the whole ask is
-done. If a worker hits a real decision, the Partner asks you in chat and resumes the worker
-with your answer.
+The Partner explores current graph dependencies and searches for existing capabilities before
+building. It defines observable dependency packets, maximizes useful parallel work, prepares
+separate worker worktrees, reserves ready runs, and explicitly launches their native controllers.
+Every directive uses this flow; apparent request size does not determine packet count.
+Workers bind exact checks before edits and obtain independent approval. Typed blockers bring
+unresolved decisions back to the Partner; changed scope requires stopped/revised work.
 
-You never run `hx` yourself after this page. If you catch yourself wanting to, tell the Partner
-instead.
+The runtime verifies exact source/dependencies, approved checks, managed-operation drain,
+output publication, and ownership release. Packet coverage is separate from integration,
+intent review, landing, fixed release validation, and external deployment. The Partner reports
+what the requested outcome and evidence establish.
 
 ## 4. Watching
 
-- `tmux attach -t partner` is the only control surface. Detach with `Ctrl-b d`.
-- The UI is already running: `hx install` started it in tmux session `ui`. Open
-  `http://127.0.0.1:8765/`. It is read-only: the Board (every worker, its state and outcome,
-  whether its session is alive, its context size and seams), an Agent drawer per worker (its
-  work item file: the goal, the definition of done the worker wrote, live `## Tasks`, evidence,
-  deliverables, open decision, digest; plus
-  whether its Companion is running a pass right now, and an **Open last compaction** link that
-  opens the Companion's latest compaction in another window), an **Open session** link that opens the
-  pane, step state, what the `context` hook hands it and stream tails in another window, Goals and Archive, and a
-  Partner page with `PARTNER.md`, the board, and a chat box that sends a message to the Partner
-  exactly as `hx wake partner` does.
-  Full control (slash commands, interrupts) stays in `tmux attach -t partner`.
-- `~/hx/PARTNER.md` is the Partner's memory: the fleet, open questions, decisions.
+The UI address reported by setup projects ledger dependency packets, execution/leases,
+progress, approved bindings, check/checkpoint evidence, and delivery candidates. Details can
+name task, run, worker, or plan. Recorded state does not itself prove current readiness.
+The Partner chat sends the human's explicit message; it does not create a task transition.
+
+`PARTNER.md` retains current decisions, pending questions, constraints, and next scheduling
+consequences. The ledger owns fleet state. Ask the Partner for status or changes in chat.
 
 ## 5. Personas
 
@@ -129,7 +124,7 @@ has the taxonomy and the whole process.
 
 ## 7. Stopping and starting
 
-`hx up` relaunches the Partner and every working agent after a reboot; `hx heartbeat` restarts
-dead sessions and tells the Partner. Both are plain commands; put them in your own cron or
-login items if you want them automatic. To stop everything: `tmux kill-server` on the hx
-server's sockets, or kill the sessions by name (`partner`, `be-001`, …).
+`hx up` recovers the Partner/UI/root service. `hx heartbeat` advances existing durable native
+intents, without starting unlaunched reservations. Worker drain/shutdown name the original
+admitted run and launch request; uncertain process ownership retains leases until reconciled.
+The Partner uses `hx plan stop` when a task must be stopped or revised.

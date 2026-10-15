@@ -11,7 +11,8 @@ from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from .test_appmap import git, mapped
 from .test_map_updates import active
-from .test_planning import unit, plan, dependency
+from .test_planning import unit, plan, dependency, bind
+from .test_checks import definition
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def commit(repo):
 
 def source_unit(repo, name, path="feature.py", prerequisites=None):
     task = unit(repo, name, paths=[path], prerequisites=prerequisites)
-    task["outputs"].append({"id": "source", "version": 1, "kind": "source", "paths": [path]})
+    task["outputs"].append({"id": "source", "version": 1, "kind": "source", "paths": [path], "obligation": "Source implements the assigned behavior."})
     return task
 
 
@@ -60,6 +61,7 @@ def test_cold_admission_parser_leaves_continuity_writer_available(fleet,monkeypa
         return original(text,path)
     monkeypatch.setattr(code_build.code_extract,'extract',extract)
     run=units.assign(store,'implement',1,'eng-001')['run_id']
+    bind(store, run)
     assert parsed and store.db.execute('SELECT 1 FROM unit_runs WHERE run_id=?',(run,)).fetchone()
 
 
@@ -98,6 +100,7 @@ def test_ready_and_completion_unlock_receipt_dependency(fleet):
     assert statuses(store)["a"]["status"] == "ready"
     assert statuses(store)["b"]["status"] == "blocked"
     first = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, first)
     with pytest.raises(Conflict, match="verified"):
         with store.transaction() as tx:
             tx.finish_run(first, "completed")
@@ -107,8 +110,9 @@ def test_ready_and_completion_unlock_receipt_dependency(fleet):
     assert store.db.execute("SELECT count(*) FROM leases").fetchone()[0] == 0
     assert statuses(store)["b"]["status"] == "ready"
     second = units.assign(store, "b", 1, "eng-002")["run_id"]
+    bind(store, second)
     finish(store, second)
-    assert all(item["status"] == "completed" for item in statuses(store).values())
+    assert all(item["status"] == "deployable" for item in statuses(store).values())
 
 
 def test_completion_waits_for_native_delivery_and_retains_ownership(fleet, monkeypatch):
@@ -116,6 +120,7 @@ def test_completion_waits_for_native_delivery_and_retains_ownership(fleet, monke
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet))
     run = units.assign(store, "implement", 1, "eng-001")["run_id"]
+    bind(store, run)
     with monkeypatch.context() as m:
         def unavailable(*args, **kwargs):
             raise OSError("temporary capture failure")
@@ -135,6 +140,7 @@ def test_late_producer_evidence_blocks_downstream_admission(fleet):
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet, [unit(repo, "a"), unit(repo, "b", prerequisites=[dependency("a")])]))
     run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run)
     finish(store, run)
     assert statuses(store)["b"]["status"] == "ready"
     relay.produce(store, run_id=run, worker_id="eng-001", adapter="claude", session_id="late-session", stream_id="native",
@@ -149,6 +155,7 @@ def test_unread_transcript_blocks_completion_and_late_append_blocks_dependency(f
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet, [unit(repo, "a"), unit(repo, "b", prerequisites=[dependency("a")])]))
     run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run)
     path = tmp_path / "transcript.jsonl"
     path.write_text("")
     source = observer.register(store, run_id=run, stream_id="native", path=path, decoder="hook-v1", session_id="S")
@@ -177,7 +184,9 @@ def test_independent_units_parallel_only_in_distinct_worktrees(fleet, tmp_path):
     git(repo, "worktree", "add", "-qb", "parallel", str(other))
     planning.apply(store, plan(fleet, [unit(repo, "a"), unit(other, "b"), unit(repo, "c")]))
     a = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, a)
     b = units.assign(store, "b", 1, "eng-002")["run_id"]
+    bind(store, b)
     with pytest.raises(Conflict, match="worktree"):
         units.assign(store, "c", 1, "eng-003")
     units.stop(store, a)
@@ -194,6 +203,7 @@ def test_overlapping_leases_conflict_across_plans_and_worktrees(fleet, tmp_path)
     second["plan_id"] = "second"
     planning.apply(store, second)
     a = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, a)
     with pytest.raises(Conflict, match="lease overlaps"):
         units.assign(store, "b", 1, "eng-002")
     units.stop(store, a)
@@ -213,6 +223,7 @@ def test_unexpected_write_pauses_and_retains_leases(fleet):
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet))
     run = units.assign(store, "implement", 1, "eng-001")["run_id"]
+    bind(store, run)
     (repo / "unexpected.py").write_text("unsafe = True\n")
     audit = units.audit(store, run)
     assert audit["unexpected_paths"] == ["unexpected.py"] and not audit["within_scope"]
@@ -230,6 +241,7 @@ def test_failed_or_changed_check_cannot_complete(fleet):
     task = source_unit(repo, "a")
     planning.apply(store, plan(fleet, [task]))
     run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run)
     receipt = checks.run_check(store, run, "unit")
     (repo / "feature.py").write_text("value = 2\n")
     commit(repo)
@@ -243,6 +255,7 @@ def test_completion_requires_all_checks_and_declared_changed_outputs(fleet):
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet, [unit(repo, "a", paths=["feature.py"])]))
     run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run)
     with pytest.raises(ValidationError, match="every assigned check"):
         units.complete(store, run, {})
     (repo / "feature.py").write_text("value = 1\n")
@@ -261,12 +274,14 @@ def test_source_producer_integration_consumer_end_to_end(fleet, tmp_path, monkey
         {"task_id": "producer", "output_id": "source", "version": 1}, dependency("integration")])
     planning.apply(store, plan(fleet, [producer, integration, consumer]))
     producing = units.assign(store, "producer", 1, "eng-001")["run_id"]
+    bind(store, producing)
     (repo / "feature.py").write_text("value = 42\n")
     commit(repo)
     produced = finish(store, producing)
     assert statuses(store)["integration"]["status"] == "ready"
     assert statuses(store)["consumer"]["status"] == "blocked"
     integrating = units.assign(store, "integration", 1, "eng-002")["run_id"]
+    bind(store, integrating)
     with pytest.raises(Conflict, match="not installed"):
         units.materialize(store, "consumer", integrating, "producer", "source")
     git(consumer_repo, "checkout", produced["commit"], "--", "feature.py")
@@ -285,8 +300,9 @@ def test_source_producer_integration_consumer_end_to_end(fleet, tmp_path, monkey
     finish(store, integrating)
     assert statuses(store)["consumer"]["status"] == "ready"
     consuming = units.assign(store, "consumer", 1, "eng-003")["run_id"]
+    bind(store, consuming)
     finish(store, consuming)
-    assert all(item["status"] == "completed" for item in statuses(store).values())
+    assert all(item["status"] == "deployable" for item in statuses(store).values())
 
 
 def test_materialization_does_not_survive_failed_integration(fleet, tmp_path):
@@ -298,8 +314,10 @@ def test_materialization_does_not_survive_failed_integration(fleet, tmp_path):
     consumer = unit(other, "c", prerequisites=[{"task_id": "a", "output_id": "source", "version": 1}, dependency("b")])
     planning.apply(store, plan(fleet, [producer, integration, consumer]))
     first = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, first)
     finish(store, first)
     second = units.assign(store, "b", 1, "eng-002")["run_id"]
+    bind(store, second)
     units.materialize(store, "c", second, "a", "source")
     units.stop(store, second, "failed")
     assert statuses(store)["c"]["status"] == "blocked"
@@ -310,6 +328,7 @@ def test_plan_revision_cannot_replace_active_assignment(fleet):
     body = plan(fleet)
     planning.apply(store, body)
     run = units.assign(store, "implement", 1, "eng-001")["run_id"]
+    bind(store, run)
     revised = copy.deepcopy(body)
     revised["expected_revision"] = 1
     revised["tasks"][0]["expected_revision"] = 1
@@ -327,8 +346,10 @@ def test_completed_contract_needs_new_versions_and_live_consumers_stop_first(fle
     body = plan(fleet, [unit(repo, "a"), unit(other, "b", prerequisites=[dependency("a")])])
     planning.apply(store, body)
     run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run)
     finish(store, run)
     consumer = units.assign(store, "b", 1, "eng-002")["run_id"]
+    bind(store, consumer)
     revised = copy.deepcopy(body)
     revised["expected_revision"] = 1
     for item in revised["tasks"]:
@@ -349,6 +370,7 @@ def test_leases_survive_restart_without_automatic_expiry(fleet):
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet))
     run = units.assign(store, "implement", 1, "eng-001")["run_id"]
+    bind(store, run)
     with ContinuityStore(store.root) as other:
         assert statuses(other)["implement"]["status"] == "blocked"
         units.stop(other, run)
@@ -376,21 +398,13 @@ def test_simultaneous_prefix_reservations_have_exactly_one_owner(fleet, tmp_path
     assert store.db.execute("SELECT count(*) FROM leases").fetchone()[0] == 1
 
 
-def test_legacy_assignment_cannot_enter_a_planned_worktree(fleet):
-    store, repo = fleet[:2]
-    planning.apply(store, plan(fleet))
-    units.assign(store, "implement", 1, "eng-001")
-    with pytest.raises(Conflict, match="owned by an active planned"):
-        with store.transaction() as tx:
-            tx.start_run("T0", 1, "eng-002")
-
 
 def test_failing_acceptance_retains_run_and_cannot_publish_outputs(fleet):
     store, repo = fleet[:2]
     task = unit(repo, "a")
-    task["checks"]["unit"]["argv"][-1] = "raise SystemExit(2)"
     planning.apply(store, plan(fleet, [task]))
     run = units.assign(store, "a", 1, "eng-001")["run_id"]
+    bind(store, run, recipes={"unit": definition("raise SystemExit(2)")})
     with pytest.raises(Conflict, match="receipt_not_reusable"):
         finish(store, run)
     assert store.db.execute("SELECT ended_at FROM runs WHERE run_id=?", (run,)).fetchone()[0] is None
@@ -408,6 +422,7 @@ def test_plan_execution_cli_round_trip(fleet, tmp_path, run_hx):
     command("apply", "--file", str(source))
     assert command("ready", "continuation")["units"][0]["status"] == "ready"
     run = command("assign", "implement", "--revision", "1", "--worker", "eng-001")["run_id"]
+    bind(store, run)
     worker = {"HARNESS_ID": "eng-001"}
     checked = run_hx("check", "unit", "--run", run, "--root", str(store.root), env_extra=worker)
     assert checked.returncode == 0, checked.stderr
@@ -416,7 +431,7 @@ def test_plan_execution_cli_round_trip(fleet, tmp_path, run_hx):
     wrong = run_hx("plan", "finish", run, "--file", str(receipts), "--root", str(store.root), env_extra={"HARNESS_ID": "eng-002"})
     assert wrong.returncode != 0 and "only its own assignment" in wrong.stderr
     command("finish", run, "--file", str(receipts), env_extra=worker)
-    assert command("ready", "continuation")["units"][0]["status"] == "completed"
+    assert command("ready", "continuation")["units"][0]["status"] == "deployable"
 
 
 def test_completion_refreshes_changed_paths_and_replays_after_derived_failure(fleet,monkeypatch):
@@ -424,6 +439,7 @@ def test_completion_refreshes_changed_paths_and_replays_after_derived_failure(fl
     store,repo=fleet[:2]
     planning.apply(store,plan(fleet,[source_unit(repo,'producer')]))
     run=units.assign(store,'producer',1,'eng-001')['run_id']
+    bind(store, run)
     (repo/'feature.py').write_text('def fresh_feature():\n return 42\n')
     commit(repo)
     original=code_freshness.refresh_completion
@@ -435,3 +451,26 @@ def test_completion_refreshes_changed_paths_and_replays_after_derived_failure(fl
     monkeypatch.setattr(code_freshness,'refresh_completion',original)
     assert units.complete(store,run,accepted['checks'])==accepted
     assert code_index.symbols_for(store.root,'fresh_feature')[0]['signature']=='def fresh_feature()'
+
+
+def test_read_only_packet_admission_requires_current_repository_graph(fleet):
+    store, repo = fleet[:2]
+    planning.apply(store, plan(fleet, [unit(repo, paths=[])]))
+    assert statuses(store)["implement"]["status"] == "ready"
+    (repo / "compiler.py").write_text("def changed_before_discovery(): pass\n")
+    assert statuses(store)["implement"]["status"] == "blocked"
+    with pytest.raises(Conflict, match="stale code scope"):
+        units.assign(store, "implement", 1, "eng-001")
+    assert not store.db.execute("SELECT 1 FROM unit_runs").fetchone()
+
+
+def test_plan_assignment_rejects_task_without_current_packet_contract(fleet):
+    store, repo = fleet[:2]
+    with store.transaction() as tx:
+        tx.put_task("unplanned", {"goal": "Cannot bypass the packet contract.",
+                    "plan_id": "continuation", "workdir": str(repo)}, expected_revision=0)
+    with pytest.raises(ValidationError, match="unknown planned unit"):
+        units.assign(store, "unplanned", 1, "eng-001")
+    with pytest.raises(ValidationError, match="current dependency packet"):
+        with store.transaction() as tx:
+            tx.start_run("unplanned", 1, "eng-001")

@@ -11,8 +11,7 @@ indexed source refresh, and invalidation of declared map consumers are implement
 Assignment briefs include bounded neighboring contracts/consumers, checks, and current
 write owners; planned assignments acquire repository-wide leases. Completion can
 publish source-bound findings and retrieval terms through the coordinated export
-journal. Legacy state consumers and some projections still need to migrate to the same
-authority. See [system design](system-design.md) for how map state flows through the
+journal. The ledger is authoritative for assignment and projection state. See [system design](system-design.md) for how map state flows through the
 runtime.
 
 ## Repository format
@@ -52,7 +51,7 @@ unfamiliar values. Unfamiliar structural types require a schema migration.
 | `component` | `responsibility` |
 | `interface` | `contract` as a signature string or schema object; string array `invariants` |
 | `file` | Repository-relative `path` |
-| `check` | `recipe` using the [check contract](continuity-runtime.md#check-receipts), with the record's ID |
+| `check` | `recipe` using the [check contract](../CONTRACTS.md#scoped-check-execution-artifacts), with the record's ID |
 | `resource` | `responsibility`, `resource_type` |
 
 An anchor contains `path`, `symbol` (qualified name or null), and `sha256`. Optional

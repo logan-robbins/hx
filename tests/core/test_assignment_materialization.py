@@ -2,10 +2,11 @@
 
 import json
 
-from hx import assignment_materialization, planning, repo_service
+from hx import assignment_materialization, planning, repo_service, unit_execution
 from .test_appmap import git, mapped
 from .test_map_updates import active
-from .test_planning import plan
+from .test_planning import plan, bind
+from .test_checks import definition
 from .test_unit_execution import fleet, source_unit, commit
 
 
@@ -15,9 +16,12 @@ def setup(fleet, *, complete=True):
         (repo / name).write_text('value = 1\n')
     commit(repo)
     unit = source_unit(repo, 'feature', 'feature.py')
-    if complete:
-        unit['checks']['unit']['source'] = {'complete': True, 'inputs': ['feature.py'], 'dependencies': ['dependency.py']}
     planning.apply(store, plan(fleet, [unit]))
+    if complete:
+        run = unit_execution.assign(store, 'feature', 1, 'eng-001')['run_id']
+        recipe = definition()
+        recipe['source'] = {'complete': True, 'inputs': ['feature.py'], 'dependencies': ['dependency.py']}
+        bind(store, run, recipes={'unit': recipe})
     return store, repo
 
 
@@ -43,4 +47,4 @@ def test_assignment_cli_and_missing_closure_remain_explicit(fleet, tmp_path, cap
     assert repo_service.main(['assignment', 'feature', '--out', str(out)], store.root) == 0
     answer = json.loads(capsys.readouterr().out)
     assert not answer['assignment']['closure_complete']
-    assert 'unknown source closure' in answer['assignment']['gaps'][0]
+    assert 'worker checks are not bound' in answer['assignment']['gaps'][0]

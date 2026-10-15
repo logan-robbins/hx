@@ -290,3 +290,9 @@ def test_the_skeleton_harness_files_validate():
     worker = skeleton_dir() / "templates" / "worker" / "harness.json"
     if worker.exists():
         assert "workdir" in worker.read_text()
+
+
+@pytest.mark.parametrize('field',['memory_episode_chars','memory_half_life_h','memory_inject_k'])
+def test_episode_configuration_is_not_a_runtime_option(field):
+    with pytest.raises(ValidationError,match='unknown.*companion'):
+        validate_harness({**WORKER,'companion':{field:1}},'config/eng-001/harness.json',dir_name='eng-001')

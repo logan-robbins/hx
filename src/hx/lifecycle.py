@@ -1,30 +1,18 @@
-"""`hx launch`, `hx restart`, `hx up`, `hx heartbeat` — keeping the fleet alive (spec 08, 12).
-
-`hx launch` is idempotent, because `hx up` runs it for every id and the Partner runs it for
-an id that may already be running. `hx restart` is the fallback seam: relaunch bare and send
-the pointer once the pane is ready. `hx heartbeat` is the human's own cron, if they want one,
-and is the only thing outside Claude Code that watches the fleet (17.2: hx ships no units).
-"""
-
+"""Partner bootstrap and ledger-owned worker lifecycle reconciliation."""
 from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
-import sys
 from pathlib import Path
 
-from . import board, compose, flush as flush_mod, goal, store, timestamps, tmux, wake
+from . import timestamps, tmux
 from .caller import require_partner_caller
-from .config_harness import flavor_of, load_harness, resolve_workdir
+from .config_harness import flavor_of
+from .continuity_store import Conflict, ContinuityStore, canonical
 from .errors import HxError, NotFound
-from .ids import ID_RE, PARTNER, sort_key
-from .workitems import find_work_item, load_template, render, work_item_path
+from .ids import PARTNER
 
-HEARTBEAT_BOARD = "run/heartbeat-board.txt"
-
-#: The UI runs in its own tmux session, like everything else hx starts (spec 16.1, 17.2).
 UI_SESSION = "ui"
 
 
@@ -40,50 +28,6 @@ def adapter(root: Path, name: str, item_id: str | None = None, *, flavor: str | 
     if not path.is_file():
         raise NotFound(f"{path}: missing; `hx install` copies the adapters from the package (spec 17.2)")
     return path
-
-
-def config_ids(root: Path) -> list[str]:
-    directory = root / "config"
-    if not directory.is_dir():
-        return []
-    return sorted(
-        (e.name for e in directory.iterdir() if e.is_dir() and ID_RE.match(e.name)), key=sort_key
-    )
-
-
-def ensure_work_item(root: Path, item_id: str) -> Path | None:
-    """`hx launch` creates the `-idle` work item when there is none — not for the Partner,
-    which has none at all (spec 08, spec 14 D25)."""
-    if item_id == PARTNER:
-        return None
-    existing = find_work_item(root, item_id)
-    if existing is not None:
-        return existing
-    harness = root / "config" / item_id / "harness.json"
-    if not harness.is_file():
-        raise NotFound(f"{harness}: no config for {item_id}; every id has a config/<id>/ (spec 03)")
-    pod = load_harness(harness, check_cross_file=False).pod
-    path = work_item_path(root, pod, item_id, "idle")
-    store.atomic_write_text(
-        path, render(load_template(root), item_id=item_id, pod=pod, dispatched="", goal="")
-    )
-    return path
-
-
-def ensure_workdir(root: Path, item_id: str) -> Path | None:
-    """The directory `start.sh` runs in: `harness.json.workdir`, whatever the Partner chose.
-
-    hx creates no repository and no branch for it (17.2); it creates the directory if it is
-    not there, so a launch is possible, and nothing else. The Partner runs in HARNESS_ROOT.
-    """
-    if item_id == PARTNER:
-        return None
-    config = load_harness(root / "config" / item_id / "harness.json", check_cross_file=False)
-    if not config.workdir:
-        return None
-    workdir = resolve_workdir(config.workdir, root)
-    workdir.mkdir(parents=True, exist_ok=True)
-    return workdir
 
 
 def run_adapter(
@@ -113,65 +57,10 @@ def run_adapter(
     )
 
 
-#: Kept for callers written before the runner took extra arguments.
-_run_adapter = run_adapter
-
-
 def prepare_persona(root: Path, item_id: str, *, env=None) -> dict:
-    """Move the instance onto the current persona layout (`hx.persona.migrate_layout`) and a
-    pre-redesign `config/<id>/AGENTS.md` into its sources (`hx.persona.migrate`), remove the
-    `run/<id>/persona.md` an older hx rendered, and build what the `context` hook will print
-    (`hx.persona.boundary`), so a missing source fails the launch, not the first boundary."""
+    """Validate the configured Partner prompt sources before bootstrap."""
     from . import persona as persona_mod
-
-    for migrated in [*persona_mod.migrate_layout(root, env=env), persona_mod.migrate(root, item_id, env=env)]:
-        if migrated is not None:
-            print(f"hx: {persona_mod.describe_migration(migrated)}", file=sys.stderr)
-    (root / "run" / item_id / "persona.md").unlink(missing_ok=True)
     return persona_mod.boundary(root, item_id, env=env)
-
-
-def launch(root: Path, item_id: str, *, companion: bool = True, env=None) -> dict:
-    """Idempotent: a live session is left alone, but a `working` item still gets its goal.
-
-    `companion=False` launches the agent without its Companion window, for a caller that
-    starts `hx companion <id>` itself — which is what the suites do, so a test that is not
-    about the Companion does not run one.
-    """
-    require_partner_caller("launch", env)
-    _guard_planned(root, item_id)
-    from . import claude_bin, envfile
-
-    envfile.sync_seed(root)
-    # Every launch boundary re-records the version the pinned binary reports now, so the
-    # fleet runs the latest release from here and `hx doctor` has the current record.
-    claude_bin.refresh_pin(root, env)
-    path = ensure_work_item(root, item_id)
-    ensure_workdir(root, item_id)
-    prepare_persona(root, item_id, env=env)
-
-    already = tmux.has_session(item_id, env)
-    result = {"id": item_id, "session": "existing" if already else "started", "goal": None}
-    no_companion = not companion or _companion_disabled(root, item_id)
-    if not already:
-        install_extra = (
-            ["--no-companion"]
-            if no_companion and flavor_of(root, item_id) == "meta"
-            else None
-        )
-        installed = _run_adapter(root, "install.sh", item_id, env, extra=install_extra)
-        if installed.returncode != 0:
-            raise HxError(f"launch {item_id}: install.sh failed:\n{installed.stdout}{installed.stderr}")
-        started = _run_adapter(root, "start.sh", item_id, env)
-        if started.returncode != 0:
-            raise HxError(f"launch {item_id}: start.sh failed:\n{started.stdout}{started.stderr}")
-
-    if not already and not no_companion:
-        start_companion(root, item_id, env=env)
-
-    if path is not None and path.name.endswith("-working.md"):
-        result["goal"] = goal.send_goal(root, item_id, wait=True, env=env)
-    return result
 
 
 def ui_url(root: Path) -> str:
@@ -206,273 +95,116 @@ def start_ui(root: Path, *, env=None) -> bool:
     for key, value in (os.environ if env is None else env).items():
         if key.startswith("HX_"):
             session_env += ["-e", f"{key}={value}"]
-    subprocess.run(
+    started = subprocess.run(
         [
             *tmux.tmux_command(env), "new-session", "-d", "-s", UI_SESSION,
             "-c", str(root), *session_env, str(hx_bin), "ui",
         ],
         capture_output=True, text=True, check=False,
     )
+    if started.returncode:
+        raise HxError(f"could not start UI session: {started.stderr.strip()}")
     return True
 
 
-def _companion_disabled(root: Path, item_id: str) -> bool:
-    """Best-effort read of `companion.disabled`. Unknown means enabled, as today."""
-    from . import companion as companion_mod
-
-    return companion_mod.is_disabled(root, item_id)
-
-
-def start_companion(root: Path, item_id: str, *, env=None) -> bool:
-    """The Companion's own Claude Code session in window `companion` (spec 10).
-
-    `start.sh <id> --companion` launches it, exactly as it launches the agent: there is no
-    headless path (spec 02 "Model calls").
-    """
-    from . import companion as companion_mod
-
-    try:
-        return companion_mod.launch(root, item_id, env=env)
-    except (HxError, NotFound) as exc:
-        # The agent still launches — an instance whose companion prompts are missing is
-        # usable — but a Companion that silently fails to start is exactly the kind of thing
-        # that should be visible, so it is logged and printed.
-        from .hooks import log_error
-
-        log_error(root, item_id, "companion", f"could not start the Companion: {exc}")
-        print(f"hx: launch {item_id}: the Companion did not start: {exc}", file=sys.stderr)
-        return False
-
-
-def restart(root: Path, item_id: str, *, env=None) -> dict:
-    """The fallback seam (spec 08, 02): flush, compose, relaunch bare, then the pointer."""
-    require_partner_caller("restart", env)
-    _guard_planned(root, item_id)
-    from . import claude_bin
-
-    # A restart is a launch boundary too: re-record the version the binary reports now.
+def launch(root: Path, item_id: str, *, run_id: str | None = None,
+           request_id: str | None = None, env=None) -> dict:
+    """Start the Partner, or advance this worker's explicitly admitted run."""
+    require_partner_caller("launch", env)
+    if item_id != PARTNER:
+        if not run_id or not request_id:
+            raise Conflict("worker launch requires --run RUN and --request REQUEST from hx plan assign")
+        from .native_controller import advance
+        with ContinuityStore(root) as ledger:
+            return advance(ledger, item_id, run_id, request_id, env=env)
+    if run_id or request_id:
+        raise Conflict("the Partner orchestrates plans and cannot own a worker run")
+    from . import claude_bin, envfile
+    envfile.sync_seed(root)
     claude_bin.refresh_pin(root, env)
-    path = find_work_item(root, item_id)
-    prepare_persona(root, item_id, env=env)
-
-    flush_mod.flush(root, item_id, env=env)
-    compose.compose(root, item_id, f"{item_id}-main", env=env)
-
-    # `start.sh` respawns window `main` with `-k`, which is spec 08's "kill window main".
-    started = _run_adapter(root, "start.sh", item_id, env)
-    if started.returncode != 0:
-        raise HxError(f"restart {item_id}: start.sh failed:\n{started.stdout}{started.stderr}")
-
-    sent = None
-    if path is not None and path.name.endswith("-working.md"):
-        sent = goal.send_goal(root, item_id, wait=True, env=env)
-    return {"id": item_id, "goal": sent}
+    prepare_persona(root, PARTNER, env=env)
+    already = tmux.has_session(PARTNER, env)
+    if not already:
+        for adapter_name in ("install.sh", "start.sh"):
+            result = run_adapter(root, adapter_name, PARTNER, env)
+            if result.returncode:
+                raise HxError(f"launch partner: {adapter_name} failed:\n{result.stdout}{result.stderr}")
+    return {"id": PARTNER, "session": "existing" if already else "started"}
 
 
-def up(root: Path, *, env=None) -> list[dict]:
-    """Boot: `hx launch` for every `config/<id>/`, `partner` first, and the UI (spec 08, 17.4)."""
-    launched = [launch(root, item_id, env=env) for item_id in config_ids(root)]
-    start_ui(root, env=env)
-    return launched
+def _recover(root: Path, *, env=None) -> dict:
+    """Recover root services and existing launch intents, never unlaunched reservations."""
+    from . import application_loop
+    # Recover worker control even when a Partner/UI bootstrap later reports an
+    # unrelated configuration error.
+    service = application_loop.ensure(root, env=env)
+    partner = None
+    if (root / "config" / PARTNER).is_dir():
+        partner = ({"id": PARTNER, "session": "existing"} if tmux.has_session(PARTNER, env)
+                   else launch(root, PARTNER, env=env))
+    ui_started = start_ui(root, env=env)
+    # The resident loop owns native progression. Kernel identity plus its root
+    # lock prevents heartbeat from starting a second controller after a crash.
+    with ContinuityStore(root) as ledger:
+        snapshot = application_loop.status(ledger)
+    return {"partner": partner, "ui_started": ui_started, "service": service, "status": snapshot}
 
 
-def goal_was_lost(root: Path, item_id: str, *, env=None) -> bool:
-    """A `working` agent that is alive, idle, and has not completed (build-8 item 12).
-
-    Seen live 2026-09-20: a `/goal` evaluator can clear itself, and the agent then sits at
-    its prompt with nothing to do and no way to say so. The board shows exactly this — a
-    live session on a `working` item — so the heartbeat re-sends the pointer. It is
-    idempotent for an agent that is merely between turns: the pointer is the same one it
-    already has.
-    """
-    from .tasks import load_tasks
-
-    pane = goal.capture_pane(item_id, env)
-    if (pane is None or board.pane_awaits_input(pane.splitlines())
-            or not goal.pane_is_idle(pane)):
-        return False
-    task = load_tasks(root).get(item_id) or {}
-    path = find_work_item(root, item_id)
-    if not task.get("goal") or path is None or not path.name.endswith("-working.md"):
-        return False
-    if goal.task_completed(root, item_id):
-        return False
-    try:
-        if any(g["status"] != "complete" for g in goal.native_goals(root, item_id)):
-            return False
-        goal.check_background_tasks(root, item_id)
-    except (HxError, OSError, ValueError):
-        # Unreadable native/handle state is not permission to disturb a live session.
-        return False
-    return True
-
-
-HEARTBEAT_LEARNINGS = "run/heartbeat-learnings.txt"
+def up(root: Path, *, env=None) -> dict:
+    require_partner_caller("up", env)
+    return _recover(root, env=env)
 
 
 def heartbeat(root: Path, *, env=None, require_go: bool = False) -> dict:
-    """The human's own cron, if they want one (spec 08, 12 step 4, 17.2).
-
-    With `require_go` (a fleet's cron, docs/multi-instance.md §3) an instance whose
-    `PARTNER.md` carries no `GO <date>` line is left exactly as it is: nothing launched,
-    nothing restarted, nobody woken — a deliberately stopped instance stays stopped.
-    """
+    """Recover the root loop; durable outbox events report meaningful changes."""
+    require_partner_caller("heartbeat", env)
     from . import learn
-
     if require_go and learn.go_line(root) is None:
-        return {"gated": True, "restarted": [], "regoaled": [], "partner_launched": False,
-                "ui_started": False, "changed": False, "woke_partner": None,
-                "learnings_pending": learn.summary(root, env)["pending"], "ts": timestamps.now()}
-    view = board.collect(root, env=env)
-
-    # The Partner is not a board item, so it is checked on its own (spec 08, build-8 item 9).
-    partner_launched = False
-    if not tmux.has_session(PARTNER, env) and (root / "config" / PARTNER).is_dir():
-        launch(root, PARTNER, env=env)
-        partner_launched = True
-
-    ui_started = start_ui(root, env=env)
-
-    restarted = []
-    regoaled = []
-    for item in view["items"]:
-        if item["state"] != "working":
-            continue
-        if not item["session_alive"]:
-            restart(root, item["id"], env=env)
-            restarted.append(item["id"])
-        elif goal_was_lost(root, item["id"], env=env):
-            goal.send_goal(root, item["id"], env=env)
-            regoaled.append(item["id"])
-
-    after = board.collect(root, env=env) if (restarted or regoaled) else view
-    text = board.render_text(after)
-
-    previous_path = root / HEARTBEAT_BOARD
-    previous = previous_path.read_text() if previous_path.is_file() else None
-    store.atomic_write_text(previous_path, text + "\n")
-
-    active = any(item["state"] == "working" for item in after["items"])
-    changed = previous is not None and previous.strip() != text.strip()
-
-    # Proposed learnings are the Partner's worklist too: it is told once per new batch,
-    # the same way it is told once per board change (never nagged on every tick).
-    pending_ids = sorted(proposal["id"] for proposal in learn.list_proposals(learn.learnings_path(root, env)))
-    pending_path = root / HEARTBEAT_LEARNINGS
-    pending_before = pending_path.read_text().split() if pending_path.is_file() else None
-    store.atomic_write_text(pending_path, "\n".join(pending_ids) + "\n")
-    new_proposals = pending_before is not None and pending_ids and pending_ids != pending_before
-
-    woke = None
-    if active and changed:
-        message = f"check on each HarnessAgent: {_diff(previous, text)}"
-        if pending_ids:
-            message += f"; learnings pending: {len(pending_ids)} (hx learn pending)"
-        woke = wake.wake_partner_status(root, message)
-    elif new_proposals:
-        woke = wake.wake_partner_status(root, f"learnings pending: {len(pending_ids)} (hx learn pending)")
-
-    return {
-        "gated": False,
-        "restarted": restarted,
-        "regoaled": regoaled,
-        "partner_launched": partner_launched,
-        "ui_started": ui_started,
-        "changed": changed,
-        "woke_partner": woke,
-        "learnings_pending": len(pending_ids),
-        "ts": timestamps.now(),
-    }
-
-
-def _diff(previous: str | None, current: str) -> str:
-    """A one-line summary of what moved on the board, for the wake text (spec 08)."""
-    before = set((previous or "").strip().split("\n"))
-    after = set(current.strip().split("\n"))
-    gained = sorted(line for line in after - before if line.strip())
-    lost = sorted(line for line in before - after if line.strip())
-    parts = [f"+ {line}" for line in gained] + [f"- {line}" for line in lost]
-    return "; ".join(parts) if parts else "no change"
-
-
-def _guard_planned(root, item_id):
-    if not (root / "state" / "continuity.sqlite").is_file():
-        return
-    from .continuity_store import Conflict, ContinuityStore
-    with ContinuityStore(root) as ledger:
-        if ledger.db.execute("SELECT 1 FROM runs JOIN unit_runs USING(run_id) WHERE worker_id=? AND ended_at IS NULL", (item_id,)).fetchone():
-            raise Conflict("planned worker requires hx launch --run RUN --request REQUEST; legacy launch/restart cannot replace it")
+        return {"gated": True, "ts": timestamps.now()}
+    return {"gated": False, **_recover(root, env=env), "ts": timestamps.now()}
 
 
 def main_launch(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx launch", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx launch")
     parser.add_argument("id")
-    parser.add_argument("--no-companion", action="store_true",
-                        help="launch the agent without its Companion window")
-    parser.add_argument("--run", help="start the worker's reserved planned run")
-    parser.add_argument("--request", help="stable native launch request; reuse it when checking progress")
-    stopping = parser.add_mutually_exclusive_group()
-    stopping.add_argument("--drain", action="store_true", help="close planned request/tool admission and retain execution leases")
-    stopping.add_argument("--shutdown", action="store_true", help="advance owned-process termination; retain unreconciled leases")
+    parser.add_argument("--run", help="worker run reserved by hx plan assign")
+    parser.add_argument("--request", help="stable launch request; reuse it to reconcile progress")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--drain", action="store_true", help="close request/tool admission while retaining execution leases")
+    action.add_argument("--shutdown", action="store_true", help="advance owned-process termination")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.run or args.request or args.drain or args.shutdown:
-        if not (args.run and args.request):
-            parser.error("planned launch requires --run and --request together")
-        from .continuity_store import ContinuityStore, canonical
-        from .native_controller import advance, drain
+    require_partner_caller("launch", env)
+    if args.id != PARTNER and not (args.run and args.request):
+        parser.error("worker launch requires --run RUN and --request REQUEST from hx plan assign")
+    if (args.run is None) != (args.request is None):
+        parser.error("--run and --request are required together")
+    if args.drain or args.shutdown:
+        if args.id == PARTNER or not args.run:
+            parser.error("drain/shutdown requires a worker run and its original request")
+        from .native_controller import drain
         from .native_shutdown import advance as shutdown
         with ContinuityStore(root) as ledger:
-            action = shutdown if args.shutdown else drain if args.drain else advance
-            print(canonical(action(ledger, args.id, args.run, args.request, env=env)))
-        return 0
-    result = launch(root, args.id, companion=not args.no_companion, env=env)
-    print(f"HX-LAUNCH {result['id']} {result['session']} goal={result['goal'] or 'none'}")
-    return 0
-
-
-def main_restart(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx restart", add_help=True)
-    parser.add_argument("id")
-    parser.add_argument("--root", help=argparse.SUPPRESS)
-    args = parser.parse_args(argv)
-    result = restart(root, args.id, env=env)
-    print(f"HX-RESTART {result['id']} goal={result['goal'] or 'none'}")
+            result = (shutdown if args.shutdown else drain)(ledger, args.id, args.run, args.request, env=env)
+    else:
+        result = launch(root, args.id, run_id=args.run, request_id=args.request, env=env)
+    print(canonical(result))
     return 0
 
 
 def main_up(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx up", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx up")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     parser.parse_args(argv)
-    for result in up(root, env=env):
-        print(f"HX-LAUNCH {result['id']} {result['session']} goal={result['goal'] or 'none'}")
+    print(canonical(up(root, env=env)))
     print(f"HX-UI {ui_url(root)}")
     return 0
 
 
 def main_heartbeat(argv: list[str], root: Path, *, env=None) -> int:
-    parser = argparse.ArgumentParser(prog="hx heartbeat", add_help=True)
+    parser = argparse.ArgumentParser(prog="hx heartbeat")
     parser.add_argument("--root", help=argparse.SUPPRESS)
-    parser.add_argument("--require-go", action="store_true",
-                        help="do nothing unless PARTNER.md carries a `GO <date>` line (a fleet's cron)")
+    parser.add_argument("--require-go", action="store_true", help="recover only when PARTNER.md carries a GO line")
     args = parser.parse_args(argv)
-    result = heartbeat(root, env=env, require_go=args.require_go)
-    if result["gated"]:
-        print(f"HX-HEARTBEAT gated=no-GO-line partner=untouched learnings_pending={result['learnings_pending']}")
-        return 0
-    if result["woke_partner"] not in (None, wake.ACCEPTED):
-        # A warning: the next heartbeat compares against the same board and tries again.
-        print(
-            f"hx: heartbeat: the Partner was not woken ({result['woke_partner']})",
-            file=sys.stderr,
-        )
-    print(
-        f"HX-HEARTBEAT restarted={','.join(result['restarted']) or 'none'} "
-        f"regoaled={','.join(result['regoaled']) or 'none'} "
-        f"partner={'launched' if result['partner_launched'] else 'alive'} "
-        f"ui={'started' if result['ui_started'] else 'alive'} "
-        f"changed={str(result['changed']).lower()} woke={result['woke_partner'] or 'not-needed'} "
-        f"learnings_pending={result['learnings_pending']}"
-    )
+    print(canonical(heartbeat(root, env=env, require_go=args.require_go)))
     return 0

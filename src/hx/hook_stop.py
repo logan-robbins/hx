@@ -1,20 +1,8 @@
-"""The `stop` hook: `Stop`, main thread (spec 09.1, 09.3).
+"""Partner turn boundaries and orchestration-companion results.
 
-Two jobs at every turn boundary, in this order:
-
-  1. record the turn and its `background_tasks` in `run/<id>/turn`, and wake the Companion
-     when a batch of records is owed to it
-  2. take a seam if one is pending — `hx seam` reads the marker this hook just wrote, so the
-     `background_tasks` it gates on are this turn's
-
-It returns no decision output: `/goal` owns whether the agent keeps working (spec 09.1).
-The v1 cut (spec 14 D25) removed `goal-pending` delivery: it existed only for the Partner
-dispatching itself, and the Partner has no work item and no goal.
-
-The turn-end wake is batch-gated, not forced: waking the Companion past a `/clear` and a
-full re-read on every turn is how the continuity machinery eats the context budget it
-exists to protect. Forced wakes belong to deliberate acts — `hx flush`, `hx seam`'s
-readiness signal, and the Companion's own `stop` hook installing a pass.
+The Partner's stop hook records background work, signals an owed companion pass,
+and takes a pending reset when its conversation is quiet. Native worker stops
+are captured and reconciled through their admitted run instead.
 """
 
 from __future__ import annotations
@@ -41,6 +29,8 @@ def background_tasks(payload: dict) -> list:
 
 
 def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
+    from .companion import require_partner
+    require_partner(item_id)
     tasks = background_tasks(payload)
     store.atomic_write_json(turn_marker(root, item_id), {
         "ts": timestamps.now(),
@@ -75,6 +65,7 @@ def companion_handle(payload: dict, item_id: str, root: Path, *, env=None) -> tu
     retry is owed — wake the Companion again.
     """
     from . import companion as companion_mod
+    companion_mod.require_partner(item_id)
 
     installed = []
     for stream in companion_mod.open_streams(root, item_id):

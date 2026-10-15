@@ -48,7 +48,7 @@ def test_the_instance_gitignore_keeps_runtime_state_out_of_git(tmp_path):
     root = tmp_path / "instance"
     install_skeleton(root)
     ignored = (root / ".gitignore").read_text()
-    for entry in ("pods/", "logs/", "state/", "run/", "tasks.json"):
+    for entry in ("logs/", "state/", "run/"):
         assert entry in ignored
 
 
@@ -77,7 +77,7 @@ def test_missing_gtm_files_are_reported_not_fatal(tmp_path, monkeypatch):
     root = tmp_path / "instance"
     result = install_skeleton(root)
     assert "config/CLAUDE.md" in result["missing"]
-    assert "templates/work-item.md" in result["missing"]
+    assert "templates/worker/harness.json" in result["missing"]
     assert "config/models.json" not in result["missing"]
     assert set(result["missing"]) <= set(EXPECTED_SKELETON_FILES)
 

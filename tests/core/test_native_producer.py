@@ -28,6 +28,14 @@ def unavailable(*args, **kwargs):
     raise OSError("capture temporarily unavailable")
 
 
+def test_worker_refuses_partner_file_digest_event(ledger):
+    store, run = ledger
+    with pytest.raises(ValidationError, match='Partner'):
+        relay.hook(store, run_id=run, worker_id='eng-001', adapter='claude', launch_id='launch',
+                   event='subagent-result', payload={})
+    assert queued(store) == 0
+
+
 def test_pi_completed_messages_retry_public_data_and_retain_child_identity(ledger, monkeypatch):
     store, run = ledger
     payload = {"type": "message_end", "agent_id": "child", "message": {"role": "assistant",
@@ -317,11 +325,9 @@ def test_concurrent_hook_retries_capture_once(ledger):
     assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
-def test_schema_ten_upgrade_installs_empty_producer_state(tmp_path):
+def test_current_schema_reopen_retains_empty_producer_state(tmp_path):
     with ContinuityStore(tmp_path) as store:
-        store.db.execute("DROP TABLE native_producer_queue")
-        store.db.execute("DROP TABLE native_capture_gaps")
-        store.db.execute("PRAGMA user_version=10")
+        assert queued(store) == 0
     with ContinuityStore(tmp_path) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert queued(upgraded) == 0

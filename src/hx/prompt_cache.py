@@ -137,7 +137,7 @@ def _last_seam_ts(root, item_id: str) -> str | None:
     return last
 
 
-def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dict:
+def _partner_report(root, item_id: str, *, now: str | None = None, env=None) -> dict:
     """One agent's invariant prefix against its model's budget, and its last seam's cache age."""
     from pathlib import Path
 
@@ -222,6 +222,120 @@ def agent_report(root, item_id: str, *, now: str | None = None, env=None) -> dic
     }
 
 
+def _frozen_json(path, *, expected_hash=None, limit=65536):
+    """Read a retained runtime input, never rebuild it from current instructions."""
+    import hashlib
+    from pathlib import Path
+    with Path(path).open('rb') as source:
+        data=source.read(limit+1)
+    if len(data)>limit:
+        raise ValidationError('frozen cache report input exceeds its bound')
+    if expected_hash and hashlib.sha256(data).hexdigest()!=expected_hash:
+        raise ValidationError('frozen native configuration was altered')
+    return json.loads(data)
+
+
+def _worker_report(root, item_id, *, env=None):
+    import hashlib
+    from pathlib import Path
+    from .board import ledger_reader, rows
+    from .continuity_store import digest
+    from .config_models import load_models
+    from .config_harness import load_harness
+
+    result={'id':item_id,'kind':'packet','status':'unassigned','run':None,'launch':None,
+            'invariant':{'prefix_bytes':None,'native_tool_schemas':UNMEASURED,'host_context':UNMEASURED},
+            'budget':{'model':None,'invariant_ceiling_tokens':None,'working_room_tokens':None,
+                      'within':None,'share':None},'checkpoint':None,'tools':None,
+            'context_usage':UNMEASURED,'provider_usage':[],
+            'cache':{'state':UNMEASURED,'note':'Provider cache residency is not inferred from checkpoint or file timestamps.'}}
+    with ledger_reader(root) as db:
+        if db is None:
+            return result
+        selected=rows(db,'''SELECT r.run_id,r.task_id,r.task_revision,r.phase,r.ended_at,
+            l.launch_id,l.status AS native_status,l.payload
+            FROM runs r JOIN unit_runs u USING(run_id)
+            JOIN tasks t ON t.task_id=r.task_id AND t.revision=r.task_revision
+            LEFT JOIN native_launches l USING(run_id)
+            WHERE r.worker_id=? AND json_extract(t.payload,'$.dependency_packet')=1
+            ORDER BY r.ended_at IS NOT NULL,r.started_at DESC,l.rowid DESC LIMIT 1''',(item_id,))
+        if not selected:
+            return result
+        row=selected[0]
+        result['run']={key:row[key] for key in ('run_id','task_id','task_revision','phase','ended_at')}
+        if row['launch_id'] is None:
+            result['status']='awaiting_launch'
+            return result
+        payload=row['payload']
+        result['status']=row['native_status']
+        result['launch']={key:row[key] for key in ('launch_id','native_status')}
+        result['launch'].update(prompt_version=payload['prompt_version'],
+            instruction_delivery=payload.get('instruction_delivery'),
+            initial_input_limit=payload.get('initial_input_limit'),
+            charged_initial_tokens=payload.get('charged_initial_tokens'),
+            accounting='conservative utf8-byte charge; not provider token usage')
+        checkpoint=db.execute('''SELECT c.checkpoint_id,c.packet_hash,c.task_revision,c.acknowledged,c.payload,a.size
+            FROM checkpoints c JOIN artifacts a ON a.hash=c.packet_hash
+            WHERE c.checkpoint_id=? AND c.run_id=?''',(payload.get('checkpoint_id'),row['run_id'])).fetchone()
+        if checkpoint:
+            metadata=json.loads(checkpoint['payload'])
+            result['checkpoint']={key:checkpoint[key] for key in ('checkpoint_id','packet_hash','task_revision','acknowledged','size')}
+            result['checkpoint'].update(charged_tokens=metadata['charged_tokens'],tokenizer=metadata['tokenizer'])
+        usage=rows(db,'''SELECT binding_id,stream_id,session_id,decoder_version,latest_usage
+            FROM native_bindings WHERE run_id=? ORDER BY binding_id LIMIT 257''',(row['run_id'],))
+        result['provider_usage']=[{**entry,'latest_usage':json.loads(entry['latest_usage']) if entry['latest_usage'] else UNMEASURED}
+                                  for entry in usage[:256]]
+        result['provider_usage_truncated']=len(usage)>256
+        result['provider_usage_scope']='Latest captured usage per binding; not summed across attempts, sessions or children.'
+        tokens=db.execute('SELECT payload FROM runtime_cycles WHERE scope=?',('tokens:'+row['launch_id'],)).fetchone()
+        if tokens:
+            result['context_usage']=json.loads(tokens[0])
+        tools=payload.get('tool_selection')
+        result['tools']={'launch_selection':tools,'native_schema_tokens':UNMEASURED,
+                         'visibility':payload.get('tool_visibility',UNMEASURED)}
+    capsule=Path(payload['capsule'])
+    manifest=_frozen_json(payload['manifest'])
+    base={key:value for key,value in manifest.items() if key not in {'version','system_path','context_path'}}
+    if manifest.get('version')!=payload['prompt_version'] or digest(base)!=payload['prompt_version']:
+        raise ValidationError('frozen prompt manifest identity changed')
+    for channel in ('system','context'):
+        path=Path(manifest[channel+'_path'])
+        with path.open('rb') as source:
+            data=source.read(262145)
+        expected=manifest['delivery'][channel]
+        if len(data)!=expected['bytes'] or hashlib.sha256(data).hexdigest()!=expected['sha256']:
+            raise ValidationError('frozen prompt channel was altered')
+    from .prompt_compiler import _verify_required_file
+    required_files=[]
+    for material in manifest['required_files']:
+        _verify_required_file(material)
+        required_files.append({**material,'integrity':'verified','read_status':UNMEASURED})
+    sizes={channel:manifest['delivery'][channel]['bytes'] for channel in ('system','context')}
+    prefix=sum(sizes.values())
+    result['invariant'].update(prefix_bytes=prefix,prompt_version=payload['prompt_version'],
+        channels=manifest['delivery'],sections=manifest['sections'],inline_bytes=prefix,
+        referenced_full_text_bytes=sum(material['bytes'] for material in required_files),
+        required_files=required_files,reference_read_status=UNMEASURED,
+        accounting='Inline frozen instructions only; referenced full text and checkpoint are separate. References are required reads, not proof of reading. Tool schemas and host additions are unmeasured.')
+    for relative in (f'config/{item_id}/harness.json','config/models.json'):
+        _frozen_json(capsule/relative,expected_hash=payload['configuration'][relative])
+    harness=load_harness(capsule/'config'/item_id/'harness.json',check_cross_file=False)
+    model=load_models(capsule/'config/models.json')[harness.model]
+    computed=invariant_budget(window=model.window,threshold=model.threshold)
+    ceiling=computed['invariant_ceiling_tokens']
+    result['budget'].update(model=harness.model,invariant_ceiling_tokens=ceiling,
+        working_room_tokens=computed['working_room_tokens'],within=False if prefix>ceiling else None,
+        measured_prefix_share=round(prefix/ceiling,4),
+        note='Known static bytes are a lower bound; total prefix and provider cache state remain unmeasured.')
+    return result
+
+
+def agent_report(root, item_id, *, now=None, env=None):
+    if item_id=='partner':
+        return {'kind':'partner',**_partner_report(root,item_id,now=now,env=env)}
+    return _worker_report(root,item_id,env=env)
+
+
 def report(root, item_id: str | None = None, *, now: str | None = None, env=None) -> dict:
     """`hx cache report [ID]`: every configured agent (`config/<id>/`), or one."""
     from pathlib import Path
@@ -238,13 +352,22 @@ def report(root, item_id: str | None = None, *, now: str | None = None, env=None
         if item_id not in ids:
             raise NotFound(f"unknown id: {item_id} (no config/{item_id}/)")
         ids = [item_id]
-    return {"ts": now or timestamps.now(),
+    return {"schema_version":2,"ts": now or timestamps.now(),
             "agents": [agent_report(root, i, now=now, env=env) for i in ids]}
 
 
 def render_report(doc: dict) -> str:
     lines = []
     for row in doc["agents"]:
+        if row['kind']=='packet':
+            run=row['run'] or {}
+            checkpoint=row['checkpoint'] or {}
+            lines.append(f"{row['id']}: {row['status']} run={run.get('run_id','-')} "
+                         f"static_prefix={row['invariant']['prefix_bytes']} B "
+                         f"checkpoint={checkpoint.get('checkpoint_id','-')} "
+                         f"model={row['budget']['model'] or 'unmeasured'}; "
+                         "tool schemas, host context and provider cache residency unmeasured")
+            continue
         inv, budget, seam = row["invariant"], row["budget"], row["seam"]
         share = "n/a" if budget["share"] is None else f"{budget['share']:.1%}"
         line = (f"{row['id']}: prefix {inv['prefix_bytes']} B (CLAUDE.md {inv['claude_md_bytes']} "

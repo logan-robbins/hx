@@ -15,7 +15,6 @@ from .continuity_store import Conflict, canonical, digest
 
 
 def initialize(tx):
-    # Separate initialization keeps this feature compatible with older ledgers.
     db = getattr(tx, "db", tx)
     db.execute("""CREATE TABLE IF NOT EXISTS check_artifacts (
         execution_id TEXT PRIMARY KEY, identity_hash TEXT NOT NULL,

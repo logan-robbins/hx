@@ -17,7 +17,6 @@ from .test_unit_execution import fleet, commit
 
 def packet(repo, name='implement', *, paths=None, prerequisites=None, resources=None):
     body = unit(repo,name,paths=paths,prerequisites=prerequisites)
-    body.pop('checks')
     body['outputs'] = [{'id':'proof','version':1,'kind':'receipt','obligation':'Checks prove the declared packet behavior.'}]
     body['resources'] = resources or []
     body['check_policy'] = {'reviewer':'qa-001','required_checks':['unit']}

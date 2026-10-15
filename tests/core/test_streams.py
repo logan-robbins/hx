@@ -19,7 +19,6 @@ import pytest
 
 from .conftest import clean_env, wait_for
 from .test_compose import run_hook
-from .test_transitions import dispatch_working
 
 
 def records(instance, item_id, stream):
@@ -68,10 +67,19 @@ def transcript_with(tmp_path, *, input_tokens=0, cache_read=0, cache_creation=0)
     return path
 
 
+def pasted(root, item_id):
+    path = root / 'run' / item_id / 'fake-input.log'
+    return path.read_text() if path.is_file() else ''
+
+
 @pytest.fixture
-def working(instance, hx, launched, goals):
-    launched("eng-001")
-    dispatch_working(instance, hx, goals)
+def working(instance, hx, tmux_server):
+    """Partner hook observations retain stream and subagent transport contracts."""
+    result = hx('launch', 'partner')
+    assert result.returncode == 0, result.stderr
+    wait_for((instance / 'run/partner/fake-ready').is_file, what='Partner prompt')
+    (instance / 'config/partner/SUBAGENTS.md').write_text(
+        'You assist the Partner with bounded orchestration research. Return findings and evidence.\n')
     return instance
 
 
@@ -80,13 +88,13 @@ def working(instance, hx, launched, goals):
 
 def test_one_record_per_tool_call_in_the_spec_07_1_shape(working, tmp_path):
     transcript = transcript_with(tmp_path, input_tokens=1000, cache_read=47000)
-    result = run_hook(working, "eng-001", "log",
+    result = run_hook(working, "partner", "log",
                       post_tool(tool="Read", tool_input={"file_path": "/x"}, transcript=transcript))
     assert result.returncode == 0, result.stderr
 
-    record = records(working, "eng-001", "eng-001-main")[-1]
+    record = records(working, "partner", "partner-main")[-1]
     assert record["event"] == "post_tool" and record["tool"] == "Read"
-    assert record["stream"] == "eng-001-main"
+    assert record["stream"] == "partner-main"
     assert isinstance(record["seq"], int) and record["seq"] >= 1
     assert record["ts"].endswith("Z")
     assert "/x" in record["input"] and record["output"]
@@ -97,8 +105,8 @@ def test_one_record_per_tool_call_in_the_spec_07_1_shape(working, tmp_path):
 
 def test_seq_is_monotonic_across_calls(working):
     for _ in range(5):
-        assert run_hook(working, "eng-001", "log", post_tool()).returncode == 0
-    seqs = [r["seq"] for r in records(working, "eng-001", "eng-001-main")]
+        assert run_hook(working, "partner", "log", post_tool()).returncode == 0
+    seqs = [r["seq"] for r in records(working, "partner", "partner-main")]
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
 
 
@@ -107,11 +115,11 @@ def test_a_huge_tool_result_still_fits_one_line_under_4kb(working):
     from hx.streams import MAX_RECORD_BYTES, main_stream
 
     huge = "x" * 500_000
-    result = run_hook(working, "eng-001", "log",
+    result = run_hook(working, "partner", "log",
                       post_tool(tool_input={"command": huge}, tool_response={"stdout": huge}))
     assert result.returncode == 0, result.stderr
 
-    lines = main_stream(working, "eng-001").read_text().splitlines()
+    lines = main_stream(working, "partner").read_text().splitlines()
     assert lines, "the record was dropped"
     for line in lines:
         assert len(line.encode()) <= MAX_RECORD_BYTES, f"{len(line.encode())} bytes"
@@ -124,40 +132,40 @@ def test_the_seam_marker_is_written_at_the_threshold(working, tmp_path):
     """spec 05, 02: the hard trigger that does not wait for a step to close."""
     from hx.hook_log import seam_marker, threshold_for
 
-    threshold = threshold_for(working, "eng-001")
+    threshold = threshold_for(working, "partner")
     # The shipped row: 200000, below the 250000 autocompact window the session runs at, and
     # inside spec 05's 500000 cap for a 1M model.
     assert threshold == 200_000, "the seam threshold comes from config/models.json"
 
-    run_hook(working, "eng-001", "log",
+    run_hook(working, "partner", "log",
              post_tool(transcript=transcript_with(tmp_path, input_tokens=threshold - 1)))
-    assert not seam_marker(working, "eng-001").exists()
+    assert not seam_marker(working, "partner").exists()
 
-    run_hook(working, "eng-001", "log",
+    run_hook(working, "partner", "log",
              post_tool(transcript=transcript_with(tmp_path, input_tokens=threshold)))
-    assert seam_marker(working, "eng-001").is_file()
+    assert seam_marker(working, "partner").is_file()
 
 
 def test_a_subagent_stream_never_triggers_a_seam(working, tmp_path):
     """A subagent's window is its own (spec 09.1: the marker is main-stream only)."""
     from hx.hook_log import seam_marker
 
-    run_hook(working, "eng-001", "subagent-start",
+    run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agent-1", "agent_type": "Explore"})
-    run_hook(working, "eng-001", "log",
+    run_hook(working, "partner", "log",
              post_tool(agent_id="agent-1", transcript=transcript_with(tmp_path, input_tokens=900_000)))
-    assert not seam_marker(working, "eng-001").exists()
-    assert events(working, "eng-001", "eng-001-s001")[-1] == "post_tool"
+    assert not seam_marker(working, "partner").exists()
+    assert events(working, "partner", "partner-s001")[-1] == "post_tool"
 
 
 def test_a_malformed_log_payload_is_logged_and_allowed(working):
     result = subprocess.run(
-        [sys.executable, "-m", "hx.hooks", "--id", "eng-001", "log"],
+        [sys.executable, "-m", "hx.hooks", "--id", "partner", "log"],
         input="{not json", env=clean_env(HARNESS_ROOT=str(working)),
         capture_output=True, text=True,
     )
     assert result.returncode == 0, "a broken hook never stops the agent"
-    assert "log" in (working / "logs" / "eng-001" / "hook-errors.log").read_text()
+    assert "log" in (working / "logs" / "partner" / "hook-errors.log").read_text()
 
 
 # --- the subagent hooks ----------------------------------------------------------------------
@@ -167,7 +175,7 @@ def test_three_parallel_subagents_get_three_isolated_streams(working):
     """spec 13 M4: correct handles, each with its own context file."""
     paths = {}
     for n, agent_id in enumerate(("agent-a", "agent-b", "agent-c"), start=1):
-        result = run_hook(working, "eng-001", "subagent-start", {
+        result = run_hook(working, "partner", "subagent-start", {
             "hook_event_name": "SubagentStart", "agent_id": agent_id, "agent_type": "Explore",
             "tool_input": {"prompt": f"look at thing {n}"},
         })
@@ -176,36 +184,35 @@ def test_three_parallel_subagents_get_three_isolated_streams(working):
         assert body["hookSpecificOutput"]["hookEventName"] == "SubagentStart"
         paths[agent_id] = body["hookSpecificOutput"]["additionalContext"]
 
-    mapping = json.loads((working / "run" / "eng-001" / "subagents.json").read_text())
+    mapping = json.loads((working / "run" / "partner" / "subagents.json").read_text())
     assert mapping == {"agent-a": "s001", "agent-b": "s002", "agent-c": "s003"}
 
-    logs = working / "logs" / "eng-001"
+    logs = working / "logs" / "partner"
     for handle in ("s001", "s002", "s003"):
-        assert (logs / f"eng-001-{handle}-open.jsonl").is_file()
-        context = working / "run" / "eng-001" / f"eng-001-{handle}.context.md"
+        assert (logs / f"partner-{handle}-open.jsonl").is_file()
+        context = working / "run" / "partner" / f"partner-{handle}.context.md"
         assert context.is_file()
         assert str(context) in paths[[k for k, v in mapping.items() if v == handle][0]]
 
     # Each carries its own task, and none carries another's.
-    first = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
+    first = (working / "run" / "partner" / "partner-s001.context.md").read_text()
     assert "look at thing 1" in first and "look at thing 2" not in first
-    assert "You are a subagent of `eng-001`" in first, \
-        "the shared SUBAGENTS.md, rendered with the parent's id (spec 07.3)"
-    assert "_source: `templates/worker/SUBAGENTS.md`_" in first
+    assert "You assist the Partner with bounded orchestration research." in first
+    assert "_source: `config/partner/SUBAGENTS.md`_" in first
     assert "\n## Tasks\n" not in first, "`## Tasks` is main-stream only"
 
 
 def test_the_main_stream_records_every_spawn_and_close(working):
     for agent_id in ("agent-a", "agent-b"):
-        run_hook(working, "eng-001", "subagent-start",
+        run_hook(working, "partner", "subagent-start",
                  {"hook_event_name": "SubagentStart", "agent_id": agent_id, "agent_type": "Explore"})
     for agent_id in ("agent-a", "agent-b"):
-        run_hook(working, "eng-001", "subagent-stop", {
+        run_hook(working, "partner", "subagent-stop", {
             "hook_event_name": "SubagentStop", "agent_id": agent_id,
             "last_assistant_message": f"{agent_id} done",
         })
 
-    main = records(working, "eng-001", "eng-001-main")
+    main = records(working, "partner", "partner-main")
     spawned = [r for r in main if r["event"] == "spawned"]
     closed = [r for r in main if r["event"] == "closed"]
     assert [r["handle"] for r in spawned] == ["s001", "s002"]
@@ -213,35 +220,35 @@ def test_the_main_stream_records_every_spawn_and_close(working):
 
 
 def test_subagent_stop_closes_the_stream(working):
-    run_hook(working, "eng-001", "subagent-start",
+    run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agent-a", "agent_type": "Explore"})
-    logs = working / "logs" / "eng-001"
-    assert (logs / "eng-001-s001-open.jsonl").is_file()
+    logs = working / "logs" / "partner"
+    assert (logs / "partner-s001-open.jsonl").is_file()
 
-    run_hook(working, "eng-001", "subagent-stop", {
+    run_hook(working, "partner", "subagent-stop", {
         "hook_event_name": "SubagentStop", "agent_id": "agent-a",
         "last_assistant_message": "the importer buffers in read_all",
     })
-    assert not (logs / "eng-001-s001-open.jsonl").exists()
-    assert (logs / "eng-001-s001-closed.jsonl").is_file()
+    assert not (logs / "partner-s001-open.jsonl").exists()
+    assert (logs / "partner-s001-closed.jsonl").is_file()
 
-    closing = records(working, "eng-001", "eng-001-s001")[-1]
+    closing = records(working, "partner", "partner-s001")[-1]
     assert closing["event"] == "close"
     assert "read_all" in closing["output"]
 
 
 def test_the_closed_stream_digest_reaches_the_parent(working):
     """spec 09.1: `PostToolUse(Agent)` is the only path that reaches the parent."""
-    run_hook(working, "eng-001", "subagent-start",
+    run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agent-a", "agent_type": "Explore"})
-    run_hook(working, "eng-001", "subagent-stop",
+    run_hook(working, "partner", "subagent-stop",
              {"hook_event_name": "SubagentStop", "agent_id": "agent-a", "last_assistant_message": "done"})
 
-    digest = working / "state" / "eng-001" / "eng-001-s001.digest.md"
+    digest = working / "state" / "partner" / "partner-s001.digest.md"
     assert digest.is_file(), "a closed stream always has a digest file"
     digest.write_text("s001 found the buffer in read_all.\n")
 
-    result = run_hook(working, "eng-001", "subagent-result", {
+    result = run_hook(working, "partner", "subagent-result", {
         "hook_event_name": "PostToolUse", "tool_name": "Agent",
         "tool_response": {"agentId": "agent-a", "status": "completed"},
         "tool_use_id": "toolu_x",
@@ -251,50 +258,39 @@ def test_the_closed_stream_digest_reaches_the_parent(working):
     assert str(digest) in body["hookSpecificOutput"]["additionalContext"]
     assert "Read tool" in body["hookSpecificOutput"]["additionalContext"]
 
-    handed = [r for r in records(working, "eng-001", "eng-001-main") if r["event"] == "subagent_result"]
+    handed = [r for r in records(working, "partner", "partner-main") if r["event"] == "subagent_result"]
     assert handed and handed[-1]["handle"] == "s001" and handed[-1]["digest"] == str(digest)
 
 
 def test_a_subagent_result_that_is_not_completed_says_nothing(working):
-    run_hook(working, "eng-001", "subagent-start",
+    run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agent-a", "agent_type": "Explore"})
-    result = run_hook(working, "eng-001", "subagent-result", {
+    result = run_hook(working, "partner", "subagent-result", {
         "hook_event_name": "PostToolUse", "tool_name": "Agent",
         "tool_response": {"agentId": "agent-a", "status": "failed"},
     })
     assert result.returncode == 0 and result.stdout == ""
 
 
-def test_complete_refuses_while_a_stream_is_open(working, hx):
-    """spec 13 M4, and the same rule build-2 pinned, now driven through the real hooks."""
-    run_hook(working, "eng-001", "subagent-start",
-             {"hook_event_name": "SubagentStart", "agent_id": "agent-a", "agent_type": "Explore"})
-    refused = hx("complete", "done", harness_id="eng-001")
-    assert refused.returncode == 1 and "HX-CHECK-FAILED" in refused.stdout
-    assert "s001" in refused.stdout
-
-    run_hook(working, "eng-001", "subagent-stop",
-             {"hook_event_name": "SubagentStop", "agent_id": "agent-a", "last_assistant_message": "x"})
-    assert hx("complete", "done", harness_id="eng-001").returncode == 0
 
 
 def test_an_unknown_agent_id_falls_back_to_the_main_stream(working):
     """A subagent hx never saw start: recorded on main, never on an invented handle."""
-    assert run_hook(working, "eng-001", "log", post_tool(agent_id="ghost")).returncode == 0
-    assert events(working, "eng-001", "eng-001-main")[-1] == "post_tool"
-    assert not (working / "logs" / "eng-001").glob("*-s*-open.jsonl") or True
+    assert run_hook(working, "partner", "log", post_tool(agent_id="ghost")).returncode == 0
+    assert events(working, "partner", "partner-main")[-1] == "post_tool"
+    assert not (working / "logs" / "partner").glob("*-s*-open.jsonl") or True
 
 
 # --- the stop hook ----------------------------------------------------------------------------
 
 
 def test_stop_writes_the_turn_marker(working):
-    result = run_hook(working, "eng-001", "stop", {
+    result = run_hook(working, "partner", "stop", {
         "hook_event_name": "Stop", "session_id": "s1",
         "background_tasks": [{"id": "bg1", "status": "running"}],
     })
     assert result.returncode == 0, result.stderr
-    marker = json.loads((working / "run" / "eng-001" / "turn").read_text())
+    marker = json.loads((working / "run" / "partner" / "turn").read_text())
     assert marker["background_tasks"] == [{"id": "bg1", "status": "running"}]
     assert marker["ts"].endswith("Z") and marker["session_id"] == "s1"
 
@@ -302,7 +298,7 @@ def test_stop_writes_the_turn_marker(working):
 # --- build-8 items 1 and 2: `hx seam` ---------------------------------------------------------
 
 
-def seam_marker_for(instance, item_id="eng-001"):
+def seam_marker_for(instance, item_id="partner"):
     from hx.hook_log import seam_marker
 
     marker = seam_marker(instance, item_id)
@@ -313,47 +309,44 @@ def seam_marker_for(instance, item_id="eng-001"):
 
 def test_stop_takes_a_pending_seam(working, tmux_server):
     """spec 09.2: the marker is written, the next `stop` consumes it via `hx seam`."""
-    from .test_transitions import pasted
 
     marker = seam_marker_for(working)
-    (working / "run" / "eng-001" / "fake-input.log").write_text("")
+    (working / "run" / "partner" / "fake-input.log").write_text("")
 
-    result = run_hook(working, "eng-001", "stop",
+    result = run_hook(working, "partner", "stop",
                       {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
     assert result.returncode == 0, result.stderr
     assert not marker.exists(), "a taken seam consumes its marker"
-    wait_for(lambda: "/clear" in pasted(working, "eng-001"), what="the `/clear` hx seam pasted")
-    assert events(working, "eng-001", "eng-001-main")[-1] == "seam"
+    wait_for(lambda: "/clear" in pasted(working, "partner"), what="the `/clear` hx seam pasted")
+    assert events(working, "partner", "partner-main")[-1] == "seam"
 
 
 def test_a_seam_is_deferred_while_background_work_runs(working, tmux_server):
     """spec 09.2 step 2: not a boundary. The marker stays and the next `stop` retries."""
-    from .test_transitions import pasted
 
     marker = seam_marker_for(working)
-    (working / "run" / "eng-001" / "fake-input.log").write_text("")
+    (working / "run" / "partner" / "fake-input.log").write_text("")
 
-    result = run_hook(working, "eng-001", "stop",
+    result = run_hook(working, "partner", "stop",
                       {"hook_event_name": "Stop", "background_tasks": ["bg_1"]}, tmux=tmux_server)
     assert result.returncode == 0, result.stderr
     assert marker.is_file(), "the marker stays for the next boundary"
-    assert "/clear" not in pasted(working, "eng-001")
-    assert "seam" not in events(working, "eng-001", "eng-001-main")
+    assert "/clear" not in pasted(working, "partner")
+    assert "seam" not in events(working, "partner", "partner-main")
 
 
 def test_the_deferred_seam_is_taken_at_the_next_quiet_boundary(working, tmux_server):
-    from .test_transitions import pasted
 
     marker = seam_marker_for(working)
-    (working / "run" / "eng-001" / "fake-input.log").write_text("")
-    run_hook(working, "eng-001", "stop",
+    (working / "run" / "partner" / "fake-input.log").write_text("")
+    run_hook(working, "partner", "stop",
              {"hook_event_name": "Stop", "background_tasks": ["bg_1"]}, tmux=tmux_server)
     assert marker.is_file()
 
-    run_hook(working, "eng-001", "stop",
+    run_hook(working, "partner", "stop",
              {"hook_event_name": "Stop", "background_tasks": []}, tmux=tmux_server)
     assert not marker.exists()
-    wait_for(lambda: "/clear" in pasted(working, "eng-001"), what="the `/clear`")
+    wait_for(lambda: "/clear" in pasted(working, "partner"), what="the `/clear`")
 
 
 def test_hx_seam_rewrites_the_status_before_it_cuts(working, tmux_server):
@@ -361,40 +354,40 @@ def test_hx_seam_rewrites_the_status_before_it_cuts(working, tmux_server):
     not before it."""
     from hx.seam import seam
 
-    item = working / "pods" / "engineers" / "eng-001-working.md"
-    state = working / "state" / "eng-001"
+    item = working / "PARTNER.md"
+    state = working / "state" / "partner"
     state.mkdir(parents=True, exist_ok=True)
-    (state / "eng-001-main.json").write_text(json.dumps({"seq": 5, "goal": "written at the seam"}))
+    (state / "partner-main.json").write_text(json.dumps({"seq": 5, "goal": "written at the seam"}))
     assert "written at the seam" not in item.read_text()
     seam_marker_for(working)
-    result = seam(working, "eng-001", env={"HX_TMUX": " ".join(tmux_server)})
+    result = seam(working, "partner", env={"HX_TMUX": " ".join(tmux_server)})
     assert result["outcome"] == "taken"
     assert "goal: written at the seam" in item.read_text().split("\n## Status\n", 1)[1]
-    assert not (working / "run" / "eng-001" / "eng-001-main.context.md").exists()
+    assert not (working / "run" / "partner" / "partner-main.context.md").exists()
 
 
 def test_the_seam_record_is_the_spec_07_4_shape(working, tmux_server):
     """CONTRACTS.md `hx metrics`: this record is what the metric is computed from."""
     from hx.seam import seam
 
-    logs = working / "logs" / "eng-001"
-    with (logs / "eng-001-main.jsonl").open("a") as handle:
+    logs = working / "logs" / "partner"
+    with (logs / "partner-main.jsonl").open("a") as handle:
         handle.write(json.dumps({
-            "seq": 900, "ts": "2026-09-20T12:00:00Z", "stream": "eng-001-main",
+            "seq": 900, "ts": "2026-09-20T12:00:00Z", "stream": "partner-main",
             "event": "post_tool", "context_tokens": 91044,
         }) + "\n")
-    state = working / "state" / "eng-001"
+    state = working / "state" / "partner"
     state.mkdir(parents=True, exist_ok=True)
-    (state / "eng-001-main.json").write_text(json.dumps({
+    (state / "partner-main.json").write_text(json.dumps({
         "seq": 900, "goal": "g", "prompt_version": {"base": "abc", "role": "def"},
         "open_steps": [], "closed_steps": [],
         "working_set": {"files": [{"path": "a.py", "note": "n"}, {"path": "b.py", "note": "n"}]},
     }))
 
     seam_marker_for(working)
-    seam(working, "eng-001", env={"HX_TMUX": " ".join(tmux_server)})
+    seam(working, "partner", env={"HX_TMUX": " ".join(tmux_server)})
 
-    record = records(working, "eng-001", "eng-001-main")[-1]
+    record = records(working, "partner", "partner-main")[-1]
     assert record["event"] == "seam"
     assert record["source"] == "clear"
     assert record["prompt_version"] == {"base": "abc", "role": "def"}
@@ -408,12 +401,12 @@ def test_hx_seam_defers_from_the_cli_without_touching_anything(working, tmux_ser
     from hx.hook_stop import turn_marker
 
     marker = seam_marker_for(working)
-    turn_marker(working, "eng-001").write_text(json.dumps({
+    turn_marker(working, "partner").write_text(json.dumps({
         "ts": "2026-09-20T12:00:00Z", "background_tasks": ["bg_1"], "session_id": "s1",
     }))
-    result = hx("seam", "eng-001")
+    result = hx("seam", "partner")
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "HX-SEAM eng-001 deferred background_tasks=1"
+    assert result.stdout.strip() == "HX-SEAM partner deferred background_tasks=1"
     assert marker.is_file()
 
 
@@ -423,12 +416,12 @@ def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(work
     Verified live on 2026-09-20: the payload's documented fields are `session_id`,
     `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`.
     """
-    result = run_hook(working, "eng-001", "subagent-start",
+    result = run_hook(working, "partner", "subagent-start",
                       {"hook_event_name": "SubagentStart", "agent_id": "agent-a",
                        "agent_type": "Explore", "cwd": "/tmp", "permission_mode": "bypassPermissions"})
     assert result.returncode == 0, result.stderr
 
-    text = (working / "run" / "eng-001" / "eng-001-s001.context.md").read_text()
+    text = (working / "run" / "partner" / "partner-s001.context.md").read_text()
     section = text[text.index("## Task\n"):text.index("## Step state")]
     assert "_none yet_" not in section, "an empty task section tells the subagent nothing"
     assert "already in this conversation" in section
@@ -439,36 +432,36 @@ def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(work
 
 def test_precompact_records_and_never_blocks(working):
     """spec 02, 09.1: a block suppresses compaction for the whole turn (live E4)."""
-    result = run_hook(working, "eng-001", "precompact",
+    result = run_hook(working, "partner", "precompact",
                       {"hook_event_name": "PreCompact", "trigger": "auto"})
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "", "no decision output, ever"
-    record = records(working, "eng-001", "eng-001-main")[-1]
+    record = records(working, "partner", "partner-main")[-1]
     assert record["event"] == "compact_pending" and record["trigger"] == "auto"
 
 
 def test_postcompact_records_what_claude_kept(working):
-    result = run_hook(working, "eng-001", "postcompact", {
+    result = run_hook(working, "partner", "postcompact", {
         "hook_event_name": "PostCompact", "trigger": "auto",
         "compact_summary": "kept the importer work, dropped the log output",
     })
     assert result.returncode == 0, result.stderr
-    record = records(working, "eng-001", "eng-001-main")[-1]
+    record = records(working, "partner", "partner-main")[-1]
     assert record["event"] == "compact"
     assert "kept the importer work" in record["compact_summary"]
 
 
 def test_a_subagents_compaction_lands_on_its_own_stream(working):
     """Live E8: PreCompact fires for subagent compactions with the parent's session_id."""
-    run_hook(working, "eng-001", "subagent-start",
+    run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agt_x", "agent_type": "general-purpose"})
-    run_hook(working, "eng-001", "precompact",
+    run_hook(working, "partner", "precompact",
              {"hook_event_name": "PreCompact", "trigger": "auto", "agent_id": "agt_x"})
-    assert events(working, "eng-001", "eng-001-s001")[-1] == "compact_pending"
-    assert "compact_pending" not in events(working, "eng-001", "eng-001-main")
+    assert events(working, "partner", "partner-s001")[-1] == "compact_pending"
+    assert "compact_pending" not in events(working, "partner", "partner-main")
 
 
 def test_an_unknown_agent_id_falls_back_to_the_main_stream(working):
-    run_hook(working, "eng-001", "precompact",
+    run_hook(working, "partner", "precompact",
              {"hook_event_name": "PreCompact", "trigger": "auto", "agent_id": "never-seen"})
-    assert events(working, "eng-001", "eng-001-main")[-1] == "compact_pending"
+    assert events(working, "partner", "partner-main")[-1] == "compact_pending"

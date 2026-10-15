@@ -167,11 +167,10 @@ def test_existing_session_collision_is_not_replaced(runtime):
     assert controller.advance(store, "eng-001", run, "launch", env=env)["status"] == "start_uncertain"
 
 
-def test_legacy_launch_and_restart_cannot_bypass_planned_ownership(runtime):
+def test_worker_launch_without_identity_is_always_refused(runtime):
     store, _, _, env = runtime
-    for action in (lifecycle.launch, lifecycle.restart):
-        with pytest.raises(Conflict, match="planned worker"):
-            action(store.root, "eng-001", env=env)
+    with pytest.raises(Conflict, match="worker launch requires"):
+        lifecycle.launch(store.root, "eng-001", env=env)
 
 
 def test_wrong_native_session_cannot_acknowledge_submission(runtime):
@@ -248,3 +247,68 @@ def test_installed_muse_startup_and_request_hooks(runtime, tmp_path):
     wait_for(lambda: native_launch._row(store, run)["status"] == "submitted", what="installed Muse request hook", limit=15)
     assert native_launch._row(store, run)["payload"]["instruction_delivery"] == "launcher_prefix_verified_startup_observed"
     assert controller.advance(store, "eng-001", run, "launch", env=env)["status"] == "submitted"
+
+
+def test_recovery_never_starts_a_run_without_explicit_launch(runtime, monkeypatch):
+    store, _, _, env = runtime
+    monkeypatch.setattr(controller, 'advance', lambda *a, **kw: pytest.fail('reservation is not launch authorization'))
+    assert controller.reconcile_launches(store, env=env) == []
+    assert store.db.execute('SELECT count(*) FROM native_launches').fetchone()[0] == 0
+
+
+def test_recovery_advances_existing_ready_launch_once(runtime):
+    store, _, run, env = runtime
+    ready(runtime)
+    results = controller.reconcile_launches(store, env=env)
+    assert len(results) == 1
+    wait_for(lambda: native_launch._row(store, run)['status'] == 'submitted', what='recovered submission')
+    controller.reconcile_launches(store, env=env)
+    lines = (store.root / 'run/eng-001/native-test.jsonl').read_text().splitlines()
+    assert sum('"prompt"' in line for line in lines) == 1
+
+
+def test_recovery_records_missing_submitted_pane_without_replacement(runtime):
+    store, _, run, env = runtime
+    row = ready(runtime)
+    controller.advance(store, 'eng-001', run, 'launch', env=env)
+    wait_for(lambda: native_launch._row(store, run)['status'] == 'submitted', what='submission')
+    subprocess.run([*env['HX_TMUX'].split(), 'kill-session', '-t', '=' + row['payload']['session']], check=True)
+    result = controller.reconcile_launches(store, env=env)[0]
+    assert result['status'] == 'session_uncertain'
+    assert controller.reconcile_launches(store, env=env) == []
+    assert store.db.execute('SELECT count(*) FROM leases WHERE run_id=?', (run,)).fetchone()[0]
+    assert store.db.execute("SELECT count(*) FROM outbox WHERE kind='native_launch_unresolved'").fetchone()[0] == 1
+
+
+def test_public_controller_rejects_raw_persistence_runs(tmp_path):
+    from hx.continuity_store import ContinuityStore
+    with ContinuityStore(tmp_path) as store:
+        with store.transaction() as tx:
+            tx.put_task('raw', {'goal': 'A storage fixture is not an executable packet.'}, expected_revision=0)
+            run = tx.start_run('raw', 1, 'eng-001')
+        with pytest.raises(Conflict, match='active planned run'):
+            controller.advance(store, 'eng-001', run, 'raw-launch', env={})
+        assert store.db.execute('SELECT count(*) FROM native_launches').fetchone()[0] == 0
+        assert not (tmp_path / 'run').exists()
+
+
+def test_startup_composition_failure_keeps_owned_run_visible_and_drainable(runtime, monkeypatch):
+    from hx.facts import RequiredContextOverflow
+    store, _, run, env = runtime
+    row = ready(runtime)
+    # Simulate a failure after the controller claimed its first startup boundary.
+    with store.transaction() as tx:
+        payload = {**row['payload'], 'startup_observed': False}
+        tx.db.execute("UPDATE native_launches SET status='starting',payload=? WHERE launch_id=?", (json.dumps(payload), row['launch_id']))
+    def overflow(*a, **kw):
+        raise RequiredContextOverflow('required observation exceeds the context bound')
+    monkeypatch.setattr(controller.context_packets, 'issue', overflow)
+    with pytest.raises(RequiredContextOverflow):
+        controller.observe(store, run, row['launch_id'], 'context', {'source': 'startup', 'session_id': row['payload']['native_session']})
+    failed = native_launch._row(store, run)
+    assert failed['status'] == 'startup_failed' and failed['error'] == 'RequiredContextOverflow'
+    assert not failed['payload']['startup_observed']
+    assert store.db.execute('SELECT ended_at FROM runs WHERE run_id=?', (run,)).fetchone()[0] is None
+    assert store.db.execute('SELECT count(*) FROM leases WHERE run_id=?', (run,)).fetchone()[0]
+    assert controller.advance(store, 'eng-001', run, 'launch', env=env)['status'] == 'startup_failed'
+    assert controller.drain(store, 'eng-001', run, 'launch', env=env)['status'] == 'draining'

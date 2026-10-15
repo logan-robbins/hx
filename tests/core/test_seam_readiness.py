@@ -12,6 +12,13 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def observation_only_companion(monkeypatch):
+    """Readiness tests observe Partner state without waking a live session."""
+    from hx import companion
+    monkeypatch.setattr(companion, 'wake_due', lambda *a, **kw: [])
+
+
 def _behind(instance):
     """One main-stream record with no state: the Companion is behind."""
     from hx import streams
@@ -62,9 +69,9 @@ def test_transcript_size_triggers_the_seam_without_usage_counts(instance, tmp_pa
     _no_companion(instance, monkeypatch)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     _session_file(tmp_path / "xdg", "test-session-1", 300000 * 4)
-    code, _ = handle(_meta_payload(), "eng-001", instance, env={})
+    code, _ = handle(_meta_payload(), "partner", instance, env={})
     assert code == 0
-    assert seam_marker(instance, "eng-001").is_file()
+    assert seam_marker(instance, "partner").is_file()
 
 
 def test_small_transcript_leaves_no_marker(instance, tmp_path, monkeypatch):
@@ -73,9 +80,9 @@ def test_small_transcript_leaves_no_marker(instance, tmp_path, monkeypatch):
     _no_companion(instance, monkeypatch)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     _session_file(tmp_path / "xdg", "test-session-1", 1024)
-    code, _ = handle(_meta_payload(), "eng-001", instance, env={})
+    code, _ = handle(_meta_payload(), "partner", instance, env={})
     assert code == 0
-    assert not seam_marker(instance, "eng-001").exists()
+    assert not seam_marker(instance, "partner").exists()
 
 
 def test_missing_transcript_stays_silent(instance, tmp_path, monkeypatch):
@@ -85,10 +92,10 @@ def test_missing_transcript_stays_silent(instance, tmp_path, monkeypatch):
 
     _no_companion(instance, monkeypatch)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-empty"))
-    code, _ = handle(_meta_payload(session_id="never-existed"), "eng-001", instance, env={})
+    code, _ = handle(_meta_payload(session_id="never-existed"), "partner", instance, env={})
     assert code == 0
-    assert not seam_marker(instance, "eng-001").exists()
-    records = list(iter_records(stream_path(instance, "eng-001", "eng-001-main")))
+    assert not seam_marker(instance, "partner").exists()
+    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
     assert records[-1]["context_tokens"] is None
 
 
@@ -100,9 +107,9 @@ def test_malicious_session_id_is_not_a_glob(instance, tmp_path, monkeypatch):
     assert transcript_tokens(None) is None
     _no_companion(instance, monkeypatch)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    code, _ = handle(_meta_payload(session_id="*"), "eng-001", instance, env={})
+    code, _ = handle(_meta_payload(session_id="*"), "partner", instance, env={})
     assert code == 0
-    assert not seam_marker(instance, "eng-001").exists()
+    assert not seam_marker(instance, "partner").exists()
 
 
 def test_stop_defers_while_companion_behind(instance, monkeypatch):
@@ -179,11 +186,15 @@ def test_take_proceeds_when_ready(instance, monkeypatch):
     assert records[-1]["event"] == "seam"
 
 
-def test_precompact_signals_without_blocking(instance):
+def test_precompact_signals_without_blocking(instance, monkeypatch):
     """`precompact` nudges and returns even with the Companion behind."""
     from hx import hook_compact
+    from hx import flush
+    signalled = []
+    monkeypatch.setattr(flush, 'signal', lambda root, worker, **kw: signalled.append(worker))
 
     _behind(instance)
     code, out = hook_compact.pre(
         {"hook_event_name": "PreCompact", "trigger": "auto"}, "partner", instance, env={})
     assert (code, out) == (0, "")
+    assert signalled == ['partner']

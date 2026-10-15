@@ -10,7 +10,7 @@ from .test_map_updates import active  # noqa: F401 — fixture
 def _source_unit(repo, name, prerequisites=None):
     body = unit(repo, name, prerequisites=prerequisites)
     body["outputs"] = [{"id": "lib", "version": 1, "kind": "source",
-                        "paths": [f"src/{name}.py"]}]
+                        "paths": [f"src/{name}.py"], "obligation": "Source implements the declared behavior."}]
     return body
 
 
@@ -57,7 +57,7 @@ def test_size_warning_for_wide_unit(active):
     wide = unit(repo, "wide")
     wide["write_paths"] = [f"src/mod{i}.py" for i in range(12)]
     wide["outputs"] = [{"id": "proof", "version": 1, "kind": "receipt",
-                        "paths": [f"src/mod{i}.py" for i in range(12)]}]
+                        "obligation": "Checks prove the broad unit."}]
     from hx.errors import HxError
     try:
         result = planning.validate(store, plan(active, [wide]))

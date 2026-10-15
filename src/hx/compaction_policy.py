@@ -88,6 +88,7 @@ def continue_context(ledger, row, observation):
             raise Conflict('native assignment changed during continuation')
         payload = {**latest['payload'], 'checkpoint_id': packet['checkpoint_id'], 'packet_path': str(path),
             'packet_hash': packet['packet_hash'], 'startup_observed': True, 'native_session': session,
+            'required_files': native_controller.required_files(latest['payload'], packet),
             'instruction_delivery': 'continuation_checkpoint', 'continuation_source': source}
         native_controller._transition(tx, run_id, {latest['status']}, 'submitted', payload=payload)
         # Read reuse never crosses a model context reset.

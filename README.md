@@ -6,8 +6,12 @@ the small current state needed to continue; and hx checks, publishes, and report
 completed work.
 
 Use hx for new features, application maintenance, integrations, or codebase conversions.
+Every directive follows current code/application dependencies: search for existing behavior
+and contracts, reuse capabilities, and schedule maximum useful parallel work within source,
+resource, and capacity constraints. Packet boundaries follow dependencies and outcomes;
+apparent request size never selects packet count.
 For a conversion, graph the existing codebase first. The Partner uses that source graph
-to understand behavior and dependencies before dispatching target work; source and target
+to understand behavior and dependencies before assigning target work; source and target
 graphs remain separately addressable so shared capabilities can be built once and reused.
 
 hx is designed to make each assignment start with the right context, use only the
@@ -17,8 +21,7 @@ required Jev calls for bounded observation and routing judgments, token controls
 incremental capture, context reset, tool-output reduction, and managed completion.
 
 **→ [Getting started](docs/getting-started.md)** sets up a Partner. [Operating hx](docs/operating.md)
-covers day-to-day use. [System design](docs/system-design.md) describes the runtime as
-implemented and its remaining integration work.
+covers day-to-day use. [System design](docs/system-design.md) describes the runtime and proof boundaries.
 
 Inside Claude Code, the plugin provides setup and Partner commands:
 
@@ -80,18 +83,24 @@ Scoped check execution artifacts can be reused across runs when complete input a
 environment identities match. `hx build` adds evaluated .NET dependencies, deduplicated
 builds, immutable artifacts, and test shards that avoid repeated compilation.
 
-The companion is a Claude Code session of its own with Read and Write — two tools and nothing else;
-it processes new captured events and submits structured changes to current
-task state and the application map. Jev is required for its bounded judgments about
+The Companion processes frozen captured events and submits structured changes to current
+task state and the application map. Native worker passes expose only bounded evidence reads
+and structured patch submission; the Companion cannot execute the worker's commands. Jev is required for its bounded judgments about
 observation deltas, repeated tool observations, optional tool discovery, and surplus
 output. Jev does not choose which facts survive, write facts, generate task plans, or
 switch models. The companion handles factual changes; deterministic code validates
 scope, versions, evidence references, and source applicability.
 
+Native startup keeps identity, graph/search/reuse, ownership, independent approval, and required
+full-read rules in a compact facade. Longer warranted instructions and oversized mandatory task
+context retain exact immutable full-text files with hashes and explicit full-read requirements.
+They are never truncated or assumed consumed just because a reference was delivered. Only current
+verified required material can be read whole through the managed exception.
+
 Workers receive a bounded packet for the active assignment: goal and corrections,
 acceptance, next action, relevant findings and commands, required map records, and
 unresolved events. Obsolete state can be compressed or deleted. Workers do not carry
-personal episodic memory across independent assignments. Planned context boundaries
+personal episodic memory across independent assignments. Native context boundaries
 use incremental capture and hooks; the runtime restores the current packet after a
 controlled reset. Token thresholds, native autocompaction settings, and model output
 caps provide the enforcement layers.
@@ -113,13 +122,17 @@ Partner. Other native harnesses can be assigned as workers when configured. Type
 API access is required for Jev; the runtime has no inference fallback for Jev decisions.
 See [getting started](docs/getting-started.md) for credentials and installation.
 
-The merged runtime is covered by Linux and macOS CI, focused integration tests, and
-installed adapter checks. A live native engineering-to-QA fleet run has not yet been
-completed. Coordinated migration of remaining legacy state consumers and retention for
-cancelled assignments that may be resumed remain open. Provider-specific tool schema
-reduction is available only where the native public interface supports it; advisory
-adapters do not claim native schema savings. See [current implementation status](docs/continuity-build-status.md)
-for verified behavior and boundaries.
+Worker tasks use one schema-2 dependency packet lifecycle. Source materialization and accepted
+workdir precede admission; `hx plan assign` reserves ownership and explicit `hx launch ID
+--run RUN --request REQUEST` advances native startup. Workers bind executable checks before
+edits and obtain approval from the configured independent reviewer. Empty write scopes still
+require a current repository graph. The ledger is authoritative for task state and views.
+
+Tests exercise named lifecycle, concurrency, recovery, graph, and proof boundaries. They do
+not establish general model extraction accuracy or a live engineering-to-QA fleet result.
+Deployment eligibility retains exact integration and tested-artifact obligations; the product's
+configured external release mechanism performs authorized deployment. Obsolete unreleased
+store/plan formats are replaced, with no compatibility workflow.
 
 ## Documentation
 
@@ -130,11 +143,9 @@ for verified behavior and boundaries.
 - [Search and retrieval](docs/search-and-retrieval.md) — code/graph/content search, isolated execution, Jev sifting
 - [Provider model registry](docs/models.md) — latest model IDs per provider, pinned defaults
 - [Application map](docs/application-map.md) — semantic records, validation, and updates
-- [Continuity runtime](docs/continuity-runtime.md) — capture, state, checks, and reset contracts
+- [Prompt runtime](docs/prompt-runtime.md) — capture, state, checks, and native context boundaries
 - [Planning runtime](docs/planning-runtime.md) — assignments, ownership, and completion
 - [Agent-scale runtime](docs/agent-scale-runtime.md) — immutable snapshots, shared computation, dependency packets, review, and fixed CI candidates
-- [Current implementation status](docs/continuity-build-status.md) — merged scope and verification
-- [Native interface verification](docs/native-interface-verification.md) — adapter support boundaries
 - [docs/learnings.md](docs/learnings.md) — the central LEARNINGS file: propose, other-session review, numbered append; the signal index every agent carries
 - [CONTRACTS.md](CONTRACTS.md) — shared machine-readable shapes
 - [CHANGELOG.md](CHANGELOG.md)

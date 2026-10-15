@@ -17,7 +17,7 @@ between them. Everything below was learned running thirteen instances on one 96-
 
   ```bash
   hxc() { local a=$1; shift; HARNESS_ROOT=/path/fleet/instances/$a HX_TMUX="tmux -L hx-$a" hx "$@"; }
-  hxc payments board; hxc payments attach partner
+  hxc payments board
   ```
 - `config/ui.json` (or `hx ui --port N`) gets a distinct port per instance: `8800 + index`.
 - Start each instance's UI **inside that instance's environment** (`hxc <area> ui`, in a `ui`
@@ -48,10 +48,10 @@ between them. Everything below was learned running thirteen instances on one 96-
   `version` field is a note, not a gate; a fleet-wide `pins-check` (grep for a version-like path
   component, then `-x`) runs with the board. A running process keeps its unlinked binary, so the
   deletion hurts the next launch, not the current one.
-- A pane frozen by a usage limit does not answer `hx restart partner` (restart sends the goal and
-  waits; it hung seven minutes). Recovery: `HX_TMUX="tmux -L hx-<area>" tmux kill-session -t partner`
-  then `hx launch partner`. Use `hx wake partner "<text>"` for cross-instance nudges; it is accepted
-  through the Partner's cross-session inbound and never pastes into a pane.
+- A usage-limited native process is unresolved execution. Reconcile worker drain/shutdown
+  through its original run/request and owned-process identity; do not start a replacement to
+  bypass uncertainty. Partner recovery uses its configured instance and `hx launch partner`.
+  `hx wake partner TEXT` sends an explicitly authorized message through the Partner transport.
 
 ## 3. The go-gate
 
@@ -59,31 +59,24 @@ Install and verify every instance before approval; let none of them work. The Pa
 carries a go-gate: unless its standing instructions contain a `GO <date>` line written by the
 human, on every wake the Partner reads its plan, runs `hx doctor` and `hx board`, writes one
 `READY` or `BLOCKED <why>` row to its board, replies with that row and waits. No worker is
-launched, no goal dispatched, no lane provisioned before `GO`. A fleet that is installed but
+assigned or launched before `GO` when the instance has that explicit operator gate. A fleet that is installed but
 gated costs nothing and starts in one line per instance. `hx heartbeat --require-go` reads the
 same line (`hx.learn.go_line`), so the fleet's cron honours the gate without a wrapper.
 
-## 4. Goals across many instances
+## 4. Dependencies across instances
 
-- Keep goal templates in the fleet root and validate each one with
-  `hx.goals.parse_goal_text(text, path)` before anyone dispatches it: one `## Goal` paragraph,
-  optionally one to three sentences on its dependencies, nothing else. The worker writes its
-  own `## Definition of done` on top of its role's standard set, and `hx complete done`
-  requires the `## Evidence` it leaves; fleet-wide rules belong in the role personas.
-- One `hx dispatch` call per wave with every independent goal in it; one stream per dispatch is
-  how capacity sits idle. Completion wakes the Partner; nobody polls panes.
-- Systematic failures are promoted to one shared `LEARNINGS/` — one file per category of mistake — as rules
-  (`Rule · Signal · Check · Evidence`), never as file-and-line notes; every rule a grep can decide
-  becomes a lint a definition of done cites. Each instance appends application facts to its own map file and
-  proposes only the rule to the shared file — `hx learn propose` from the agent that was tripped
-  up, `hx learn accept` from its Partner on the next wake, with every instance's `config/hx.json`
-  `learnings` pointing at the one directory (docs/learnings.md). Nobody opens a file for writing,
-  and nobody reads one either: every rule is in every agent's system prompt from its next launch.
-- The first goal of every wave in every instance is its contract goal: the interfaces, stubs and
-  seeds that the other instances will build against, committed on a contract branch before any
-  feature lane starts. An instance that owns something another instance needs unblocks that
-  instance first; a contract change after dispatch is a new commit plus `hx resume` to every
-  lane built on the old one.
+Every directive follows graph/search/reuse and maximum useful parallel planning. Each instance
+has its own ledger, ownership, native workers, and resources. There is no cross-instance ledger.
+Map responsibilities to a provider instance, publish exact immutable interfaces/source evidence,
+and explicitly supply those external identities/obligations to consumers before admission.
+Do not infer a cross-instance lease or current proof from a local status view.
+
+Use schema-2 dependency packets. Materialize source and accept the correct workdir before
+admission. Assign ready units, then explicitly launch each admitted run with a stable request.
+Schedule every justified ready overlap within safe ownership and host capacity; whole-wave
+barriers and request-size heuristics do not determine packet count or start time.
+Contract changes require stopped/revised affected assignments and new exact versions/proof.
+Stand-ins require explicit permission and retain real-provider integration before deployability.
 
 ## 5. Keeping the product repository clean
 

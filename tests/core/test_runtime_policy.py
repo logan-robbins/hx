@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,133 @@ def test_search_cache_ignores_source_changed_during_search(runtime):
     path.write_text('after\n')
     assert fire(store, run, row, 'log', {**body, 'tool_response': 'before'}) == 0
     assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 0
+
+
+def test_required_full_instruction_material_can_be_read_without_excerpt_and_cannot_be_mutated(runtime):
+    store, _, run, _ = runtime
+    policy = store.root / 'continuity/policy/worker.md'
+    policy.parent.mkdir(parents=True, exist_ok=True)
+    full_policy = 'Preserve this exact required constraint and every subsequent paragraph.\n' * 250
+    policy.write_text(full_policy)
+    row = submitted(runtime)
+    reference = row['payload']['required_files'][0]
+    path = Path(reference['path'])
+    complete = path.read_text()
+    assert len(complete.encode()) > runtime_policy.CONTEXT_BYTES
+    assert full_policy in complete
+    # This is a verified exact material object, so the whole file is allowed.
+    body = payload('material-full', tool_name='Read', tool_input={'file_path': str(path)})
+    assert fire(store, run, row, 'tool-start', body) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': complete}) == 0
+    assert fire(store, run, row, 'tool-start', payload('material-write', tool_name='Write',
+        tool_input={'file_path': str(path), 'content': 'replacement'})) == 2
+    assert path.read_text() == complete
+    # An unrelated file at the same location gains no authority from its directory.
+    other = path.parent / 'unregistered.md'
+    other.write_text(complete)
+    assert fire(store, run, row, 'tool-start', payload('unregistered', tool_name='Read',
+        tool_input={'file_path': str(other)})) == 2
+    path.write_text('damaged required instructions\n')
+    assert fire(store, run, row, 'tool-start', payload('material-drift', tool_name='Read',
+        tool_input={'file_path': str(path)})) == 2
+
+
+def test_required_full_assignment_reference_is_verified_and_readable_after_startup(runtime):
+    store, _, run, _ = runtime
+    complete_constraint = '\n'.join(['This exact required acceptance condition survives every continuation.'] * 250)
+    with store.transaction() as tx:
+        evidence = tx.db.execute('SELECT event_id FROM events WHERE run_id=? ORDER BY rowid LIMIT 1', (run,)).fetchone()[0]
+        tx.put_record('required-full', expected_version=0, task_id='implement', kind='constraint',
+            payload={'schema_version': 1, 'text': complete_constraint}, evidence=[evidence], inputs={},
+            reason='All exact clauses are required by this assigned unit.', expires_when='The Partner replaces this constraint.')
+    row = submitted(runtime)
+    reference, = [item for item in row['payload']['required_files'] if item.get('kind') == 'assignment']
+    path = Path(reference['path'])
+    constraint_line = next(line for line in path.read_text().splitlines() if line.startswith('[required-full@1] '))
+    assert json.JSONDecoder().raw_decode(constraint_line.split('] ', 1)[1])[0] == complete_constraint
+    assert reference['bytes'] == path.stat().st_size > runtime_policy.CONTEXT_BYTES
+    assert complete_constraint not in Path(row['payload']['packet_path']).read_text()
+    body = payload('full-assignment', tool_name='Read', tool_input={'file_path': str(path)})
+    assert fire(store, run, row, 'tool-start', body) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': path.read_text()}) == 0
+    assert fire(store, run, row, 'tool-start', payload('assignment-write', tool_name='Write',
+        tool_input={'file_path': str(path), 'content': 'replacement'})) == 2
+    path.write_text('damaged full assignment\n')
+    assert fire(store, run, row, 'tool-start', payload('assignment-drift', tool_name='Read',
+        tool_input={'file_path': str(path)})) == 2
+
+
+@pytest.mark.parametrize('change', ['checkpoint_id', 'required_files', 'material'])
+def test_material_read_rechecks_context_at_final_admission(runtime, monkeypatch, change):
+    store, _, run, _ = runtime
+    row = submitted(runtime)
+    reference = row['payload']['required_files'][0]
+    path = Path(reference['path'])
+    inspect = runtime_policy.inspect_call
+
+    def inspect_then_change(*args, **kwargs):
+        reading = inspect(*args, **kwargs)
+        if change == 'material':
+            path.write_text('changed after initial inspection\n')
+        else:
+            current = {**row['payload'], change: 'retired-checkpoint' if change == 'checkpoint_id' else []}
+            with store.transaction() as tx:
+                tx._change()
+                tx.db.execute('UPDATE native_launches SET payload=? WHERE launch_id=?',
+                              (json.dumps(current), row['launch_id']))
+        return reading
+
+    monkeypatch.setattr(runtime_policy, 'inspect_call', inspect_then_change)
+    assert fire(store, run, row, 'tool-start', payload('racing-material', tool_name='Read',
+        tool_input={'file_path': str(path)})) == 2
+    assert native_tools.pending(store, row['launch_id']) == 0
+
+
+def test_assignment_read_revalidates_required_facts_inside_final_writer(runtime, monkeypatch):
+    store, _, run, _ = runtime
+    with store.transaction() as tx:
+        evidence = tx.db.execute('SELECT event_id FROM events WHERE run_id=? ORDER BY rowid LIMIT 1', (run,)).fetchone()[0]
+        tx.put_record('required-race', expected_version=0, task_id='implement', kind='constraint',
+            payload={'schema_version': 1, 'text': 'Retain this exact acceptance condition.\n' * 400},
+            evidence=[evidence], inputs={}, reason='Required acceptance conditions.', expires_when='Partner replaces it.')
+    row = submitted(runtime)
+    reference, = [item for item in row['payload']['required_files'] if item.get('kind') == 'assignment']
+    inspect = runtime_policy.inspect_call
+
+    def inspect_then_replace_fact(*args, **kwargs):
+        reading = inspect(*args, **kwargs)
+        with store.transaction() as tx:
+            tx.put_record('required-race', expected_version=1, task_id='implement', kind='constraint',
+                payload={'schema_version': 1, 'text': 'The required condition has changed.'},
+                evidence=[evidence], inputs={}, reason='Partner replaced this constraint.', expires_when='Partner replaces it.')
+        return reading
+
+    monkeypatch.setattr(runtime_policy, 'inspect_call', inspect_then_replace_fact)
+    assert fire(store, run, row, 'tool-start', payload('racing-fact', tool_name='Read',
+        tool_input={'file_path': reference['path']})) == 2
+    assert native_tools.pending(store, row['launch_id']) == 0
+
+
+@pytest.mark.parametrize('target', ['packet', 'material'])
+@pytest.mark.parametrize('operation', ['Add File', 'Update File', 'Delete File', 'Move to'])
+def test_structured_patch_cannot_mutate_runtime_owned_context(runtime, target, operation):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    path = row['payload']['packet_path'] if target == 'packet' else row['payload']['required_files'][0]['path']
+    patch = f'*** Begin Patch\n*** {operation}: {path}\n*** End Patch\n'
+    assert fire(store, run, row, 'tool-start', payload('patch-material', tool_name='apply_patch', tool_input=patch)) == 2
+    assert native_tools.pending(store, row['launch_id']) == 0
+
+
+def test_large_product_instruction_file_does_not_block_other_tools(runtime):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    for relative in ['AGENTS.md', 'CLAUDE.md', '.claude/CLAUDE.md']:
+        path = Path(repo) / relative
+        path.parent.mkdir(exist_ok=True)
+        path.write_text('Product repository documentation.\n' * 400)
+    assert fire(store, run, row, 'tool-start', payload('unrelated-tool')) == 0
+    assert fire(store, run, row, 'tool-start', payload('ordinary-full-read', tool_name='Read',
+        tool_input={'file_path': str(Path(repo) / 'AGENTS.md')})) == 2
+    assert fire(store, run, row, 'tool-start', payload('ordinary-bounded-read', tool_name='Read',
+        tool_input={'file_path': str(Path(repo) / 'AGENTS.md'), 'offset': 1, 'limit': 20})) == 0

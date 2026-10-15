@@ -2,10 +2,10 @@
 # adapters/grok/install.sh <id> — write the per-agent Grok home.
 #
 # The home is GROK_HOME for this agent. It holds config.toml (minimal screen,
-# always-approve posture, goal mode on, the hx hooks) and skills. Auth is
+# always-approve posture and the hx hooks) and skills. Auth is
 # XAI_API_KEY from seed/grok-token, exported at launch; the home holds no
 # credentials. Nothing is read from ~/.grok. Goal delivery is grok's native
-# /goal loop, enabled in config; no custom command shadows it.
+# Native continuation and completion are owned by the admitted ledger run.
 #
 # The Companion is still a Claude session. After the Grok home is written this runs
 # adapters/claude/install.sh with HX_COMPANION_ONLY=1, which needs seed/token.
@@ -112,9 +112,6 @@ feedback = false
 [ui]
 screen_mode = "minimal"
 permission_mode = "always-approve"
-
-[goal]
-enabled = true
 
 """ + "\n".join(blocks)
 if continuity:

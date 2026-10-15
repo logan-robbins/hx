@@ -1,8 +1,6 @@
-"""Atomic writes: the primitive the work items and the run-directory markers use.
+"""Atomic writes for configuration, orchestration notes, and runtime markers.
 
-A write is tmp-file + fsync + same-directory rename, so a reader never sees half a file and
-an interrupted command leaves the previous version intact. `tasks.json` is not written this
-way: the v1 cut (spec 14 D25) made it an ordinary `json.dump`, with no lock around it.
+Same-directory replacement with fsync keeps readers from observing a partial file.
 """
 
 from __future__ import annotations

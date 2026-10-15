@@ -217,10 +217,8 @@ def test_map_directory_cannot_redirect_writes_outside_repository(tmp_path):
     assert not list(outside.iterdir())
 
 
-def test_schema_five_upgrade_preserves_authority(mapped):
+def test_schema_five_reopen_preserves_authority(mapped):
     store, _, _, _, _ = mapped
-    store.db.execute("DROP TABLE map_snapshots")
-    store.db.execute("PRAGMA user_version=5")
     with ContinuityStore(store.root) as upgraded:
         assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert upgraded.db.execute("SELECT count(*) FROM map_snapshots").fetchone()[0] == 0

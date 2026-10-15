@@ -12,10 +12,8 @@ from hx.ui.server import TOKEN_COOKIE, token_cookie_name
 GUARDED_GET = [
     "/api/board",
     "/api/goals",
-    "/api/archive",
-    "/api/show/eng-001",
-    "/api/show/partner",
-    "/api/events",
+        "/api/show/be-001",
+        "/api/events",
     "/static/app.js",
     "/static/style.css",
 ]

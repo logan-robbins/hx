@@ -25,6 +25,21 @@ def _pointer(path):
     return f"Read the task context at {canonical(str(path))} once before executing the assignment."
 
 
+def startup_packet_path(capsule, run_id, launch_id):
+    checkpoint = str(uuid.uuid5(uuid.NAMESPACE_URL, "hx-context:" + run_id + ":startup-" + launch_id))
+    return Path(capsule).parent / (checkpoint + ".md")
+
+
+def startup_overhead(capsule, run_id, launch_id, system):
+    """Charge the exact system prefix, submitted marker, and startup pointer."""
+    return len((system + _prompt(launch_id) + _pointer(startup_packet_path(capsule, run_id, launch_id))).encode())
+
+
+def required_files(payload, packet):
+    """Retain the invariant instruction bundle and replace assignment references."""
+    return [item for item in payload['required_files'] if item.get('kind') != 'assignment'] + packet['required_files']
+
+
 def _transition(tx, run_id, expected, status, *, payload=None, error=None):
     row = native_launch._row(tx, run_id)
     if row is None or row["status"] not in expected:
@@ -84,13 +99,17 @@ def _owned_pane(row):
     return actual
 
 
-def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
+def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure_service=True):
     """Advance once; retries inspect durable state and never repaste blindly.
 
     The call returns while the native UI is starting or busy. Repeating the same
     request advances a ready session; an ambiguous operation retains its leases.
     """
     require_partner_caller("launch", env)
+    with ledger.transaction() as tx:
+        run, _, _ = unit_execution._run(tx, run_id)
+        if run['worker_id'] != worker:
+            raise Conflict('native launch belongs to another worker')
     row = native_launch._row(ledger, run_id)
     if row is None:
         row = native_launch.prepare(ledger, worker, run_id, request_id, env=env)
@@ -163,9 +182,15 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
     if row['status'] == 'start_uncertain' and row['payload'].get('supervisor_process'):
         _owned_pane(row)
         with ledger.transaction() as tx:
-            _transition(tx, run_id, {'start_uncertain'}, 'starting')
+            _transition(tx, run_id, {'start_uncertain'}, 'starting',
+                        payload={**row['payload'], 'spawn_returned': True})
         row = native_launch._row(ledger, run_id)
-    if submit and row['status'] in {'starting', 'ready', 'submitted', 'submission_unconfirmed'}:
+    if row['status'] == 'starting' and not row['payload'].get('spawn_returned') and row['payload'].get('supervisor_process'):
+        _owned_pane(row)
+        with ledger.transaction() as tx:
+            _transition(tx, run_id, {'starting'}, 'starting', payload={**row['payload'], 'spawn_returned': True})
+        row = native_launch._row(ledger, run_id)
+    if submit and ensure_service and row['status'] in {'starting', 'ready', 'submitted', 'submission_unconfirmed'}:
         from .application_loop import ensure
         ensure(ledger.root, env=env)
     if submit and row["status"] in {"starting", "ready"}:
@@ -215,6 +240,53 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True):
     return _result(ledger, run_id)
 
 
+def reconcile_launches(ledger, *, env=None, limit=8):
+    """Advance existing launch intents fairly, retaining uncertain execution ownership.
+
+    A reserved run without a native launch is deliberately absent. Only the
+    explicit launch command authorizes native installation and execution.
+    """
+    from .application_loop import _save, _state
+    after = _state(ledger, 'launch-round').get('after', '')
+    rows = ledger.db.execute("""SELECT l.run_id FROM native_launches l JOIN runs r USING(run_id)
+        WHERE r.ended_at IS NULL AND l.status IN
+        ('starting','ready','submitted','submission_unconfirmed','submitting','start_uncertain')
+        ORDER BY l.run_id<=?,l.run_id LIMIT ?""", (after, limit)).fetchall()
+    results = []
+    for found in rows:
+        run_id = found['run_id']
+        _save(ledger, 'launch-round', {'after': run_id})
+        row = native_launch._row(ledger, run_id)
+        try:
+            if row['status'] in {'submitted', 'submission_unconfirmed', 'submitting'}:
+                try:
+                    _owned_pane(row)
+                except Conflict:
+                    with ledger.transaction() as tx:
+                        if _transition(tx, run_id, {row['status']}, 'session_uncertain',
+                                       error='original native pane is unavailable; execution ownership retained'):
+                            tx.enqueue('native_launch_unresolved', 'native-session:' + row['launch_id'],
+                                       {'task_id': tx.db.execute('SELECT task_id FROM runs WHERE run_id=?', (run_id,)).fetchone()[0],
+                                        'identity': row['launch_id'], 'run_id': run_id})
+                else:
+                    if row['status'] == 'submitting':
+                        with ledger.transaction() as tx:
+                            _transition(tx, run_id, {'submitting'}, 'submission_uncertain',
+                                        error='submission interrupted before acknowledgement')
+                result = _result(ledger, run_id)
+            else:
+                result = advance(ledger, row['payload']['worker_id'], run_id,
+                                 row['request_id'], env=env, ensure_service=False)
+            if _state(ledger, 'launch-error:' + run_id):
+                _save(ledger, 'launch-error:' + run_id, {})
+        except (HxError, OSError, subprocess.SubprocessError) as exc:
+            result = {'run_id': run_id, 'status': 'unresolved', 'error': str(exc)}
+            if _state(ledger, 'launch-error:' + run_id) != result:
+                _save(ledger, 'launch-error:' + run_id, result)
+        results.append(result)
+    return results
+
+
 def drain(ledger, worker, run_id, request_id, *, env=None):
     """Close admissions durably while retaining every execution lease.
 
@@ -230,7 +302,7 @@ def drain(ledger, worker, run_id, request_id, *, env=None):
             return _result(tx, run_id)
         if row["status"] != "draining":
             if row["status"] not in {"ready", "submitted", "submission_unconfirmed", "submission_uncertain",
-                                      "submission_rejected", "continuation_required", "session_uncertain", "starting", "start_uncertain"}:
+                                      "submission_rejected", "continuation_required", "session_uncertain", "starting", "start_uncertain", "startup_failed"}:
                 raise Conflict("native launch is changing state; reconcile startup before draining")
             # Closing admission must work even when task inputs were invalidated.
             # The immutable launch tuple, not a fresh assignment, owns shutdown.
@@ -288,23 +360,30 @@ def observe(ledger, run_id, launch_id, event, observation):
             if native_launch._bytes(persona, 262144) != rendered["system"].encode():
                 raise Conflict("native launcher did not install its expected system prefix")
             _transition(tx, run_id, startup_states, "composing_startup")
-        checkpoint = str(uuid.uuid5(uuid.NAMESPACE_URL, "hx-context:" + run_id + ":startup-" + launch_id))
-        packet_path = Path(payload["capsule"]).parent / (checkpoint + ".md")
-        overhead = len((rendered["system"] + _prompt(launch_id) + _pointer(packet_path)).encode())
-        budget = payload["initial_input_limit"] - overhead
-        if budget <= 0:
-            raise ValidationError("startup instructions exhaust the initial context budget")
-        packet = context_packets.issue(ledger, run_id, request_id="startup-" + launch_id,
-            instructions=rendered["context"], mode="forced", max_tokens=budget, optional_tokens=min(1000, budget))
-        atomic_write_text(packet_path, packet["text"])
-        payload = {**payload, "checkpoint_id": packet["checkpoint_id"], "packet_path": str(packet_path),
-                   "packet_hash": packet["packet_hash"], "pane": pane, "native_session": native_session,
-                   "startup_observed": True,
-                   "instruction_delivery": "launcher_prefix_verified_startup_observed",
-                   "charged_initial_tokens": packet["charged_tokens"] + overhead}
-        with ledger.transaction() as tx:
-            unit_execution._run(tx, run_id)
-            _transition(tx, run_id, {"composing_startup"}, "ready" if previous_status == "starting" else previous_status, payload=payload)
+        packet_path = startup_packet_path(payload['capsule'], run_id, launch_id)
+        overhead = startup_overhead(payload['capsule'], run_id, launch_id, rendered['system'])
+        from .runtime_policy import CONTEXT_BYTES
+        budget = min(CONTEXT_BYTES, payload["initial_input_limit"] - overhead)
+        try:
+            if budget <= 0:
+                raise ValidationError("startup instructions exhaust the initial context budget")
+            packet = context_packets.issue(ledger, run_id, request_id="startup-" + launch_id,
+                instructions=rendered["context"], mode="forced", max_tokens=budget, optional_tokens=min(1000, budget))
+            atomic_write_text(packet_path, packet["text"])
+            payload = {**payload, "checkpoint_id": packet["checkpoint_id"], "packet_path": str(packet_path),
+                       "packet_hash": packet["packet_hash"], "pane": pane, "native_session": native_session,
+                       "required_files": required_files(payload, packet),
+                       "startup_observed": True,
+                       "instruction_delivery": "launcher_prefix_verified_startup_observed",
+                       "charged_initial_tokens": packet["charged_tokens"] + overhead}
+            with ledger.transaction() as tx:
+                unit_execution._run(tx, run_id)
+                _transition(tx, run_id, {"composing_startup"}, "ready" if previous_status == "starting" else previous_status, payload=payload)
+        except Exception as exc:
+            with ledger.transaction() as tx:
+                _transition(tx, run_id, {'composing_startup'}, 'startup_failed',
+                            error=type(exc).__name__)
+            raise
         return _pointer(packet_path)
     if event == "request" and not row["payload"].get("startup_observed"):
         with ledger.transaction() as tx:
@@ -362,5 +441,6 @@ def refresh_before_submission(ledger, row):
             return
         atomic_write_text(Path(payload['packet_path']), packet['text'])
         updated = {**payload, 'checkpoint_id': packet['checkpoint_id'], 'packet_hash': packet['packet_hash'],
+                   'required_files': required_files(payload, packet),
                    'charged_initial_tokens': packet['charged_tokens'] + overhead}
         _transition(tx, row['run_id'], {'ready'}, 'ready', payload=updated)

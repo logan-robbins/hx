@@ -1,0 +1,195 @@
+{
+  "identity": "be-001",
+  "schema_version": 2,
+  "root_abs": "/private/fixture/hx",
+  "ts": "2026-10-15T15:26:21Z",
+  "ledger_revision": 7,
+  "plans": [
+    {
+      "plan_id": "orders",
+      "revision": 1,
+      "request_hash": "hash",
+      "payload": {
+        "definition": {
+          "goal": "Order lookup",
+          "plan_id": "orders",
+          "schema_version": 2,
+          "tasks": [
+            {
+              "acceptance": [
+                "Result matches input"
+              ],
+              "check_policy": {
+                "required_checks": [
+                  "unit"
+                ],
+                "reviewer": "qa-001"
+              },
+              "dependency_packet": true,
+              "goal": "Return the order result",
+              "map_inputs": [],
+              "outputs": [
+                {
+                  "id": "source",
+                  "kind": "source",
+                  "paths": [
+                    "order.py"
+                  ],
+                  "version": 1
+                }
+              ],
+              "plan_id": "orders",
+              "prerequisites": [],
+              "repository": "repo",
+              "resources": [],
+              "workdir": "/fixture/hx",
+              "write_paths": [
+                "order.py"
+              ],
+              "write_scope": [
+                "order.py"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "orders.work",
+      "revision": 1,
+      "parent_id": null,
+      "payload": {
+        "acceptance": [
+          "Result matches input"
+        ],
+        "check_policy": {
+          "required_checks": [
+            "unit"
+          ],
+          "reviewer": "qa-001"
+        },
+        "dependency_packet": true,
+        "goal": "Return the order result",
+        "map_inputs": [],
+        "outputs": [
+          {
+            "id": "source",
+            "kind": "source",
+            "paths": [
+              "order.py"
+            ],
+            "version": 1
+          }
+        ],
+        "plan_id": "orders",
+        "prerequisites": [],
+        "repository": "repo",
+        "resources": [],
+        "workdir": "/fixture/hx",
+        "write_paths": [
+          "order.py"
+        ],
+        "write_scope": [
+          "order.py"
+        ]
+      },
+      "created_at": 1.0,
+      "status": "implementing",
+      "active_run_id": "run-1",
+      "worker_id": "be-001",
+      "completion": null,
+      "binding": null
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "run-1",
+      "task_id": "orders.work",
+      "task_revision": 1,
+      "worker_id": "be-001",
+      "map_revision": 0,
+      "phase": "implementing",
+      "checkpoint_id": null,
+      "outcome": null,
+      "started_at": 1.0,
+      "ended_at": null,
+      "assignment": {
+        "acceptance": [
+          "Result matches input"
+        ],
+        "check_policy": {
+          "required_checks": [
+            "unit"
+          ],
+          "reviewer": "qa-001"
+        },
+        "dependency_packet": true,
+        "goal": "Return the order result",
+        "map_inputs": [],
+        "outputs": [
+          {
+            "id": "source",
+            "kind": "source",
+            "paths": [
+              "order.py"
+            ],
+            "version": 1
+          }
+        ],
+        "plan_id": "orders",
+        "prerequisites": [],
+        "repository": "repo",
+        "resources": [],
+        "workdir": "/fixture/hx",
+        "write_paths": [
+          "order.py"
+        ],
+        "write_scope": [
+          "order.py"
+        ]
+      },
+      "launch_id": null,
+      "native_status": null,
+      "native_error": null
+    }
+  ],
+  "leases": [
+    {
+      "repository": "repo",
+      "canonical_path": "order.py",
+      "run_id": "run-1",
+      "payload": {}
+    }
+  ],
+  "progress": [],
+  "checkpoints": [
+    {
+      "checkpoint_id": "checkpoint-1",
+      "run_id": "run-1",
+      "ledger_revision": 1,
+      "task_revision": 1,
+      "packet_hash": "artifact",
+      "acknowledged": 1
+    }
+  ],
+  "checks": [
+    {
+      "receipt_id": "receipt-1",
+      "run_id": "run-1",
+      "check_id": "unit",
+      "exit_code": 0,
+      "valid": 1,
+      "duration": 0.5,
+      "artifact_hash": "artifact"
+    }
+  ],
+  "milestones": [],
+  "delivery": {
+    "changes": [],
+    "candidates": []
+  },
+  "truncated": false,
+  "proof_note": "Recorded state; plan ready and change status revalidate current proof."
+}

@@ -44,6 +44,8 @@ def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]
     state the `SessionStart(compact)` context file is composed from. It returns nothing —
     no decision output, ever (spec 02).
     """
+    from .companion import require_partner
+    require_partner(item_id)
     stream, is_main = stream_for(payload, item_id, root)
     streams.append_record(root, item_id, stream, {
         "event": COMPACT_PENDING,
@@ -62,6 +64,8 @@ def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]
 
 def post(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
     """Record what Claude Code kept, so the Companion can see the fallback path's summary."""
+    from .companion import require_partner
+    require_partner(item_id)
     stream, _ = stream_for(payload, item_id, root)
     summary = payload.get("compact_summary") or payload.get("summary")
     seq = streams.append_record(root, item_id, stream, {
@@ -69,18 +73,4 @@ def post(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str
         "trigger": payload.get("trigger"),
         "compact_summary": streams.excerpt(summary) if summary else None,
     })
-
-    # Native compaction is the fallback path, and what it kept is the only record of the part
-    # of the conversation it threw away. It goes into episode memory next to the Companion's
-    # own chunks, marked `compact` so a search can tell them apart (docs/memory.md).
-    if summary and item_id != PARTNER:
-        from . import memory as memory_mod
-        from .companion import state_path
-        from .stepstate import load as load_state
-
-        state = load_state(state_path(root, item_id, stream)) or {}
-        memory_mod.enqueue_quietly(
-            root, item_id, stream, "compact", state,
-            seq=seq, text=streams.excerpt(summary),
-        )
     return 0, ""

@@ -172,7 +172,7 @@ def test_a_fresh_instance_has_no_mirror_worktrees_or_orders_dir(
 
     from hx.board import collect
 
-    assert collect(root)["items"] == [], "the Partner is not an item (spec 14 D25)"
+    assert collect(root)["tasks"] == [], "Partner bootstrap creates no packet assignment"
 
 
 def test_there_is_no_implicit_repository_creation_push_or_upgrade_command(run_hx, tmp_path):
@@ -250,35 +250,3 @@ def test_no_install_path_reads_the_users_claude_home(tmp_path, fake_claude_on_pa
     preflight(root, None, os.environ)
     install_skeleton(root)
     assert opened == [], f"hx opened the user's Claude home: {opened}"
-
-
-def test_dispatch_leaves_a_dirty_workdir_untouched(instance, hx, goals, launched):
-    """spec 13 M1, spec 14 D25: a dirty workdir is the agent's business, not hx's."""
-    launched("eng-001")
-    workdir = instance / "wt" / "eng-001"
-    (workdir / "half-done.py").write_text("work in progress\n")
-    goals("eng-001")
-
-    result = hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance)
-    assert result.returncode == 0, result.stderr
-    assert (workdir / "half-done.py").read_text() == "work in progress\n"
-    assert git("-C", str(workdir), "status", "--porcelain").stdout.strip() != ""
-
-
-def test_bench_touches_neither_git_nor_the_workdir(instance, hx, goals, launched):
-    """spec 08, spec 14 D25: the body archive is the whole of `hx bench`."""
-    launched("eng-001")
-    goals("eng-001")
-    assert hx("dispatch", "eng-001", "run/goal-eng-001.md", cwd=instance).returncode == 0
-    assert hx("complete", "blocked", harness_id="eng-001").returncode == 0
-
-    workdir = instance / "wt" / "eng-001"
-    (workdir / "never-committed.py").write_text("untracked work\n")
-    head = git("-C", str(workdir), "rev-parse", "HEAD").stdout
-
-    result = hx("bench", "eng-001")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "patch" not in result.stdout
-    assert list((instance / "pods" / "engineers" / "archive").glob("*.patch")) == []
-    assert (workdir / "never-committed.py").is_file()
-    assert git("-C", str(workdir), "rev-parse", "HEAD").stdout == head

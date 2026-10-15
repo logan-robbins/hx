@@ -11,3 +11,9 @@ Prefer named paths, symbols, and bounded evidence to open-ended surveys. Reuse v
 facts, and reread selected source when the new question requires it. Do not collect personal
 memory or historical summaries. If the question expands beyond your scope, report the needed
 boundary change and return what you can verify.
+
+Every directive follows actual code/application graph dependencies. Search for existing
+behavior, providers, interfaces, callers, tests, and precedents before building; reuse known
+capabilities. Maximize useful independent parallel work within inherited ownership, resources,
+and host capacity. Apparent request size does not select packet count. Worker edits/proof
+require the exact binding's independent approval; do not infer it from a proposed check list.

@@ -69,7 +69,7 @@ def sync_seed(root: Path) -> None:
         return
     values = parse(Path(path))
     mapping = dict(_SEED_KEYS)
-    mapping["token"] = ("ANTHROPIC_API_KEY", "ANTRHOPIC_API_KEY")
+    mapping["token"] = ("ANTHROPIC_API_KEY",)
     seed = root / "seed"
     seed.mkdir(parents=True, exist_ok=True)
     for filename, names in mapping.items():
@@ -90,7 +90,6 @@ def sync_seed(root: Path) -> None:
 def main() -> None:
     """Emit NUL-delimited assignments for the private adapter shell loader."""
     values = parse(Path(sys.argv[1]))
-    values.setdefault("ANTHROPIC_API_KEY", values.get("ANTRHOPIC_API_KEY", ""))
     values.setdefault("XAI_API_KEY", values.get("GROK_API_KEY", ""))
     for key, value in values.items():
         if value:

@@ -1,6 +1,6 @@
 # LEARNINGS · planning
 
-Shaping a work item: lanes, contracts and stubs, gates to define, sizing, sequencing.
+Shaping dependency packets: behavior, contracts, permitted stand-ins, proof, ownership, and useful parallelism.
 
 One line per rule, in exactly this shape, written only by `hx learn accept`:
 

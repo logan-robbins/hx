@@ -29,7 +29,7 @@ from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import unquote, quote, urlparse
 
 from hx.ui.data import (
     WAKE_ACCEPTED,
@@ -133,7 +133,7 @@ class Watcher(threading.Thread):
         if not previous:
             return []
         return sorted(
-            scope for scope, mtime in current.items() if mtime > previous.get(scope, 0.0)
+            scope for scope, mtime in current.items() if mtime != previous.get(scope)
         ) + sorted(scope for scope in previous if scope not in current)
 
     def run(self) -> None:
@@ -285,10 +285,8 @@ class UIHandler(BaseHTTPRequestHandler):
             self._from_source(self.source.board)
         elif path == "/api/goals":
             self._from_source(self.source.goals)
-        elif path == "/api/archive":
-            self._from_source(self.source.archive)
         elif path.startswith("/api/show/"):
-            agent_id = path[len("/api/show/") :]
+            agent_id = unquote(path[len("/api/show/") :])
             self._from_source(lambda: self.source.show(agent_id))
         elif path == "/api/events":
             self._events()
