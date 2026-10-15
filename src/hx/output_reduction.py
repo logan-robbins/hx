@@ -1,14 +1,27 @@
 """Bounded verbatim tool-output chunks; Jev judges surplus, code preserves diagnostics."""
 from __future__ import annotations
 
+import json
 import re
-from . import jev, jev_decisions
+from . import jev, jev_decisions, test_summary
 from .continuity_store import canonical
 
 OUTPUT_BYTES = 4096
 CHUNK_BYTES = 768
 MAX_SEMANTIC_BYTES = 8192
 DIAGNOSTIC = re.compile(r'error|fail(?:ed|ure)?|exception|traceback|panic|assert|^E\s|^\s*[+-]\s', re.I)
+LEAF = re.compile(r'::| › | > ')
+
+
+def _needles(summary):
+    """Failing names and their leaf test names, only when a recognized runner reported a failure."""
+    if not test_summary.failed(summary):
+        return None
+    needles = set()
+    for name in summary['failing']:
+        leaf = LEAF.split(name)[-1]
+        needles.update([name, leaf] if len(leaf) >= 4 else [name])
+    return needles
 
 
 def reduce(store, run_id, event_id, *, env=None):
@@ -18,10 +31,11 @@ def reduce(store, run_id, event_id, *, env=None):
     with store.transaction() as tx:
         run = _active_run(tx, run_id)
         goal = tx.task(run['task_id'])['payload']['goal']
-        event = tx.db.execute('SELECT run_id FROM events WHERE event_id=?', (event_id,)).fetchone()
+        event = tx.db.execute('SELECT run_id,payload FROM events WHERE event_id=?', (event_id,)).fetchone()
         if event is None or event[0] != run_id:
             from .errors import ValidationError
             raise ValidationError('tool output belongs to another assignment')
+    needles = _needles(json.loads(event[1])['summary'])
     first = read(store, event_id, offset=0, limit=OUTPUT_BYTES)
     if first['next_offset'] is None and first['encoding'] == 'utf-8':
         return {'text': first['content'], 'encoding': first['encoding'], 'complete': True, 'omitted_bytes': 0}
@@ -31,6 +45,9 @@ def reduce(store, run_id, event_id, *, env=None):
     from .errors import ValidationError
     selected, candidates, used, scanned, previous, protect_next = [], [], 0, 0, None, False
     selected_bytes, required_overflow, offset, unscored = 0, False, 0, 0
+    # A failed recognized run ranks chunks naming a failing test ahead of other
+    # diagnostics, and diagnostics ahead of head chunks, within the same bounds.
+    named = set()
     source = store.artifacts / first['source_hash']
     hasher = hashlib.sha256()
     # Streaming checksum validates the captured artifact once, not once per slice.
@@ -48,12 +65,21 @@ def reduce(store, run_id, event_id, *, env=None):
                 required_overflow = True
                 previous, protect_next = None, False
                 continue
-            diagnostic = bool(DIAGNOSTIC.search(text))
+            if needles and any(needle in text for needle in needles):
+                named.add(start)
+            diagnostic = start in named or bool(DIAGNOSTIC.search(text))
             if diagnostic or protect_next:
                 for item in ([previous] if previous else []) + [(start, text)]:
                     if item in selected:
                         continue
                     size = len(item[1].encode())
+                    while item[0] in named and selected_bytes + size > OUTPUT_BYTES * 2:
+                        evictable = [entry for entry in selected if entry[0] not in named]
+                        if not evictable:
+                            break
+                        selected.remove(evictable[0])
+                        selected_bytes -= len(evictable[0][1].encode())
+                        required_overflow = True
                     if selected_bytes + size <= OUTPUT_BYTES * 2:
                         selected.append(item)
                         selected_bytes += size
@@ -102,8 +128,11 @@ def reduce(store, run_id, event_id, *, env=None):
                     reserved += size
                 else:
                     required_overflow = True
+    diagnostics = {offset for offset, _ in selected}
+    ordered = sorted(keep.items()) if needles is None else sorted(keep.items(),
+        key=lambda item: (0 if item[0] in named else 1 if item[0] in diagnostics else 2, item[0]))
     lines, kept_bytes = [], 0
-    for offset, text in sorted(keep.items()):
+    for offset, text in ordered:
         line = f'[{offset}] {text}'
         if used + len((line + "\n").encode()) > OUTPUT_BYTES:
             required_overflow = True

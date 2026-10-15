@@ -315,3 +315,21 @@ def test_receipt_without_current_provenance_cannot_pass_any_gate(setup):
     assert not checks.receipt_intact(store, row)
     assert not checks.current(store, run, receipt["receipt_id"], env=env)["current"]
     assert not checks.run_check(store, run, "unit", recipe=definition(), env=env, request_id="proof")["valid"]
+
+
+def test_check_result_carries_the_one_parsed_test_summary(setup, monkeypatch):
+    store, run, _, env = setup
+    recipe = definition("print('..s'); print('Ran 3 tests in 0.001s'); print(); print('OK (skipped=1)')")
+    result = checks.run_check(store, run, "unit", recipe=recipe, env=env)
+    summary = {"framework": "unittest", "passed": None, "failed": 0, "skipped": 1, "errors": 0,
+               "failing": [], "truncated": False}
+    assert result["summary"] == summary
+    event = json.loads(store.db.execute("SELECT payload FROM events WHERE event_id=?", (result["event_id"],)).fetchone()[0])
+    assert event["summary"] == summary
+    monkeypatch.setattr(checks, "execute", lambda *_: pytest.fail("identical check ran again"))
+    assert checks.run_check(store, run, "unit", recipe=recipe, env=env)["summary"] == summary
+
+
+def test_spawn_failure_has_no_summary(tmp_path):
+    observed = checks.execute([str(tmp_path / "missing")], tmp_path, {}, tmp_path / "output", 1, 1000)
+    assert observed["reason"] == "spawn_failed" and observed["summary"] is None

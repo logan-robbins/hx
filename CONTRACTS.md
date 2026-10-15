@@ -359,6 +359,20 @@ Equal in-flight requests share an execution. Reuse creates a new requesting-run 
 Corruption rejects reuse. Interrupted claims remain held until owned process/group death
 is proven; absent spawn identity remains unresolved.
 
+Every bounded execution parses its captured output once (`hx.test_summary`) into `summary`:
+`{framework, passed, failed, skipped, errors, failing, truncated}` for pytest, unittest,
+jest, vitest, go test, cargo test or dotnet test, else `null`. Counts are what the runner
+printed: 0 when reported by omission, `null` when never printed. `failing` lists at most 20
+unique failed or errored names of at most 512 characters in output order; `truncated` marks
+an omitted name. `hx check` prints `receipt_id`, `check_id`, `check_version`, `exit_code`,
+`valid`, `reused`, `execution_id`, `reusable`, `reasons`, `artifact_hash`, `summary` and
+`event_id`; the `check_result` event carries the same result. The `tool_result` event carries
+the execution observation with `summary`, `artifact_hash` and `command`; `hx tool-exec` prints
+`exit_code`, `reason`, `output_bytes`, `summary`, `event_id` and the reduction. When `summary`
+reports a failure, reduction keeps chunks naming a failing test, then other diagnostics, then
+head chunks, in that order within the unchanged byte bounds and Jev contract. A summary is a
+parse of emitted text, not an execution receipt.
+
 ## .NET build broker (`hx build`)
 
 `graph` and `build` name a project/solution plus cwd, configuration, optional framework,

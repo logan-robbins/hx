@@ -60,3 +60,29 @@ def test_excess_diagnostics_explicitly_require_recovery(planned):
     result = tool_execution.execute(store, run, 'many-errors', [sys.executable, '-c', "print('ERROR: detailed failure\\n'*500)"])
     assert result['requires_read'] and not result['complete']
     assert len(result['text'].encode()) <= 4096
+    assert result['summary'] is None
+    offsets = [int(line[1:line.index(']')]) for line in result['text'].split('\n') if line.startswith('[')]
+    assert offsets == sorted(offsets)
+
+
+def test_failed_test_run_summary_is_recorded_and_its_failing_chunk_leads_the_reduction(planned, monkeypatch):
+    import json
+    store, run, _ = planned
+    monkeypatch.setattr(jev, 'evaluate', lambda state, questions, **kwargs: {'model': jev.MODEL,
+        'answers': {key: {'type': 'noul', 'noul': .01} for key in questions},
+        'usage': {'input_tokens': 50, 'output_tokens': 20}, 'latency_ms': 1})
+    # 480 lines of 32 bytes fill 20 complete 768-byte chunks, so the tail starts its own chunk.
+    tail = ('_____ test_rejects_field _____\nE       AssertionError: expected accepted\n'
+            '===== short test summary info =====\nFAILED tests/test_parser.py::test_rejects_field - AssertionError\n'
+            '===== 1 failed, 3 passed in 0.50s =====\n')
+    script = f"import sys\nsys.stdout.write('warning: retry error budget 80%\\n' * 480 + {tail!r})\nraise SystemExit(1)"
+    result = tool_execution.execute(store, run, 'pytest', [sys.executable, '-c', script])
+    assert result['summary'] == {'framework': 'pytest', 'passed': 3, 'failed': 1, 'skipped': 0, 'errors': 0,
+                                 'failing': ['tests/test_parser.py::test_rejects_field'], 'truncated': False}
+    payload = json.loads(store.db.execute('SELECT payload FROM events WHERE event_id=?', (result['event_id'],)).fetchone()[0])
+    assert payload['summary'] == result['summary']
+    # The head alone overflows the diagnostic selection; the failing chunk displaces head chunks.
+    assert result['text'].startswith('[15360] _____ test_rejects_field')
+    assert 'FAILED tests/test_parser.py::test_rejects_field' in result['text']
+    assert 'retry error budget' in result['text'] and result['requires_read']
+    assert len(result['text'].encode()) <= output_reduction.OUTPUT_BYTES

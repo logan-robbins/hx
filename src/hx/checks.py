@@ -14,7 +14,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import check_artifacts, fingerprints
+from . import check_artifacts, fingerprints, test_summary
 from .continuity_store import ContinuityStore, Conflict, _id, canonical, digest
 from .errors import ValidationError
 
@@ -132,7 +132,8 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
         except OSError as exc:
             message = f"Check could not start: {type(exc).__name__}.\n".encode()[:max_bytes]
             target.write(message)
-            return {"exit_code": 127, "duration": time.monotonic() - started, "reason": "spawn_failed", "output_bytes": len(message)}
+            return {"exit_code": 127, "duration": time.monotonic() - started, "reason": "spawn_failed",
+                    "output_bytes": len(message), "summary": None}
         try:
             if on_spawn is not None:
                 child_observation = on_spawn(process)
@@ -178,9 +179,12 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
             process.stdout.close()
         target.flush()
         os.fsync(target.fileno())
+    # The one parse of captured output; tool results, check results and reduction reuse it.
+    with output.open("rb") as captured:
+        summary = test_summary.summarize_lines(line.decode("utf-8", "replace") for line in captured)
     return {"exit_code": process.returncode, "duration": time.monotonic() - started,
             "reason": reason, "output_bytes": size, "child": child_observation,
-            "process_group_absent": group_absent}
+            "process_group_absent": group_absent, "summary": summary}
 
 
 def _artifact_intact(store, sha):
@@ -372,7 +376,7 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
                   "exit_code": observed["exit_code"], "valid": valid, "reused": reuse is not None,
                   "execution_id": reuse["execution_id"] if reuse else execution_id,
                   "reusable": valid and before_env["complete"] and after_env["complete"],
-                  "reasons": reasons, "artifact_hash": artifact}
+                  "reasons": reasons, "artifact_hash": artifact, "summary": observed["summary"]}
         event = tx.append_event(run_id, "checks", f"check:{execution_id}", "check_result", result)
         result["event_id"] = event["event_id"]
         payload = {"schema_version": 2, "result": result, "reusable": result["reusable"],

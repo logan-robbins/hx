@@ -63,7 +63,7 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
     # Provider failure leaves captured output and command identity intact. A
     # deliberate retry can reduce that same output; it never repeats the command.
     reduced = output_reduction.reduce(store, run_id, result['event_id'], env=child)
-    return {key: result[key] for key in ('exit_code', 'reason', 'output_bytes', 'event_id')} | reduced
+    return {key: result[key] for key in ('exit_code', 'reason', 'output_bytes', 'summary', 'event_id')} | reduced
 
 
 def main(argv, root, *, env=None):

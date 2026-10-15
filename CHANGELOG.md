@@ -11,6 +11,13 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- Test-run summaries (CONTRACTS.md § Scoped check execution artifacts): `checks.execute` parses
+  captured output once with `hx.test_summary` (pytest, unittest, jest, vitest, go test, cargo
+  test, dotnet test) into `summary` — `framework`, printed `passed`/`failed`/`skipped`/`errors`
+  counts or `null`, at most 20 `failing` names and `truncated` — or `null`. `hx check`, the
+  `check_result` and `tool_result` events and `hx tool-exec` carry it. When it reports a
+  failure, output reduction keeps chunks naming a failing test first, then other diagnostics,
+  then head chunks, within the same bounds.
 - `hx memory warm` (operator): the one-time download of the embedding model into
   `~/.cache/chroma/onnx_models`. Every other chroma open now requires the model already on disk
   and otherwise raises `MemoryUnavailable` naming the command — an agent at a boundary never
