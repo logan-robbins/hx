@@ -394,6 +394,10 @@ def status_file(root: Path, item_id: str) -> Path | None:
     finally:
         connection.close()
 
+# A compiled codex/meta assignment is about 8.3 KB, counted in bytes without a tokenizer;
+# the default has to hold the system's own largest native delivery.
+DEFAULT_MAX_TOKENS = 16000
+
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx compose", add_help=True)
     parser.add_argument("id")
@@ -408,12 +412,12 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--require", action="append", default=[])
     parser.add_argument("--instructions", help="explicit resolved instruction file to include and charge once")
     parser.add_argument("--prompt-manifest", help="verify compiled context-channel instructions and include them once")
-    parser.add_argument("--max-tokens", type=int, default=8000)
+    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     parser.add_argument("--optional-tokens", type=int, default=1000)
     parser.add_argument("--json", action="store_true", help="return checkpoint identity, artifact path, and coverage")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    ledger_options = args.request or args.checkpoint or args.ack or args.planned or args.record or args.require or args.instructions or args.prompt_manifest or args.json or args.max_tokens != 8000 or args.optional_tokens != 1000
+    ledger_options = args.request or args.checkpoint or args.ack or args.planned or args.record or args.require or args.instructions or args.prompt_manifest or args.json or args.max_tokens != DEFAULT_MAX_TOKENS or args.optional_tokens != 1000
     if not args.run and ledger_options:
         raise ValidationError("ledger context options require --run")
     if args.run:
@@ -424,7 +428,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
             raise ValidationError("ledger context requires --request or --checkpoint, and scopes all run streams together")
         if args.instructions and args.prompt_manifest:
             raise ValidationError("use a prompt manifest or an explicit instruction file, not both")
-        if args.checkpoint and (args.record or args.require or args.instructions or args.prompt_manifest or args.planned or args.max_tokens != 8000 or args.optional_tokens != 1000):
+        if args.checkpoint and (args.record or args.require or args.instructions or args.prompt_manifest or args.planned or args.max_tokens != DEFAULT_MAX_TOKENS or args.optional_tokens != 1000):
             raise ValidationError("checkpoint replay cannot change its frozen selection or budget")
         who = caller(env)
         if who not in {None, "partner", args.id}:

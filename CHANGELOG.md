@@ -11,6 +11,10 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- `hx compose --max-tokens` defaults to 16000 (`compose.DEFAULT_MAX_TOKENS`), not 8000: a compiled
+  codex/meta assignment is about 8.3 KB and is counted in bytes when no tokenizer is present, so
+  the default must hold the system's own largest native delivery. The live native path still
+  budgets with the model's real input limit.
 - Per-agent chat metrics (docs/prompt-runtime.md): `hx metrics` adds `agents`, each worker's
   launch `flavors`, `chat_bytes`, `output_tokens` and `turns` (model responses) from captured
   main-session events — Claude transcripts, Codex rollouts, Pi `message_end` records and meta

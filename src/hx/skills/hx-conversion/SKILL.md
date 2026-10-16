@@ -104,18 +104,17 @@ its `## Definition of done`, runs it before `hx complete done`, and names the ru
   `InvoiceServiceImpl2` next to `InvoiceService` is the second interface this skill exists to
   prevent.
 - When the source behaviour is wrong (a bug you would be porting), do not silently fix or
-  preserve it. Record the question and both options in `## Open decision`, then
-  `hx complete decision`.
+  preserve it. Record the question and both options in `## Open decision`, then report it
+  as a typed `hx progress` blocker; `hx complete` accepts only `done`.
 - Publish only contracts declared as your own packet outputs. External registry promotion
   belongs to the Partner. Report an undeclared/missing prerequisite with typed progress
   under a planned run; the Partner schedules publication or revises dependencies.
 
 ## Partner only: register the contracts first
 
-A worker never runs the command in this section: it is refused for a worker caller. Planned
-workers report the missing prerequisite or decision through the typed `hx progress` blocker;
-the Partner schedules publication or revises the packet. Ordinary goal-file workers use
-`hx complete blocked` or `hx complete decision`.
+A worker never runs the command in this section: it is refused for a worker caller. A worker
+reports the missing prerequisite or decision through the typed `hx progress` blocker; the
+Partner schedules publication or revises the packet.
 
 ```bash
 hx code contracts --register contracts/billing.jsonl
