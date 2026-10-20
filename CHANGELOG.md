@@ -89,6 +89,14 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- A worker's Bash command is routed by its shape, not its first word
+  (docs/fleet-throughput-plan.md P2.2, D7). The line is split with `shlex` on `&&`, `;`, `|`,
+  `||`, `&` and parentheses, and each command's executable is taken past `NAME=value`, `env`,
+  `npx`, `uv run` and `python -m`, and a git or go subcommand past global options, so
+  `python3 -m pytest`, `uv run pytest`, `cd x && pytest` and `git -C x diff` are sent to
+  `hx tool-exec` like a bare `pytest`. File readers are refused in any command of the line;
+  `rg`/`grep` reading a pipe filters output and stays allowed.
+
 - The seam and output reduction fire without Jev (docs/fleet-throughput-plan.md P0.4, D4, D8).
   `jev_decisions.decide` raises `jev.Unavailable` (no credential, timeout, invalid answer) and
   every caller degrades: Jev delta classification settles the affected events as `unclassified`

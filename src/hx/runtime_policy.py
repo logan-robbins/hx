@@ -16,6 +16,12 @@ CONTEXT_BYTES = 8192
 MEMORY_BYTES = 4096
 SEARCH_RESULTS = 80
 INPUT_BYTES = 16384
+#: Build, test and diff programs whose output belongs in `hx tool-exec` or an assigned check.
+NOISY = {'pytest', 'npm', 'pnpm', 'yarn', 'cargo', 'make', 'mvn', 'gradle', 'dotnet'}
+NOISY_SUBCOMMANDS = {('git', 'diff'), ('git', 'show'), ('git', 'log'), ('go', 'test')}
+READERS = {'cat', 'less', 'more', 'find', 'head', 'tail', 'awk'}
+#: Global options that take the next argument before a git or go subcommand.
+VALUE_OPTIONS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
 
 
 def _stamp(path):
@@ -49,6 +55,60 @@ def _source(payload, task):
 def _material_reference(row, path):
     return next((material for material in row['payload']['required_files']
                  if Path(material['path']).resolve() == path), None)
+
+
+def _segments(command):
+    """Each command of a shell line, split on `&&`, `;`, `|`, `||`, `&` and parentheses, with
+    whether its input is piped. A `cd …` is a command of its own."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=';&|()<>')
+    lexer.whitespace_split = True
+    current, piped = [], False
+    for token in lexer:
+        if token and all(char in ';&|()' for char in token):
+            if current:
+                yield current, piped
+            current, piped = [], '|' in token and '||' not in token
+        else:
+            current.append(token)
+    if current:
+        yield current, piped
+
+
+def _module(args):
+    """`python -m MODULE ARGS` as [MODULE, *ARGS]; None for a script, `-c` code or a REPL."""
+    for index, part in enumerate(args):
+        if part == '-m':
+            return args[index + 1:] or None
+        if part.startswith('-m'):
+            return [part[2:], *args[index + 1:]]
+        if part == '-c' or not part.startswith('-'):
+            return None
+    return None
+
+
+def _program(parts):
+    """A command's executable and arguments past `NAME=value`, `env`, `npx`, `uv run` and `python -m`."""
+    while parts:
+        name = Path(parts[0]).name
+        if '=' in parts[0] and parts[0].partition('=')[0].isidentifier():
+            parts = parts[1:]
+        elif name in {'env', 'npx'} or name == 'uv' and parts[1:2] == ['run']:
+            parts = parts[2 if name == 'uv' else 1:]
+            while parts and parts[0].startswith('-'):
+                parts = parts[1:]
+        elif name.startswith('python') and (module := _module(parts[1:])):
+            parts = module
+        else:
+            return name, parts[1:]
+    return None, []
+
+
+def _subcommand(args):
+    """The subcommand past global options, as `diff` in `git -C path --no-pager diff`."""
+    index = 0
+    while index < len(args) and args[index].startswith('-'):
+        index += 2 if args[index] in VALUE_OPTIONS else 1
+    return args[index] if index < len(args) else None
 
 
 def inspect_call(row, task, observation, *, root=None):
@@ -144,7 +204,7 @@ def inspect_call(row, task, observation, *, root=None):
         # This is an efficiency gate, not an attempt to sandbox arbitrary code.
         if isinstance(command, str):
             try:
-                parts = shlex.split(command)
+                commands = list(_segments(command))
             except ValueError:
                 return None
             from .file_inspection import require_non_file_output
@@ -152,14 +212,15 @@ def inspect_call(row, task, observation, *, root=None):
                 require_non_file_output(['sh', '-c', command])
             except HxError as exc:
                 raise AdmissionDenied(str(exc)) from exc
-            noisy = {'pytest', 'npm', 'pnpm', 'yarn', 'cargo', 'make', 'mvn', 'gradle', 'dotnet'}
-            if parts and (parts[0] in noisy or parts[:2] in [['git', 'diff'], ['git', 'show'], ['git', 'log'], ['go', 'test']]):
-                raise AdmissionDenied('run build/test/diff output through hx tool-exec --request ID -- COMMAND, or use an assigned hx check')
-            if parts and (parts[0] in {'cat', 'less', 'more', 'find', 'head', 'tail', 'awk'}
-                          or parts[0] == 'sed' and any(part == '-n' or part.startswith('-n') for part in parts[1:])):
-                raise AdmissionDenied('use the native complete-file read tool for files or bounded search for trees')
-            if parts and parts[0] in {'rg', 'grep'}:
-                raise AdmissionDenied('use scoped Grep with head_limit, or hx tool-exec --request ID -- rg PATTERN PATH for bounded output')
+            for parts, piped in commands:
+                program, args = _program(parts)
+                if program in NOISY or (program, _subcommand(args)) in NOISY_SUBCOMMANDS:
+                    raise AdmissionDenied('run build/test/diff output through hx tool-exec --request ID -- COMMAND, or use an assigned hx check')
+                if program in READERS or program == 'sed' and any(part.startswith('-n') for part in args):
+                    raise AdmissionDenied('use the native complete-file read tool for files or bounded search for trees')
+                # Piped input is command output being filtered, not a tree search.
+                if program in {'rg', 'grep'} and not piped:
+                    raise AdmissionDenied('use scoped Grep with head_limit, or hx tool-exec --request ID -- rg PATTERN PATH for bounded output')
     return None
 
 

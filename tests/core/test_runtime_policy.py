@@ -59,6 +59,20 @@ def test_bounded_search_remains_available(runtime):
     assert fire(store, run, row, 'tool-start', payload('shell-search', tool_input={'command': 'hx tool-exec --request search1 -- rg -m 20 Compiler compiler.py'})) == 0
 
 
+def test_noisy_commands_route_by_shape_not_first_word(runtime):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    noisy = ['python3 -m pytest -q', 'uv run pytest', 'cd x && pytest', 'git -C x diff',
+             'cd x&&pytest', 'uv run python -m pytest tests', 'FOO=1 env -i npx pnpm test',
+             'make lint; git --no-pager log -3', 'ls x || cargo build', 'pytest 2>&1 | tee run.log']
+    for index, command in enumerate(noisy):
+        assert fire(store, run, row, 'tool-start', payload(f'noisy-{index}', tool_input={'command': command})) == 2, command
+    quiet = ['python3 -m json.tool data.json', 'python3 script.py -m pytest', 'git -C x status', 'cd x && ls',
+             'echo "a && pytest"', 'pip list | grep pytest', 'hx tool-exec --request t1 -- uv run pytest']
+    for index, command in enumerate(quiet):
+        assert fire(store, run, row, 'tool-start', payload(f'quiet-{index}', tool_input={'command': command})) == 0, command
+
+
 def test_search_result_reused_after_reset_but_invalidated_by_source_change(runtime):
     store, repo, run, _ = runtime
     row = submitted(runtime)
