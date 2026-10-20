@@ -89,6 +89,26 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- **Every `hx code` read answers for the caller's checkout** (CONTRACTS.md § `hx code`; fleet
+  plan P0.1/D1). One namespace now holds N checkout roots: `repos` and `checkout_heads` are
+  keyed by (namespace, root), and a read — search, symbols, `--expect absent`, `fresh`,
+  `--at`, `callers`, `impact`, `edges`, `map`, `submaps`, `stats`, `contracts --register`,
+  `import` — selects the snapshot of `--repo PATH` or the checkout containing the working
+  directory, never the last indexer's. Before this, a worktree indexed at the same HEAD as a
+  dirty sibling reused the sibling's snapshot, so every worktree saw one agent's uncommitted
+  symbols and `--expect absent` and `fresh` answered for the wrong tree. Reads accept
+  `--repo`; the shared-service client appends its checkout. Several indexed checkouts with
+  different snapshots and no caller among them exit 2 naming `--repo`. Imports, contract
+  registrations and resolved (SCIP) rows publish into one checkout's snapshot only. The
+  `latest`, `HEAD` and branch snapshot refs are gone; only a clean complete index records
+  `commit:<sha>`, and a snapshot ID or full SHA resolves without a checkout. Every snapshot
+  records its dirty and stale paths, so a full index converges in one pass from its own
+  snapshot or a same-HEAD sibling, including after a checkout reverts its edits. The FTS5
+  mirrors of live rows (`code_search`, `code_trigram`) are dropped; search uses the
+  content-addressed `source_search`/`source_trigram` only. tree-sitter is no longer gated to
+  0.25.10: any `tree-sitter` CLI is used and its version is recorded in the extractor
+  generation. Schema version 2: an existing index is refused; remove
+  `state/code-index/index.db` and rebuild with `hx code index`.
 - Chat is a machine channel (docs/prompt-runtime.md): `continuity/prompts/common.md` states it
   once, so every compiled bundle carries it exactly once. No narration between tool calls,
   explanation, recap, greeting, closing offer or chat question; a needed decision is a typed

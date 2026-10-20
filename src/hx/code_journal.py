@@ -1,4 +1,8 @@
-"""Durable, replayable graph changesets with exact source identity and modes."""
+"""Durable, replayable graph changesets with exact source identity and modes.
+
+`base` is the checkout's own binding when prepared (the optimistic check);
+`snapshot_base` is the parent map, which may be a sibling checkout's snapshot.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ import time
 from . import code_snapshot as snapshot
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS code_changesets(identity TEXT PRIMARY KEY,repo TEXT NOT NULL,root TEXT NOT NULL,base TEXT,head TEXT,generation TEXT NOT NULL,complete INTEGER NOT NULL,state TEXT NOT NULL,created_at REAL NOT NULL,snapshot TEXT,dirty INTEGER NOT NULL DEFAULT 0,snapshot_base TEXT,resolved BLOB);
+CREATE TABLE IF NOT EXISTS code_changesets(identity TEXT PRIMARY KEY,repo TEXT NOT NULL,root TEXT NOT NULL,base TEXT,head TEXT,generation TEXT NOT NULL,complete INTEGER NOT NULL,state TEXT NOT NULL,created_at REAL NOT NULL,snapshot TEXT,dirty INTEGER NOT NULL DEFAULT 0,snapshot_base TEXT,resolved BLOB,dirty_paths BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS code_changes(identity TEXT NOT NULL,path TEXT NOT NULL,operation TEXT NOT NULL,sha TEXT,mode TEXT,extraction TEXT,reason TEXT,size INTEGER,mtime_ns INTEGER,PRIMARY KEY(identity,path));
 """
 
@@ -24,8 +28,10 @@ def prepare(
     complete,
     snapshot_base=None,
     dirty=False,
+    dirty_paths=(),
     resolved=None,
 ):
+    dirty_paths = sorted(dirty_paths)
     identity = snapshot.digest(
         [
             repo,
@@ -37,11 +43,12 @@ def prepare(
             complete,
             changes,
             dirty,
+            dirty_paths,
             resolved,
         ]
     )
     conn.execute(
-        "INSERT OR IGNORE INTO code_changesets(identity,repo,root,base,head,generation,complete,state,created_at,snapshot,dirty,snapshot_base,resolved) VALUES(?,?,?,?,?,?,?,'prepared',?,NULL,?,?,?)",
+        "INSERT OR IGNORE INTO code_changesets(identity,repo,root,base,head,generation,complete,state,created_at,snapshot,dirty,snapshot_base,resolved,dirty_paths) VALUES(?,?,?,?,?,?,?,'prepared',?,NULL,?,?,?,?)",
         (
             identity,
             repo,
@@ -54,6 +61,7 @@ def prepare(
             int(dirty),
             snapshot_base,
             snapshot.packed(resolved) if resolved else None,
+            snapshot.packed(dirty_paths),
         ),
     )
     for row in changes:

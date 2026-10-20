@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Reproducible two-repository graph benchmark; all index state stays external.
+"""Reproducible graph benchmark over real repositories; all index state stays external.
 
-Run with tiktoken installed separately (o200k_base counts, not provider billing):
+Run with tiktoken installed separately (o200k_base counts, not provider billing;
+token fields are null without it):
 python tools/code-graph-benchmark.py --hx . --polyglot /path/to/eShop --state /tmp/bench --out /tmp/results.json
+
+`--worktrees N` adds the fleet case: N worktrees of one clone of `--hx` at one HEAD,
+the first one dirty, every query run inside each worktree.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import statistics
 import subprocess
 import time
@@ -20,8 +25,10 @@ from hx.code_build import discover
 
 
 def tokens(text):
-    import tiktoken
-
+    try:
+        import tiktoken
+    except ImportError:
+        return None
     return len(tiktoken.get_encoding("o200k_base").encode(text, disallowed_special=()))
 
 
@@ -190,10 +197,85 @@ def bench(root, repo, label, questions):
     )
 
 
+def multi_worktree(state, source, count, questions):
+    """Fleet shape: one namespace, N roots at one HEAD, one dirty overlay."""
+    work = state / "multi-worktree"
+    clone = work / "clone"
+    subprocess.run(
+        ["git", "clone", "--quiet", "--shared", str(source), str(clone)], check=True
+    )
+    origin = code_store.git(source, "remote", "get-url", "origin")
+    if origin:
+        subprocess.run(
+            ["git", "-C", str(clone), "remote", "set-url", "origin", origin], check=True
+        )
+    trees = []
+    for i in range(count):
+        tree = work / f"wt-{i:02}"
+        subprocess.run(
+            ["git", "-C", str(clone), "worktree", "add", "--quiet", "--detach", str(tree)],
+            check=True,
+        )
+        trees.append(tree.resolve())
+    (trees[0] / "bench_dirty_marker.py").write_text("class BenchDirtyMarker:\n    pass\n")
+    index_root = work / "state"
+    identity = code_store.namespace(trees[0])
+    indexed = []
+    for tree in trees:
+        started = time.perf_counter()
+        result = code_index.index_repo(index_root, tree)
+        indexed.append(
+            dict(
+                changed=result["changed"],
+                seconds=round(time.perf_counter() - started, 3),
+                snapshot=result["snapshot"],
+            )
+        )
+    timed = [q for q in questions if "--sift" not in q[1]]
+    samples, per_tree = [], []
+    home = Path.cwd()
+    try:
+        for i, tree in enumerate(trees):
+            # The command runs inside the worktree, exactly as a fleet agent's does.
+            os.chdir(tree)
+            medians = []
+            for _, args, _, _ in timed:
+                medians.append(
+                    statistics.median(
+                        invoke(index_root, [*args, "--namespace", identity])[2]
+                        for _ in range(3)
+                    )
+                )
+            found, _, _ = invoke(
+                index_root, ["type", "BenchDirtyMarker", "--namespace", identity]
+            )
+            per_tree.append(
+                dict(
+                    worktree=i,
+                    query_ms_median=round(statistics.median(medians), 3),
+                    dirty_marker_visible=bool(found),
+                    answers_for_caller=bool(found) == (i == 0),
+                )
+            )
+            samples.extend(medians)
+    finally:
+        os.chdir(home)
+    return dict(
+        worktrees=count,
+        repo=identity,
+        index=indexed,
+        questions=len(timed),
+        warm_query_ms_median=round(statistics.median(samples), 3),
+        answers_for_caller=all(t["answers_for_caller"] for t in per_tree),
+        per_worktree=per_tree,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hx", type=Path, required=True)
-    parser.add_argument("--polyglot", type=Path, required=True)
+    parser.add_argument("--polyglot", type=Path)
+    parser.add_argument("--worktrees", type=int, default=0)
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -311,10 +393,16 @@ def main():
         ),
     ]
     args.state.mkdir(parents=True, exist_ok=True)
-    repositories = [
-        bench(args.state, args.hx.resolve(), "hx", hx_questions),
-        bench(args.state, args.polyglot.resolve(), "eShop", cs_questions),
-    ]
+    repositories = [bench(args.state, args.hx.resolve(), "hx", hx_questions)]
+    if args.polyglot:
+        repositories.append(
+            bench(args.state, args.polyglot.resolve(), "eShop", cs_questions)
+        )
+    fleet = (
+        multi_worktree(args.state, args.hx.resolve(), args.worktrees, hx_questions)
+        if args.worktrees
+        else None
+    )
     contracts = [
         dict(
             name=name,
@@ -333,6 +421,7 @@ def main():
                 "src/Ordering.Domain/AggregatesModel/OrderAggregate/IOrderRepository.cs",
             ),
         ]
+        if label == "hx" or args.polyglot
     ]
     file = args.state / "contracts.json"
     file.write_text(json.dumps(contracts))
@@ -342,8 +431,9 @@ def main():
         tokenizer="tiktoken o200k_base (comparison count, not billing)",
         query_latency="in-process warm queries, median of three; includes SQLite open/close",
         repositories=repositories,
+        multi_worktree=fleet,
         shared_contract_query=dict(
-            answered=len(result) == 2,
+            answered=len(result) == len(repositories),
             namespaces=len({r["repo"] for r in result}),
             tokens=tokens(raw),
             ms=round(ms, 3),
@@ -370,6 +460,15 @@ def main():
                     )
                     for r in repositories
                 ],
+                warm_query_ms_median=[
+                    statistics.median(q["graph_ms_median"] for q in r["queries"])
+                    for r in repositories
+                ],
+                multi_worktree=fleet
+                and dict(
+                    warm_query_ms_median=fleet["warm_query_ms_median"],
+                    answers_for_caller=fleet["answers_for_caller"],
+                ),
                 output=str(args.out),
             )
         )

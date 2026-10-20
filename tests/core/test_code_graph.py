@@ -48,7 +48,7 @@ def test_namespace_isolation_and_incremental(tmp_path):
     assert code_index.index_repo(root, b)["changed"] == 0
 
 
-def test_no_cap_and_single_body_external_fts(tmp_path):
+def test_no_cap_and_single_body_content_addressed_fts(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     root = tmp_path / "root"
@@ -56,12 +56,11 @@ def test_no_cap_and_single_body_external_fts(tmp_path):
         (repo / f"{i}.py").write_text("def hello(): return 1\n")
     assert code_index.index_repo(root, repo)["files"] == 2005
     conn = connect(root)
-    assert (
-        "content='files'"
-        in conn.execute(
-            "SELECT sql FROM sqlite_master WHERE name='code_search'"
-        ).fetchone()[0]
-    )
+    # One body object backs every identical file; no live-row FTS mirror exists.
+    assert conn.execute("SELECT count(*) FROM source_objects").fetchone()[0] == 1
+    assert not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE name IN ('code_search','code_trigram')"
+    ).fetchone()
     conn.close()
 
 
@@ -278,7 +277,7 @@ def test_porter_only_persists_and_trigram_rebuilds_existing_content(tmp_path):
     assert [
         r[0]
         for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE name='code_trigram'"
+            "SELECT name FROM sqlite_master WHERE name='source_trigram'"
         )
     ] == []
     conn.close()

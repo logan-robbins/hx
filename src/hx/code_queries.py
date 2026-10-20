@@ -74,30 +74,6 @@ def search(conn, query, *, repo=None, limit=10, fuzzy=True):
         ranking[key] = 10 - LANES[row["lane"]]
         files.setdefault(key, row)
     match = " OR ".join('"' + t.replace('"', '""') + '"' for t in terms)
-    for table in store.fts_tables(conn):
-        try:
-            rows = conn.execute(
-                f"""SELECT f.* FROM {table} JOIN files f ON f.id={table}.rowid
-                WHERE {table} MATCH ? AND (? IS NULL OR f.repo=?) ORDER BY bm25({table}),f.repo,f.path LIMIT ?""",
-                (match, repo, repo, max(50, min(CAP, limit) * 4)),
-            ).fetchall()
-        except Exception:
-            continue
-        for i, row in enumerate(rows, 1):
-            key = (row["repo"], row["path"])
-            ranking[key] = ranking.get(key, 0) + 1 / (60 + i)
-            files.setdefault(
-                key,
-                store.decorate(
-                    conn,
-                    {
-                        **dict(row),
-                        "lane": "text",
-                        "extractor": "fts5",
-                        "anchor_sha": row["sha256"],
-                    },
-                ),
-            )
     if conn.snapshot is not None:
         from .code_snapshot import matching_files, source_search_tables
 

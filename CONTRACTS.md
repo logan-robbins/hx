@@ -169,16 +169,33 @@ PATH...` for the complete write scope instead of inferring scope coverage from a
 capped symbol result. `--namespace` selects a repository; omission searches shared
 namespaces for named queries. `fresh` requires one unambiguous namespace.
 
+Every read answers for the caller's checkout: `--repo PATH`, else the Git checkout
+containing the working directory. Each namespace selected is read at that checkout's own
+snapshot, whose dirty overlay is part of it; live rows are never read. A checkout of the
+namespace that was never indexed reads the clean snapshot of its HEAD commit, and its edits
+show as `stale`. When the caller is not one of a namespace's indexed checkouts and they
+bind different snapshots, the read exits 2 naming `--repo`. `fresh`, `--expect absent`,
+`--at`, `callers`, `impact`, `edges`, `map`, `submaps`, `stats`, `contracts --register` and
+`import` all take that checkout. Through the shared service the client appends its
+checkout as `--repo` to every read.
+
 `hx code index --repo PATH [--paths PATH...]` returns
 `{repo, files, symbols, changed, skipped, head, resolved}`. The repository identity
 is the portable map's `repo_id`, then a git remote, then the resolved path.
-The store is `state/code-index/index.db` outside product checkouts. Bodies occur
-once in `files`; Porter and optional trigram FTS use external content. Text files above
+The store is `state/code-index/index.db` outside product checkouts. One namespace holds
+any number of checkout roots: `repos` and `checkout_heads` are keyed by (namespace, root).
+Bodies occur once per content hash in `source_objects`; Porter and optional trigram FTS
+(`source_search`, `source_trigram`) index those objects, so worktrees share source,
+extraction and graph objects. Indexing a checkout starts from its own snapshot, else a
+complete sibling snapshot at the same HEAD (clean first); every snapshot records the paths
+that may differ from its HEAD and the paths with stale derived rows, so one full pass
+converges whichever checkout indexed last. Text files above
 the maintained-file budget remain fully indexed and appear in the mandatory size audit.
 The separate parser resource bound refuses indexing before publishing partial coverage.
 Binary bodies are excluded and counted in `skipped`; streamed fingerprints remain in
 `exclusions` for scope freshness. No file-count cap applies.
-A derived index without current namespaces is rebuilt from source. Extractor-generation changes
+A derived index without current namespaces is rebuilt from source; an index of another
+schema version is refused until it is removed and rebuilt. Extractor-generation changes
 invalidate old candidates before the next refresh.
 
 Natural UTF-8 source exports use `lane=syntax`, `extractor=stdlib-natural`.
@@ -219,8 +236,8 @@ custom imported kinds. These never validate map relations. `conform` returns
 stale, clean}`; overloads, generic constraints and default values cannot certify
 clean parity. `projects [NAME]` returns manifests and project dependencies;
 `map --budget BYTES [--focus PATH...]` returns ranked files with scope headers,
-definitions and fan-in. `stats` reports namespaces, heads, coverage, tools,
-tokenizers and database bytes. `submaps` returns modularity, directory baseline
+definitions and fan-in. `stats` reports each selected namespace's checkout (`root`,
+`head`, `snapshot`), coverage, tools with their versions, tokenizers and database bytes. `submaps` returns modularity, directory baseline
 and candidate components with bounded member/boundary lists, `read_versions`
 and `put` operations; the caller supplies its current run/snapshot patch envelope.
 
@@ -229,12 +246,15 @@ and `put` operations; the caller supplies its current run/snapshot patch envelop
 `{name,qualified,kind,path,line,end_line,signature}` (optional `attributes`) and
 edges `{from,to,kind,evidence}`. `from` names a symbol or relative source path;
 `to` names a symbol or path. Imports replace the same namespace/tool batch
-atomically; free-form kinds and evidence survive. Missing source spans remain
-`unanchored: true` and cannot satisfy freshness.
+atomically; free-form kinds and evidence survive. Rows anchor against and publish into
+one checkout — `--repo`, else the caller's — and other checkouts see them only after
+their own import. Missing source spans remain `unanchored: true` and cannot satisfy
+freshness.
 
 `hx code contracts --register FILE` accepts a JSON object or array of
 `{name,path,version,producer,repo,sha}` records; `repo` must already be indexed,
-`sha` is the published Git commit. `contract NAME` returns matching published
+`sha` is the published Git commit; records publish into the caller's checkout of each
+namespace. `contract NAME` returns matching published
 records across namespaces. `--owners` adds `{worker,task,run}` entries from the
 continuity ledger's current leases; the graph has no ownership columns.
 
@@ -263,7 +283,11 @@ advisory: it never validates edges, receipts, or completion.
 ## Immutable graph snapshots and changesets
 
 Graph snapshots bind repository, commit, working-copy overlay and extractor generation.
-`hx code … --at COMMIT` selects immutable source at that revision. Historical Git capture
+`hx code … --at COMMIT` selects immutable source at that revision. A snapshot ID or a full
+commit SHA resolves without a checkout; `HEAD`, branches and abbreviations resolve in the
+caller's checkout. `snapshot_refs` names only `commit:<sha>`, recorded by a clean complete
+index; there is no `latest`, `HEAD` or branch ref. A checkout's current state is its
+`checkout_heads` binding. Historical Git capture
 does not check out files. Dirty overlays never replace clean-commit facts. Content-addressed
 compressed source/extraction/graph objects and persistent path bindings share unchanged
 data. Named lookup limits apply after snapshot membership, not to unrelated historical rows.

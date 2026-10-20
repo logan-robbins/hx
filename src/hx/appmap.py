@@ -228,7 +228,7 @@ def source_anchor(repository: Path, path: str, symbol: str | None = None, *, wit
                     raise ValidationError("symbol validation exceeds its source budget")
                 if index_root is not None:
                     candidates = [r for r in code_index.symbols_for(index_root, symbol,
-                        repo=code_store.namespace(repository), path=path) if r['lane'] == 'syntax']
+                        repo=code_store.namespace(repository), path=path, checkout=repository) if r['lane'] == 'syntax']
                     if len(candidates) != 1 or candidates[0]['stale']:
                         raise ValidationError(f"symbol {symbol} is absent, ambiguous or stale in the syntax index; run hx code index --repo {repository}")
                 else:

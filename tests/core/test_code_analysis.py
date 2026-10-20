@@ -57,5 +57,6 @@ def test_map_budget_and_candidate_patch(tmp_path, capsys):
     for candidate in result["candidates"]:
         appmap.validate_record(candidate["operations"][0]["record"])
     conn = connect(root)
+    code_index.select(conn, caller=repo)
     assert code_analysis.run(conn, "submaps") == result
     conn.close()

@@ -27,9 +27,15 @@ file discovery includes tracked and nonignored untracked files; nongit trees use
 a directory walk. There is no file-count cap. `--max-file-bytes` or
 `HX_CODE_MAX_FILE_BYTES` sets the default 512 KiB body budget. Binary/oversize
 bodies are counted as skipped; their streamed content fingerprints still support
-scope freshness and asset assignments. Excluded oversize bodies cannot certify
-an absence lint. Porter and optional trigram FTS reference one
-stored body; `--porter-only` and SQLite without trigram remain supported.
+scope freshness and asset assignments. Porter and optional trigram FTS index one
+content-addressed body per hash; `--porter-only` and SQLite without trigram remain
+supported.
+
+One namespace holds every checkout of a repository: a fleet's worktrees share source,
+extraction and graph objects, while each checkout keeps its own snapshot. Every read
+answers for the checkout it runs in, or `--repo PATH`; a dirty edit in one worktree is
+never visible from another, and `--at HEAD` follows the caller's own HEAD. Indexing a
+clean sibling of a dirty worktree, or reverting the edits, converges in one pass.
 
 Immutable snapshots bind repository, commit, overlay and extractor generation. Queries
 accept `--at COMMIT` without checking out that revision; dirty overlays remain separate.
@@ -45,10 +51,11 @@ parameter/data fields, literal calls and dependencies, with dynamic targets kept
 as unresolved references. [Natural source support](#natural-source-support)
 describes the exported formats and query examples.
 Other text languages remain searchable. Optional syntax precedence is tree-sitter
-**0.25.10** tags (CLI, C compiler and operator grammar checkouts with parser and
+tags (CLI, C compiler and operator grammar checkouts with parser and
 `queries/tags.scm` required), then Universal Ctags JSON, then stdlib extraction.
-Set `HX_TREE_SITTER_GRAMMARS` to colon-separated grammar directories. Unknown
-versions/formats degrade to stdlib; BSD ctags is refused. Every answer preserves
+Set `HX_TREE_SITTER_GRAMMARS` to colon-separated grammar directories. The detected
+tree-sitter version is recorded in `stats` and the extractor generation, never gated;
+unknown tags formats degrade to stdlib; BSD ctags is refused. Every answer preserves
 `repo`, `lane`, `extractor`, `anchor_sha` and `stale`. Signatures preserve source
 header tokens with whitespace normalized; compiler/parser-supplied signatures
 are labelled by their extractor. Syntax references remain candidates.
@@ -73,7 +80,8 @@ hx code submaps --focus src
 hx code stats
 ```
 
-Named queries search all namespaces unless `--namespace` is given. Queries cap
+Named queries search all namespaces unless `--namespace` is given, each at the
+caller's checkout. Queries cap
 results at 100 (`--limit`, default 20); maps additionally cap their JSON bytes.
 Exact symbol search is case folded and lane ranked (resolved, syntax, text,
 imported). FTS rankings use reciprocal rank fusion and term proximity; a typo

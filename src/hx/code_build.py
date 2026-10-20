@@ -174,7 +174,8 @@ def scoped_names(repo, paths):
     return sorted(n for n in names if not any(p in SKIP_DIRS for p in Path(n).parts))
 
 
-def git_changes(repo, base, head):
+def git_changes(repo, base, head, *, status=None):
+    """Paths changed between two commits plus the working tree's status paths."""
     names = set()
     if base and head and base != head:
         result = subprocess.run(
@@ -185,6 +186,8 @@ def git_changes(repo, base, head):
         if result.returncode:
             return None
         names.update(os.fsdecode(p) for p in result.stdout.split(b"\0") if p)
+    if status is not None:
+        return names | status
     result = subprocess.run(
         [
             "git",
@@ -362,9 +365,10 @@ def apply_changeset(
                 changed=0,
                 replayed=True,
             )
+        # Checkouts publish independently; only this checkout's binding may not move.
         current = conn.execute(
-            "SELECT snapshot FROM snapshot_refs WHERE repo=? AND ref='latest'",
-            (identity,),
+            "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
+            (journal["root"], identity),
         ).fetchone()
         if (current[0] if current else None) != journal["base"]:
             conn.execute(
@@ -437,14 +441,6 @@ def apply_changeset(
                     journal["generation"],
                 ),
             )
-            file = conn.execute(
-                "SELECT id,symbols FROM files WHERE repo=? AND path=?", (identity, rel)
-            ).fetchone()
-            for table in store.fts_tables(conn):
-                conn.execute(
-                    f"INSERT INTO {table}(rowid,repo,path,symbols,body) VALUES(?,?,?,?,?)",
-                    (file["id"], identity, rel, file["symbols"], text),
-                )
             for symbol in result["symbols"]:
                 insert_symbol(conn, identity, symbol)
             for ref in result["refs"]:
@@ -546,15 +542,29 @@ def apply_changeset(
                 )
             if "results" in resolved:
                 resolved["results"] = results
-            for path in [
+            # Resolved rows are a namespace registry; every other fact of an
+            # unchanged path stays as this checkout's parent captured it.
+            for path in sorted(
                 r[0]
                 for r in conn.execute(
-                    "SELECT DISTINCT path FROM symbols WHERE repo=? AND lane='resolved'",
-                    (identity,),
+                    "SELECT path FROM symbols WHERE repo=? AND lane='resolved' UNION SELECT path FROM refs WHERE repo=? AND lane='resolved' UNION SELECT src_path FROM edges WHERE repo=? AND lane='resolved'",
+                    (identity, identity, identity),
                 )
-            ]:
-                updates[path] = snapshots.capture_path(
-                    conn, identity, path, mode=modes.get(path)
+            ):
+                if path in changed_paths:
+                    updates[path] = snapshots.capture_path(
+                        conn, identity, path, mode=modes.get(path)
+                    )
+                    continue
+                artifact = (
+                    updates[path]
+                    if path in updates
+                    else tree.get(parent[0], path)
+                    if parent
+                    else None
+                )
+                updates[path] = snapshots.overlay_lanes(
+                    conn, identity, path, snapshots.graph_value(conn, artifact), {"resolved"}
                 )
         snapshot = snapshots.publish(
             conn,
@@ -565,9 +575,10 @@ def apply_changeset(
             updates,
             parent=snapshot_base,
             complete=bool(journal["complete"]),
+            dirty=snapshots.unpacked(journal["dirty_paths"]),
         )
         conn.execute(
-            "INSERT INTO repos VALUES(?,?,?,?,?) ON CONFLICT(repo) DO UPDATE SET root=excluded.root,head=excluded.head,dirty=excluded.dirty,indexed_at=excluded.indexed_at",
+            "INSERT INTO repos VALUES(?,?,?,?,?) ON CONFLICT(repo,root) DO UPDATE SET head=excluded.head,dirty=excluded.dirty,indexed_at=excluded.indexed_at",
             (identity, journal["root"], journal["head"], journal["dirty"], time.time()),
         )
         conn.execute(
@@ -633,16 +644,47 @@ def _index_repo(
     generation = extractor_generation(detected, context)
     conn = store.connect(root, trigram=trigram)
     try:
-        current = conn.execute(
-            "SELECT * FROM code_snapshots WHERE identity=(SELECT snapshot FROM snapshot_refs WHERE repo=? AND ref='latest')",
-            (identity,),
-        ).fetchone()
-        base = current["identity"] if current else None
-        checkout = conn.execute(
-            "SELECT * FROM code_snapshots WHERE identity=(SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?)",
+        own = conn.execute(
+            "SELECT s.* FROM checkout_heads h JOIN code_snapshots s ON s.identity=h.snapshot WHERE h.root=? AND h.repo=?",
             (str(repo), identity),
         ).fetchone()
-        snapshot_base = checkout["identity"] if paths is not None and checkout else base
+        head = store.git(repo, "rev-parse", "HEAD")
+        status = git_changes(repo, None, None)
+        if status is None:
+            if head:
+                raise ValueError("repository status is unavailable")
+            # A directory outside Git has no HEAD to differ from.
+            status = set()
+        # The delta base is this checkout's own snapshot, else a complete sibling
+        # snapshot at the same HEAD (clean first); its recorded dirty and stale
+        # paths name everything that can differ from this working tree.
+        base = own or conn.execute(
+            "SELECT s.* FROM code_snapshots s LEFT JOIN snapshot_refs r ON r.repo=s.repo AND r.ref=? AND r.snapshot=s.identity WHERE s.repo=? AND s.head=? AND s.complete=1 AND s.generation=? ORDER BY r.snapshot IS NULL,s.created_at DESC LIMIT 1",
+            ("commit:" + str(head), identity, head, generation),
+        ).fetchone()
+        snapshot_base = base["identity"] if base else None
+        tree = snapshots.PathMap(conn)
+        entries = {}
+
+        def entry(rel):
+            if rel not in entries:
+                artifact = tree.get(base["map_root"], rel) if base else None
+                entries[rel] = snapshots.graph_value(conn, artifact) or {}
+            return entries[rel]
+
+        def base_paths(scope="."):
+            if not base:
+                return set()
+            if scope == ".":
+                return {p for p, _ in tree.items(base["map_root"])}
+            return {p for p, _ in tree.scoped_items(base["map_root"], scope)}
+
+        stale = snapshots.path_set(base, "stale_paths")
+        divergence = None
+        if base and base["complete"] and head and base["head"]:
+            delta = git_changes(repo, base["head"], head, status=status)
+            if delta is not None:
+                divergence = delta | snapshots.path_set(base, "dirty_paths") | stale
         scopes = (
             [str(p).rstrip("/") or "." for p in paths] if paths is not None else None
         )
@@ -650,96 +692,18 @@ def _index_repo(
             Path(p).is_absolute() or ".." in Path(p).parts for p in scopes
         ):
             raise ValueError("index paths must be repository relative")
-
-        def scope_sql(column="path"):
-            if scopes is None or "." in scopes:
-                return "1", ()
-            clauses = []
-            parameters = []
-            for scope in scopes:
-                clauses.append(f"({column}=? OR ({column}>=? AND {column}<?))")
-                parameters.extend((scope, scope + "/", scope + "/" + chr(0x10FFFF)))
-            return " OR ".join(clauses) or "0", tuple(parameters)
-
-        path_filter, path_bindings = scope_sql()
-        edge_filter, edge_bindings = scope_sql("src_path")
-        existing = {
-            r["path"]: dict(r)
-            for r in conn.execute(
-                "SELECT path,sha256,generation FROM files WHERE repo=? AND ("
-                + path_filter
-                + ")",
-                (identity, *path_bindings),
-            )
-        }
-        excluded = {
-            r["path"]: dict(r)
-            for r in conn.execute(
-                "SELECT * FROM exclusions WHERE repo=? AND (" + path_filter + ")",
-                (identity, *path_bindings),
-            )
-        }
-        stale = {
-            r[0]
-            for r in conn.execute(
-                "SELECT path FROM symbols WHERE repo=? AND stale=1 AND ("
-                + path_filter
-                + ") UNION SELECT path FROM refs WHERE repo=? AND stale=1 AND ("
-                + path_filter
-                + ") UNION SELECT src_path FROM edges WHERE repo=? AND stale=1 AND ("
-                + edge_filter
-                + ")",
-                (
-                    identity,
-                    *path_bindings,
-                    identity,
-                    *path_bindings,
-                    identity,
-                    *edge_bindings,
-                ),
-            )
-        }
-        head = store.git(repo, "rev-parse", "HEAD")
-        if paths is not None:
-            scopes = [str(p).rstrip("/") or "." for p in paths]
-            if checkout and checkout["identity"] != base:
-                branch = store.connect(root, existing=True)
-                try:
-                    snapshots.activate(
-                        branch, checkout["identity"], identity, paths=scopes
-                    )
-                    for row in branch.execute(
-                        "SELECT path,sha256,generation FROM files"
-                    ):
-                        existing.setdefault(row["path"], dict(row))
-                    for row in branch.execute("SELECT * FROM exclusions"):
-                        excluded.setdefault(row["path"], dict(row))
-                finally:
-                    branch.close()
+        if scopes is not None:
             names = set(scoped_names(repo, scopes))
-            old = {
-                p
-                for p in set(existing) | set(excluded)
-                if any(p == s or p.startswith(s + "/") or s == "." for s in scopes)
-            }
-            names.update(old)
-        elif current and current["complete"] and head and current["head"]:
-            delta = git_changes(repo, current["head"], head)
-            names = (
-                set(discover(repo)) | set(existing) | set(excluded)
-                if delta is None
-                else delta | stale
-            )
-            if current["generation"] != generation:
-                names.update(existing)
-            # Previously excluded text must be fully indexed or fail explicitly.
-            names.update(
-                p
-                for p, r in excluded.items()
-                if r["reason"] == "oversize"
-            )
+            names.update(p for scope in scopes for p in base_paths(scope))
+            if base is not own:
+                # A borrowed base is exact outside the scope only after its divergence.
+                names.update(divergence if divergence is not None else base_paths())
+        elif divergence is not None:
+            names = set(divergence)
+            if base["generation"] != generation:
+                names.update(base_paths())
         else:
-            names = set(discover(repo)) | set(existing) | set(excluded)
+            names = set(discover(repo)) | base_paths()
         changes = []
         objects = []
         extractions = []
@@ -752,10 +716,13 @@ def _index_repo(
             path = repo / rel
             if any(p in SKIP_DIRS for p in Path(rel).parts):
                 return
+            indexed = entry(rel)
+            file = (indexed.get("files") or [None])[0]
+            exclusion = (indexed.get("exclusions") or [None])[0]
             if not (
                 path.is_file() or path.is_symlink()
             ) or not path.parent.resolve().is_relative_to(repo):
-                if rel in existing or rel in excluded:
+                if file or exclusion:
                     changes.append(dict(path=rel, operation="delete"))
                 return
             before = path.lstat()
@@ -775,16 +742,7 @@ def _index_repo(
                 if before.st_mode & 0o111
                 else "100644"
             )
-            old_mode = None
-            if current:
-                artifact = snapshots.PathMap(conn).get(current["map_root"], rel)
-                if artifact:
-                    old_mode = snapshots.unpacked(
-                        conn.execute(
-                            "SELECT data FROM graph_objects WHERE identity=?",
-                            (artifact,),
-                        ).fetchone()[0]
-                    ).get("mode")
+            old_mode = indexed.get("mode")
             reason = "binary" if b"\0" in data else None
             if reason is None and len(data) > maximum:
                 raise ValueError(
@@ -795,9 +753,9 @@ def _index_repo(
             if reason:
                 skipped += 1
                 if (
-                    rel in excluded
-                    and excluded[rel]["sha256"] == sha
-                    and excluded[rel]["reason"] == reason
+                    exclusion
+                    and exclusion["sha256"] == sha
+                    and exclusion["reason"] == reason
                     and old_mode == mode
                 ):
                     return
@@ -816,9 +774,9 @@ def _index_repo(
                 return
             if (
                 not force
-                and rel in existing
-                and existing[rel]["sha256"] == sha
-                and existing[rel]["generation"] == generation
+                and file
+                and file["sha256"] == sha
+                and file["generation"] == generation
                 and rel not in stale
                 and old_mode == mode
             ):
@@ -901,34 +859,46 @@ def _index_repo(
                 repo,
                 indexer_checkout,
                 prepare_only=True,
-                suffixes={Path(p).suffix for p in set(existing) | names},
+                suffixes={Path(p).suffix for p in names | base_paths()},
             )
         # No writer is held while files are read, adapters run or syntax is parsed.
         for data in objects:
             snapshots.source(conn, data)
         for args in extractions:
             snapshots.put_extraction(conn, *args)
-        baseline = checkout or current
         commit_changes = (
-            git_changes(repo, baseline["head"], head) if baseline and head else None
+            git_changes(repo, base["head"], head, status=status)
+            if base and head
+            else None
         )
         complete = paths is None or bool(
-            baseline
-            and baseline["complete"]
+            base
+            and base["complete"]
             and commit_changes is not None
             and commit_changes <= names
+        )
+        # Every candidate of a full or borrowed-base refresh was read from disk, so
+        # only the working tree's status differs from HEAD; a scoped refresh of the
+        # own base also keeps whatever its parent and the commit delta left behind.
+        dirty_paths = (
+            status
+            if paths is None or base is not own
+            else status
+            | snapshots.path_set(base, "dirty_paths")
+            | (commit_changes or set())
         )
         journal = code_journal.prepare(
             conn,
             identity,
             repo,
-            base,
+            own["identity"] if own else None,
             head,
             generation,
             changes,
             complete=complete,
             snapshot_base=snapshot_base,
-            dirty=bool(store.git(repo, "status", "--porcelain")),
+            dirty=bool(status),
+            dirty_paths=dirty_paths,
             resolved=resolved_prepared,
         )
         result = apply_changeset(
@@ -938,17 +908,17 @@ def _index_repo(
             resolve=resolve,
             indexer_checkout=indexer_checkout,
         )
-        if paths is None and not store.git(repo, "status", "--porcelain") and head:
+        # Clean before preparation and after publication: the snapshot is the commit.
+        if (
+            paths is None
+            and head
+            and not status
+            and not store.git(repo, "status", "--porcelain")
+        ):
             conn.execute(
                 "INSERT OR REPLACE INTO snapshot_refs VALUES(?,?,?)",
                 (identity, "commit:" + head, result["snapshot"]),
             )
-            for ref in ("HEAD", store.git(repo, "symbolic-ref", "--short", "HEAD")):
-                if ref:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO snapshot_refs VALUES(?,?,?)",
-                        (identity, ref, result["snapshot"]),
-                    )
             conn.commit()
         counts = conn.execute(
             "SELECT files_count,symbols_count FROM code_snapshots WHERE identity=?",

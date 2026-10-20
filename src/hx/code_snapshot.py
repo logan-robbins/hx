@@ -1,7 +1,11 @@
 """Immutable graph snapshots backed by compressed objects and a persistent treap.
 
 Only changed paths and their O(log paths) ancestors are written for a new map.
-Current checkout query tables are derived from immutable source snapshots.
+Current checkout query tables are derived from immutable source snapshots. Every
+live read answers for one checkout root: the caller's binding in `checkout_heads`,
+never another worktree's. Each snapshot records the paths whose content may differ
+from its commit (`dirty_paths`) and the paths holding stale facts (`stale_paths`),
+so any snapshot is an exact delta base for any checkout of the namespace.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ CREATE TABLE IF NOT EXISTS snapshot_contract_postings(artifact TEXT NOT NULL,ord
 CREATE INDEX IF NOT EXISTS snapshot_contract_name ON snapshot_contract_postings(name_folded,repo,path,artifact);
 CREATE TABLE IF NOT EXISTS snapshot_project_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_project_name ON snapshot_project_postings(name,repo,path,artifact);
-CREATE TABLE IF NOT EXISTS snapshot_object_counts(artifact TEXT PRIMARY KEY,files INTEGER NOT NULL,symbols INTEGER NOT NULL,exclusions INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS snapshot_object_counts(artifact TEXT PRIMARY KEY,files INTEGER NOT NULL,symbols INTEGER NOT NULL,exclusions INTEGER NOT NULL,stale INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS snapshot_symbol_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name TEXT NOT NULL,name_folded TEXT NOT NULL,qualified_folded TEXT NOT NULL,lane TEXT NOT NULL,line INTEGER NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_symbol_name ON snapshot_symbol_postings(name_folded,repo,path,artifact);
 CREATE INDEX IF NOT EXISTS snapshot_symbol_qualified ON snapshot_symbol_postings(qualified_folded,repo,path,artifact);
@@ -46,9 +50,9 @@ CREATE INDEX IF NOT EXISTS snapshot_path_stem ON snapshot_path_postings(repo,ste
 CREATE INDEX IF NOT EXISTS snapshot_path_stem_folded ON snapshot_path_postings(repo,stem_folded,path,artifact);
 CREATE INDEX IF NOT EXISTS snapshot_path_scope ON snapshot_path_postings(repo,path,artifact);
 CREATE TABLE IF NOT EXISTS snapshot_nodes(identity TEXT PRIMARY KEY,path TEXT NOT NULL,artifact TEXT NOT NULL,left_node TEXT,right_node TEXT,priority TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS code_snapshots(identity TEXT PRIMARY KEY,repo TEXT NOT NULL,head TEXT,overlay TEXT NOT NULL,generation TEXT NOT NULL,map_root TEXT,parent TEXT,complete INTEGER NOT NULL,created_at REAL NOT NULL,files_count INTEGER NOT NULL DEFAULT 0,symbols_count INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS code_snapshots(identity TEXT PRIMARY KEY,repo TEXT NOT NULL,head TEXT,overlay TEXT NOT NULL,generation TEXT NOT NULL,map_root TEXT,parent TEXT,complete INTEGER NOT NULL,created_at REAL NOT NULL,files_count INTEGER NOT NULL DEFAULT 0,symbols_count INTEGER NOT NULL DEFAULT 0,dirty_paths BLOB NOT NULL,stale_paths BLOB NOT NULL);
 CREATE INDEX IF NOT EXISTS snapshot_revision ON code_snapshots(repo,head,complete);
-CREATE TABLE IF NOT EXISTS checkout_heads(root TEXT PRIMARY KEY,repo TEXT NOT NULL,snapshot TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS checkout_heads(root TEXT NOT NULL,repo TEXT NOT NULL,snapshot TEXT NOT NULL,PRIMARY KEY(root,repo));
 CREATE TABLE IF NOT EXISTS snapshot_refs(repo TEXT NOT NULL,ref TEXT NOT NULL,snapshot TEXT NOT NULL,PRIMARY KEY(repo,ref));
 """
 
@@ -89,12 +93,21 @@ def put_postings(conn, artifact, value):
             (artifact, ordinal, row["repo"], row["path"], row["name"]),
         )
     conn.execute(
-        "INSERT OR IGNORE INTO snapshot_object_counts VALUES(?,?,?,?)",
+        "INSERT OR IGNORE INTO snapshot_object_counts VALUES(?,?,?,?,?)",
         (
             artifact,
             len(value.get("files", [])),
             len(value.get("symbols", [])),
             len(value.get("exclusions", [])),
+            # Re-extraction refreshes source staleness; a stale import waits for
+            # its own extractor, so it never forces a path back into a refresh.
+            int(
+                any(
+                    row.get("stale") and row.get("lane") != "imported"
+                    for table in ("symbols", "refs", "edges")
+                    for row in value.get(table, [])
+                )
+            ),
         ),
     )
     for ordinal, row in enumerate(value.get("symbols", [])):
@@ -426,6 +439,11 @@ def capture_path(conn, repo, path, *, mode=None):
     return put_graph(conn, value, sha)
 
 
+def path_set(snapshot, column):
+    """A snapshot's recorded dirty or stale paths."""
+    return set(unpacked(snapshot[column])) if snapshot else set()
+
+
 def publish(
     conn,
     repo,
@@ -437,10 +455,13 @@ def publish(
     complete=True,
     parent=None,
     activate_checkout=True,
+    dirty=None,
 ):
+    """Bind a new map; `dirty` (default: the parent's) names paths that may differ from `head`."""
     if parent is None and activate_checkout:
         row = conn.execute(
-            "SELECT snapshot FROM checkout_heads WHERE root=?", (str(repository),)
+            "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
+            (str(repository), repo),
         ).fetchone()
         parent = row[0] if row else None
     old = (
@@ -454,23 +475,29 @@ def publish(
     map_root = old["map_root"] if old else None
     files_count = old["files_count"] if old else 0
     symbols_count = old["symbols_count"] if old else 0
+    stale = path_set(old, "stale_paths") - set(updates)
+    dirty = path_set(old, "dirty_paths") if dirty is None else set(dirty)
     for path, artifact in sorted(updates.items()):
         previous = tree.get(map_root, path)
         for object_id, direction in ((previous, -1), (artifact, 1)):
             if object_id:
                 counts = conn.execute(
-                    "SELECT files,symbols FROM snapshot_object_counts WHERE artifact=?",
+                    "SELECT files,symbols,stale FROM snapshot_object_counts WHERE artifact=?",
                     (object_id,),
                 ).fetchone()
                 files_count += direction * counts["files"]
                 symbols_count += direction * counts["symbols"]
+                if direction == 1 and counts["stale"]:
+                    stale.add(path)
         map_root = tree.set(map_root, path, artifact)
     # Overlay identity is a Merkle source+mode+lane map, so distinct dirty trees
     # never alias even when HEAD is identical or a scoped refresh is incomplete.
     overlay = map_root or digest([])
     identity = digest([repo, head, overlay, generation, bool(complete)])
+    # The same map at the same head differs from that commit at the same paths, so
+    # an identity's first recorded path sets stay a valid superset for every binder.
     conn.execute(
-        "INSERT OR IGNORE INTO code_snapshots(identity,repo,head,overlay,generation,map_root,parent,complete,created_at,files_count,symbols_count) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT OR IGNORE INTO code_snapshots(identity,repo,head,overlay,generation,map_root,parent,complete,created_at,files_count,symbols_count,dirty_paths,stale_paths) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             identity,
             repo,
@@ -483,6 +510,8 @@ def publish(
             time.time(),
             files_count,
             symbols_count,
+            packed(sorted(dirty)),
+            packed(sorted(stale)),
         ),
     )
     if activate_checkout:
@@ -490,39 +519,26 @@ def publish(
             "INSERT OR REPLACE INTO checkout_heads VALUES(?,?,?)",
             (str(repository), repo, identity),
         )
-        conn.execute(
-            "INSERT OR REPLACE INTO snapshot_refs VALUES(?,?,?)",
-            (repo, "latest", identity),
-        )
     return identity
 
 
-def resolve(conn, at, repo=None):
+def resolve(conn, at, repo=None, root=None):
+    """A snapshot identity, or a Git revision resolved in checkout `root`."""
     if repo is None:
-        repos = [r[0] for r in conn.execute("SELECT repo FROM main.repos")]
-        if len(repos) != 1:
-            raise ValueError("--at requires exactly one namespace; pass --namespace")
-        repo = repos[0]
+        repo = select_namespace(conn, None, root)
     row = conn.execute(
         "SELECT * FROM code_snapshots WHERE repo=? AND identity=?", (repo, at)
     ).fetchone()
     if row:
         return dict(row)
-    registered = conn.execute(
-        "SELECT root FROM main.repos WHERE repo=?", (repo,)
-    ).fetchone()
+    if root is None:
+        root = checkout_root(conn, repo)
     from .code_store import git
 
-    head = (
-        git(registered[0], "rev-parse", "--verify", at + "^{commit}")
-        if registered and registered[0]
-        else None
-    )
-    lookup = "commit:" + head if head else at
-    if at == "latest":
-        lookup = at
+    head = git(root, "rev-parse", "--verify", at + "^{commit}") if root else None
     ref = conn.execute(
-        "SELECT snapshot FROM snapshot_refs WHERE repo=? AND ref=?", (repo, lookup)
+        "SELECT snapshot FROM snapshot_refs WHERE repo=? AND ref=?",
+        (repo, "commit:" + (head or at)),
     ).fetchone()
     if ref:
         return dict(
@@ -535,38 +551,39 @@ def resolve(conn, at, repo=None):
     )
 
 
-def activate_query(conn, at, repo=None):
-    """An explicit revision may populate the shared immutable cache on demand."""
+def activate_query(conn, at, repo=None, caller=None):
+    """An explicit revision resolves in the caller's checkout and may populate the
+    shared immutable cache on demand."""
+    exact = conn.execute(
+        "SELECT identity,repo FROM code_snapshots WHERE identity=? AND (? IS NULL OR repo=?) UNION ALL SELECT snapshot,repo FROM snapshot_refs WHERE ref=? AND (? IS NULL OR repo=?)",
+        (at, repo, repo, "commit:" + at, repo, repo),
+    ).fetchone()
+    if exact:
+        # A snapshot ID or full commit names its own facts; no checkout resolves it.
+        return activate(conn, exact[0], exact[1])
+    repo = select_namespace(conn, repo, caller)
+    root = checkout_root(conn, repo, caller)
     try:
-        selected = resolve(conn, at, repo)
+        selected = resolve(conn, at, repo, root)
     except ValueError as exc:
         if not str(exc).startswith("revision is not indexed"):
             raise
-        if repo is None:
-            repos = [r[0] for r in conn.execute("SELECT repo FROM main.repos")]
-            if len(repos) != 1:
-                raise ValueError(
-                    "--at requires exactly one namespace; pass --namespace"
-                )
-            repo = repos[0]
-        registered = conn.execute(
-            "SELECT root FROM main.repos WHERE repo=?", (repo,)
-        ).fetchone()
-        if not registered or not registered[0]:
+        if not root:
             raise ValueError("revision repository is not registered")
         from .code_build import index_revision
 
         database = Path(conn.execute("PRAGMA database_list").fetchone()[2])
-        captured = index_revision(database.parents[2], registered[0], at)
+        captured = index_revision(database.parents[2], root, at)
         selected = resolve(conn, captured["snapshot"], repo)
-    return activate(conn, selected["identity"], selected["repo"])
+    return activate(conn, selected["identity"], selected["repo"], root=root)
 
 
-def activate(conn, at, repo=None, *, historical=True, paths=None):
+def activate(conn, at, repo=None, *, historical=True, paths=None, root=None):
     """Install graph views over immutable objects without copying graph rows."""
-    snapshot = resolve(conn, at, repo)
+    snapshot = resolve(conn, at, repo, root)
     conn.snapshot = snapshot
     conn.snapshot_maps = {snapshot["repo"]: snapshot}
+    conn.snapshot_roots = {snapshot["repo"]: str(root) if root else None}
     conn.snapshot_scopes = paths
     conn.membership_cache = {}
     if getattr(conn, "graph_cache", None) is None:
@@ -653,38 +670,76 @@ def activate(conn, at, repo=None, *, historical=True, paths=None):
     return snapshot
 
 
-def capture_external(conn, repo, repository):
-    """Publish import/resolution writes as a new immutable overlay."""
+def overlay_lanes(conn, repo, path, value, lanes, *, contracts=False):
+    """A path's graph value with `lanes` replaced by the namespace's live rows.
+
+    Imported and resolved facts are namespace registries; every other fact stays
+    exactly as the checkout's own snapshot captured it.
+    """
+    value = dict(value) if value else {
+        t: [] for t in ("files", "symbols", "refs", "edges", "projects", "project_edges", "contracts", "exclusions")
+    } | {"mode": None}
+    for table, key in (("symbols", "path"), ("refs", "path"), ("edges", "src_path")):
+        live = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT * FROM main.{table} WHERE repo=? AND {key}=? AND lane IN ("
+                + ",".join("?" for _ in lanes)
+                + ") ORDER BY rowid",
+                (repo, path, *sorted(lanes)),
+            )
+        ]
+        value[table] = [r for r in value[table] if r["lane"] not in lanes] + live
+    if contracts:
+        value["contracts"] = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM main.contracts WHERE repo=? AND path=? ORDER BY rowid",
+                (repo, path),
+            )
+        ]
+    file = value["files"][0] if value["files"] else None
+    body = None
+    if file:
+        row = conn.execute(
+            "SELECT data FROM main.source_objects WHERE sha=?", (file["sha256"],)
+        ).fetchone()
+        body = zlib.decompress(row[0]).decode("utf-8", errors="replace") if row else None
+    from .code_store import span_sha
+
+    for row in value["symbols"]:
+        if row["lane"] == "imported" and row.get("anchor_sha") and body is not None:
+            row["stale"] = int(
+                span_sha(body, row["line"], row["end_line"]) != row["anchor_sha"]
+            )
+    for row in value["edges"]:
+        if row["lane"] == "imported" and row.get("anchor_sha") and file:
+            row["stale"] = int(row["anchor_sha"] != file["sha256"])
+    if not any(
+        value[t] for t in ("files", "exclusions", "symbols", "refs", "edges", "projects", "contracts")
+    ):
+        return None
+    return put_graph(conn, value, file["sha256"] if file else None)
+
+
+def capture_external(conn, repo, repository, paths, lanes=("imported",), *, contracts=True):
+    """Publish import, contract or resolved writes into one checkout's snapshot only."""
     row = conn.execute(
-        "SELECT * FROM code_snapshots WHERE identity=(SELECT snapshot FROM snapshot_refs WHERE repo=? AND ref='latest')",
-        (repo,),
+        "SELECT s.* FROM checkout_heads h JOIN code_snapshots s ON s.identity=h.snapshot WHERE h.root=? AND h.repo=?",
+        (str(repository), repo),
     ).fetchone()
-    paths = {
-        r[0]
-        for r in conn.execute(
-            "SELECT path FROM main.files WHERE repo=? UNION SELECT path FROM main.symbols WHERE repo=? UNION SELECT src_path FROM main.edges WHERE repo=?",
-            (repo, repo, repo),
-        )
-    }
     tree = PathMap(conn)
-    if row:
-        paths.update(p for p, _ in tree.items(row["map_root"]))
     updates = {}
-    for path in paths:
+    for path in sorted(paths):
         artifact = tree.get(row["map_root"], path) if row else None
-        previous = (
-            conn.execute(
-                "SELECT data FROM graph_objects WHERE identity=?", (artifact,)
-            ).fetchone()
-            if artifact
-            else None
+        value = graph_value(conn, artifact)
+        updates[path] = overlay_lanes(
+            conn, repo, path, value, set(lanes), contracts=contracts
         )
-        mode = unpacked(previous[0]).get("mode") if previous else None
-        updates[path] = capture_path(conn, repo, path, mode=mode)
     return publish(
         conn,
         repo,
-        repository or "",
+        repository,
         row["head"] if row else None,
         row["generation"] if row else "",
         updates,
@@ -693,23 +748,149 @@ def capture_external(conn, repo, repository):
     )
 
 
-def activate_latest(conn, repo=None):
-    """Read each namespace's current immutable map with live source proof."""
-    rows = conn.execute(
-        "SELECT s.* FROM code_snapshots s JOIN snapshot_refs r ON r.snapshot=s.identity WHERE r.ref='latest' AND (? IS NULL OR s.repo=?) ORDER BY s.repo",
-        (repo, repo),
-    ).fetchall()
-    if not rows:
+def graph_value(conn, artifact):
+    if not artifact:
         return None
-    selected = activate(conn, rows[0]["identity"], rows[0]["repo"], historical=False)
-    for row in rows[1:]:
-        conn.snapshot_maps[row["repo"]] = dict(row)
-        conn.execute("INSERT INTO selected_snapshot VALUES(?)", (row["map_root"],))
-    if len(rows) > 1:
-        conn.snapshot = dict(
-            identity=None, head=None, complete=all(r["complete"] for r in rows)
+    row = conn.execute(
+        "SELECT data FROM graph_objects WHERE identity=?", (artifact,)
+    ).fetchone()
+    return unpacked(row[0]) if row else None
+
+
+def caller_checkout(path=None):
+    """The checkout a command runs in: `--repo`, else the Git root above the cwd."""
+    if path is not None:
+        return Path(path).resolve()
+    here = Path.cwd().resolve()
+    return next((p for p in (here, *here.parents) if (p / ".git").exists()), None)
+
+
+def checkout_root(conn, repo, caller=None):
+    """The checkout a read of namespace `repo` answers for, or None if it has none.
+
+    The caller's own checkout wins; a namespace with one root answers from it; a
+    namespace with several roots and no caller among them is ambiguous.
+    """
+    roots = [
+        r[0]
+        for r in conn.execute(
+            "SELECT root FROM main.repos WHERE repo=? AND root<>'' ORDER BY root",
+            (repo,),
         )
-    return selected
+    ]
+    if caller is not None:
+        caller = str(caller)
+        if caller in roots:
+            return caller
+        if not conn.execute(
+            "SELECT 1 FROM main.repos WHERE root=?", (caller,)
+        ).fetchone():
+            from .code_store import namespace
+
+            if namespace(caller) == repo:
+                return caller
+    if len(roots) == 1:
+        return roots[0]
+    if not roots:
+        # An unanchored import binds the empty root.
+        return "" if checkout_snapshot(conn, repo, "") else None
+    # Checkouts bound to one snapshot answer identically; any of them will do.
+    bound = {
+        r[0]: r[1]
+        for r in conn.execute(
+            "SELECT root,snapshot FROM checkout_heads WHERE repo=? AND root<>'' ORDER BY root",
+            (repo,),
+        )
+    }
+    if len(set(bound.values())) == 1:
+        return min(bound)
+    raise ValueError(
+        f"namespace {repo} has {len(roots)} indexed checkouts; run hx code inside "
+        "one of them or pass --repo PATH"
+    )
+
+
+def select_namespace(conn, repo=None, caller=None):
+    """The single namespace a revision or freshness question names."""
+    if repo is not None:
+        return repo
+    names = [r[0] for r in conn.execute("SELECT DISTINCT repo FROM main.repos")]
+    if len(names) == 1:
+        return names[0]
+    if caller is not None:
+        owned = [
+            r[0]
+            for r in conn.execute(
+                "SELECT repo FROM main.repos WHERE root=?", (str(caller),)
+            )
+        ]
+        if len(owned) == 1:
+            return owned[0]
+        if not owned:
+            from .code_store import namespace
+
+            if namespace(caller) in names:
+                return namespace(caller)
+    raise ValueError(
+        "this query requires exactly one namespace; pass --namespace or run it inside a checkout"
+    )
+
+
+def checkout_snapshot(conn, repo, root):
+    """A checkout's own binding, else the clean snapshot of its current commit."""
+    row = conn.execute(
+        "SELECT s.* FROM checkout_heads h JOIN code_snapshots s ON s.identity=h.snapshot WHERE h.root=? AND h.repo=?",
+        (str(root), repo),
+    ).fetchone()
+    if row:
+        return dict(row)
+    from .code_store import git
+
+    head = git(root, "rev-parse", "--verify", "HEAD^{commit}") if root else None
+    row = (
+        conn.execute(
+            "SELECT s.* FROM snapshot_refs r JOIN code_snapshots s ON s.identity=r.snapshot WHERE r.repo=? AND r.ref=?",
+            (repo, "commit:" + head),
+        ).fetchone()
+        if head
+        else None
+    )
+    return dict(row) if row else None
+
+
+def activate_checkouts(conn, caller=None, repo=None):
+    """Read each namespace at the caller's checkout with live source proof."""
+    selected = []
+    for (name,) in conn.execute(
+        "SELECT DISTINCT repo FROM main.repos WHERE (? IS NULL OR repo=?) ORDER BY repo",
+        (repo, repo),
+    ).fetchall():
+        bound = conn.execute(
+            "SELECT 1 FROM checkout_heads WHERE repo=? LIMIT 1", (name,)
+        ).fetchone()
+        if not bound:
+            continue
+        root = checkout_root(conn, name, caller)
+        snapshot = checkout_snapshot(conn, name, root) if root is not None else None
+        if snapshot is None:
+            raise ValueError(
+                f"checkout {root} is not indexed for namespace {name}; "
+                f"run hx code index --repo {root}"
+            )
+        selected.append((snapshot, root))
+    if not selected:
+        return None
+    first, root = selected[0]
+    activate(conn, first["identity"], first["repo"], historical=False, root=root)
+    for snapshot, root in selected[1:]:
+        conn.snapshot_maps[snapshot["repo"]] = snapshot
+        conn.snapshot_roots[snapshot["repo"]] = root
+        conn.execute("INSERT INTO selected_snapshot VALUES(?)", (snapshot["map_root"],))
+    if len(selected) > 1:
+        conn.snapshot = dict(
+            identity=None, head=None, complete=all(s["complete"] for s, _ in selected)
+        )
+    return conn.snapshot
 
 
 def source_search_tables(conn):

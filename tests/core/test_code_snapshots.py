@@ -314,10 +314,14 @@ def test_explicit_unindexed_revision_captures_git_objects_and_keeps_live_overlay
     conn = connect(root)
     assert (
         conn.execute(
-            "SELECT snapshot FROM snapshot_refs WHERE ref='latest'"
+            "SELECT snapshot FROM checkout_heads WHERE root=?", (str(repo.resolve()),)
         ).fetchone()[0]
         == live["snapshot"]
     )
+    # Only clean full indexes name a commit; no last-writer ref exists.
+    assert {r[0] for r in conn.execute("SELECT ref FROM snapshot_refs")} == {
+        "commit:" + head
+    }
     conn.close()
     status, result = code_index.execute(
         ["index", "--repo", str(repo), "--at", head], root
@@ -375,8 +379,11 @@ def test_scoped_refresh_keeps_checkout_parent_when_other_branch_is_latest(tmp_pa
     scoped = code_index.index_repo(root, repo, paths=["item.py"])
     assert code_index.symbols_for(root, "branch_a", at=scoped["snapshot"])
     assert not code_index.symbols_for(root, "branch_b", at=scoped["snapshot"])
-    assert code_index.symbols_for(root, "branch_a")
-    assert code_index.symbols_for(root, "scoped_a")
+    assert code_index.symbols_for(root, "branch_a", checkout=repo)
+    assert code_index.symbols_for(root, "scoped_a", checkout=repo)
+    assert not code_index.symbols_for(root, "scoped_a", checkout=clone)
+    with pytest.raises(ValueError, match="--repo"):
+        code_index.symbols_for(root, "scoped_a")
     assert code_freshness.scope(root, repo, ["branch.py"])["fresh"]
     assert code_freshness.scope(root, clone, ["branch.py"])["fresh"]
     assert code_index.symbols_for(root, "branch_b", at=b["snapshot"])
@@ -509,7 +516,7 @@ def test_named_queries_decompress_only_matching_paths_in_large_snapshot(
     root = tmp_path / "state"
     indexed = code_index.index_repo(root, repo)
     conn = connect(root)
-    code_snapshot.activate_latest(conn)
+    code_snapshot.activate_checkouts(conn, repo)
     counts = dict(graph=0, view=0)
     original = code_snapshot.unpacked
 
@@ -640,7 +647,7 @@ def test_named_reuse_and_impact_avoid_global_json_views(tmp_path, monkeypatch):
         lambda *a: pytest.fail("named reuse enumerated map"),
     )
     conn = connect(root)
-    code_snapshot.activate_latest(conn)
+    code_snapshot.activate_checkouts(conn, repo)
     assert code_reuse.conform(conn, "IFoo")["clean"]
     assert code_reuse.tests_for(conn, "Foo")
     assert code_reuse.run(conn, "register", "IFoo")

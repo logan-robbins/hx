@@ -16,74 +16,80 @@ from .code_store import db_path as db_path
 from .errors import HxError
 
 
-def _read(root, method, *args, at=None, **kwargs):
+def select(conn, at=None, repo=None, caller=None):
+    """Activate the caller's checkout, or revision `at` resolved in it; None when
+    no namespace has an indexed checkout."""
+    from .code_snapshot import activate_checkouts, activate_query
+
+    if at is not None:
+        return activate_query(conn, at, repo, caller)
+    return activate_checkouts(conn, caller, repo)
+
+
+def _read(root, method, *args, at=None, checkout=None, **kwargs):
+    from .code_snapshot import caller_checkout
+
     conn = store.connect(root, existing=True)
     if conn is None:
         return []
     try:
-        if at is not None:
-            from .code_snapshot import activate_query
-
-            activate_query(conn, at, kwargs.get("repo"))
-        else:
-            from .code_snapshot import activate_latest
-
-            activate_latest(conn, kwargs.get("repo"))
+        if select(conn, at, kwargs.get("repo"), caller_checkout(checkout)) is None:
+            return []
         return method(conn, *args, **kwargs)
     finally:
         conn.close()
 
 
-def symbols_for(root, name, *, repo=None, limit=100, path=None, at=None):
-    return _read(root, query.symbols, name, repo=repo, limit=limit, path=path, at=at)
+def symbols_for(root, name, *, repo=None, limit=100, path=None, at=None, checkout=None):
+    return _read(
+        root, query.symbols, name, repo=repo, limit=limit, path=path, at=at,
+        checkout=checkout,
+    )
 
 
-def search(root, name, *, repo=None, limit=10, at=None):
-    return _read(root, query.search, name, repo=repo, limit=limit, at=at)
+def search(root, name, *, repo=None, limit=10, at=None, checkout=None):
+    return _read(
+        root, query.search, name, repo=repo, limit=limit, at=at, checkout=checkout
+    )
 
 
-def callers(root, name, *, repo=None, limit=100, count=False, at=None):
-    return _read(root, query.callers, name, repo=repo, limit=limit, count=count, at=at)
+def callers(root, name, *, repo=None, limit=100, count=False, at=None, checkout=None):
+    return _read(
+        root, query.callers, name, repo=repo, limit=limit, count=count, at=at,
+        checkout=checkout,
+    )
 
 
-def graph_edges(root, *, repo=None, path=None, limit=100, at=None):
-    return _read(root, query.edges, repo=repo, path=path, limit=limit, at=at)
+def graph_edges(root, *, repo=None, path=None, limit=100, at=None, checkout=None):
+    return _read(
+        root, query.edges, repo=repo, path=path, limit=limit, at=at, checkout=checkout
+    )
 
 
-def impact(root, paths, *, repo=None, limit=100, at=None):
+def impact(root, paths, *, repo=None, limit=100, at=None, checkout=None):
+    from .code_snapshot import caller_checkout, facts_in_path
+
+    caller = caller_checkout(checkout)
     conn = store.connect(root, existing=True)
     symbols = []
     if conn:
         try:
-            if at is not None:
-                from .code_snapshot import activate_query
-
-                activate_query(conn, at, repo)
-            else:
-                from .code_snapshot import activate_latest
-
-                activate_latest(conn, repo)
-            for path in paths:
-                if conn.snapshot is not None:
-                    from .code_snapshot import facts_in_path
-
+            if select(conn, at, repo, caller) is not None:
+                for path in paths:
                     rows = sorted(
                         facts_in_path(conn, "symbols", str(path), repo=repo),
                         key=lambda r: (r["repo"], r["line"]),
                     )[:limit]
-                else:
-                    rows = conn.execute(
-                        "SELECT * FROM symbols WHERE path=? AND (? IS NULL OR repo=?) ORDER BY repo,line LIMIT ?",
-                        (str(path), repo, repo, limit),
-                    )
-                symbols.extend(store.decorate(conn, r) for r in rows)
+                    symbols.extend(store.decorate(conn, r) for r in rows)
         finally:
             conn.close()
     references = set()
     for row in symbols[:limit]:
         references.update(
             r["path"]
-            for r in callers(root, row["name"], repo=row["repo"], limit=limit, at=at)
+            for r in callers(
+                root, row["name"], repo=row["repo"], limit=limit, at=at, checkout=caller
+            )
         )
     references = sorted(references - set(paths))[:limit]
     tests = [p for p in references if "test" in p.lower() or "spec" in p.lower()]
@@ -159,6 +165,10 @@ def _parser():
         p.add_argument("--namespace")
         if name != "import":
             p.add_argument("--at", help="indexed commit, ref or immutable snapshot ID")
+        if name not in {"audit", "index", "import", "journal"}:
+            p.add_argument(
+                "--repo", help="checkout to answer for (default: the one containing the cwd)"
+            )
         if name == "audit":
             p.add_argument("--repo", required=True)
             p.add_argument("--paths", nargs="+")
@@ -245,6 +255,9 @@ def main(argv, root, *, env=None, _emit=print, read_ledger=True):
     args = parser.parse_args(argv)
     root = Path(root)
     try:
+        from .code_snapshot import caller_checkout
+
+        caller = caller_checkout(getattr(args, "repo", None))
         if hasattr(args, "limit") and not 1 <= args.limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         name = getattr(args, "name", None)
@@ -295,6 +308,7 @@ def main(argv, root, *, env=None, _emit=print, read_ledger=True):
                 args.edges,
                 repo_path=args.repo,
                 extractor=args.extractor,
+                caller=caller,
             )
         elif args.command == "journal":
             from .code_journal import list_changesets, replay
@@ -309,54 +323,44 @@ def main(argv, root, *, env=None, _emit=print, read_ledger=True):
                 else list_changesets(root, repo=args.namespace, limit=args.limit)
             )
         elif args.command == "fresh":
-            from .code_freshness import scope
+            from .code_freshness import scope, snapshot_scope
+            from .code_snapshot import activate_query, checkout_root, select_namespace
 
             conn = store.connect(root, existing=True)
+            if conn is None:
+                raise ValueError("fresh requires an indexed checkout; run hx code index")
             try:
-                repos = (
-                    conn.execute(
-                        "SELECT * FROM repos WHERE (? IS NULL OR repo=?)",
-                        (args.namespace, args.namespace),
-                    ).fetchall()
-                    if conn
-                    else []
-                )
-                if len(repos) != 1:
-                    raise ValueError(
-                        "fresh requires exactly one namespace; index it or pass --namespace"
-                    )
+                identity = select_namespace(conn, args.namespace, caller)
                 if args.at:
-                    from .code_snapshot import activate_query
-
-                    selected = activate_query(conn, args.at, args.namespace)
-                    from .code_freshness import snapshot_scope
-
+                    selected = activate_query(conn, args.at, identity, caller)
                     result = snapshot_scope(conn, selected, args.paths)
                 else:
-                    result = scope(root, repos[0]["root"], args.paths, local=True)
+                    checkout = checkout_root(conn, identity, caller)
+                    if checkout is None:
+                        raise ValueError(
+                            f"namespace {identity} has no indexed checkout; run hx code index --repo PATH"
+                        )
+                    result = scope(root, checkout, args.paths, local=True)
             finally:
-                if conn:
-                    conn.close()
+                conn.close()
         elif args.command == "impact":
             result = impact(
-                root, args.paths, repo=args.namespace, limit=args.limit, at=args.at
+                root, args.paths, repo=args.namespace, limit=args.limit, at=args.at,
+                checkout=caller,
             )
         else:
             conn = store.connect(
                 root, existing=args.command != "contracts" or not args.register
             )
             try:
-                if conn is not None and args.at:
-                    if getattr(args, "register", None):
+                if getattr(args, "register", None):
+                    if args.at:
                         raise ValueError("--at is read-only")
-                    from .code_snapshot import activate_query
+                    from .code_metadata import register_contracts
 
-                    activate_query(conn, args.at, args.namespace)
-                elif conn is not None and not getattr(args, "register", None):
-                    from .code_snapshot import activate_latest
-
-                    activate_latest(conn, args.namespace)
-                if conn is None:
+                    register_contracts(conn, args.register, caller)
+                    conn.commit()
+                if conn is None or select(conn, args.at, args.namespace, caller) is None:
                     result = []
                 elif args.command in {"symbols", "signature", "type"}:
                     result = query.symbols(
@@ -424,7 +428,6 @@ def main(argv, root, *, env=None, _emit=print, read_ledger=True):
                         args.command,
                         name,
                         repo=args.namespace,
-                        register=getattr(args, "register", None),
                         root=root,
                         limit=args.limit,
                     )
@@ -455,39 +458,24 @@ def main(argv, root, *, env=None, _emit=print, read_ledger=True):
         if getattr(args, "expect", None) == "absent" and expectation(result, "absent"):
             conn = store.connect(root, existing=True)
             try:
-                if conn and getattr(args, "at", None):
-                    from .code_snapshot import activate_query
-
-                    activate_query(conn, args.at, args.namespace)
-                elif conn:
-                    from .code_snapshot import activate_latest
-
-                    activate_latest(conn, args.namespace)
-                if conn and (
-                    conn.snapshot is None
-                    or not conn.snapshot["complete"]
-                    or conn.execute(
-                        "SELECT 1 FROM exclusions WHERE reason='oversize' AND (? IS NULL OR repo=?) LIMIT 1",
-                        (args.namespace, args.namespace),
-                    ).fetchone()
-                ):
+                selected = (
+                    select(conn, getattr(args, "at", None), args.namespace, caller)
+                    if conn
+                    else None
+                )
+                if conn and (selected is None or not selected["complete"]):
                     _emit(
-                        "hx: code: absence unverified: incomplete snapshot or excluded oversize bodies; index the complete scope or raise --max-file-bytes",
+                        "hx: code: absence unverified: no complete snapshot of this checkout; index the complete scope",
                         file=sys.stderr,
                     )
                     return 3
                 if conn and not getattr(args, "at", None):
                     from .code_freshness import scope
 
-                    for identity in conn.snapshot_maps:
-                        record = conn.execute(
-                            "SELECT root FROM repos WHERE repo=?", (identity,)
-                        ).fetchone()
+                    for identity, checkout in conn.snapshot_roots.items():
                         if (
-                            record is None
-                            or not scope(root, record["root"], ["."], local=True)[
-                                "fresh"
-                            ]
+                            not checkout
+                            or not scope(root, checkout, ["."], local=True)["fresh"]
                         ):
                             _emit(
                                 "hx: code: absence unverified: stale live source scope; refresh with hx code index",
