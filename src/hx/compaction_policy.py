@@ -53,15 +53,16 @@ def continue_context(ledger, row, observation):
     if native_restart.request_instruction_refresh(ledger, row):
         return None
     run_id = row['run_id']
-    with ledger.transaction() as tx:
+    # This runs in the context hook: read in a snapshot and compile without the writer.
+    with ledger.snapshot() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
         current = native_launch._row(tx, run_id)
         if current['status'] not in {'submitted', 'continuation_required'} or current['payload'].get('pane') != pane:
             raise Conflict('native continuation changed before composition')
-        _, rendered = prompt_compiler.verified_bundle(ledger.root, current['payload']['worker_id'],
-            Path(current['payload']['manifest']), workdir=task['payload']['workdir'])
         cursors, pending = context_packets._pending(tx, run_id)
-        boundary = digest([source, session, cursors, current['payload'].get('prompt_version')])
+    _, rendered = prompt_compiler.verified_bundle(ledger.root, current['payload']['worker_id'],
+        Path(current['payload']['manifest']), workdir=task['payload']['workdir'])
+    boundary = digest([source, session, cursors, current['payload'].get('prompt_version')])
     request = 'continue-' + boundary
     # Forced mode preserves pending corrections and source gaps explicitly.
     # It does not classify, acknowledge, or delete anything on a model's behalf.
@@ -97,7 +98,7 @@ def prepare_native_compaction(ledger, row, observation):
     from . import context_packets, native_controller
     from .continuity_store import digest
     from .store import atomic_write_text
-    with ledger.transaction() as tx:
+    with ledger.snapshot() as tx:
         cursors, _ = context_packets._pending(tx, row['run_id'])
     request = 'precompact-' + digest([row['launch_id'], observation, cursors])
     packet = context_packets.issue(ledger, row['run_id'], request_id=request, mode='forced', max_tokens=row['payload']['initial_input_limit'])

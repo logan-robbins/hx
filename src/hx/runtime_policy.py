@@ -114,7 +114,7 @@ def inspect_call(row, task, observation, *, root=None):
                 if required.get('kind') == 'assignment':
                     from .context_packets import verify_material
                     from .continuity_store import ContinuityStore
-                    with ContinuityStore(root) as store:
+                    with ContinuityStore.reader(root) as store:
                         verified = verify_material(store, row['run_id'], path,
                                                    checkpoint_id=row['payload']['checkpoint_id'])
                 else:

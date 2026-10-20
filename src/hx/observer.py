@@ -134,13 +134,19 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
                 or path == Path(native_scope["root"])):
             raise ValidationError("invalid native source scope")
         source_id = digest([source_id, native_scope])
-    with store.transaction() as tx:
+    def registered(tx):
         run = tx.db.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
         if run is None or run["ended_at"] is not None:
             raise ValidationError("capture registration requires an active run")
         if native_scope and tx.task(run["task_id"])["revision"] != run["task_revision"]:
             raise Conflict("native source task changed; lifecycle rebind required")
-        if tx.db.execute("SELECT 1 FROM capture_sources WHERE source_id=?", (source_id,)).fetchone():
+        return tx.db.execute("SELECT 1 FROM capture_sources WHERE source_id=?", (source_id,)).fetchone() is not None
+    # Hooks re-report the same transcript on every turn; recognise it without the writer.
+    with store.snapshot() as tx:
+        if registered(tx):
+            return source_id
+    with store.transaction() as tx:
+        if registered(tx):
             return source_id
         # A changed branch requires a fresh run. Fact invalidation/rebinding must
         # also happen at the lifecycle boundary before preparing new context.

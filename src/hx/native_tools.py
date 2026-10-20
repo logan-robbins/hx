@@ -6,7 +6,7 @@ Only call identities and input hashes live here; evidence stays in capture.
 """
 
 from . import native_launch, unit_execution
-from .continuity_store import Conflict, _id, digest
+from .continuity_store import Conflict, LedgerBusy, _id, digest
 from .errors import ValidationError
 
 
@@ -84,12 +84,15 @@ def admit(store, run_id, launch_id, payload):
         # Hosts may still emit an error result for a deliberately blocked call.
         # Retain that identity so it does not masquerade as missing capture.
         session, actor, call, fingerprint = _identity(payload)
-        with store.transaction() as tx:
-            row = native_launch._row(tx, run_id)
-            if row and row["launch_id"] == launch_id:
-                tx._change()
-                tx.db.execute("INSERT OR IGNORE INTO native_tool_calls VALUES(?,?,?,?,?,'denied')",
-                              (launch_id, session, actor, call, fingerprint))
+        try:
+            with store.transaction() as tx:
+                row = native_launch._row(tx, run_id)
+                if row and row["launch_id"] == launch_id:
+                    tx._change()
+                    tx.db.execute("INSERT OR IGNORE INTO native_tool_calls VALUES(?,?,?,?,?,'denied')",
+                                  (launch_id, session, actor, call, fingerprint))
+        except LedgerBusy:
+            pass  # The refusal stands; its unmatched error result becomes a capture gap.
         raise
 
 
@@ -105,7 +108,7 @@ def _admit(store, run_id, launch_id, payload):
     from .native_controller import _owned_pane
     pane = _owned_pane(snapshot)
     from . import runtime_policy
-    with store.transaction() as tx:
+    with store.snapshot() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
     reading = runtime_policy.inspect_call(snapshot, task['payload'], payload, root=store.root)
     if reading is not None:
@@ -151,6 +154,25 @@ def _admit(store, run_id, launch_id, payload):
         tx.db.execute("INSERT INTO native_tool_calls VALUES(?,?,?,?,?,'admitted')", (*key, fingerprint))
         runtime_policy.remember_read(tx, row, session, actor, call, reading)
         search_coverage.remember(tx, row, session, actor, call, search)
+
+
+def record_executed(store, run_id, launch_id, payload):
+    """A deferred tool call ran without admission; record it as admitted so the
+    shutdown barrier waits for its result and settlement matches it."""
+    session, actor, call, fingerprint = _identity(payload)
+    with store.transaction() as tx:
+        row = native_launch._row(tx, run_id)
+        if row is None or row["launch_id"] != launch_id:
+            raise Conflict("deferred tool call lost its native launch")
+        actor = _actor(tx, row, session, actor)
+        previous = tx.db.execute("SELECT input_hash FROM native_tool_calls WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?",
+                                 (launch_id, session, actor, call)).fetchone()
+        if previous:
+            if previous[0] != fingerprint:
+                raise Conflict("deferred tool call reused an identity with different input")
+            return
+        tx._change()
+        tx.db.execute("INSERT INTO native_tool_calls VALUES(?,?,?,?,?,'admitted')", (launch_id, session, actor, call, fingerprint))
 
 
 def settle(tx, run_id, session_id, payload):

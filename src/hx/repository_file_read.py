@@ -52,7 +52,7 @@ def require_admitted(root, receipt, env):
     """A marker is legal only after the native hook reserved this exact read."""
     from .continuity_store import ContinuityStore
     if env.get('HX_CONTINUITY_RUN'):
-        with ContinuityStore(Path(env.get('HX_CONTINUITY_AUTHORITY', root))) as ledger:
+        with ContinuityStore.reader(Path(env.get('HX_CONTINUITY_AUTHORITY', root))) as ledger:
             reads = ledger.db.execute('''SELECT r.source_stamp FROM native_reads r
                 JOIN native_tool_calls c USING(launch_id,session_id,actor_id,call_id)
                 JOIN native_launches l USING(launch_id)

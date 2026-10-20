@@ -124,8 +124,9 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
     if row["request_id"] != request_id or row["payload"]["worker_id"] != worker:
         raise Conflict("native launch retry must name its original worker and request")
     if row["status"] == "prepared":
+        verified = native_launch.verify(ledger, run_id)
         with ledger.transaction() as tx:
-            row = native_launch.verify_inputs(tx, run_id)
+            row = native_launch.confirm(tx, verified)
             payload = {**row["payload"], "session": "hx-" + row["launch_id"], "tmux": tmux.tmux_command(env),
                        "supervisor": "receipt-wait-v1"}
             _transition(tx, run_id, {"prepared"}, "installing", payload=payload)
@@ -143,8 +144,9 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
                                        stderr=subprocess.DEVNULL, timeout=30, check=False)
             if installed.returncode:
                 raise HxError("native installer failed")
+            verified = native_launch.verify(ledger, run_id, states={"installing"})
             with ledger.transaction() as tx:
-                native_launch.verify_inputs(tx, run_id, states={"installing"})
+                native_launch.confirm(tx, verified)
                 _transition(tx, run_id, {"installing"}, "installed")
         except Exception as exc:
             with ledger.transaction() as tx:
@@ -152,8 +154,9 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
             raise
     row = native_launch._row(ledger, run_id)
     if row["status"] == "installed":
+        verified = native_launch.verify(ledger, run_id, states={"installed"})
         with ledger.transaction() as tx:
-            row = native_launch.verify_inputs(tx, run_id, states={"installed"})
+            row = native_launch.confirm(tx, verified)
             # Claim before touching tmux. A crash after this point is uncertain;
             # another controller never creates a replacement session implicitly.
             _transition(tx, run_id, {"installed"}, "starting")
@@ -219,8 +222,7 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
         if visible is None or not goal.pane_is_idle(visible):
             return _result(ledger, run_id)
         try:
-            with ledger.transaction() as tx:
-                native_launch.verify_inputs(tx, run_id, states={"starting", "ready"})
+            native_launch.verify(ledger, run_id, states={"starting", "ready"})
         except Conflict as exc:
             if 'newer execution evidence' not in str(exc):
                 raise
@@ -229,8 +231,9 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
                 refresh_before_submission(ledger, current)
             else:
                 return _result(ledger, run_id)
+        verified = native_launch.verify(ledger, run_id, states={"starting", "ready"})
         with ledger.transaction() as tx:
-            row = native_launch.verify_inputs(tx, run_id, states={"starting", "ready"})
+            row = native_launch.confirm(tx, verified)
             payload = {**row["payload"], "pane": pane}
             prompt = _submission_prompt(row)
             payload["submission_hash"] = digest(prompt)
@@ -355,19 +358,26 @@ def observe(ledger, run_id, launch_id, event, observation):
         if row["status"] not in startup_states:
             return None
         pane = _owned_pane(row)
-        with ledger.transaction() as tx:
+        # This runs in the startup hook: verify in a read snapshot, then take
+        # the writer only to confirm the verified row and record the step.
+        with ledger.snapshot() as tx:
             row = native_launch._row(tx, run_id)
             if row["payload"].get("startup_observed") or row["status"] not in startup_states:
                 return None
             row = native_launch.verify_inputs(tx, run_id, states=startup_states, check_evidence=False)
-            payload = row["payload"]
-            previous_status = row["status"]
             _, task, _ = unit_execution._run(tx, run_id)
-            _, rendered = prompt_compiler.verified_bundle(ledger.root, payload["worker_id"],
-                Path(payload["manifest"]), workdir=task["payload"]["workdir"])
-            persona = Path(payload["capsule"]) / "run" / payload["worker_id"] / "persona.md"
-            if native_launch._bytes(persona, 262144) != rendered["system"].encode():
-                raise Conflict("native launcher did not install its expected system prefix")
+        payload = row["payload"]
+        previous_status = row["status"]
+        _, rendered = prompt_compiler.verified_bundle(ledger.root, payload["worker_id"],
+            Path(payload["manifest"]), workdir=task["payload"]["workdir"])
+        persona = Path(payload["capsule"]) / "run" / payload["worker_id"] / "persona.md"
+        if native_launch._bytes(persona, 262144) != rendered["system"].encode():
+            raise Conflict("native launcher did not install its expected system prefix")
+        with ledger.transaction() as tx:
+            current = native_launch._row(tx, run_id)
+            if current is not None and (current["payload"].get("startup_observed") or current["status"] not in startup_states):
+                return None
+            native_launch.confirm(tx, row, check_evidence=False)
             _transition(tx, run_id, startup_states, "composing_startup")
         # Startup acknowledges ownership and the installed prefix only. The
         # full frozen checkpoint travels in the exact submitted native input;
@@ -440,7 +450,7 @@ def refresh_before_submission(ledger, row):
     payload = row['payload']
     _, rendered = prompt_compiler.verified_bundle(ledger.root, payload['worker_id'],
         Path(payload['manifest']), workdir=payload['workdir'])
-    with ledger.transaction() as tx:
+    with ledger.snapshot() as tx:
         native_launch.verify_inputs(tx, row['run_id'], states={'ready'}, check_evidence=False)
         cursors, pending = context_packets._pending(tx, row['run_id'])
         sources = context_packets._sources(tx, row['run_id'])
@@ -475,6 +485,9 @@ def submit_continuation(ledger, row, *, env=None):
     visible = goal.capture_pane(row["payload"]["session"], child)
     if not visible or not goal.pane_is_idle(visible):
         return None
+    # Compile before the writer; the transaction confirms the row it was compiled for.
+    _, rendered = prompt_compiler.verified_bundle(ledger.root, row["payload"]["worker_id"],
+        Path(row["payload"]["manifest"]), workdir=row["payload"]["workdir"])
     with ledger.transaction() as tx:
         current = native_launch._row(tx, row["run_id"])
         if current["payload"] != row["payload"] or current["status"] != "continuation_required":
@@ -482,8 +495,6 @@ def submit_continuation(ledger, row, *, env=None):
         packet = context_packets._read(tx, row["payload"]["checkpoint_id"], row["run_id"])
         if native_launch._bytes(Path(row["payload"]["packet_path"]), 262144) != packet["text"].encode():
             raise Conflict("continuation native input changed before submission")
-        _, rendered = prompt_compiler.verified_bundle(ledger.root, row["payload"]["worker_id"],
-            Path(row["payload"]["manifest"]), workdir=row["payload"]["workdir"])
         system_path = Path(row["payload"]["capsule"]) / "run" / row["payload"]["worker_id"] / "persona.md"
         if native_launch._bytes(system_path, 262144) != rendered["system"].encode():
             raise Conflict("continuation native system instructions changed")

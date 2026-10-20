@@ -46,7 +46,7 @@ def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
     if adapter not in TRANSPORTS or decoder not in TRANSPORTS[adapter]:
         raise ValidationError("native capture requires a supported adapter/transport pair")
     binding_id = digest([run_id, stream_id, adapter, session_id, decoder])
-    with store.transaction() as tx:
+    def bound(tx):
         if retain_late:
             # The producer may retain a late observation for reconciliation, but
             # enqueue still refuses to apply new evidence to an ended/amended run.
@@ -57,9 +57,15 @@ def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
             _run(tx, run_id, worker_id)
         old = tx.db.execute("SELECT * FROM native_bindings WHERE adapter=? AND session_id=? AND stream_id=?",
                             (adapter, session_id, stream_id)).fetchone()
-        if old:
-            if old["binding_id"] != binding_id:
-                raise Conflict("native session already bound; use a new session identity for a new run or decoder")
+        if old and old["binding_id"] != binding_id:
+            raise Conflict("native session already bound; use a new session identity for a new run or decoder")
+        return old is not None
+    # Every hook delivery binds; an existing binding needs no writer.
+    with store.snapshot() as tx:
+        if bound(tx):
+            return binding_id
+    with store.transaction() as tx:
+        if bound(tx):
             return binding_id
         tx._change()
         tx.db.execute("INSERT OR IGNORE INTO cursors(run_id,stream_id) VALUES(?,?)", (run_id, stream_id))

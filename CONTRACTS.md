@@ -34,6 +34,17 @@ acknowledgment, and process ownership. `hx launch partner` starts the unassigned
 `--drain` and `--shutdown` advance owned-process closure for a worker's original run/request.
 Unknown process or remote outcomes retain their obligations rather than inventing success.
 
+Planned hooks attach to the ledger without its writer lock and read through snapshots. Each
+commit waits at most `hooks.LEDGER_BUDGET_S` for the writer. A hook that cannot get it lets the
+native operation proceed (exit 0). It writes its whole delivery under `state/hook-spool/`, and
+later hooks of the same run queue behind it. Only intentional refusals and the guard deny.
+The application loop replays deferred deliveries in order: a tool start is recorded as
+admitted, and a complete-file read is recorded as undelivered so the agent repeats it. A
+delivery that cannot apply becomes the run's capture gap. Until replayed, deferred deliveries
+count as capture lag, so drain, restart, reset and completion wait.
+Long work (worktree hashing, bundle compilation, fingerprints, check identities) runs before
+the writer opens, and the transaction re-verifies its inputs and refuses changed ones.
+
 Workers bind their definition of done and exact check recipes before edits/proof. A configured
 independent reviewer approves the frozen hash. Known mutating/proof tools enforce that gate;
 arbitrary shell commands are not a filesystem sandbox. Worker commands act only on their run.
@@ -151,6 +162,9 @@ model/effort, independent `companion` and `learning` settings, and optional expl
 `personas/ROLE.md` and `companion/roles/ROLE.md`. Workers use isolated native homes and
 configured credentials; instance setup does not authorize changing personal harness state.
 `config/hx.json` carries runtime, repository service, and optional capability settings.
+`loop.workers` (integer 1–64, default 4) bounds the application loop's job threads.
+`companion.max_concurrent` (integer 1–64, default 1) bounds running Companion jobs of both
+kinds together. Any other value is refused.
 `config/planning.json` has `schema_version: 1`, independent `reviewer`, and `required_checks`;
 this policy document version is separate from the schema-2 packet plan.
 
@@ -441,7 +455,12 @@ Each agent has a Context Companion and a separate Learning Companion. Context jo
 frozen task/map patches and context event cursor. Learning jobs have separate `learning_jobs`
 and `learning_cursors`, frozen captured evidence, model/effort, request and proposal budgets.
 Neither sidecar can acknowledge the other's cursor. Context failure does not disable learning;
-learning lag does not block packet completion or release. Both respect shared host capacity.
+learning lag does not block packet completion or release. Both respect shared host capacity:
+running context and learning jobs together never exceed `companion.max_concurrent`, and a pass
+with no free slot stays prepared for a later turn. The application loop runs checks and
+Companion passes as jobs and reaps their outcomes on later ticks. No run's completion,
+restart, reset or Companion turn waits behind another run's job. Restart, reset and each
+Companion kind take turns across runs on their own cursors.
 
 Learning assessment tools are exactly `read_evidence` (one complete frozen evidence object,
 without offsets) and `submit_assessment`. Responses require `schema_version: 1`,

@@ -41,7 +41,7 @@ def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
         raise Conflict("native source belongs to another session")
     # Validate the original task revision too; never register late evidence on
     # the worker slot's newer assignment.
-    with store.transaction() as tx:
+    with store.snapshot() as tx:
         native_capture._run(tx, run_id, worker_id)
     home = Path(launch["payload"]["capsule"]) / "run" / worker_id / "home"
     if home.resolve() != home:

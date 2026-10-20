@@ -1,4 +1,4 @@
-"""Observe and schedule independent context and learning Companions in one slot."""
+"""Observe and schedule independent context and learning Companions in counted slots."""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +8,7 @@ import json
 import time
 from pathlib import Path
 
-from . import companion_protocol, map_refresh, native_companion, native_processes, observer, passes
+from . import companion_protocol, loop_jobs, map_refresh, native_companion, native_processes, observer, passes
 from .continuity_store import Conflict, ContinuityStore, canonical, digest
 from .errors import HxError
 
@@ -76,11 +76,21 @@ def watch_map(store, *, limit=32):
     return changes
 
 
-def reconcile_companion(store):
-    row = store.db.execute("SELECT job_id FROM companion_jobs WHERE status='running' LIMIT 1").fetchone()
-    if row is None:
-        return None
-    job = companion_protocol.row(store, row[0])
+def reconcile_companion(store, *, skip=lambda job_id: False):
+    """Every running context pass this process does not execute itself, by its original process."""
+    results = []
+    for row in store.db.execute("SELECT job_id FROM companion_jobs WHERE status='running' ORDER BY job_id").fetchall():
+        if skip(row[0]):
+            continue
+        try:
+            results.append(_reconcile_context(store, row[0]))
+        except (HxError, OSError) as exc:
+            results.append({'job_id': row[0], 'status': 'unresolved', 'error': str(exc)})
+    return results
+
+
+def _reconcile_context(store, job_id):
+    job = companion_protocol.row(store, job_id)
     identity = job['payload'].get('process')
     if not identity:
         raise Conflict('interrupted companion lacks a process identity; execution remains unresolved')
@@ -120,86 +130,187 @@ def _records(store, task_id):
     return tuple(ids)
 
 
-def tick(store, *, env=None):
+def tick(store, *, env=None, jobs=None):
+    """One bounded cycle. Checks and Companion passes run in `jobs`; the tick
+    submits and reaps them, so none holds another run's completion, restart,
+    reset, or Companion turn behind it. Without `jobs` each runs inline."""
+    jobs = loop_jobs.Jobs.inline() if jobs is None else jobs
     from .runtime_notifications import drain
     drain(store)
     from .task_retention import retire_closed
     retire_closed(store)
-    observed = observer.reconcile(store)
+    from . import hook_spool
+    hook_spool.ingest(store)
+    observer.reconcile(store)
     from .native_controller import reconcile_launches
     reconcile_launches(store, env=env)
     changed = watch_map(store)
-    from .native_completion import advance_one
-    try:
-        completion = advance_one(store, env=env)
-        if _state(store, 'completion-error'):
-            _save(store, 'completion-error', {})
-    except HxError as exc:
-        completion = {'status': 'unresolved', 'error': str(exc)}
-        if _state(store, 'completion-error') != completion:
-            _save(store, 'completion-error', completion)
-    if completion and completion['status'] in {'advancing', 'completed', 'failed'}:
-        return {**completion, 'map_changes': changed}
-    from . import learning_companion
-    running = []
-    for kind, reconcile in (('context', reconcile_companion), ('learning', learning_companion.reconcile)):
-        try:
-            current = reconcile(store)
-        except (HxError, OSError) as exc:
-            current = {'status': 'unresolved', 'error': str(exc)}
-        if current and current.get('status') == 'running':
-            running.append({'kind': kind, **current})
-        elif current and current.get('error'):
-            _save(store, kind + '-companion-error', current)
-        elif current and _state(store, kind + '-companion-error'):
-            _save(store, kind + '-companion-error', {})
-    # An ambiguous process remains an occupied paid slot until reconciled.
-    occupied = bool(store.db.execute("SELECT 1 FROM companion_jobs WHERE status='running' UNION ALL SELECT 1 FROM learning_jobs WHERE status='running' LIMIT 1").fetchone())
-    if running or occupied:
-        return {'status': 'waiting', 'companions': running, 'map_changes': changed}
+    completion = _completions(store, env=env, jobs=jobs)
+    companion, running = _companions(store, env=env, jobs=jobs)
     from .native_restart import advance_one as restart_one
     restart = restart_one(store, env=env)
-    if restart:
-        return {**restart, 'map_changes': changed}
     from .token_controls import reset_one
     reset = reset_one(store, env=env)
-    if reset:
-        return {**reset, 'map_changes': changed}
-    from . import learning_companion
-    first = _state(store, 'companion-turn').get('next', 'context')
-    order = (first, 'context' if first == 'learning' else 'learning')
-    fallback = {'status': 'idle'}
-    for kind in order:
+    extra = {'map_changes': changed, **({'companions': running} if running else {})}
+    if completion and completion['status'] in {'advancing', 'completed', 'failed'}:
+        return {**completion, **extra}
+    for result in (restart, reset):
+        if result:
+            return {**result, **extra}
+    if companion.get('status') not in {'idle', 'no_work'}:
+        return {**companion, **extra}
+    if running or (completion and completion['status'] == 'checking'):
+        return {'status': 'waiting', **extra}
+    return {**companion, **extra}
+
+
+def _completions(store, *, env, jobs):
+    """Visit each active completion intent once, round-robin; the first that moved is the result."""
+    from . import native_completion
+    seen = None
+    for _ in range(max(1, min(native_completion.active(store), 16))):
         try:
-            result = (learning_companion.tick(store, env=env) if kind == 'learning'
-                      else _context_tick(store, env=env))
-        except (HxError, OSError) as exc:
+            result = native_completion.advance_one(store, env=env, jobs=jobs)
+            if _state(store, 'completion-error'):
+                _save(store, 'completion-error', {})
+        except HxError as exc:
             result = {'status': 'unresolved', 'error': str(exc)}
-        result = result or {'status': 'idle'}
-        _save(store, 'companion-turn', {'next': 'context' if kind == 'learning' else 'learning'})
-        if result.get('status') == 'unresolved' and result.get('error'):
+            if _state(store, 'completion-error') != result:
+                _save(store, 'completion-error', result)
+        if result is None:
+            break
+        if result['status'] in {'advancing', 'completed', 'failed'}:
+            return result
+        seen = seen or result
+    return seen
+
+
+def _companion_kinds():
+    from . import learning_companion
+    return {'context': (_context_select, _context_pass, reconcile_companion),
+            'learning': (learning_companion.select, learning_companion.assess, learning_companion.reconcile)}
+
+
+def _companions(store, *, env, jobs):
+    """Reap finished passes, reconcile foreign ones, and fill the free slots.
+
+    Both kinds share companion.max_concurrent slots and alternate turns. A pass
+    this process runs is never reconciled by process identity underneath it.
+    """
+    kinds = _companion_kinds()
+    reaped = []
+    for kind in kinds:
+        for key, outcome in jobs.finished(kind):
+            try:
+                result = outcome.result() or {'status': 'idle'}
+            except (HxError, OSError) as exc:
+                result = {'status': 'unresolved', 'error': str(exc)}
+            _companion_error(store, kind, result)
+            reaped.append({**result, 'companion_kind': kind})
+    running = []
+    for kind, (_, _, reconcile) in kinds.items():
+        for current in reconcile(store, skip=jobs.owns):
+            if current.get('status') == 'running':
+                running.append({'kind': kind, **current})
+            else:
+                _companion_error(store, kind, current)
+    # An ambiguous foreign process remains an occupied paid slot until reconciled.
+    foreign = sum(not jobs.owns(row[0]) for row in store.db.execute(
+        "SELECT job_id FROM companion_jobs WHERE status='running' UNION ALL SELECT job_id FROM learning_jobs WHERE status='running'"))
+    free = loop_jobs.companion_slots(store.root) - foreign - sum(len(jobs.active(kind)) for kind in kinds)
+    first = _state(store, 'companion-turn').get('next', 'context')
+    started = []
+    for _ in range(max(free, 0)):
+        order = (first, 'context' if first == 'learning' else 'learning')
+        for kind in order:
+            select, run, _ = kinds[kind]
+            first = 'context' if kind == 'learning' else 'learning'
+            _save(store, 'companion-turn', {'next': first})
+            try:
+                candidate = select(store, exclude={key[1] for key in jobs.active(kind)})
+            except (HxError, OSError) as exc:
+                result = {'status': 'unresolved', 'error': str(exc)}
+                _companion_error(store, kind, result)
+                reaped.append({**result, 'companion_kind': kind})
+                continue
+            if candidate is None:
+                continue
+            key = (kind, (candidate['run_id'], candidate['stream_id']) if kind == 'context' else (candidate['agent_id'], candidate['key']))
+            jobs.submit(key, _companion_job(run, candidate, env, jobs), store)
+            started.append(key)
+            break
+        else:
+            break  # Neither kind has work for another slot.
+    for kind in kinds:
+        for key, outcome in jobs.finished(kind):  # Inline jobs finish at submission.
+            try:
+                result = outcome.result() or {'status': 'idle'}
+            except (HxError, OSError) as exc:
+                result = {'status': 'unresolved', 'error': str(exc)}
+            _companion_error(store, kind, result)
+            reaped.append({**result, 'companion_kind': kind})
+    running += [{'kind': key[0], 'status': 'running'} for kind in kinds for key in jobs.active(kind)]
+    headline = next((item for item in reaped if item.get('status') not in {'idle', 'no_work'}), None)
+    return headline or (reaped[0] if reaped else {'status': 'idle'}), running
+
+
+def _companion_job(run, candidate, env, jobs):
+    owned = []
+    def own(job_id):
+        owned.append(job_id)
+        jobs.own(job_id)
+    def job(store):
+        try:
+            return run(store, candidate, env=env, own=own)
+        finally:
+            for job_id in owned:
+                jobs.release(job_id)
+    return job
+
+
+def _companion_error(store, kind, result):
+    if result.get('status') == 'unresolved' and result.get('error'):
+        if _state(store, kind + '-companion-error') != result:
             _save(store, kind + '-companion-error', result)
-        elif result.get('status') not in {'idle', 'no_work'} and _state(store, kind + '-companion-error'):
-            _save(store, kind + '-companion-error', {})
-        if result.get('status') not in {'idle', 'no_work'}:
-            return {**result, 'companion_kind': kind, 'map_changes': changed}
-        fallback = result
-    return {**fallback, 'map_changes': changed}
+    elif result.get('status') not in {'idle', 'no_work', 'waiting'} and _state(store, kind + '-companion-error'):
+        _save(store, kind + '-companion-error', {})
 
 
-def _context_tick(store, *, env=None):
-    """Advance only the context Companion's cursor and frozen observation pass."""
+CANDIDATES = '''SELECT r.run_id,r.worker_id,r.task_id,r.task_revision,c.stream_id,c.head_seq,c.classified_seq,c.revision
+    FROM runs r JOIN cursors c USING(run_id) WHERE r.ended_at IS NULL AND
+    (c.head_seq>c.classified_seq OR EXISTS(SELECT 1 FROM events e WHERE e.run_id=r.run_id AND e.stream_id=c.stream_id AND e.disposition='pending'))'''
+
+
+def _context_select(store, *, exclude=frozenset()):
+    """The next stream with unclassified evidence, or None.
+
+    A run whose completion waits on its own observations goes first, so it never
+    queues behind other runs' passes; otherwise round-robin after the last stream.
+    """
+    waiting = store.db.execute(CANDIDATES + ''' AND EXISTS(SELECT 1 FROM runtime_cycles f WHERE f.scope='finish:'||r.run_id
+        AND json_extract(f.payload,'$.status') IN ('requested','checking','stopping','publishing'))
+        ORDER BY r.run_id,c.stream_id LIMIT ?''', (len(exclude) + 1,)).fetchall()
+    for row in waiting:
+        if (row['run_id'], row['stream_id']) not in exclude:
+            return _candidate(store, row)
     after = _state(store, 'companion-round').get('after', ['', ''])
-    candidates = store.db.execute('''SELECT r.run_id,r.worker_id,r.task_id,r.task_revision,c.stream_id,c.head_seq,c.classified_seq,c.revision
-        FROM runs r JOIN cursors c USING(run_id) WHERE r.ended_at IS NULL AND
-        (c.head_seq>c.classified_seq OR EXISTS(SELECT 1 FROM events e WHERE e.run_id=r.run_id AND e.stream_id=c.stream_id AND e.disposition='pending'))
-        AND (r.run_id,c.stream_id)>(?,?) ORDER BY r.run_id,c.stream_id LIMIT 1''', after).fetchall()
-    if not candidates:
-        _save(store, 'companion-round', {'after': ['', '']})
-        return {'status': 'idle'}
-    candidate = dict(candidates[0])
+    for row in store.db.execute(CANDIDATES + ' AND (r.run_id,c.stream_id)>(?,?) ORDER BY r.run_id,c.stream_id LIMIT ?',
+                                (*after, len(exclude) + 1)).fetchall():
+        if (row['run_id'], row['stream_id']) not in exclude:
+            _save(store, 'companion-round', {'after': [row['run_id'], row['stream_id']]})
+            return _candidate(store, row)
+    _save(store, 'companion-round', {'after': ['', '']})
+    return None
+
+
+def _candidate(store, row):
+    candidate = dict(row)
     candidate['retry'] = _state(store, 'retry:' + candidate['run_id']).get('generation', 0)
-    _save(store, 'companion-round', {'after': [candidate['run_id'], candidate['stream_id']]})
+    return candidate
+
+
+def _context_pass(store, candidate, *, env=None, own=None):
+    """Prepare and execute the context Companion's frozen pass for one selected stream."""
     # Failures stick to this window until a new observation or explicit retry.
     scope = 'companion:' + candidate['run_id'] + ':' + candidate['stream_id']
     version = digest(candidate)
@@ -209,13 +320,17 @@ def _context_tick(store, *, env=None):
     try:
         job = native_companion.prepare(store, candidate['worker_id'], candidate['run_id'], candidate['stream_id'],
             'auto-' + version, record_ids=_records(store, candidate['task_id']), env=env)
+        if job and own:
+            own(job['job_id'])
         result = native_companion.execute(store, job['job_id'], env=env) if job else {'status': 'idle'}
+    except native_companion.SlotBusy as exc:
+        return {'status': 'waiting', 'run_id': candidate['run_id'], 'reason': str(exc)}
     except HxError as exc:
         result = {'status': 'unresolved', 'error': str(exc)}
     # Persist the post-pass cursor too: pending events do not cause a paid retry loop.
     cursor = store.db.execute('SELECT head_seq,classified_seq,revision FROM cursors WHERE run_id=? AND stream_id=?',
                               (candidate['run_id'], candidate['stream_id'])).fetchone()
-    candidate.update(classified_seq=cursor['classified_seq'], revision=cursor['revision'])
+    candidate = {**candidate, 'classified_seq': cursor['classified_seq'], 'revision': cursor['revision']}
     _save(store, scope, {'version': digest(candidate), **result})
     return {**result, 'run_id': candidate['run_id']}
 
@@ -236,12 +351,14 @@ def serve(root, *, env=None, stop=None, interval=5, idle_exit=False):
     with service_lock(root):
         with ContinuityStore(root) as store:
             _save(store, 'application-service', {'process': native_processes.probe(os.getpid())['identity'], 'ready': True})
+            jobs = loop_jobs.Jobs(root, workers=loop_jobs.workers(root))
             try:
                 while stop is None or not stop.is_set():
                     if idle_exit and not store.db.execute('SELECT 1 FROM runs WHERE ended_at IS NULL LIMIT 1').fetchone() and not store.db.execute("SELECT 1 FROM outbox WHERE status IN ('pending','claimed') LIMIT 1").fetchone():
                         return
+                    jobs.wake.clear()
                     try:
-                        result = tick(store, env=env)
+                        result = tick(store, env=env, jobs=jobs)
                         if _state(store, 'service-error'):
                             _save(store, 'service-error', {})
                     except (HxError, OSError) as exc:
@@ -254,11 +371,15 @@ def serve(root, *, env=None, stop=None, interval=5, idle_exit=False):
                     if _state(store, 'last-cycle') != brief:
                         _save(store, 'last-cycle', brief)
                     if result['status'] in {'idle', 'waiting', 'unresolved'}:
-                        if stop is not None:
-                            stop.wait(interval)
-                        else:
-                            time.sleep(interval)
+                        # A finished check or pass wakes the loop to reap it.
+                        deadline = time.monotonic() + interval
+                        while not jobs.wake.is_set() and not (stop is not None and stop.is_set()):
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                break
+                            jobs.wake.wait(min(remaining, 0.25 if stop is not None else remaining))
             finally:
+                jobs.close()
                 state = _state(store, 'application-service')
                 if state.get('process', {}).get('pid') == os.getpid():
                     _save(store, 'application-service', {**state, 'ready': False})
@@ -275,7 +396,7 @@ def main(argv, root, *, env=None):
     parser.add_argument('--after', default='', help='status pagination after a run ID')
     args = parser.parse_args(argv)
     if args.status:
-        with ContinuityStore(root) as store:
+        with ContinuityStore.reader(root) as store:
             print(canonical(status(store, after=args.after)))
     elif args.retry:
         from .caller import require_partner_caller

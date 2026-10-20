@@ -46,13 +46,28 @@ def guard(store, row):
 
 
 def reset_one(store, *, env=None):
+    """Round-robin like native_completion.advance_one: a busy pane yields its turn."""
+    from . import application_loop as loop
+    after = loop._state(store, 'reset-round').get('after', '')
+    keys = ['continuation:' + row[0] for row in store.db.execute("SELECT run_id FROM native_launches WHERE status='continuation_required' AND json_extract(payload,'$.continuation_input.phase')='prepared'")]
+    keys += [row[0] for row in store.db.execute("SELECT scope FROM runtime_cycles WHERE scope LIKE 'tokens:%' AND json_extract(payload,'$.reset')='needed'")]
+    for key in sorted(keys, key=lambda key: (key <= after, key)):
+        try:
+            result = _reset_one(store, key, env=env)
+        except BaseException:
+            loop._save(store, 'reset-round', {'after': key})
+            raise
+        if result:
+            loop._save(store, 'reset-round', {'after': key})
+            return result
+    return None
+
+
+def _reset_one(store, key, *, env=None):
     from . import application_loop as loop, context_packets, goal, native_controller, native_launch, native_tools
-    continuation = store.db.execute("SELECT run_id FROM native_launches WHERE status='continuation_required' AND json_extract(payload,'$.continuation_input.phase')='prepared' ORDER BY rowid LIMIT 1").fetchone()
-    if continuation:
-        return native_controller.submit_continuation(store, native_launch._row(store, continuation[0]), env=env)
-    row = store.db.execute("SELECT scope,payload FROM runtime_cycles WHERE scope LIKE 'tokens:%' AND json_extract(payload,'$.reset')='needed' ORDER BY scope LIMIT 1").fetchone()
-    if not row:
-        return None
+    if key.startswith('continuation:'):
+        return native_controller.submit_continuation(store, native_launch._row(store, key.split(':', 1)[1]), env=env)
+    row = store.db.execute("SELECT scope,payload FROM runtime_cycles WHERE scope=?", (key,)).fetchone()
     launch = store.db.execute('SELECT run_id FROM native_launches WHERE launch_id=?', (row['scope'][7:],)).fetchone()
     if not launch:
         return None

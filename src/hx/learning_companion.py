@@ -195,11 +195,13 @@ def execute(store, job_id, *, env=None, timeout_s=60):
         raise Conflict('learning instructions differ from their immutable prepared sources')
     sidecar_process.verify_runtime(payload)
     transport = sidecar_process.preflight(store.root, payload, body, protocol='learning_protocol', timeout_s=timeout_s)
+    from .loop_jobs import companion_slots
+    from .native_companion import occupied
+    slots = companion_slots(store.root)
     with store.transaction() as tx:
         if row(tx, job_id)['status'] != 'prepared':
             return status(tx, job_id)
-        if tx.db.execute("SELECT 1 FROM companion_jobs WHERE status='running'").fetchone() or tx.db.execute("SELECT 1 FROM learning_jobs WHERE status='running'").fetchone():
-            raise Conflict('another Companion owns the root execution slot')
+        occupied(tx, slots)
         cursor = tx.db.execute('SELECT assessed_seq,revision FROM learning_cursors WHERE agent_id=? AND stream_id=?',
                                (job['agent_id'], job['stream_id'])).fetchone()
         if tuple(cursor) != (body['from_seq'], body['cursor_revision']):
@@ -219,11 +221,21 @@ def execute(store, job_id, *, env=None, timeout_s=60):
     return status(store, job_id)
 
 
-def reconcile(store):
-    found = store.db.execute("SELECT job_id FROM learning_jobs WHERE status='running' LIMIT 1").fetchone()
-    if found is None:
-        return None
-    job = row(store, found[0])
+def reconcile(store, *, skip=lambda job_id: False):
+    """Every running assessment this process does not execute itself, by its original process."""
+    results = []
+    for found in store.db.execute("SELECT job_id FROM learning_jobs WHERE status='running' ORDER BY job_id").fetchall():
+        if skip(found[0]):
+            continue
+        try:
+            results.append(_reconcile(store, found[0]))
+        except (HxError, OSError) as exc:
+            results.append({'job_id': found[0], 'status': 'unresolved', 'error': str(exc)})
+    return results
+
+
+def _reconcile(store, job_id):
+    job = row(store, job_id)
     process = job['payload'].get('process')
     if not process:
         raise Conflict('interrupted learning Companion lacks its original process identity')
@@ -239,18 +251,18 @@ def reconcile(store):
     return status(store, job['job_id'])
 
 
-def tick(store, *, env=None):
-    """One separately scheduled assessment; unchanged failed windows never rerun."""
+def select(store, *, exclude=frozenset()):
+    """The next cursor due an assessment, round-robin; None when none is due.
+
+    Unchanged failed windows never rerun: the request identity is the window.
+    """
     register(store)
-    running = reconcile(store)
-    if running and running['status'] == 'running':
-        return running
-    if store.db.execute("SELECT 1 FROM companion_jobs WHERE status='running'").fetchone():
-        return {'status': 'waiting', 'purpose': 'learning'}
     from .application_loop import _state, _save
     after = _state(store, 'learning-round').get('after', ['', ''])
     for cursor in store.db.execute('SELECT * FROM learning_cursors ORDER BY (agent_id,stream_id)<=(?,?),agent_id,stream_id', after).fetchall():
         agent, key = cursor['agent_id'], cursor['stream_id']
+        if (agent, key) in exclude:
+            continue
         _save(store, 'learning-round', {'after': [agent, key]})
         config = load_harness(store.root / 'config' / agent / 'harness.json', check_cross_file=False)
         if config.learning.get('disabled'):
@@ -281,10 +293,31 @@ def tick(store, *, env=None):
         retry = store.db.execute('SELECT payload FROM runtime_cycles WHERE scope=?', ('retry:' + (run_id or agent),)).fetchone()
         generation = json.loads(retry[0]).get('generation', 0) if retry else 0
         request = 'auto-' + digest([agent, key, cursor['assessed_seq'], head, generation])
-        try:
-            job = prepare(store, agent, stream, request, run_id=run_id)
-            if job and job['status'] == 'prepared':
-                return execute(store, job['job_id'], env=env)
-        except (HxError, OSError) as exc:
-            return {'status': 'unresolved', 'purpose': 'learning', 'agent_id': agent, 'error': str(exc)}
-    return {'status': 'idle', 'purpose': 'learning'}
+        prior = store.db.execute('SELECT status FROM learning_jobs WHERE request_key=?', (digest([agent, key, request]),)).fetchone()
+        if prior and prior[0] != 'prepared':
+            continue
+        return {'agent_id': agent, 'key': key, 'stream_id': stream, 'run_id': run_id, 'request': request}
+    return None
+
+
+def assess(store, candidate, *, env=None, own=None):
+    """Prepare and execute one selected assessment; failures stay with their window."""
+    try:
+        job = prepare(store, candidate['agent_id'], candidate['stream_id'], candidate['request'], run_id=candidate['run_id'])
+        if not job or job['status'] != 'prepared':
+            return {'status': 'idle', 'purpose': 'learning'}
+        if own:
+            own(job['job_id'])
+        return execute(store, job['job_id'], env=env)
+    except (HxError, OSError) as exc:
+        from .native_companion import SlotBusy
+        status_name = 'waiting' if isinstance(exc, SlotBusy) else 'unresolved'
+        return {'status': status_name, 'purpose': 'learning', 'agent_id': candidate['agent_id'], 'error': str(exc)}
+
+
+def tick(store, *, env=None):
+    """One assessment now, for direct callers; the loop schedules select and assess itself."""
+    candidate = select(store)
+    if candidate is None:
+        return {'status': 'idle', 'purpose': 'learning'}
+    return assess(store, candidate, env=env)

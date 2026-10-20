@@ -214,7 +214,7 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
     from .unit_execution import _run, _entries, _git, workspace, audit
     if not audit(store,run_id)['within_scope']:
         raise Conflict('contract publication requires an in-scope active run')
-    with store.transaction() as tx:
+    with store.snapshot() as tx:
         _, task, _ = _run(tx,run_id)
         require_bound(task)
         output = next((item for item in task['payload']['outputs'] if item['id']==output_id and item['kind']=='contract'),None)
@@ -228,13 +228,24 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
         current = checks.current(store,run_id,receipt,check_id=name,env=env)
         if not current['current']:
             raise Conflict('contract check proof is no longer current')
+    # Read the published bytes and fingerprint the check inputs before taking
+    # the writer; the transaction rechecks the worktree identity they came from.
+    workdir = task['payload']['workdir']
+    files = _entries(workdir,before['commit'],output['paths'])
+    blobs = {path: _git(workdir,'show',before['commit']+':'+path) for path, entry in files.items() if entry is not None}
+    child = dict(os.environ if env is None else env)
+    identities = {}
+    for name in receipt_ids:
+        recipe = task['payload']['checks'][name]
+        cwd = (Path(workdir) / recipe['cwd']).resolve()
+        identities[name] = (checks.source_identity(cwd,recipe,child),
+                            fingerprints.environment(cwd,recipe['argv'],recipe['environment'],child)[0])
     with store.transaction() as tx:
         _, task, _ = _run(tx,run_id)
-        if workspace(task['payload'],clean=True) != before:
+        if task['payload']['workdir'] != workdir or workspace(task['payload'],clean=True) != before:
             raise Conflict('contract source changed during proof verification')
         from .native_producer import require_drained
         require_drained(tx,run_id)
-        files = _entries(task['payload']['workdir'],before['commit'],output['paths'])
         if any(value is None or value['mode'] not in {'100644','100755'} for value in files.values()):
             raise Conflict('interface contract must publish existing exact regular files')
         proof = {**output,'producer':task['task_id'],'task_revision':task['revision'],'run_id':run_id,
@@ -246,15 +257,10 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
                 raise Conflict('published contract version is immutable; revise the output version')
             return old
         for path, entry in files.items():
-            data = _git(task['payload']['workdir'],'show',before['commit']+':'+path)
-            proof['artifacts'][path] = tx.put_artifact(data,owner_type='contract',owner_id=digest([task['task_id'],output_id,output['version']]),slot=digest(path))
-        child = dict(os.environ if env is None else env)
+            proof['artifacts'][path] = tx.put_artifact(blobs[path],owner_type='contract',owner_id=digest([task['task_id'],output_id,output['version']]),slot=digest(path))
         for name, receipt_id in receipt_ids.items():
             receipt = _receipt(tx,receipt_id)
-            recipe = task['payload']['checks'][name]
-            cwd = (Path(task['payload']['workdir']) / recipe['cwd']).resolve()
-            source = checks.source_identity(cwd,recipe,child)
-            environment, _ = fingerprints.environment(cwd,recipe['argv'],recipe['environment'],child)
+            source, environment = identities[name]
             if not source['complete'] or not environment['complete'] or source['hash'] != receipt['inputs_hash'] or environment['hash'] != receipt['environment_hash']:
                 raise Conflict('contract check inputs changed at publication')
         tx._change()
