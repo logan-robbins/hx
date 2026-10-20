@@ -359,19 +359,29 @@ Equal in-flight requests share an execution. Reuse creates a new requesting-run 
 Corruption rejects reuse. Interrupted claims remain held until owned process/group death
 is proven; absent spawn identity remains unresolved.
 
-Every bounded execution parses its captured output once (`hx.test_summary`) into `summary`:
-`{framework, passed, failed, skipped, errors, failing, truncated}` for pytest, unittest,
-jest, vitest, go test, cargo test or dotnet test, else `null`. Counts are what the runner
-printed: 0 when reported by omission, `null` when never printed. `failing` lists at most 20
-unique failed or errored names of at most 512 characters in output order; `truncated` marks
-an omitted name. `hx check` prints `receipt_id`, `check_id`, `check_version`, `exit_code`,
-`valid`, `reused`, `execution_id`, `reusable`, `reasons`, `artifact_hash`, `summary` and
-`event_id`; the `check_result` event carries the same result. The `tool_result` event carries
-the execution observation with `summary`, `artifact_hash` and `command`; `hx tool-exec` prints
-`exit_code`, `reason`, `output_bytes`, `summary`, `event_id` and the reduction. When `summary`
-reports a failure, reduction keeps chunks naming a failing test, then other diagnostics, then
-head chunks, in that order within the unchanged byte bounds and Jev contract. A summary is a
-parse of emitted text, not an execution receipt.
+A recipe may declare `report`, the runner's machine-readable format: `junit-xml` (pytest
+`--junit-xml`), `trx` (`dotnet test --logger trx`), `go-json` (`go test -json`), `cargo-json`
+(cargo `--message-format=json` with libtest `--format json`) or `jest-json` (`jest --json`,
+vitest `--reporter=json`); `hx tool-exec --report FORMAT` declares the same. A file format
+names its path with the argument placeholder `{report}`, which hx binds to a file beside the
+captured output under the root (never the checkout) and removes after parsing; the JSON
+formats read `{report}` when named, else the captured output, skipping non-JSON lines. The
+execution parses that report once (`hx.test_summary`, `xml.etree`/`json`) into `summary`:
+`{format, passed, failed, skipped, errors, failing, truncated}` counted per test, else
+`null`; text output is never parsed. `failing` lists at most 20 unique failed or errored names
+of at most 512 characters in report order; `truncated` marks an omitted name. `hx check`
+prints `receipt_id`, `check_id`, `check_version`, `exit_code`, `valid`, `reused`,
+`execution_id`, `reusable`, `reasons`, `artifact_hash`, `summary` and `event_id`; the
+`check_result` event carries the same result. The `tool_result` event carries the execution
+observation with `summary`, `artifact_hash` and `command`; `hx tool-exec` prints `exit_code`,
+`reason`, `output_bytes`, `summary`, `event_id` and the reduction. A chunk is a diagnostic
+when it names error, fail, exception, traceback, panic or assert, or holds a line starting
+`E `. When `summary` records a failure, reduction keeps chunks naming a failing test, then
+other diagnostics, then head chunks, in that order within the unchanged byte bounds. Jev
+judges surplus chunks in at most four requests; without Jev or past that budget the
+reduction keeps diagnostics, then the tail, then the head, and names the reason in
+`fallback` (`null` when Jev judged). A character split by a chunk boundary starts the next
+chunk. A summary is a parse of the runner's report, not an execution receipt.
 
 ## .NET build broker (`hx build`)
 

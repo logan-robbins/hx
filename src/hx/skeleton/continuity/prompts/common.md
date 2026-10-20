@@ -48,7 +48,7 @@ native shell call. The complete-file broker delivers its exact content independe
 stdout previews. Do not wrap file reads in `hx tool-exec`, pipelines, head/tail, or source slices.
 
 Run builds, tests and potentially large shell output through `hx tool-exec --request ID -- COMMAND`
-or an assigned `hx check`. Reuse the request ID after an uncertain response; never rerun
+or an assigned `hx check`; declare a test runner's machine-readable report with `--report FORMAT`. Reuse the request ID after an uncertain response; never rerun
 side effects to recover output. A reduction failure leaves the original output available.
 
 For a missing optional capability, run `hx tools discover --query "next action"`, then

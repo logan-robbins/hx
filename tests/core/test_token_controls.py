@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 from hx import native_launch, token_controls
@@ -74,3 +75,36 @@ def test_reset_waits_for_classification_and_submits_once(configured, monkeypatch
     assert token_controls.reset_one(store)['status'] == 'reset_submitted'
     assert sent == ['/clear']
     assert token_controls.reset_one(store) is None
+
+
+def test_seam_fires_without_a_jev_credential(configured, monkeypatch, tmp_path):
+    from hx import companion_protocol, jev, native_companion, native_controller
+    from .test_passes import answer
+    store, _, run = configured
+    (store.root / 'config/claude.json').write_text(json.dumps({'bin': sys.executable}))
+    row = prepare(configured)
+    payload = {**row['payload'], 'pane': {'id': '%1'}, 'session': 'fixture', 'tmux': ['tmux']}
+    store.db.execute("UPDATE native_launches SET status='submitted',payload=? WHERE run_id=?", (json.dumps(payload), run))
+    token_controls.observe(store, row, 'log', {'context_tokens': 999999})
+    with store.transaction() as tx:
+        event = tx.append_event(run, 'main', 'pending', 'tool_result', {'text': 'Current result.'})
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    monkeypatch.delenv('JEV_API_KEY', raising=False)
+    env = {'TYPESAFE_API_KEY_FILE': str(tmp_path / 'absent')}
+    monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no credential, no request'))
+    monkeypatch.setattr(native_controller, '_owned_pane', lambda row: payload['pane'])
+    monkeypatch.setattr(native_controller.goal, 'capture_pane', lambda *args: 'ready')
+    monkeypatch.setattr(native_controller.goal, 'pane_is_idle', lambda value: True)
+    sent = []
+    monkeypatch.setattr(native_controller.goal, 'paste', lambda *args: sent.append(args[1]))
+    with pytest.raises(AdmissionDenied, match='threshold'):
+        token_controls.guard(store, row)
+    assert token_controls.reset_one(store, env=env) is None
+    job = native_companion.prepare(store, 'eng-001', run, 'main', 'seam', env=env)
+    assert job['payload']['jev']['events'][event['event_id']] == {'route': 'unclassified'}
+    # The companion settles the frozen pass; the seam then proceeds on the re-issued packet.
+    store.db.execute("UPDATE companion_jobs SET status='running' WHERE job_id=?", (job['job_id'],))
+    frozen = companion_protocol.frozen(store, job)
+    assert companion_protocol.call(store, job['job_id'], 'submit_patch', {'response': answer(frozen, disposition='no_change')})['accepted']
+    assert token_controls.reset_one(store, env=env)['status'] == 'reset_submitted'
+    assert sent == ['/clear']

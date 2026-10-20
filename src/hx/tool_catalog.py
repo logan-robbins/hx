@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-from . import jev_decisions, native_launch, passes
+from . import jev, jev_decisions, native_launch, passes
 from .config_harness import load_harness
 from .continuity_store import ContinuityStore, Conflict, canonical, digest
 from .errors import ValidationError
@@ -81,19 +81,26 @@ def discover(store, run_id, query, *, env=None, cursor=None):
     optional = {name: entries[name] for name in sorted(set(entries) - set(catalog['required']))}
     page = dict(list(optional.items())[offset:offset + 8])
     next_cursor = f'{version}:{offset + 8}' if offset + 8 < len(optional) else None
+    fallback = {}
     if query in entries:
         selected = [query]  # Exact names need no semantic decision.
     elif page:
         questions = {name: {'type': 'noul', 'instructions': f'Would this tool help the stated next action: {purpose[:160]}'}
                      for name, purpose in page.items()}
-        judged = jev_decisions.decide(store, run_id, 'tool-discovery-v1', {'next_action': query}, questions,
-                                      binding=version, env=env)
-        selected = sorted((name for name in questions if judged['answers'][name]['noul'] >= .65),
-                          key=lambda name: (-judged['answers'][name]['noul'], name))[:3]
+        try:
+            judged = jev_decisions.decide(store, run_id, 'tool-discovery-v1', {'next_action': query}, questions,
+                                          binding=version, env=env)
+            selected = sorted((name for name in questions if judged['answers'][name]['noul'] >= .65),
+                              key=lambda name: (-judged['answers'][name]['noul'], name))[:3]
+        except jev.Unavailable as exc:
+            # No guessed suggestion: the bounded page stays selectable by exact ID.
+            selected, fallback = [], {'ranking': 'unavailable: ' + str(exc),
+                                      'unranked': [{'id': name, 'purpose': purpose} for name, purpose in page.items()]}
     else:
         selected = []
     return {'adapter': adapter, 'visibility': catalog['mode'], 'required': catalog['required'],
             'suggested': [{'id': name, 'purpose': entries[name]} for name in selected], 'cursor': next_cursor, 'version': version,
+            **fallback,
             'note': 'Selection does not invoke tools or authorize actions. Advisory adapters retain their native tool schemas.'}
 
 

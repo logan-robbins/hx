@@ -317,17 +317,35 @@ def test_receipt_without_current_provenance_cannot_pass_any_gate(setup):
     assert not checks.run_check(store, run, "unit", recipe=definition(), env=env, request_id="proof")["valid"]
 
 
-def test_check_result_carries_the_one_parsed_test_summary(setup, monkeypatch):
-    store, run, _, env = setup
-    recipe = definition("print('..s'); print('Ran 3 tests in 0.001s'); print(); print('OK (skipped=1)')")
+def test_check_result_carries_the_declared_report_summary(setup, monkeypatch):
+    store, run, repo, env = setup
+    junit = ('<testsuites><testsuite><testcase classname="t" name="a"/><testcase classname="t" name="b"/>'
+             '<testcase classname="t" name="c"><skipped/></testcase></testsuite></testsuites>')
+    recipe = {**definition(f"import sys; open(sys.argv[1], 'w').write({junit!r}); print('3 tests')"), "report": "junit-xml"}
+    recipe["argv"] = [*recipe["argv"], "{report}"]
     result = checks.run_check(store, run, "unit", recipe=recipe, env=env)
-    summary = {"framework": "unittest", "passed": None, "failed": 0, "skipped": 1, "errors": 0,
+    summary = {"format": "junit-xml", "passed": 2, "failed": 0, "skipped": 1, "errors": 0,
                "failing": [], "truncated": False}
-    assert result["summary"] == summary
+    assert result["valid"] and result["summary"] == summary
     event = json.loads(store.db.execute("SELECT payload FROM events WHERE event_id=?", (result["event_id"],)).fetchone()[0])
     assert event["summary"] == summary
+    # The report lives beside the captured output under the root, never in the checkout, and is removed.
+    assert not list((store.root / "state" / "check-output").iterdir())
+    assert sorted(path.name for path in repo.iterdir()) == [".git", ".gitignore", "source.py"]
+    payload = json.loads(store.db.execute("SELECT payload FROM receipts").fetchone()["payload"])
+    assert payload["resolved_argv"][-1] == "{report}"
     monkeypatch.setattr(checks, "execute", lambda *_: pytest.fail("identical check ran again"))
     assert checks.run_check(store, run, "unit", recipe=recipe, env=env)["summary"] == summary
+
+
+def test_a_check_without_a_declared_report_has_no_summary_and_a_file_report_needs_its_path(setup):
+    store, run, _, env = setup
+    recipe = definition("print('==== 1 failed, 3 passed in 0.50s ====')")
+    assert checks.run_check(store, run, "unit", recipe=recipe, env=env)["summary"] is None
+    with pytest.raises(ValidationError, match="placeholder"):
+        checks.validate({**definition(), "report": "junit-xml"})
+    with pytest.raises(ValidationError, match="report format"):
+        checks.validate({**definition(), "report": "text"})
 
 
 def test_spawn_failure_has_no_summary(tmp_path):

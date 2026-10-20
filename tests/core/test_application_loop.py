@@ -89,24 +89,27 @@ def test_automatic_delta_pass_commits_once_and_leaves_late_events(planned, monke
     assert len(calls) == 2
 
 
-def test_failed_semantic_call_is_not_retried_every_tick(planned, monkeypatch):
+def test_failed_semantic_call_settles_unclassified_and_the_companion_still_runs(planned, monkeypatch):
     from hx import jev
-    store, run, _ = planned
-    calls = []
+    store, run, event = planned
+    calls, executed = [], []
     def unavailable(*args, **kwargs):
         calls.append(1)
         raise jev.Unavailable('timeout')
     monkeypatch.setattr(jev, 'evaluate', unavailable)
-    assert loop.tick(store)['status'] == 'unresolved'
-    for _ in range(4):
-        loop.tick(store)
+    def execute(ledger, job_id, **kwargs):
+        job = companion_protocol.row(ledger, job_id)
+        executed.append(job['payload']['jev'])
+        frozen = companion_protocol.frozen(ledger, job)
+        passes.commit(ledger, job['pass_id'], answer(frozen, disposition='no_change'))
+        ledger.db.execute("UPDATE companion_jobs SET status='committed' WHERE job_id=?", (job_id,))
+        return {'status': 'committed', 'job_id': job_id}
+    monkeypatch.setattr(native_companion, 'execute', execute)
+    assert loop.tick(store)['status'] == 'committed'
     assert len(calls) == 1
-    assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 0
-    with store.transaction() as tx:
-        tx.append_event(run, 'main', 'new', 'tool_result', {'text': 'Another observation.'})
-    for _ in range(2):
-        loop.tick(store)
-    assert len(calls) == 2
+    assert executed == [{'status': 'unclassified', 'reason': 'timeout', 'requests': [],
+                         'events': {event['event_id']: {'route': 'unclassified'}}}]
+    assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 1
 
 
 def test_indexed_map_watch_invalidates_after_change_without_tree_search(active, monkeypatch):

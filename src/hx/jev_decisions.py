@@ -1,4 +1,8 @@
-"""Cached, bounded Jev judgments. Code owns versions, limits, and mutations."""
+"""Cached, bounded Jev judgments. Code owns versions, limits, and mutations.
+
+`decide` raises `jev.Unavailable` when the service has no credential, times out or answers
+invalidly; every caller then proceeds on its deterministic fallback. Jev is never on the
+critical path."""
 from __future__ import annotations
 
 import json
@@ -28,10 +32,7 @@ def decide(store, run_id, policy, state, questions, *, binding=None, env=None):
             # caller is gone, a fresh caller may replace its missing answer.
             tx._change()
             tx.db.execute('DELETE FROM retrieval_runs WHERE task_id=? AND input_hash=?', (run['task_id'], identity))
-        try:
-            key = jev.credential(store.root, env)
-        except jev.Unavailable as exc:
-            raise ValidationError('Jev decision stopped: ' + str(exc)) from None
+        key = jev.credential(store.root, env)
         request = str(uuid.uuid4())
         tx._change()
         tx.db.execute('INSERT INTO retrieval_runs VALUES(?,?,?,?)',
@@ -50,10 +51,8 @@ def decide(store, run_id, policy, state, questions, *, binding=None, env=None):
                 (SELECT retrieval_id FROM retrieval_runs WHERE task_id=? AND json_extract(payload,'$.status')='complete'
                  ORDER BY rowid DESC LIMIT -1 OFFSET 128)''', (run['task_id'], run['task_id']))
         return result
-    except (jev.Unavailable, Conflict, ValidationError) as exc:
+    except (jev.Unavailable, Conflict, ValidationError):
         with store.transaction() as tx:
             tx._change()
             tx.db.execute('DELETE FROM retrieval_runs WHERE retrieval_id=?', (request,))
-        if isinstance(exc, jev.Unavailable):
-            raise ValidationError('Jev decision stopped: ' + str(exc)) from None
         raise

@@ -1,8 +1,12 @@
-"""Classify new observations against a small frozen state; never select facts."""
+"""Classify new observations against a small frozen state; never select facts.
+
+Without Jev (no credential, timeout, invalid answer) or past the request budget, an event
+settles as `unclassified`: the companion reviews it without a route and the seam proceeds.
+"""
 from . import jev, jev_decisions
 from .continuity_store import canonical
 from .events import is_bookkeeping
-from .facts import RequiredContextOverflow, render_fact
+from .facts import render_fact
 
 MAX_REQUESTS = 4
 
@@ -51,13 +55,22 @@ def classify(store, body, *, env=None):
         questions.update(ask)
     if questions:
         batches.append((observations, questions))
-    if len(batches) > MAX_REQUESTS:
-        raise RequiredContextOverflow('Jev delta pass exceeds four requests; reduce the event window')
-    requests = []
-    for observations, questions in batches:
-        result = jev_decisions.decide(store, body['run_id'], 'event-deltas-v1',
-            {**base, 'events': observations}, questions,
-            binding={'records': body['record_versions'], 'events': body['event_digest']}, env=env)
+    requests, unavailable = [], None
+    for index, (observations, questions) in enumerate(batches):
+        result = None
+        if index < MAX_REQUESTS and unavailable is None:
+            try:
+                result = jev_decisions.decide(store, body['run_id'], 'event-deltas-v1',
+                    {**base, 'events': observations}, questions,
+                    binding={'records': body['record_versions'], 'events': body['event_digest']}, env=env)
+            except jev.Unavailable as exc:
+                unavailable = str(exc)
+        if result is None:
+            # One failed request settles the rest without further calls; Jev only focuses review.
+            for event in body['events']:
+                if 'e' + str(event['seq']) in observations:
+                    decisions[event['event_id']] = {'route': 'unclassified'}
+            continue
         requests.append(result['retrieval_id'])
         for event in body['events']:
             name = 'e' + str(event['seq'])
@@ -70,6 +83,9 @@ def classify(store, body, *, env=None):
                 'map_review': map_change >= .9, 'current_coverage_complete': not omitted,
                 'unchanged': bool(current) and not omitted and delta <= .05 and map_change <= .05
                     and event['kind'] == 'tool_result' and not _failed(event['payload'])}
+    reason = unavailable or ('request_budget' if len(batches) > MAX_REQUESTS else None)
+    if reason:
+        return {'status': 'unclassified', 'reason': reason, 'requests': requests, 'events': decisions}
     return {'status': 'complete', 'requests': requests, 'events': decisions}
 
 

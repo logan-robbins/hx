@@ -184,11 +184,15 @@ state, map updates, and cursors together. Routine passes use deltas rather than 
 whole logs or rewriting complete memory files. Larger current-task reads are reserved
 for explicit compaction work.
 
-Jev is a required TypeSafe API dependency. It judges bounded deltas, repeated
-observations, optional tool candidates, and surplus command output. It does not select
-retained facts, compose prompts, generate memory, plan tasks, or switch models. A Jev
-failure does not trigger an alternate inference path. Deterministic checks and the
-companion's native model remain responsible for factual changes and task decisions.
+Jev is an optional TypeSafe API service, never on the critical path. It judges bounded
+deltas, repeated observations, optional tool candidates, and surplus command output. It does
+not select retained facts, compose prompts, generate memory, plan tasks, or switch models.
+Without a credential, on a timeout or invalid answer, or past the request budget, events
+settle as `unclassified` and the companion reviews them unrouted, so the seam still fires;
+command output keeps its diagnostics, tail and head within the same bounds; tool discovery
+returns the unranked catalog page. No alternate inference path substitutes Jev's answer.
+Deterministic checks and the companion's native model remain responsible for factual
+changes and task decisions.
 
 Task packets are compiled from current goal state, required records, selected findings,
 checks, and unresolved events. Hooks and the root service coordinate token thresholds,

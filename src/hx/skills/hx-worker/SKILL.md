@@ -102,9 +102,13 @@ and explicit installation proof; the integration assignment can use `hx plan mat
 ```sh
 hx check CHECK --run RUN
 hx tool-exec --request REQUEST -- COMMAND ARGUMENTS
+hx tool-exec --request REQUEST --report junit-xml -- python3 -m pytest -q --junit-xml={report}
 hx evidence EVENT --offset 0 --limit 8000
 hx complete done
 ```
+
+A test run's `summary` comes only from a declared report (`junit-xml`, `trx`, `go-json`,
+`cargo-json`, `jest-json`); `{report}` names the file hx reads outside your checkout.
 
 `hx complete done` requests managed completion: drain captured/managed work, execute approved
 checks, verify current source/environment/dependencies, publish exact declared outputs,

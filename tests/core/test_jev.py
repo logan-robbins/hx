@@ -11,7 +11,6 @@ import pytest
 
 from hx import jev, jev_deltas, passes, native_companion, companion_protocol
 from hx.continuity_store import Conflict
-from hx.errors import ValidationError
 from .test_native_companion import planned
 from .test_passes import create
 
@@ -148,19 +147,44 @@ def test_native_pass_classifies_deltas_without_selecting_facts(planned, monkeypa
 
 
 @pytest.mark.parametrize('reason', ['timeout', 'invalid_response', 'http_401'])
-def test_failed_jev_stops_preparation_without_fallback_or_native_execution(planned, monkeypatch, reason):
-    store, run, _ = planned
+def test_failed_jev_settles_events_unclassified_and_the_companion_pass_proceeds(planned, monkeypatch, reason):
+    store, run, event = planned
     calls = []
     def fail(*args, **kwargs):
         calls.append(1)
         raise jev.Unavailable(reason)
     monkeypatch.setattr(jev, 'evaluate', fail)
-    monkeypatch.setattr(native_companion.checks, 'execute', lambda *a, **kw: pytest.fail('must not run native model'))
-    with pytest.raises(ValidationError, match='Jev decision stopped: '+reason):
-        native_companion.prepare(store, 'eng-001', run, 'main', 'request')
+    job = native_companion.prepare(store, 'eng-001', run, 'main', 'request')
     assert len(calls) == 1
-    assert store.db.execute('SELECT count(*) FROM companion_jobs').fetchone()[0] == 0
-    assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 0
+    assert job['status'] == 'prepared' and not job['payload']['semantic_reduction']
+    assert job['payload']['jev'] == {'status': 'unclassified', 'reason': reason, 'requests': [],
+                                     'events': {event['event_id']: {'route': 'unclassified'}}}
+    assert store.db.execute('SELECT count(*) FROM retrieval_runs').fetchone()[0] == 0
+
+
+def test_missing_credentials_never_reach_the_service(planned, monkeypatch, tmp_path):
+    store, run, event = planned
+    monkeypatch.delenv('TYPESAFE_API_KEY')
+    monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no credential, no request'))
+    body = passes.prepare(store, run, 'main', prompt_version='test')
+    result = jev_deltas.classify(store, body, env={'TYPESAFE_API_KEY_FILE': str(tmp_path / 'absent')})
+    assert result['status'] == 'unclassified' and result['reason'] == 'missing_credentials'
+    assert result['events'] == {event['event_id']: {'route': 'unclassified'}}
+
+
+def test_events_past_the_request_budget_settle_unclassified(planned, monkeypatch):
+    store, run, first = planned
+    with store.transaction() as tx:
+        for index in range(8):
+            tx.append_event(run, 'main', f'more-{index}', 'tool_result', {'text': f'Observation {index}.'})
+    calls = []
+    monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: (calls.append(1), score(*a, **kw))[1])
+    monkeypatch.setattr(jev_deltas, 'MAX_REQUESTS', 1)
+    body = passes.prepare(store, run, 'main', prompt_version='test')
+    result = jev_deltas.classify(store, body)
+    assert len(calls) == 1 and result['status'] == 'unclassified' and result['reason'] == 'request_budget'
+    routes = [result['events'][event['event_id']]['route'] for event in body['events']]
+    assert routes[:8] == ['review_delta'] * 8 and routes[8:] == ['unclassified']
 
 
 def test_changed_observation_or_current_record_invalidates_jev_cache(planned, monkeypatch):

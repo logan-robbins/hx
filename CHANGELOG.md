@@ -89,6 +89,23 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- The seam and output reduction fire without Jev (docs/fleet-throughput-plan.md P0.4, D4, D8).
+  `jev_decisions.decide` raises `jev.Unavailable` (no credential, timeout, invalid answer) and
+  every caller degrades: Jev delta classification settles the affected events as `unclassified`
+  (also past the four-request budget, which no longer raises), so the companion reviews them
+  unrouted, cursors advance and the threshold reset fires with no `TYPESAFE_API_KEY`;
+  `hx tool-exec` reduction keeps diagnostics, then the tail, then the head inside 4096 B and
+  names the reason in `fallback`; `hx tools discover` returns no guess plus the `unranked`
+  catalog page. A character split by a 768 B chunk boundary is carried into the next chunk
+  instead of dropping both. Test summaries come only from a declared machine-readable report:
+  check recipes and `hx tool-exec --report` name `junit-xml`, `trx`, `go-json`, `cargo-json` or
+  `jest-json`, file reports bind to an hx-owned `{report}` path outside the checkout, and
+  `hx.test_summary` parses them with `xml.etree`/`json`; `summary.framework` is now
+  `summary.format` and every count is an integer. The text parsers for pytest, unittest, jest,
+  vitest, go, cargo and dotnet output and the `DIAGNOSTIC`/`LEAF` regexes are deleted;
+  diagnostics are a fixed word set or an `E ` line prefix on any line, not only a chunk's first.
+  Recipes that relied on printed summaries add `report` and the runner's report flag.
+
 - Chat is a machine channel (docs/prompt-runtime.md): `continuity/prompts/common.md` states it
   once, so every compiled bundle carries it exactly once. No narration between tool calls,
   explanation, recap, greeting, closing offer or chat question; a needed decision is a typed
