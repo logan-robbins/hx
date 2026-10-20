@@ -74,3 +74,36 @@ def test_failed_write_never_acknowledges_segment(monkeypatch):
     with pytest.raises(BrokenPipeError):
         file_read_delivery.emit(store, row, {}, observation, 0, write=failed)
     assert store.db.execute('SELECT count(*) FROM runtime_cycles').fetchone()[0] == 0
+
+
+def native(content, **extra):
+    return {'tool_response': {'type': 'text', 'file': {'filePath': 'source', 'content': content, **extra}}}
+
+
+@pytest.mark.parametrize('text', ['', 'no trailing newline', 'tabs\tand\n\nblank lines\n', 'x' * 5000 + '\n'])
+def test_native_marker_accepts_only_the_exact_admitted_file(text):
+    receipt = {'sha256': hashlib.sha256(text.encode()).hexdigest(), 'bytes': len(text.encode())}
+    marker = file_read_delivery.native_marker({'text': text, 'receipt': receipt}, native(text))
+    assert marker == f'Complete file: sha256={receipt["sha256"]}; bytes={receipt["bytes"]}'
+
+
+def test_native_marker_names_crlf_shown_as_lf_and_keeps_the_on_disk_receipt():
+    text = 'one\r\ntwo\r\n'
+    receipt = {'sha256': hashlib.sha256(text.encode()).hexdigest(), 'bytes': 10}
+    marker = file_read_delivery.native_marker({'text': text, 'receipt': receipt}, native('one\ntwo\n'))
+    assert marker.endswith('bytes=10; CRLF line endings shown as LF')
+
+
+@pytest.mark.parametrize('observation', [
+    native('first\n', truncatedByTokenCap=True),
+    native('first\nsecond\n', truncatedByTokenCap=False) | {'is_error': True},
+    {'tool_response': 'Native read token limit', 'is_error': True},
+    {'tool_response': {'error': 'Native read token limit'}},
+    {'tool_response': None},
+    native('first\r\nsecond\n'),
+])
+def test_native_marker_rejects_a_capped_failed_or_different_result(observation):
+    text = 'first\nsecond\n'
+    receipt = {'sha256': hashlib.sha256(text.encode()).hexdigest(), 'bytes': len(text.encode())}
+    with pytest.raises(ValidationError):
+        file_read_delivery.native_marker({'text': text, 'receipt': receipt}, observation)

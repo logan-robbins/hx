@@ -64,8 +64,13 @@ boundary contract below.
 Backing material parts are at most 40,000 UTF-8 bytes (10,000 estimated tokens using four
 bytes per token, an explicit heuristic). Each part names `path`, `sha256`, `bytes`,
 `payload_sha256`, `payload_bytes`, `part`, `parts`, `next_path`, `bundle_sha256`, and
-`bundle_bytes`, plus its typed source/channel metadata. The physical NEXT/END markers and all
-part/aggregate identities are verified before automatic full reconstruction. No mandatory
+`bundle_bytes`, plus its typed source/channel metadata. Each part's physical footer names
+`part k of n` and either `Read <next_path> next` or the end; part 1 also lists every part path
+in order. A native read of one part is that part's own complete read: the broker verifies the
+whole chain's part and aggregate identities, then delivers and receipts only that part. A chain
+counts as delivered only when every part has its own complete-read receipt for the same session,
+actor and checkpoint. Until then no other operation is admitted (the denial names the next
+unread part) and the completion, reset and restart drain stays pending. No mandatory
 instruction, assignment obligation or selected required fact is sliced to satisfy a budget.
 Complete native input that cannot fit its configured context/transport budget is refused.
 When reviewed instruction sources change, the next managed boundary closes admission and
@@ -73,12 +78,21 @@ requests a drained native restart with the current compiled bundle. The run/chec
 continues only after acknowledgment of that fresh complete input. Active frozen prefixes
 are never amended in place.
 
-Explicit native source-file reads prohibit offsets/limits and resolve the whole verified
-file or instruction chain in one logical call. Host-limited transports emit deterministic
-segments without model pagination. Only all required complete segments settle a successful
-read; incomplete delivery retains an action/completion barrier and permits full retry.
+Explicit native source-file reads prohibit offsets/limits and resolve one whole verified file
+or material part per call. Claude's own Read result is the delivery: `start.sh` sets
+`CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS` to the context threshold, which bounds every admitted
+read, and the post-read hook verifies `tool_response.file.content` against the admitted bytes
+and adds only a completeness marker. Claude shows CRLF line endings as LF; the receipt hashes
+the on-disk bytes, never the native body, and the marker says the endings were shown as LF. A
+capped, paged, failed or different native result fails the delivery. Codex and Pi hooks return
+the complete verified text in one response. Grok, Meta and the Partner, whose hosts cap one
+hook string, emit deterministic transport segments, one hook entry per segment, without model
+pagination; only all segments settle a successful read. Incomplete delivery retains an
+action/completion barrier and permits full retry.
 `hx file-read PATH` provides this same complete transport through one standalone native
-shell call when the harness has no dedicated file-read tool. Managed calls return only the
+shell call when the harness has no dedicated file-read tool. Claude workers are refused both
+shell brokers (`hx file-read`, managed `hx repo file`), whose stdout is only a marker; they Read
+the file, materializing another revision with `hx repo materialize` first. Managed calls return only the
 broker marker on stdout, and the logical read settles only after post-hook complete delivery;
 pipelines and lossy command wrappers are refused. Operator/protocol `hx repo file` returns
 full exact UTF-8 source with `bytes`, `sha256`, `total_lines`, and `complete: true`; managed

@@ -313,3 +313,10 @@ def require_complete_reads(tx, row, session, actor, reading):
     if unresolved and (reading is None or reading[0] not in {item[0] for item in unresolved}):
         raise AdmissionDenied('complete-file delivery failed in call ' + unresolved[0][1] +
                               '; retry that whole file before another operation')
+    from .file_reads import incomplete_material
+    missing = incomplete_material(tx, row['launch_id'], session=session, actor=actor,
+                                  checkpoint=row['payload']['checkpoint_id'])
+    if missing and reading is None:
+        path, part, parts = missing[0]
+        raise AdmissionDenied(f'required material is incomplete; read {path} next (part {part} of {parts}) '
+                              'before another operation')

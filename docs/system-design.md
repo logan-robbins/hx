@@ -227,11 +227,15 @@ restart; advisory adapters provide recipes without claiming to shrink their nati
 schemas. Tool execution records request identity and bounded output so an uncertain
 operation is not silently repeated.
 
-Explicit source-file reads deliver the whole exact file in one logical operation. Native
-host limits are handled by deterministic transport segments; the model never issues pagination
-calls. A complete read is settled only after every part has been emitted and its source identity
-still matches admission. Partial, failed or truncated reads cannot authorize later work or
-completion. Scoped search results and reduced build/test output remain separate contracts;
+Explicit source-file reads deliver the whole exact file in one operation. On Claude the native
+Read result is that delivery: its token cap is lifted to the context threshold and the hook
+verifies the result and adds a completeness marker, so the body reaches the model once. Hosts
+that cap one hook string (Grok, Meta, the Partner) get deterministic transport segments; the
+model never issues pagination calls. A complete read is settled only after the whole file is
+delivered and its source identity still matches admission. Required material over 40,000 bytes
+is split into part files, each read completely in turn; the chain counts as delivered only when
+every part has its own receipt. Partial, failed or truncated reads cannot authorize later work
+or completion. Scoped search results and reduced build/test output remain separate contracts;
 no excerpt establishes source absence. Arbitrary shell programs are not a filesystem sandbox.
 
 `hx code audit --repo PATH` scans tracked and nonignored text files without a file-count cap,

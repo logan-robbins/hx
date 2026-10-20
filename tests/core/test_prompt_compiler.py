@@ -343,9 +343,11 @@ def test_long_multibyte_policy_has_bounded_linked_parts_and_one_exact_bundle(ins
         data = Path(ref["path"]).read_bytes()
         assert len(data) <= 40000 and data.decode()
         assert ref["part"] == index + 1 and ref["parts"] == len(refs)
-        assert (ref["next_path"] or "END OF COMPLETE MATERIAL") in data.decode()
-        assert prompts.material_bundle(instance, "eng-001", Path(bundle["manifest_path"]), Path(ref["path"]),
-            workdir=bundle["identity"]["workdir"]) == refs
+        # Each footer names its place and the part to read next; every part is its own complete read.
+        continuation = f"Read {ref['next_path']} next" if ref["next_path"] else "END OF COMPLETE MATERIAL"
+        assert f"{continuation}; part {index + 1} of {len(refs)}" in data.decode()
+        assert prompts.verify_material(instance, "eng-001", Path(bundle["manifest_path"]), Path(ref["path"]),
+            workdir=bundle["identity"]["workdir"]) == ref
     Path(refs[-1]["path"]).write_text("Missing final obligation")
     with pytest.raises(ValidationError, match="altered"):
         instruction_materials.read_bundle(refs)

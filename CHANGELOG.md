@@ -89,6 +89,30 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- Claude's native Read is the whole-file delivery (docs/fleet-throughput-plan.md P0.5, D5). A
+  live check with the real Claude Code 2.1.299 binary against a recording Messages API showed
+  the native Read body stayed in the next request alongside hx's hook segments, so every
+  read reached the model twice. Native Read caps at 25000 tokens (a 3000-line file came back
+  as lines 1-1349 with `truncatedByTokenCap`), and `CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS`
+  raised to the limit returns the whole file. Hook `additionalContext` over about 10000
+  characters collapses to a 2 KB `<persisted-output>` preview, and CRLF is shown as LF.
+  `start.sh` now sets that variable to `HX_CONTEXT_THRESHOLD`, which bounds every admitted
+  read. The worker hook verifies `tool_response.file.content` against the admitted bytes and
+  adds only `Complete file: sha256=…; bytes=…` (`file_read_delivery.native_marker`); a capped,
+  failed or different result fails the delivery and holds the barrier until a complete retry.
+  Claude workers install one hook entry per event (a Read or Bash fires three, not about 22) and
+  are refused the shell brokers (`hx file-read`, managed `hx repo file`), whose stdout is only a
+  marker: they Read the file, materializing another revision first. Segments remain only for
+  Grok, Meta and the Partner. Required material parts are each their
+  own complete read: part 1's footer lists every part, each footer names
+  `Read <next_path> next; part k of n`, and the chain counts as delivered only when every part
+  has its own receipt (the gate names the next unread part, and `native_tools.pending` holds
+  completion, reset and restart). Receipts hash on-disk bytes, never the native body. Removed:
+  `prompt_compiler.material_bundle`, `context_packets.material_bundle` and whole-chain
+  resolution of one part. An existing instance replaces its `adapters/claude/install.sh` and
+  `start.sh` with the package skeleton's before its next launch (delete them and rerun
+  `hx install --skeleton-only`, which never overwrites).
+
 - A worker's Bash command is routed by its shape, not its first word
   (docs/fleet-throughput-plan.md P2.2, D7). The line is split with `shlex` on `&&`, `;`, `|`,
   `||`, `&` and parentheses, and each command's executable is taken past `NAME=value`, `env`,

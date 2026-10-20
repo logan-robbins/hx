@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from hx import native_tools, runtime_policy
 from hx.continuity_store import Conflict
 from .test_appmap import mapped
 from .test_map_updates import active
-from .test_native_tools import runtime, configured, assignment, fleet, ready, submitted, payload, fire
+from .test_native_tools import runtime, configured, assignment, fleet, ready, submitted, payload, fire, claude_read
 
 
 def test_complete_read_duplicate_rejection_and_source_change(runtime):
@@ -17,7 +18,7 @@ def test_complete_read_duplicate_rejection_and_source_change(runtime):
     path.write_text('return 1\n')
     body = payload(tool_name='Read', tool_input={'file_path': str(path)})
     assert fire(store, run, row, 'tool-start', body) == 0
-    assert fire(store, run, row, 'log', {**body, 'tool_response': 'return 1'}) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read('return 1\n', path)}) == 0
     assert fire(store, run, row, 'tool-start', {**body, 'tool_use_id': 'duplicate'}) == 2
     path.write_text('return 2\n')
     assert fire(store, run, row, 'tool-start', {**body, 'tool_use_id': 'changed'}) == 0
@@ -130,7 +131,7 @@ def test_required_full_instruction_material_can_be_read_without_excerpt_and_cann
     # This is a verified exact material object, so the whole file is allowed.
     body = payload('material-full', tool_name='Read', tool_input={'file_path': str(path)})
     assert fire(store, run, row, 'tool-start', body) == 0
-    assert fire(store, run, row, 'log', {**body, 'tool_response': complete}) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read(complete, path)}) == 0
     assert fire(store, run, row, 'tool-start', payload('material-write', tool_name='Write',
         tool_input={'file_path': str(path), 'content': 'replacement'})) == 2
     assert path.read_text() == complete
@@ -144,7 +145,7 @@ def test_required_full_instruction_material_can_be_read_without_excerpt_and_cann
         tool_input={'file_path': str(path)})) == 2
 
 
-def test_required_full_assignment_reference_is_verified_and_readable_after_startup(runtime):
+def test_required_full_assignment_parts_are_each_read_completely_before_other_work(runtime, capsys):
     store, _, run, _ = runtime
     complete_constraint = '\n'.join(['This exact required acceptance condition survives every continuation.'] * 1000)
     with store.transaction() as tx:
@@ -162,9 +163,26 @@ def test_required_full_assignment_reference_is_verified_and_readable_after_start
     assert json.JSONDecoder().raw_decode(constraint_line.split('] ', 1)[1])[0] == complete_constraint
     assert reference['bytes'] == path.stat().st_size <= 40000
     assert complete == Path(row['payload']['packet_path']).read_text()
+    parts = [Path(item['path']) for item in references]
+    assert len(parts) > 1
+    # Part 1 lists the whole chain up front; every footer names the part to read next.
+    assert f'Read {parts[1]} next; part 1 of {len(parts)}; the parts in order: ' + ', '.join(map(str, parts)) in path.read_text()
     body = payload('full-assignment', tool_name='Read', tool_input={'file_path': str(path)})
     assert fire(store, run, row, 'tool-start', body) == 0
-    assert fire(store, run, row, 'log', {**body, 'tool_response': path.read_text()}) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read(path.read_text(), path)}) == 0
+    # A started chain is delivered only when every part has its own complete-read receipt.
+    assert native_tools.pending(store, row['launch_id']) == 1
+    capsys.readouterr()
+    assert fire(store, run, row, 'tool-start', payload('before-chain-end')) == 2
+    assert f'read {parts[1]} next (part 2 of {len(parts)})' in capsys.readouterr().err
+    for index, part in enumerate(parts[1:], 2):
+        read = payload(f'assignment-part-{index}', tool_name='Read', tool_input={'file_path': str(part)})
+        assert fire(store, run, row, 'tool-start', read) == 0
+        assert fire(store, run, row, 'log', {**read, 'tool_response': claude_read(part.read_text(), part)}) == 0
+    receipts = [json.loads(item[0]) for item in store.db.execute('SELECT source_stamp FROM native_reads WHERE success=1')]
+    assert [receipt['material']['part'] for receipt in receipts] == list(range(1, len(parts) + 1))
+    assert native_tools.pending(store, row['launch_id']) == 0
+    assert fire(store, run, row, 'tool-start', payload('after-chain-end')) == 0
     assert fire(store, run, row, 'tool-start', payload('assignment-write', tool_name='Write',
         tool_input={'file_path': str(path), 'content': 'replacement'})) == 2
     path.write_text('damaged full assignment\n')
@@ -249,19 +267,84 @@ def test_large_product_instruction_file_does_not_block_other_tools(runtime):
         tool_input={'file_path': str(Path(repo) / 'AGENTS.md'), 'offset': 1, 'limit': 20})) == 2
 
 
-def test_native_file_size_error_still_delivers_whole_source_in_one_logical_read(runtime):
+def emitted(capsys):
+    """The additionalContext a hook printed for the native host."""
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines() if 'hookSpecificOutput' in line]
+    assert len(lines) == 1
+    return lines[0]['hookSpecificOutput']['additionalContext']
+
+
+def test_claude_read_result_is_the_delivery_and_the_hook_adds_only_a_marker(runtime, capsys):
     from hx import native_producer
     store, repo, run, _ = runtime
     row = submitted(runtime)
-    path = Path(repo) / 'native-too-large.py'
-    path.write_text('# source\n' * 3000 + 'def required_tail():\n    pass\n')
-    body = payload('native-limit', tool_name='Read', tool_input={'file_path': str(path)})
+    path = Path(repo) / 'whole.py'
+    source = '# source\n' * 3000 + 'def required_tail():\n    pass\n'
+    path.write_text(source)
+    body = payload('native-read', tool_name='Read', tool_input={'file_path': str(path)})
     assert fire(store, run, row, 'tool-start', body) == 0
-    assert fire(store, run, row, 'log-failure', {**body, 'tool_response': {'error': 'Native read token limit'}, 'is_error': True}) == 0
-    assert store.db.execute('SELECT success FROM native_reads WHERE call_id=?', ('native-limit',)).fetchone()[0] == 1
+    capsys.readouterr()
+    assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read(source, path)}) == 0
+    data = source.encode()
+    assert emitted(capsys) == f'Complete file: sha256={hashlib.sha256(data).hexdigest()}; bytes={len(data)}'
+    assert store.db.execute('SELECT success FROM native_reads WHERE call_id=?', ('native-read',)).fetchone()[0] == 1
     assert native_tools.pending(store, row['launch_id']) == 0
     assert native_producer.status(store, run)['gap'] is None
     assert fire(store, run, row, 'tool-start', payload('next-action')) == 0
+
+
+def test_crlf_source_shown_as_lf_is_receipted_by_its_on_disk_bytes(runtime, capsys):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    path = Path(repo) / 'windows.txt'
+    data = b'first line\r\nsecond line\r\n'
+    path.write_bytes(data)
+    body = payload('crlf-read', tool_name='Read', tool_input={'file_path': str(path)})
+    assert fire(store, run, row, 'tool-start', body) == 0
+    capsys.readouterr()
+    # Claude shows CRLF line endings as LF (live, Claude Code 2.1.299); the receipt keeps the file's bytes.
+    assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read('first line\nsecond line\n', path)}) == 0
+    assert emitted(capsys) == (f'Complete file: sha256={hashlib.sha256(data).hexdigest()}; bytes={len(data)}; '
+                               'CRLF line endings shown as LF')
+    stamp, success = store.db.execute('SELECT source_stamp,success FROM native_reads WHERE call_id=?', ('crlf-read',)).fetchone()
+    assert success == 1 and json.loads(stamp)['sha256'] == hashlib.sha256(data).hexdigest()
+
+
+def test_capped_or_failed_claude_read_fails_delivery_until_a_complete_retry(runtime, capsys):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    path = Path(repo) / 'native-too-large.py'
+    source = '# source\n' * 3000 + 'def required_tail():\n    pass\n'
+    path.write_text(source)
+    capped = claude_read('# source\n' * 1349, path)
+    capped['file'].update(numLines=1349, totalLines=3003, truncatedByTokenCap=True)
+    attempts = [('capped', 'log', {'tool_response': capped}),
+                ('failed', 'log-failure', {'tool_response': {'error': 'Native read token limit'}, 'is_error': True})]
+    for failures, (call, event, result) in enumerate(attempts, 1):
+        body = payload(call, tool_name='Read', tool_input={'file_path': str(path)})
+        assert fire(store, run, row, 'tool-start', body) == 0
+        capsys.readouterr()
+        assert fire(store, run, row, event, {**body, **result}) == 0
+        assert emitted(capsys).startswith('Complete-file delivery failed')
+        assert store.db.execute('SELECT success FROM native_reads WHERE call_id=?', (call,)).fetchone()[0] == -1
+        # Each failed delivery holds the barrier until one complete retry resolves the file.
+        assert native_tools.pending(store, row['launch_id']) == failures
+        assert fire(store, run, row, 'tool-start', payload('blocked-' + call)) == 2
+    retry = payload('complete', tool_name='Read', tool_input={'file_path': str(path)})
+    assert fire(store, run, row, 'tool-start', retry) == 0
+    assert fire(store, run, row, 'log', {**retry, 'tool_response': claude_read(source, path)}) == 0
+    assert native_tools.pending(store, row['launch_id']) == 0
+    assert fire(store, run, row, 'tool-start', payload('next-action')) == 0
+
+
+def test_claude_worker_installs_one_hook_entry_per_event(runtime):
+    row = submitted(runtime)
+    settings = json.loads((Path(row['payload']['capsule']) / 'run/eng-001/home/settings.json').read_text())
+    hooks = settings['hooks']
+    assert all(len(entries) == 1 for entries in hooks.values())
+    # A Read or Bash call fires PreToolUse, then PostToolUse or PostToolUseFailure: three entries, not ~22.
+    assert sum(len(hooks[event]) for event in ('PreToolUse', 'PostToolUse', 'PostToolUseFailure')) == 3
+    assert '--read-segment' not in json.dumps(settings)
 
 
 def test_changed_file_delivery_fails_explicitly_and_can_retry_without_capture_gap(runtime):
@@ -273,13 +356,13 @@ def test_changed_file_delivery_fails_explicitly_and_can_retry_without_capture_ga
     body = payload('raced-read', tool_name='Read', tool_input={'file_path': str(path)})
     assert fire(store, run, row, 'tool-start', body) == 0
     path.write_text('after\n')
-    assert fire(store, run, row, 'log', {**body, 'tool_response': 'before\n'}) == 0
+    assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read('before\n', path)}) == 0
     assert native_tools.pending(store, row['launch_id']) == 1
     assert native_producer.status(store, run)['gap'] is None
     assert fire(store, run, row, 'tool-start', payload('blocked-action')) == 2
     retry = {**body, 'tool_use_id': 'complete-retry'}
     assert fire(store, run, row, 'tool-start', retry) == 0
-    assert fire(store, run, row, 'log', {**retry, 'tool_response': 'after\n'}) == 0
+    assert fire(store, run, row, 'log', {**retry, 'tool_response': claude_read('after\n', path)}) == 0
     assert native_tools.pending(store, row['launch_id']) == 0
     assert native_producer.status(store, run)['gap'] is None
     assert fire(store, run, row, 'tool-start', payload('resumed-action')) == 0

@@ -1,8 +1,10 @@
 """Exact complete-file delivery at the native tool boundary.
 
-A read has one content identity, regardless of native display limits. Instructions
-may have several physical parts, but their continuation is resolved here without
-asking the model to choose pages. Receipts certify emitted bytes, never attention.
+A read has one content identity, regardless of native display limits. A required
+material chain is read one complete part file at a time; each part's receipt names its
+chain, and `incomplete_material` holds later work until every part has its own receipt.
+Receipts hash the on-disk bytes, never a host's display of them, and certify emitted
+bytes, never attention.
 """
 from __future__ import annotations
 
@@ -80,15 +82,47 @@ def stat_stamp(path):
     return digest([stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns])
 
 
-def _bundle(row, task, path, root):
+def _chain(row, path):
+    """The required-material chain holding `path`, in part order, or []."""
     refs = row['payload']['required_files']
     required = next((ref for ref in refs if Path(ref['path']).resolve() == path), None)
-    if required is None or not required.get('bundle_sha256'):
-        return [required] if required else []
-    bundle = [ref for ref in refs if ref.get('bundle_sha256') == required['bundle_sha256']
-              and ref.get('bundle_bytes') == required['bundle_bytes']
-              and ref.get('kind') == required.get('kind')]
-    return sorted(bundle, key=lambda ref: ref.get('part', 1))
+    if required is None:
+        return []
+    chain = [ref for ref in refs if ref['bundle_sha256'] == required['bundle_sha256']
+             and ref['bundle_bytes'] == required['bundle_bytes'] and ref.get('kind') == required.get('kind')]
+    return sorted(chain, key=lambda ref: ref['part'])
+
+
+def unread_parts(readings):
+    """`(path, part, parts)` of the first unread part of each material chain a reader started.
+
+    `readings` are `(reader, receipt)` pairs of completed reads; a chain is complete only
+    when every one of its parts has a receipt from the same reader.
+    """
+    chains = {}
+    for reader, receipt in readings:
+        material = receipt.get('material')
+        if material:
+            chains.setdefault((reader, material['bundle_sha256']), (material['paths'], set()))[1].add(material['part'])
+    missing = []
+    for paths, read in chains.values():
+        unread = [part for part in range(1, len(paths) + 1) if part not in read]
+        if unread:
+            missing.append((paths[unread[0] - 1], unread[0], len(paths)))
+    return missing
+
+
+def incomplete_material(tx, launch_id, *, session=None, actor=None, checkpoint=None):
+    """`unread_parts` over a launch's completed native reads, optionally for one reader."""
+    query = 'SELECT session_id,actor_id,checkpoint_id,source_stamp FROM native_reads WHERE launch_id=? AND success=1'
+    params = [launch_id]
+    for column, value in (('session_id', session), ('actor_id', actor), ('checkpoint_id', checkpoint)):
+        if value is not None:
+            query += f' AND {column}=?'
+            params.append(value)
+    rows = tx.db.execute(query, params).fetchall()
+    return unread_parts(((session_id, actor_id, checkpoint_id), json.loads(stamp))
+                        for session_id, actor_id, checkpoint_id, stamp in rows)
 
 
 def _read_ceiling(row):
@@ -115,22 +149,18 @@ def prepare(row, task, observation, *, root=None):
     if any(key in args for key in ('offset', 'limit', 'start_line', 'end_line', 'startLine', 'endLine', 'line_range', 'range')):
         raise ValidationError('bounded file slices are prohibited; request the file once without offsets or limits')
     path = source_path(args, task)
-    refs = _bundle(row, task, path, root)
-    paths = [Path(ref['path']) for ref in refs] if refs else [path]
-    metadata = [part.stat() for part in paths]
-    if any(not stat.S_ISREG(item.st_mode) for item in metadata):
+    chain = _chain(row, path)
+    metadata = path.stat()
+    if not stat.S_ISREG(metadata.st_mode):
         raise ValidationError('complete-file reads require regular files; streams, devices and directories are not file content')
     ceiling = _read_ceiling(row)
-    expected_bytes = refs[0].get('bundle_bytes', refs[0]['bytes']) if refs else metadata[0].st_size
-    if type(expected_bytes) is not int or expected_bytes < 0 or expected_bytes > ceiling:
+    if metadata.st_size > ceiling:
         raise ValidationError('complete-file size exceeds the current context/transport budget; '
                               'no content was loaded or delivered; refactor the file or restore a fresh managed context')
-    stamps = [stat_stamp(part) for part in paths]
-    if refs and refs[0].get('bundle_sha256'):
-        from .instruction_materials import read_bundle
-        data = read_bundle(refs)
-        if isinstance(data, str):
-            data = data.encode('utf-8')
+    stamp = stat_stamp(path)
+    if chain:
+        from .instruction_materials import read_part
+        data, reference = read_part(chain, path)
     else:
         # A concurrent writer cannot turn a small admitted file into an
         # unbounded allocation. This bounded internal verification is never
@@ -139,16 +169,17 @@ def prepare(row, task, observation, *, root=None):
             data = handle.read(ceiling + 1)
         if len(data) > ceiling:
             raise ValidationError('file grew beyond the complete delivery budget while reading; no partial content was delivered')
-        if refs and (len(data) != refs[0]['bytes'] or hashlib.sha256(data).hexdigest() != refs[0]['sha256']):
-            raise ValidationError('required instruction material differs from the admitted launch')
-    if stamps != [stat_stamp(part) for part in paths]:
+    if stamp != stat_stamp(path):
         raise ValidationError('file changed while preparing its complete read')
     try:
         text = data.decode('utf-8')
     except UnicodeDecodeError as exc:
         raise ValidationError('complete-file text read requires UTF-8; use an explicit binary inspection tool') from exc
     receipt = {'path': str(path), 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
-               'files': [{'path': str(part), 'stamp': stamp} for part, stamp in zip(paths, stamps)]}
+               'files': [{'path': str(path), 'stamp': stamp}]}
+    if chain:
+        receipt['material'] = {'bundle_sha256': reference['bundle_sha256'], 'part': reference['part'],
+                               'paths': [ref['path'] for ref in chain]}
     return text, receipt
 
 

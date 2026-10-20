@@ -216,12 +216,3 @@ def verify_material(root: Path, item_id: str, manifest_path: Path, path: Path, *
             _verify_required_file(material)
             return material
     return None
-
-
-def material_bundle(root: Path, item_id: str, manifest_path: Path, path: Path, *, workdir: str, audience="worker"):
-    """All exact linked parts for a single verified instruction-read operation."""
-    manifest, _ = verified_bundle(root, item_id, manifest_path, workdir=workdir, audience=audience)
-    requested = Path(path).absolute()
-    if any(requested == Path(ref["path"]).absolute() for ref in manifest["required_files"]):
-        return manifest["required_files"]
-    return []

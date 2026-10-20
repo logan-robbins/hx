@@ -1,8 +1,11 @@
-"""Automatic transport segments for hosts which cap each hook context string.
+"""Complete-file delivery after a native read: Claude's own result, or transport segments.
 
-All handlers belong to one native read operation. They resolve the complete file
-without a model pagination decision. The original tool result settles only when
-every required segment has been emitted; lost handlers leave admission pending.
+Claude's Read returns the whole admitted file (start.sh lifts its token cap to the context
+threshold, which bounds every admitted read), so its hook verifies that result against the
+admitted bytes and adds only `native_marker`. Hosts without a complete native result
+(SEGMENTED_ADAPTERS) and the Partner get automatic transport segments: one hook entry per
+segment, each within the host's per-hook context cap, settling only when every segment has
+been emitted; lost handlers leave admission pending.
 """
 from __future__ import annotations
 
@@ -11,10 +14,39 @@ import math
 
 from .continuity_store import canonical, digest
 from .errors import ValidationError
-from .file_reads import broker_result
+from .file_reads import READ_TOOLS, broker_result, read_input, tool_name
 
 SEGMENT_CHARS = 9000
-SEGMENTED_ADAPTERS = {'claude', 'grok', 'meta'}
+SEGMENTED_ADAPTERS = {'grok', 'meta'}
+#: Hosts whose own Read result is the complete-file delivery.
+NATIVE_READ_ADAPTERS = {'claude'}
+
+
+def require_native_read(adapter, observation):
+    """A shell broker returns only its marker, so a native-read host must use its Read tool."""
+    if adapter in NATIVE_READ_ADAPTERS and tool_name(observation) not in READ_TOOLS and read_input(observation):
+        raise ValidationError('the native Read tool is the complete-file delivery on this host; Read the file '
+                              '(materialize another revision with hx repo materialize first)')
+
+
+def native_marker(result, observation):
+    """The completeness marker for a host's own Read result, which must be the admitted file.
+
+    Claude shows CRLF line endings as LF; the receipt still hashes the on-disk bytes. Any other
+    difference (a capped, paged or changed result) fails the delivery.
+    """
+    response = observation.get('tool_response')
+    native = response.get('file') if isinstance(response, dict) else None
+    content = native.get('content') if isinstance(native, dict) else None
+    text, receipt = result['text'], result['receipt']
+    marker = f'Complete file: sha256={receipt["sha256"]}; bytes={receipt["bytes"]}'
+    if observation.get('is_error') or not isinstance(content, str):
+        raise ValidationError('the native read returned no file content')
+    if content == text:
+        return marker
+    if '\r\n' in text and content == text.replace('\r\n', '\n'):
+        return marker + '; CRLF line endings shown as LF'
+    raise ValidationError('the native read result is not the complete admitted file')
 
 
 def split_delivery(text):

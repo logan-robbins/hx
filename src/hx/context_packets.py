@@ -374,17 +374,3 @@ def verify_material(store, run_id, path, *, checkpoint_id=None):
         requested = Path(path).absolute()
         return next((ref for ref in packet["required_files"]
                      if Path(ref["path"]).absolute() == requested), None)
-
-
-def material_bundle(store, run_id, path, *, checkpoint_id=None):
-    """Resolve a current assignment chain for one complete broker read."""
-    with store.transaction() as tx:
-        run, _, _ = _run(tx, run_id)
-        current = run["checkpoint_id"]
-        if not current or (checkpoint_id is not None and checkpoint_id != current):
-            raise Conflict("full assignment read requires the current checkpoint")
-        packet = _read(tx, current, run_id)
-        requested = Path(path).absolute()
-        if any(Path(ref["path"]).absolute() == requested for ref in packet["required_files"]):
-            return packet["required_files"]
-        return []
