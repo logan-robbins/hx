@@ -39,43 +39,56 @@ def test_concurrent_hooks_never_deny_beside_a_mutating_loop(runtime, monkeypatch
     store, _, run, env = runtime
     row = submitted(runtime)
     quiet_companions(monkeypatch)
-    stop, ticks = threading.Event(), []
-    def mutate():
-        with ContinuityStore(store.root) as ledger:
-            while not stop.is_set():
-                loop.tick(ledger, env=env)
-                ticks.append(time.monotonic())
     def invoke(event, body):
         began = time.monotonic()
         # The installed command, as the native host runs it: one process per hook.
         result = subprocess.run(installed_command(row, 'claude', event), input=json.dumps(body), text=True,
                                 capture_output=True, env={'PATH': env['PATH']}, timeout=60)
         return time.monotonic() - began, result
+    def burst(tag):
+        with ThreadPoolExecutor(64) as pool:
+            starts = list(pool.map(lambda index: invoke('tool-start', payload(f'{tag}-{index}')), range(64)))
+            results = list(pool.map(lambda index: invoke('log', payload(f'{tag}-{index}', tool_response='done')), range(64)))
+        return starts + results
+    def settled():
+        # Results that arrived behind another of the session's deliveries queue; the loop delivers them in order.
+        return not native_tools.pending(store, row['launch_id']) and not native_producer.status(store, run)['pending_deliveries']
+    def p95(outcomes):
+        latencies = sorted(seconds for seconds, _ in outcomes)
+        return latencies[int(len(latencies) * .95) - 1]
+    # Sixty-four cold hook processes serialise their own commits, so a burst's wall time is a
+    # property of the machine (its cores, its fsync), not of the loop: 2.4 s on an eight-core
+    # laptop, past 8 s on a three-core CI runner. The idle burst measures that cost here, and the
+    # mutating loop is allowed to add less than one ledger budget on top of it.
+    idle = burst('idle')
+    with ContinuityStore(store.root) as ledger:
+        wait_for(lambda: (loop.tick(ledger, env=env), settled())[1], what='idle settlement', limit=60)
+    stop, ticks = threading.Event(), []
+    def mutate():
+        with ContinuityStore(store.root) as ledger:
+            while not stop.is_set():
+                loop.tick(ledger, env=env)
+                ticks.append(time.monotonic())
     thread = threading.Thread(target=mutate, daemon=True)
     thread.start()
     try:
-        with ThreadPoolExecutor(64) as pool:
-            starts = list(pool.map(lambda index: invoke('tool-start', payload(f'burst-{index}')), range(64)))
-            results = list(pool.map(lambda index: invoke('log', payload(f'burst-{index}', tool_response='done')), range(64)))
-        # Results that arrived behind another of the session's deliveries queue; the loop delivers them in order.
-        wait_for(lambda: not native_tools.pending(store, row['launch_id'])
-                 and not native_producer.status(store, run)['pending_deliveries'], what='settlement', limit=60)
+        contended = burst('burst')
+        wait_for(settled, what='settlement', limit=60)
     finally:
         stop.set()
         thread.join(60)
-    outcomes = starts + results
+    outcomes = idle + contended
     refused = [result.stderr for _, result in outcomes if result.returncode or result.stderr]
     assert not refused, refused[:3]
     assert len(ticks) > 1, 'the loop must keep committing throughout the burst'
     assert hook_spool.pending(store.root) == []
     assert native_tools.pending(store, row['launch_id']) == 0
     assert native_producer.status(store, run)['gap'] is None
-    latencies = sorted(seconds for seconds, _ in outcomes)
-    p95 = latencies[int(len(latencies) * .95) - 1]
     with capsys.disabled():
-        print(f"\nhook latency over {len(latencies)} invocations in bursts of 64 beside {len(ticks)} loop ticks: "
-              f"p50 {latencies[len(latencies) // 2] * 1000:.0f} ms, p95 {p95 * 1000:.0f} ms, max {latencies[-1] * 1000:.0f} ms")
-    assert p95 < hooks.LEDGER_BUDGET_S
+        print(f"\nhook latency over {len(contended)} invocations in bursts of 64: p95 {p95(idle) * 1000:.0f} ms against "
+              f"an idle ledger, {p95(contended) * 1000:.0f} ms beside {len(ticks)} loop ticks, "
+              f"max {max(seconds for seconds, _ in contended) * 1000:.0f} ms")
+    assert p95(contended) - p95(idle) < hooks.LEDGER_BUDGET_S
 
 
 def test_contended_hook_passes_through_and_the_loop_replays_it_in_order(runtime, monkeypatch):
