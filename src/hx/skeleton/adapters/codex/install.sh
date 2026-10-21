@@ -2,7 +2,8 @@
 # adapters/codex/install.sh <id> — write the per-agent Codex home.
 #
 # The home is CODEX_HOME for this agent. It holds config.toml (unattended
-# posture, the hx hooks) and skills. Auth is the invoker's ChatGPT login,
+# posture, the hx hooks, the web search route of docs/codex-search-guard.md)
+# and skills. Auth is the invoker's ChatGPT login,
 # copied from $HOME/.codex/auth.json into the agent home — the CLI refreshes
 # those tokens itself under CODEX_HOME, so no device flow ever runs
 # unattended. Only when the invoker has no login does install fall back to an
@@ -88,6 +89,23 @@ fi
 [ -n "$bin" ] || die "refuse: no codex binary; record {bin, version} in config/codex.json"
 [ -x "$bin" ] || die "refuse: pinned codex binary $bin is not executable"
 
+# Inspected web search (docs/codex-search-guard.md): config/codex.json `search_guard`
+# names the Foundry toolbox and the Content Safety endpoint. Both, or no object.
+if [ -f "$root/config/codex.json" ]; then
+  guard_problem=$("$python" - "$root/config/codex.json" <<'GUARDEOF'
+import json, sys
+guard = json.load(open(sys.argv[1])).get("search_guard")
+if guard is not None and not isinstance(guard, dict):
+    print("is not an object")
+elif guard is not None:
+    print(" and ".join("lacks " + key for key in ("toolbox_url", "content_safety_endpoint")
+                       if not isinstance(guard.get(key), str) or not guard[key].strip()))
+GUARDEOF
+  ) || die "refuse: config/codex.json is not a JSON object"
+  [ -z "$guard_problem" ] || die "refuse: config/codex.json search_guard $guard_problem;" \
+    "it needs both toolbox_url and content_safety_endpoint (docs/codex-search-guard.md)"
+fi
+
 home=$root/run/$id/home
 mkdir -p "$home/skills"
 
@@ -171,9 +189,47 @@ if item_id == 'partner':
             blocks.append(block + f'  [[hooks.{native_event}.hooks]]\n  type = "command"\n'
                 + f"  command = '{cmd}'\n  additionalContextLimit = 0\n")
 
-config = """\
+# Web search (docs/codex-search-guard.md). The hosted tool fires no hook, and the
+# full-access sandbox would default it to live: without `search_guard` it stays
+# cached. With it the hosted tool is off and search is the Foundry toolbox's MCP
+# tool, pre-approved, with both directions through search_guard.py. This is not
+# the Partner's guard: every Codex agent gets it, matched to that one tool.
+import json
+codex_json = os.path.join(root, "config", "codex.json")
+guard = json.load(open(codex_json)).get("search_guard") if os.path.isfile(codex_json) else None
+web_search = "cached" if guard is None else "disabled"
+if guard is not None:
+    adapters = os.path.join(root, "adapters", "codex")
+    helper = shlex.join([python, os.path.join(adapters, "toolbox_headers.py")])
+    blocks.append(
+        "[mcp_servers.foundry]\n"
+        f"url = {json.dumps(guard['toolbox_url'], ensure_ascii=False)}\n"
+        f"http_headers_helper = {json.dumps(helper, ensure_ascii=False)}\n"
+        'enabled_tools = ["web_search"]\n'
+        'default_tools_approval_mode = "approve"\n'
+        "tool_timeout_sec = 60\n\n"
+        "[mcp_servers.foundry.tools.web_search]\n"
+        "output_token_limit = 4000\n")
+    for event, mode, timeout, status in (
+            ("PreToolUse", "pre", 20, "Checking the search query"),
+            ("PostToolUse", "post", 60, "Scanning search results with Prompt Shields")):
+        # A TOML basic string: shlex quotes a part with `'`, which a literal cannot hold.
+        cmd = shlex.join([python, os.path.join(adapters, "search_guard.py"), mode,
+                          "--endpoint", guard["content_safety_endpoint"],
+                          "--log", os.path.join(root, "run", item_id, "search-guard.jsonl")])
+        blocks.append(
+            f"[[hooks.{event}]]\n"
+            'matcher = "mcp__foundry__web_search"\n'
+            f"  [[hooks.{event}.hooks]]\n"
+            '  type = "command"\n'
+            f"  command = {json.dumps(cmd, ensure_ascii=False)}\n"
+            f"  timeout = {timeout}\n"
+            f'  statusMessage = "{status}"\n')
+
+config = f"""\
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
+web_search = "{web_search}"
 
 """ + "\n".join(blocks)
 if continuity:
