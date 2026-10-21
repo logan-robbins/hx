@@ -4,6 +4,7 @@ helper, the installer wiring both ways, and the real `codex exec` scenario."""
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -13,7 +14,11 @@ from pathlib import Path
 import pytest
 
 from .conftest import clean_env
+from .search_guard_fixture import INJECTION, SECRET, run_codex, serve_shields
 from .test_adapter_codex import _codex_token, _fake_codex, _no_login_home
+
+#: The gate of test_installed_codex_rollout_and_hook_contract: only an explicitly chosen binary.
+SCENARIO = pytest.mark.skipif(not os.environ.get("HX_CODEX_TEST_BIN"), reason="requires an explicitly selected installed Codex CLI; local provider fixture only")
 
 ADAPTER = Path(__file__).resolve().parents[2] / "src" / "hx" / "skeleton" / "adapters" / "codex"
 HEADERS = ADAPTER / "toolbox_headers.py"
@@ -121,3 +126,57 @@ def test_install_refuses_a_partial_search_guard(instance, tmp_path, search_guard
     assert done.returncode != 0
     assert f"config/codex.json search_guard {named}" in done.stderr
     assert not (instance / "run" / "eng-001" / "home" / "config.toml").exists()
+
+
+@pytest.fixture
+def scenario(tmp_path):
+    """One real `codex exec` searching for a query through the stub MCP server and the guard."""
+    def run(query):
+        with serve_shields() as shields:
+            return run_codex(os.environ["HX_CODEX_TEST_BIN"], tmp_path, query, shields)
+    return run
+
+
+@SCENARIO
+def test_scenario_discovery_names_the_tool_the_matcher_expects(scenario):
+    run = scenario("seattle weather")
+    assert "mcp__local" in [tool.get("name") for tool in run.discovered if tool.get("type") == "namespace"]
+    assert {row["tool_name"] for row in run.audit} == {"mcp__local__web_search"}
+
+
+@SCENARIO
+def test_scenario_clean_result_reaches_the_model_after_one_scan(scenario):
+    run = scenario("seattle weather")
+    assert [call["search_query"] for call in run.calls] == ["seattle weather"]
+    assert [row["event"] for row in run.audit] == ["query_allowed", "result_allowed"]
+    assert [(sent["key"], sent["body"]["documents"]) for sent in run.shield_requests] == [
+        ("stub-key", ["Stub result for seattle weather: sunny, 18C."])]
+    assert "Stub result for seattle weather: sunny" in run.seen
+    assert "Prompt Shields found no injection" in json.dumps(run.model_requests[-1])
+    assert '"type":"mcp_tool_call"' in run.stdout
+
+
+@SCENARIO
+def test_scenario_injected_result_reaches_the_model_as_the_block_reason(scenario):
+    run = scenario("poison test")
+    assert len(run.calls) == 1
+    assert [row["event"] for row in run.audit] == ["query_allowed", "result_blocked"]
+    assert "Search result withheld" in run.seen and INJECTION not in run.seen
+    assert INJECTION not in json.dumps(run.model_requests), "no request to the model carries it"
+
+
+@SCENARIO
+def test_scenario_injected_citation_title_is_scanned_and_withheld(scenario):
+    """Codex forwards a resource item whole, `_meta` included; the toolbox puts page titles there."""
+    run = scenario("titled weather")
+    assert [row["event"] for row in run.audit] == ["query_allowed", "result_blocked"]
+    assert run.audit[1]["urls"] == ["https://evil.example/page"]
+    assert "https://evil.example/page" in run.seen and INJECTION not in json.dumps(run.model_requests)
+
+
+@SCENARIO
+def test_scenario_credential_shaped_query_never_reaches_the_server(scenario):
+    run = scenario("lookup " + SECRET)
+    assert (run.calls, run.shield_requests) == ([], [])
+    assert [row["event"] for row in run.audit] == ["query_denied"]
+    assert "denied by the search guard" in run.seen
