@@ -4,6 +4,7 @@ the installer wiring, the real `codex exec` scenario and the live Prompt Shields
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -222,3 +223,18 @@ def test_a_usage_error_exits_2(guard):
     done = subprocess.run([sys.executable, str(GUARD), "sideways"], input="{}",
                           capture_output=True, text=True, timeout=30, check=False)
     assert done.returncode == 2 and "usage" in done.stderr
+
+
+@pytest.mark.skipif(not (os.environ.get("HX_SEARCH_GUARD_LIVE_ENDPOINT") and os.environ.get("CONTENT_SAFETY_KEY")),
+                    reason="live Azure Prompt Shields: set HX_SEARCH_GUARD_LIVE_ENDPOINT and CONTENT_SAFETY_KEY")
+def test_live_prompt_shields_passes_a_benign_result(tmp_path):
+    """One real shieldPrompt call: path, key header and reply shape, and no false positive."""
+    log = tmp_path / "search-guard.jsonl"
+    done = subprocess.run(
+        [sys.executable, str(GUARD), "post", "--endpoint", os.environ["HX_SEARCH_GUARD_LIVE_ENDPOINT"],
+         "--log", str(log)],
+        input=json.dumps(hook({"search_query": "seattle weather"}, toolbox_result("Seattle: sunny, 18C."))),
+        env={"PATH": os.environ.get("PATH", ""), "CONTENT_SAFETY_KEY": os.environ["CONTENT_SAFETY_KEY"]},
+        capture_output=True, text=True, timeout=60, check=False)
+    assert done.returncode == 0, done.stderr
+    assert [row["event"] for row in map(json.loads, log.read_text().splitlines())] == ["result_allowed"], done.stdout
