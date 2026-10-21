@@ -178,7 +178,8 @@ configured credentials; instance setup does not authorize changing personal harn
 `config/hx.json` carries runtime, repository service, and optional capability settings.
 `loop.workers` (integer 1–64, default 4) bounds the application loop's job threads.
 `companion.max_concurrent` (integer 1–64, default 1) bounds running Companion jobs of both
-kinds together. Any other value is refused.
+kinds together. `notifications.per_tick` (integer 1–256, default 8) bounds the notifications
+one tick delivers. Any other value is refused.
 `config/planning.json` has `schema_version: 1`, independent `reviewer`, `required_checks`, and
 the executing seat `role`; a draft request's `role` overrides it. This policy document version
 is separate from the schema-2 packet plan. The `dispatch` section of `config/hx.json` configures
@@ -416,7 +417,17 @@ Typed milestones are `contract_published`, `packet_covered`, `integration_verifi
 and `deployable`. Packet coverage releases leases; deferred binding remains explicit.
 Current readiness revalidates proof rather than trusting historical milestone rows.
 The root loop delivers bounded at-least-once `HX-EVENT OPERATION KIND task=… identity=…`
-notifications. Deduplicate by operation ID and query readiness; a wake is not evidence.
+notifications: one pointer line, never a body, at most `config/hx.json`
+`notifications.per_tick` (integer 1–256, default 8) per tick. The Partner is woken for
+`plan_changed`, `unit_completed`, `unit_scope_violation`, the packet milestones,
+`native_launch_unresolved`, delivery outcomes, `unit_check_failed` (identity: the failing
+check's evidence event, for `hx evidence`), and `progress_blocked` (an `hx progress` update
+with a `blocker` or a `blocked` step, once per run and wording; identity: its hash).
+`packet_binding_proposed` (identity: the binding hash) is pasted, with ` reviewer=ID`, into the
+configured reviewer's live native session, or reaches the Partner when that seat has none.
+`contract_published` and `unit_completed` also clear the dispatch deferrals of the producer's
+consumers, so the executor's next pass re-evaluates them. Deduplicate by operation ID and query
+readiness; a wake is not evidence.
 
 ## Plan executor (`hx plan run`, `hx fleet pause|resume`)
 

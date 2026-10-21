@@ -17,6 +17,13 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   planning.json; a plan without it is refused. A draft request's `role` overrides the policy's.
 
 ### Added
+- Notifications wake the right party (docs/fleet-throughput-plan.md P1.5; CONTRACTS.md §
+  Dependency packet plan): `hx progress` blockers and blocked steps (`progress_blocked`) and
+  failed acceptance checks (`unit_check_failed`) wake the Partner; `packet_binding_proposed`
+  pastes one pointer line into the configured reviewer's live session, or wakes the Partner
+  when it has none; `contract_published` and `unit_completed` also clear the consumers' dispatch
+  deferrals so the executor re-evaluates them on its next pass. Every delivery stays one
+  `HX-EVENT` pointer line. `config/hx.json` `notifications.per_tick` bounds one drain.
 - The plan executor (docs/fleet-throughput-plan.md P1.1; CONTRACTS.md § Plan executor): with
   `config/hx.json` `dispatch.auto` the application loop admits and launches ready units of
   every applied plan onto idle seats whose role is the unit's `check_policy.role`, downstream

@@ -125,7 +125,9 @@ for the worker or substitute prose evidence for receipts.
 ## Act on progress, proof, and delivery
 
 Workers report blockers and decision requests with `hx progress`; they retain their leases
-until verified completion or reconciled stop. On changed contracts or scope, stop affected runs,
+until verified completion or reconciled stop. A blocker, a failed acceptance check, a milestone,
+or a binding proposal whose reviewer has no live session reaches you as one `HX-EVENT OPERATION
+KIND task=TASK identity=ID` line: query that task's current state; the line is not evidence. On changed contracts or scope, stop affected runs,
 revise the graph, preserve outstanding obligations, and bind the new assignments. Do not amend
 source scope underneath an active worker.
 
