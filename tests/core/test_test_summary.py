@@ -1,161 +1,169 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from hx import test_summary
+from hx.errors import ValidationError
 
-PYTEST = """============================= test session starts ==============================
-collected 4 items
-
-tests/test_a.py .F.s                                                     [100%]
-
-=================================== FAILURES ===================================
-___________________________________ test_one ___________________________________
-
-    def test_one():
->       assert 1 == 2
+# Recorded from `pytest --continue-on-collection-errors --junit-xml=report.xml tests` (pytest 9,
+# junit_family xunit2); absolute paths shortened. One collection error, one failure, two passes, one skip.
+JUNIT = """<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="1" skipped="1" tests="5" time="0.070"><testcase classname="" name="tests.test_b" time="0.000"><error message="collection failure">ImportError while importing test module '/work/tests/test_b.py'.
+E   ModuleNotFoundError: No module named 'missing_module'</error></testcase><testcase classname="tests.test_a" name="test_one" time="0.001"><failure message="assert 1 == 2">def test_one():
+&gt;       assert 1 == 2
 E       assert 1 == 2
 
-tests/test_a.py:3: AssertionError
-=========================== short test summary info ============================
-FAILED tests/test_a.py::test_one - assert 1 == 2
-ERROR tests/test_b.py - ImportError: no module
-==================== 1 failed, 2 passed, 1 skipped, 1 error in 0.12s ====================
+tests/test_a.py:4: AssertionError</failure></testcase><testcase classname="tests.test_a" name="test_two" time="0.002" /><testcase classname="tests.test_a" name="test_three" time="0.000" /><testcase classname="tests.test_a" name="test_four" time="0.000"><skipped type="pytest.skip" message="later">/work/tests/test_a.py:12: later</skipped></testcase></testsuite></testsuites>
 """
 
-UNITTEST = """F.E
-======================================================================
-ERROR: test_load (pkg.tests.LoaderTest.test_load)
-----------------------------------------------------------------------
-Traceback (most recent call last):
-ValueError: bad
-======================================================================
-FAIL: test_add (pkg.tests.MathTest.test_add)
-----------------------------------------------------------------------
-AssertionError: 3 != 4
-----------------------------------------------------------------------
-Ran 3 tests in 0.002s
-
-FAILED (failures=1, errors=1, skipped=1)
-"""
-
-JEST = """ FAIL  src/sum.test.js
-  math
-    ✓ adds (2 ms)
-    ✕ subtracts (3 ms)
-
-  ● math › subtracts
-
-    expect(received).toBe(expected)
-
-Test Suites: 1 failed, 1 total
-Tests:       1 failed, 1 skipped, 1 passed, 3 total
-"""
-
-VITEST = """ ❯ src/basic.test.ts (2 tests | 1 failed) 5ms
-   × Math.sqrt() 3ms
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
- FAIL  src/basic.test.ts > Math.sqrt()
-AssertionError: expected 2 to be 3
- Test Files  1 failed (1)
-      Tests  1 failed | 1 passed (2)
-"""
-
-GO = """--- FAIL: TestAdd (0.00s)
-    add_test.go:9: expected 3, got 4
-    --- FAIL: TestAdd/negative (0.00s)
-FAIL
-FAIL\texample.com/calc\t0.010s
-ok  \texample.com/util\t(cached)
-FAIL\texample.com/broken [build failed]
-"""
-
-GO_VERBOSE = """=== RUN   TestA
---- PASS: TestA (0.00s)
-=== RUN   TestB
---- SKIP: TestB (0.00s)
-PASS
-ok  \texample.com/calc\t0.010s
-"""
-
-CARGO = """running 3 tests
-test tests::adds ... ok
-test tests::subtracts ... FAILED
-test tests::slow ... ignored
-
-failures:
-
----- tests::subtracts stdout ----
-thread 'tests::subtracts' panicked at src/lib.rs:10:9:
-assertion `left == right` failed
-
-test result: FAILED. 1 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
-"""
-
-DOTNET = """  Failed Calc.Tests.AddTests.AddsNegative [12 ms]
-  Error Message:
-   Assert.Equal() Failure
-Failed!  - Failed:     1, Passed:     4, Skipped:     1, Total:     6, Duration: 50 ms - Calc.Tests.dll (net8.0)
-Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 9 ms - Util.Tests.dll (net8.0)
+# `dotnet test --logger "trx;LogFileName=…"`: VSTest TeamTest/2010 schema, outcome per UnitTestResult.
+TRX = """<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="5c1f" name="ci 2026-10-20" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Results>
+    <UnitTestResult executionId="a" testId="1" testName="Calc.Tests.AddTests.AddsNegative" outcome="Failed">
+      <Output><ErrorInfo><Message>Assert.Equal() Failure</Message></ErrorInfo></Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="b" testId="2" testName="Calc.Tests.AddTests.AddsPositive" outcome="Passed" />
+    <UnitTestResult executionId="c" testId="3" testName="Calc.Tests.AddTests.AddsZero" outcome="Passed" />
+    <UnitTestResult executionId="d" testId="4" testName="Calc.Tests.AddTests.Overflows" outcome="NotExecuted" />
+    <UnitTestResult executionId="e" testId="5" testName="Calc.Tests.AddTests.Hangs" outcome="Timeout" />
+  </Results>
+  <ResultSummary outcome="Failed"><Counters total="5" executed="4" passed="2" failed="1" timeout="1" notExecuted="1" /></ResultSummary>
+</TestRun>
 """
 
 
-def expected(framework, passed, failed, skipped, errors, failing, truncated=False):
-    return {"framework": framework, "passed": passed, "failed": failed, "skipped": skipped,
+def lines(*events):
+    return "".join(json.dumps(event) + "\n" for event in events)
+
+
+# `go test -json ./...` (test2json): one event per line; a build failure names FailedBuild.
+GO = lines(
+    {"Action": "start", "Package": "example.com/calc"},
+    {"Action": "run", "Package": "example.com/calc", "Test": "TestAdd"},
+    {"Action": "output", "Package": "example.com/calc", "Test": "TestAdd", "Output": "    add_test.go:9: expected 3, got 4\n"},
+    {"Action": "run", "Package": "example.com/calc", "Test": "TestAdd/negative"},
+    {"Action": "fail", "Package": "example.com/calc", "Test": "TestAdd/negative", "Elapsed": 0},
+    {"Action": "fail", "Package": "example.com/calc", "Test": "TestAdd", "Elapsed": 0},
+    {"Action": "pass", "Package": "example.com/calc", "Test": "TestSub", "Elapsed": 0},
+    {"Action": "skip", "Package": "example.com/calc", "Test": "TestDiv", "Elapsed": 0},
+    {"Action": "fail", "Package": "example.com/calc", "Elapsed": 0.01},
+    {"ImportPath": "example.com/broken", "Action": "build-output", "Output": "broken.go:3:1: syntax error\n"},
+    {"ImportPath": "example.com/broken", "Action": "build-fail"},
+    {"Action": "start", "Package": "example.com/broken"},
+    {"Action": "output", "Package": "example.com/broken", "Output": "FAIL\texample.com/broken [build failed]\n"},
+    {"Action": "fail", "Package": "example.com/broken", "Elapsed": 0, "FailedBuild": "example.com/broken"},
+) + "FAIL\n"
+
+# `cargo test --message-format=json -- -Z unstable-options --format json`: cargo build messages
+# and libtest events share stdout; stderr progress lines are not JSON.
+CARGO = "   Compiling calc v0.1.0\n" + lines(
+    {"reason": "compiler-artifact", "target": {"name": "calc"}, "fresh": False},
+    {"reason": "build-finished", "success": True},
+    {"type": "suite", "event": "started", "test_count": 3},
+    {"type": "test", "event": "started", "name": "tests::adds"},
+    {"type": "test", "event": "ok", "name": "tests::adds"},
+    {"type": "test", "event": "failed", "name": "tests::subtracts", "stdout": "assertion `left == right` failed\n"},
+    {"type": "test", "event": "ignored", "name": "tests::slow"},
+    {"type": "suite", "event": "failed", "passed": 1, "failed": 1, "ignored": 1, "measured": 0, "filtered_out": 0},
+)
+
+CARGO_BUILD_ERROR = lines(
+    {"reason": "compiler-message", "target": {"name": "calc"}, "message": {"level": "error", "message": "mismatched types"}},
+    {"reason": "compiler-message", "target": {"name": "calc"}, "message": {"level": "warning", "message": "unused variable"}},
+    {"reason": "build-finished", "success": False},
+)
+
+# `jest --json --outputFile=…` (vitest `--reporter=json` writes the same shape).
+JEST = json.dumps({
+    "numTotalTests": 4, "numPassedTests": 1, "numFailedTests": 1, "numPendingTests": 1, "numTodoTests": 1,
+    "numRuntimeErrorTestSuites": 1, "success": False,
+    "testResults": [
+        {"name": "/work/src/sum.test.js", "status": "failed", "message": "", "assertionResults": [
+            {"ancestorTitles": ["math"], "title": "adds", "fullName": "math adds", "status": "passed"},
+            {"ancestorTitles": ["math"], "title": "subtracts", "fullName": "math subtracts", "status": "failed"},
+            {"ancestorTitles": ["math"], "title": "divides", "fullName": "math divides", "status": "pending"},
+            {"ancestorTitles": [], "title": "later", "fullName": "later", "status": "todo"}]},
+        {"name": "/work/src/broken.test.js", "status": "failed", "message": "SyntaxError: Unexpected token",
+         "assertionResults": []}]})
+
+
+def expected(report, passed, failed, skipped, errors, failing, truncated=False):
+    return {"format": report, "passed": passed, "failed": failed, "skipped": skipped,
             "errors": errors, "failing": failing, "truncated": truncated}
 
 
-@pytest.mark.parametrize("text,summary", [
-    (PYTEST, expected("pytest", 2, 1, 1, 1, ["tests/test_a.py::test_one", "tests/test_b.py"])),
-    ("3 passed in 0.01s\n", expected("pytest", 3, 0, 0, 0, [])),
-    (UNITTEST, expected("unittest", None, 1, 1, 1, ["test_load (pkg.tests.LoaderTest.test_load)",
-                                                    "test_add (pkg.tests.MathTest.test_add)"])),
-    ("..s\n----\nRan 3 tests in 0.001s\n\nOK (skipped=1)\n", expected("unittest", None, 0, 1, 0, [])),
-    (JEST, expected("jest", 1, 1, 1, None, ["math › subtracts"])),
-    (VITEST, expected("vitest", 1, 1, 0, None, ["src/basic.test.ts > Math.sqrt()"])),
-    (GO, expected("go", None, 2, None, 1, ["TestAdd", "TestAdd/negative", "example.com/broken [build failed]"])),
-    (GO_VERBOSE, expected("go", 1, 0, 1, 0, [])),
-    (CARGO, expected("cargo", 1, 1, 1, None, ["tests::subtracts"])),
-    (DOTNET, expected("dotnet", 6, 1, 1, None, ["Calc.Tests.AddTests.AddsNegative"])),
-], ids=["pytest", "pytest-pass", "unittest", "unittest-pass", "jest", "vitest", "go", "go-verbose", "cargo", "dotnet"])
-def test_each_runner_summary_reports_only_printed_counts_and_failing_names(text, summary):
-    assert test_summary.summarize(text) == summary
-    assert test_summary.failed(summary) == bool(summary["failed"] or summary["errors"])
+def parse(tmp_path, report, text):
+    path = tmp_path / "report"
+    path.write_text(text)
+    return test_summary.summarize(report, path)
 
 
-def test_ansi_color_and_carriage_return_progress_do_not_hide_the_summary():
-    text = "\x1b[31m\x1b[1m1 failed\x1b[0m, \x1b[32m2 passed\x1b[0m in 0.40s\nrunning 1/3\rrunning 3/3\r\n"
-    assert test_summary.summarize(text) == expected("pytest", 2, 1, 0, 0, [])
+@pytest.mark.parametrize("report,text,summary", [
+    ("junit-xml", JUNIT, expected("junit-xml", 2, 1, 1, 1, ["tests.test_b", "tests.test_a::test_one"])),
+    ("trx", TRX, expected("trx", 2, 1, 1, 1, ["Calc.Tests.AddTests.AddsNegative", "Calc.Tests.AddTests.Hangs"])),
+    ("go-json", GO, expected("go-json", 1, 2, 1, 1, ["TestAdd/negative", "TestAdd", "example.com/broken [build failed]"])),
+    ("cargo-json", CARGO, expected("cargo-json", 1, 1, 1, 0, ["tests::subtracts"])),
+    ("cargo-json", CARGO_BUILD_ERROR, expected("cargo-json", 0, 0, 0, 1, ["calc [build failed]"])),
+    ("jest-json", JEST, expected("jest-json", 1, 1, 2, 1, ["math › subtracts", "/work/src/broken.test.js"])),
+    ("jest-json", "Determining test suites...\n" + JEST + "\n", expected("jest-json", 1, 1, 2, 1,
+                                                                         ["math › subtracts", "/work/src/broken.test.js"])),
+], ids=["junit", "trx", "go", "cargo", "cargo-build-error", "jest", "jest-on-stdout"])
+def test_each_report_format_counts_every_category_and_lists_failing_names(tmp_path, report, text, summary):
+    assert parse(tmp_path, report, text) == summary
+    assert test_summary.failed(summary)
 
 
-@pytest.mark.parametrize("text", [
-    "", "building...\ndone in 3.2s\n12 files in 0.5s\n", "ok   done 3s\n",
-    "FAILED to connect\nERROR: tests/x.py\n", "Tests: pending\n",
+def test_a_passing_report_is_not_a_failure(tmp_path):
+    passing = '<testsuites><testsuite><testcase classname="t" name="a"/><testcase classname="t" name="b"/></testsuite></testsuites>'
+    summary = parse(tmp_path, "junit-xml", passing)
+    assert summary == expected("junit-xml", 2, 0, 0, 0, [])
+    assert not test_summary.failed(summary) and not test_summary.failed(None)
+
+
+@pytest.mark.parametrize("report,text", [
+    ("junit-xml", ""), ("junit-xml", "<testsuites><testcase"), ("trx", "not xml"),
+    ("go-json", "ok  \texample.com/calc\t0.01s\n"), ("cargo-json", "test result: ok. 3 passed;\n"),
+    ("jest-json", "Tests: 1 failed, 1 total\n"), ("jest-json", "[1, 2]\n"),
 ])
-def test_unrecognized_output_has_no_summary(text):
-    assert test_summary.summarize(text) is None
-    assert not test_summary.failed(None)
+def test_text_or_malformed_reports_have_no_summary(tmp_path, report, text):
+    assert parse(tmp_path, report, text) is None
 
 
-def test_failing_names_stop_at_twenty_and_report_truncation():
-    summary = test_summary.summarize("\n".join(f"--- FAIL: Test{index} (0.00s)" for index in range(25)))
+def test_a_missing_or_oversized_report_has_no_summary(tmp_path, monkeypatch):
+    assert test_summary.summarize("junit-xml", tmp_path / "absent.xml") is None
+    monkeypatch.setattr(test_summary, "REPORT_BYTES", 64)
+    assert parse(tmp_path, "junit-xml", JUNIT) is None
+
+
+def test_failing_names_stop_at_twenty_and_report_truncation(tmp_path):
+    text = lines(*({"Action": "fail", "Package": "p", "Test": f"Test{index}"} for index in range(25)))
+    summary = parse(tmp_path, "go-json", text)
     assert summary["failed"] == 25 and summary["truncated"]
     assert summary["failing"] == [f"Test{index}" for index in range(20)]
 
 
-def test_an_overlong_name_is_left_out_and_reported_as_truncated():
+def test_an_overlong_name_is_left_out_and_reported_as_truncated(tmp_path):
     long = "Test" + "x" * test_summary.MAX_NAME_CHARS
-    summary = test_summary.summarize(f"--- FAIL: {long} (0.00s)\n--- FAIL: TestShort (0.00s)\n")
+    summary = parse(tmp_path, "go-json", lines({"Action": "fail", "Package": "p", "Test": long},
+                                               {"Action": "fail", "Package": "p", "Test": "TestShort"}))
     assert summary["failing"] == ["TestShort"] and summary["truncated"]
 
 
-def test_repeated_names_are_listed_once_and_several_runs_are_summed():
-    summary = test_summary.summarize(CARGO + CARGO.replace("tests::subtracts", "tests::divides"))
-    assert summary == expected("cargo", 2, 2, 2, None, ["tests::subtracts", "tests::divides"])
-    assert test_summary.summarize(PYTEST + PYTEST)["failing"] == ["tests/test_a.py::test_one", "tests/test_b.py"]
+def test_repeated_names_are_listed_once(tmp_path):
+    rerun = lines({"type": "test", "event": "failed", "name": "tests::subtracts"})
+    assert parse(tmp_path, "cargo-json", CARGO + rerun)["failing"] == ["tests::subtracts"]
 
 
-def test_a_failed_runner_is_reported_ahead_of_a_passing_one():
-    passing_cargo = "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n"
-    assert test_summary.summarize("3 passed in 0.01s\n" + CARGO)["framework"] == "cargo"
-    assert test_summary.summarize(passing_cargo + "3 passed in 0.01s\n")["framework"] == "pytest"
+def test_binding_substitutes_the_report_path_and_requires_it_for_file_formats(tmp_path):
+    path = tmp_path / "run.report"
+    argv, source = test_summary.bind("junit-xml", ["python3", "-m", "pytest", "--junit-xml={report}"], path)
+    assert argv == ["python3", "-m", "pytest", f"--junit-xml={path}"] and source == path
+    argv, source = test_summary.bind("go-json", ["go", "test", "-json", "./..."], path)
+    assert argv == ["go", "test", "-json", "./..."] and source is None
+    assert test_summary.bind(None, ["make"], path) == (["make"], None)
+    with pytest.raises(ValidationError, match="{report}"):
+        test_summary.bind("trx", ["dotnet", "test", "--logger", "trx"], path)
+    with pytest.raises(ValidationError, match="report format"):
+        test_summary.bind("tap", ["prove"], path)

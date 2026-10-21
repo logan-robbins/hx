@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -36,19 +37,17 @@ def payload(call='call-1', **changes):
             'tool_input': {'command': 'true'}, **changes}
 
 
+def claude_read(text, path='source'):
+    """Claude's own Read `tool_response` for a whole file (live shape, Claude Code 2.1.299)."""
+    lines = text.count('\n') + 1
+    return {'type': 'text', 'file': {'filePath': str(path), 'content': text, 'numLines': lines,
+                                     'startLine': 1, 'totalLines': lines}}
+
+
 def fire(store, run, row, event, body):
     args = ['--root', str(store.root), '--id', 'eng-001', '--continuity-run', run,
         '--continuity-launch', row['launch_id'], '--continuity-adapter', 'claude', event]
-    code = hooks.main(args,
-        stdin=StringIO(json.dumps(body)), env={})
-    from hx.file_reads import is_read
-    if code == 0 and event in {'log', 'log-failure'} and is_read(body):
-        from hx.file_read_delivery import segment_slots
-        for index in range(1, segment_slots(row['payload']['capsule'], 'eng-001')):
-            code = hooks.main([*args, '--read-segment', str(index)], stdin=StringIO(json.dumps(body)), env={})
-            if code:
-                return code
-    return code
+    return hooks.main(args, stdin=StringIO(json.dumps(body)), env={})
 
 
 def installed_command(row, adapter, event):
@@ -250,7 +249,7 @@ def test_tool_admission_serializes_with_drain(runtime):
         with ContinuityStore(store.root) as other:
             barrier.wait(timeout=5)
             try:
-                native_tools.admit(other, run, row['launch_id'], payload())
+                native_tools.admit(other, run, row['launch_id'], payload(), adapter='claude')
                 return True
             except native_tools.AdmissionDenied:
                 return False
@@ -397,7 +396,7 @@ session.dispose();
     assert tool_catalog.selection(store, row)['status'] == 'loaded'
 
 
-@pytest.mark.parametrize('adapter', ['claude', 'codex', 'pi', 'grok', 'meta'])
+@pytest.mark.parametrize('adapter', ['codex', 'pi', 'grok', 'meta'])
 def test_installed_file_broker_delivers_tail_after_truncated_native_preview(runtime, adapter):
     store, repo, run, env = runtime
     flavor(runtime, adapter)
@@ -439,7 +438,35 @@ def test_installed_file_broker_delivers_tail_after_truncated_native_preview(runt
         assert config['hooks']['PostToolUse'][0]['hooks'][0]['additionalContextLimit'] == 0
 
 
-@pytest.mark.parametrize('adapter', ['claude', 'codex', 'pi', 'grok', 'meta'])
+def test_installed_claude_read_is_the_delivery_and_shell_brokers_are_refused(runtime):
+    store, repo, run, env = runtime
+    row = submitted(runtime)
+    path = Path(repo) / 'complete.py'
+    complete = '# full source\n' * 4000 + 'def existing_capability():\n    return "tail retained"\n'
+    path.write_text(complete)
+    def invoke(event, body):
+        return subprocess.run(installed_command(row, 'claude', event), input=json.dumps(body),
+                              text=True, capture_output=True, env={'PATH': env['PATH']}, timeout=10)
+    # A shell broker's stdout is only its marker, and one hook entry cannot carry the file.
+    for call, command in [('shell-file', 'hx file-read ' + shlex.quote(str(path))),
+                          ('repo-file', 'hx repo file --namespace N --at HEAD --path complete.py')]:
+        refused = invoke('tool-start', payload(call, tool_name='Bash', tool_input={'command': command}))
+        assert refused.returncode == 2 and 'native Read tool is the complete-file delivery' in refused.stderr
+    body = payload('truncated', tool_name='Read', tool_input={'file_path': str(path)})
+    assert invoke('tool-start', body).returncode == 0
+    truncated = invoke('log', {**body, 'tool_response': claude_read('# full source\n', path)})
+    assert truncated.returncode == 0, truncated.stderr
+    assert json.loads(truncated.stdout)['hookSpecificOutput']['additionalContext'].startswith('Complete-file delivery failed')
+    assert native_tools.pending(store, row['launch_id']) == 1
+    retry = payload('complete', tool_name='Read', tool_input={'file_path': str(path)})
+    assert invoke('tool-start', retry).returncode == 0
+    delivered = invoke('log', {**retry, 'tool_response': claude_read(complete, path)})
+    assert json.loads(delivered.stdout)['hookSpecificOutput']['additionalContext'] == (
+        f'Complete file: sha256={hashlib.sha256(complete.encode()).hexdigest()}; bytes={len(complete.encode())}')
+    assert native_tools.pending(store, row['launch_id']) == 0
+
+
+@pytest.mark.parametrize('adapter', ['codex', 'pi', 'grok', 'meta'])
 def test_installed_shell_file_broker_delivers_complete_source_once(runtime, adapter):
     store, repo, run, env = runtime
     flavor(runtime, adapter)

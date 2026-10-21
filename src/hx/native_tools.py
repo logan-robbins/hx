@@ -37,7 +37,9 @@ def pending(tx, launch_id):
         AND NOT EXISTS (SELECT 1 FROM native_reads ok WHERE ok.launch_id=r.launch_id
             AND ok.session_id=r.session_id AND ok.actor_id=r.actor_id AND ok.checkpoint_id=r.checkpoint_id
             AND ok.read_key=r.read_key AND ok.success=1 AND ok.rowid>r.rowid)''', (launch_id,)).fetchone()[0]
-    return active + incomplete
+    # A material chain counts as delivered only when every part has its own receipt.
+    from .file_reads import incomplete_material
+    return active + incomplete + len(incomplete_material(tx, launch_id))
 
 
 def child(tx, run_id, session_id, event):
@@ -76,10 +78,10 @@ def _actor(tx, row, session, actor, *, admission=False):
     return found[0]
 
 
-def admit(store, run_id, launch_id, payload):
+def admit(store, run_id, launch_id, payload, *, adapter):
     """Commit ownership before allowing execution; serialize with drain/finish."""
     try:
-        _admit(store, run_id, launch_id, payload)
+        _admit(store, run_id, launch_id, payload, adapter)
     except AdmissionDenied:
         # Hosts may still emit an error result for a deliberately blocked call.
         # Retain that identity so it does not masquerade as missing capture.
@@ -93,7 +95,7 @@ def admit(store, run_id, launch_id, payload):
         raise
 
 
-def _admit(store, run_id, launch_id, payload):
+def _admit(store, run_id, launch_id, payload, adapter):
     session, actor, call, fingerprint = _identity(payload)
     snapshot = native_launch._row(store, run_id)
     if snapshot is None or snapshot["launch_id"] != launch_id:
@@ -107,6 +109,11 @@ def _admit(store, run_id, launch_id, payload):
     from . import runtime_policy
     with store.transaction() as tx:
         _, task, _ = unit_execution._run(tx, run_id)
+    from .file_read_delivery import require_native_read
+    try:
+        require_native_read(adapter, payload)
+    except ValidationError as exc:
+        raise AdmissionDenied(str(exc)) from exc
     reading = runtime_policy.inspect_call(snapshot, task['payload'], payload, root=store.root)
     if reading is not None:
         import json

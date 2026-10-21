@@ -53,12 +53,16 @@ count. The Partner has no run and is not reported.
 | meta | `null`: its Stop hook reports only the last message | successful `model_response` usage | successful `model_response` count |
 | grok | `null` | `null` | `null` |
 
-Whole source-file tools likewise return complete exact files in one logical operation. Native
-host envelopes may require automatic transport segments. Every required segment must be emitted
-before the read can settle; missing, partial or truncated results cannot authorize later work.
+Whole source-file tools likewise return complete exact files in one operation. On Claude the
+native Read result is the delivery and the hook adds only a completeness marker; Grok, Meta and
+the Partner, whose hosts cap one hook string, get automatic transport segments, every one of
+which must be emitted before the read can settle. Missing, partial or truncated results cannot
+authorize later work. Required material over the file budget is split into parts, each its own
+complete read; other work is admitted only once every part is read.
 Known file-inspection shell wrappers cannot route file reads into lossy command-output reduction.
 `hx file-read PATH` is the standalone native shell entry point when no dedicated read tool
-is available; its broker delivers the complete content before acknowledging the call.
+is available; its broker delivers the complete content before acknowledging the call. Claude
+workers have one and are refused the shell brokers.
 Search candidates, captured log deltas and isolated tool-output reduction retain their explicit
 contracts, and never establish exhaustive source absence.
 

@@ -23,7 +23,7 @@ MAX_RECIPE_BYTES = 16384
 
 def validate(recipe: dict) -> str:
     fields = {"schema_version", "id", "argv", "cwd", "inputs", "environment", "timeout_s", "max_output_bytes"}
-    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - {"source"} or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
+    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - {"source", "report"} or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
         raise ValidationError("check recipe requires schema_version=1, id, argv, cwd, inputs, environment, timeout_s, max_output_bytes")
     if len(canonical(recipe).encode()) > MAX_RECIPE_BYTES:
         raise ValidationError("check recipe exceeds 16 KiB")
@@ -57,6 +57,8 @@ def validate(recipe: dict) -> str:
             values = source.get(field, [])
             if not isinstance(values, list) or len(values) > 128 or any(not isinstance(x, str) or not x or "\0" in x for x in values):
                 raise ValidationError(f"source {field} must be a bounded string array")
+    if "report" in recipe:
+        test_summary.bind(recipe["report"], recipe["argv"], "")
     return digest(recipe)
 
 
@@ -117,8 +119,12 @@ def _stop(process):
     process.wait()
 
 
-def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, on_spawn=None):
-    """Drain one pipe in 64 KiB chunks; output overflow/timeouts cannot pass."""
+def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, on_spawn=None, report=None):
+    """Drain one pipe in 64 KiB chunks; output overflow/timeouts cannot pass.
+
+    `report` is a declared format and its bound file (None: the captured output); the file is
+    parsed once into `summary` and removed.
+    """
     started = time.monotonic()
     reason = None
     size = 0
@@ -179,9 +185,13 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
             process.stdout.close()
         target.flush()
         os.fsync(target.fileno())
-    # The one parse of captured output; tool results, check results and reduction reuse it.
-    with output.open("rb") as captured:
-        summary = test_summary.summarize_lines(line.decode("utf-8", "replace") for line in captured)
+    # The one parse of the declared report; tool results, check results and reduction reuse it.
+    summary = None
+    if report is not None:
+        report_format, report_path = report
+        summary = test_summary.summarize(report_format, report_path or output)
+        if report_path is not None:
+            Path(report_path).unlink(missing_ok=True)
     return {"exit_code": process.returncode, "duration": time.monotonic() - started,
             "reason": reason, "output_bytes": size, "child": child_observation,
             "process_group_absent": group_absent, "summary": summary}
@@ -342,8 +352,10 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
                                     claim=before["complete"] and before_env["complete"])
     if reuse is None:
         output.parent.mkdir(parents=True, exist_ok=True)
-        observed = execute(argv, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"],
-                           on_spawn=lambda process: check_artifacts.spawned(store, execution_id, process))
+        command, report = test_summary.bind(recipe.get("report"), argv, output.with_name(execution_id + ".report"))
+        observed = execute(command, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"],
+                           on_spawn=lambda process: check_artifacts.spawned(store, execution_id, process),
+                           report=(recipe["report"], report) if "report" in recipe else None)
     else:
         observed = reuse["payload"]["execution"]
     after = source_identity(cwd, recipe, child_env)

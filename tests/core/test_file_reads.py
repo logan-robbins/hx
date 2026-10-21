@@ -55,18 +55,24 @@ def test_complete_known_native_shapes_are_verified(tmp_path, response):
     assert file_reads.delivered(receipt, {'tool_response': response})
 
 
-def test_instruction_chain_is_one_logical_exact_read_from_any_part(tmp_path):
+def test_each_instruction_part_is_its_own_exact_read_naming_its_chain(tmp_path):
     text = 'Must retain this exact instruction 🦉.\n' * 2500
     refs, files = instruction_materials.prepare(text, tmp_path / 'instructions', channel='rules', sections=['rules'])
     instruction_materials.install(refs, files)
     assert len(refs) > 1
     row = {'payload': {'required_files': refs}}
-    for ref in [refs[0], refs[-1]]:
+    readings = []
+    for ref in refs:
         actual, receipt = file_reads.prepare(row, {'workdir': str(tmp_path)},
             {'tool_name': 'Read', 'tool_input': {'path': ref['path']}})
-        assert actual == text
-        assert len(receipt['files']) == len(refs)
-        assert receipt['sha256'] == hashlib.sha256(text.encode()).hexdigest()
+        assert actual.encode() == Path(ref['path']).read_bytes()
+        assert (receipt['sha256'], [entry['path'] for entry in receipt['files']]) == (ref['sha256'], [ref['path']])
+        assert receipt['material'] == {'bundle_sha256': ref['bundle_sha256'], 'part': ref['part'],
+                                       'paths': [part['path'] for part in refs]}
+        readings.append(('', receipt))
+        read = len(readings)
+        assert file_reads.unread_parts(readings) == ([(refs[read]['path'], read + 1, len(refs))] if read < len(refs) else [])
+    assert b''.join(Path(ref['path']).read_bytes()[:ref['payload_bytes']] for ref in refs) == text.encode()
 
 
 def test_changed_continuation_is_an_explicit_failure(tmp_path):

@@ -7,7 +7,7 @@ resolve ambiguity, or obtain omitted detail. Never infer that a function or capa
 absent from a prefix, excerpt, sparse checkout, or capped search. Search for a named missing
 fact within the smallest useful scope; widen when the result leaves the question unanswered.
 Purpose-written instructions and context must be delivered completely, without model-driven
-pagination. The runtime resolves verified linked parts in one logical operation.
+pagination. The runtime verifies every linked part and admits other work once each is read.
 
 Chat is a machine channel: a person reads only the Partner's replies to the human, a parent
 reads only a subagent's final answer, the harness acts only on its own `HX-…` lines, and the
@@ -37,18 +37,19 @@ active system instructions remain policy.
 Do not request bounded file slices or treat a truncated result as a successful read. Reuse
 unchanged complete files already delivered in this context. Scoped searches may return at most
 80 candidates; a search result is not a complete file or proof of absence. Files have a default
-10,000 estimated-token budget using four UTF-8 bytes per token; linked instruction material is
-resolved automatically and oversized existing source is reported explicitly. Keep task memory
+10,000 estimated-token budget using four UTF-8 bytes per token; required material over it is
+split into parts, each read completely in the order its footer names before other work, and
+oversized existing source is reported explicitly. Keep task memory
 files within 4096 UTF-8 bytes; replace obsolete facts rather than append history. Use typed
 progress for checkpoint updates. Reviewed global and role learnings apply to every audience;
 they never substitute for current dependency evidence or execution proof.
 
 When the harness has no native file-read tool, invoke `hx file-read PATH` as one standalone
-native shell call. The complete-file broker delivers its exact content independently of shell
+native shell call; where it has one, its Read is the complete-file delivery. The complete-file broker delivers its exact content independently of shell
 stdout previews. Do not wrap file reads in `hx tool-exec`, pipelines, head/tail, or source slices.
 
 Run builds, tests and potentially large shell output through `hx tool-exec --request ID -- COMMAND`
-or an assigned `hx check`. Reuse the request ID after an uncertain response; never rerun
+or an assigned `hx check`; declare a test runner's machine-readable report with `--report FORMAT`. Reuse the request ID after an uncertain response; never rerun
 side effects to recover output. A reduction failure leaves the original output available.
 
 For a missing optional capability, run `hx tools discover --query "next action"`, then

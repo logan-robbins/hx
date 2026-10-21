@@ -196,6 +196,11 @@ if [ "$mode" = exec ]; then
   if [ -n "${HX_MAX_OUTPUT_TOKENS:-}" ]; then
     export CLAUDE_CODE_MAX_OUTPUT_TOKENS="$HX_MAX_OUTPUT_TOKENS"
   fi
+  # Claude's Read is a worker's complete-file delivery. Its own token cap (25000 by default)
+  # would truncate a file hx admits, and admission already bounds every read by the threshold.
+  if [ -n "${HX_CONTEXT_THRESHOLD:-}" ]; then
+    export CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS="$HX_CONTEXT_THRESHOLD"
+  fi
   if [ -n "${HX_AUTOCOMPACT_WINDOW:-}" ]; then
     autocompact=$HX_AUTOCOMPACT_WINDOW
   fi

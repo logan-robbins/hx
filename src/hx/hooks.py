@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                     token_controls.guard(ledger, launch)
                 if event == "tool-start":
                     from .native_tools import admit
-                    admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload)
+                    admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload, adapter=adapter)
                 complete_read = None
                 broker_error = None
                 if launch and event in {'log', 'log-failure'}:
@@ -192,7 +192,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                         from .unit_execution import _run
                         with ledger.transaction() as tx:
                             _, task, _ = _run(tx, env['HX_CONTINUITY_RUN'])
-                        from .file_read_delivery import SEGMENTED_ADAPTERS, emit
+                        from .file_read_delivery import SEGMENTED_ADAPTERS, emit, native_marker
                         try:
                             if adapter in SEGMENTED_ADAPTERS:
                                 def write_segment(value):
@@ -203,7 +203,11 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                                 if complete_read is None:
                                     return 0
                             else:
-                                complete_read = broker_result(ledger, launch, task['payload'], payload)
+                                result = broker_result(ledger, launch, task['payload'], payload)
+                                if adapter == 'claude' and result is not None:
+                                    # Claude's own Read result is the delivery; the hook adds only its marker.
+                                    result = {**result, 'marker': native_marker(result, payload)}
+                                complete_read = result
                         except (HxError, OSError) as exc:
                             broker_error = str(exc)
                             payload = {**payload, 'tool_response': {'error': broker_error},
@@ -243,6 +247,10 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                         print(json.dumps({'hookSpecificOutput': {
                             'hookEventName': 'PostToolUse',
                             'additionalContext': complete_read['text']}}))
+                    elif adapter == 'claude':
+                        print(json.dumps({'hookSpecificOutput': {
+                            'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',
+                            'additionalContext': complete_read['marker']}}))
                 elif broker_error and not args.read_segment:
                     print(json.dumps({'hookSpecificOutput': {
                         'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',

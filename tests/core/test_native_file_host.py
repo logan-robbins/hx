@@ -9,38 +9,37 @@ import sys
 
 import pytest
 
-from hx.file_read_delivery import SEGMENT_CHARS, split_delivery
 from .claude_companion_fixture import transport
 
 
 @pytest.mark.skipif(not os.environ.get('HX_CLAUDE_TEST_BIN'), reason='requires explicitly selected installed Claude; loopback provider only')
 @pytest.mark.parametrize('dense_source', [False, True])
-def test_real_claude_receives_every_automatic_source_segment(tmp_path, dense_source):
+def test_real_claude_read_is_the_one_complete_body(tmp_path, dense_source):
+    # The dense source is past Claude's default 25000-token Read cap; start.sh lifts the cap to
+    # the context threshold, which bounds every admitted read.
     source = (('word ' * 40 + '\n') * 700 if dense_source else '# prefix\n' * 3500 + 'L' * 20000 + '\n' + '🦉' * 5000) + '\nTAIL_COMPLETE_SOURCE_SENTINEL\n'
     path = tmp_path / 'source.py'
     path.write_text(source)
+    data = source.encode()
+    marker = f'Complete file: sha256={hashlib.sha256(data).hexdigest()}; bytes={len(data)}'
     home = tmp_path / 'home'
     home.mkdir()
     (home / '.claude.json').write_text(json.dumps({'hasCompletedOnboarding': True,
         'projects': {str(tmp_path): {'hasTrustDialogAccepted': True}}}))
-    script = tmp_path / 'whole_file_hook.py'
-    script.write_text('''import json,sys
+    script = tmp_path / 'complete_read_hook.py'
+    script.write_text('''import hashlib,json,sys
 from pathlib import Path
+from hx.file_read_delivery import native_marker
 body=json.load(sys.stdin)
 if body.get('tool_name')!='Read': raise SystemExit(0)
 Path(sys.argv[1]+'.native-event.json').write_text(json.dumps(body))
-text=Path(sys.argv[1]).read_text()
-from hx.file_read_delivery import split_delivery
-index=int(sys.argv[2]); width=int(sys.argv[3])
-chunk=split_delivery(text)[index]
+data=Path(sys.argv[1]).read_bytes()
+result={'text':data.decode(),'receipt':{'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}}
 print(json.dumps({'hookSpecificOutput':{'hookEventName':body['hook_event_name'],
-    'additionalContext':f'HX complete source segment {index}\\n'+chunk}},ensure_ascii=False))
+    'additionalContext':native_marker(result,body)}}))
 ''')
-    chunks = split_delivery(source)
     settings = tmp_path / 'settings.json'
-    handlers = [
-        {'matcher': 'Read', 'hooks': [{'type': 'command', 'command': shlex.join([
-            sys.executable, str(script), str(path), str(index), str(SEGMENT_CHARS)])}]} for index in range(len(chunks))]
+    handlers = [{'matcher': 'Read', 'hooks': [{'type': 'command', 'command': shlex.join([sys.executable, str(script), str(path)])}]}]
     settings.write_text(json.dumps({'hooks': {'PostToolUse': handlers, 'PostToolUseFailure': handlers}}))
     blocks = [{'type': 'tool_use', 'id': 'read_complete_file', 'name': 'Read', 'input': {'file_path': str(path)}},
               {'type': 'text', 'text': 'Complete source verified.'}]
@@ -48,6 +47,7 @@ print(json.dumps({'hookSpecificOutput':{'hookEventName':body['hook_event_name'],
         env = {'PATH': os.environ.get('PATH', ''), 'HOME': str(home), 'CLAUDE_CONFIG_DIR': str(home),
                'ANTHROPIC_API_KEY': 'sk-ant-api-loopback-only', 'ANTHROPIC_BASE_URL': url,
                'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1', 'DISABLE_AUTOUPDATER': '1',
+               'CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS': '160000',
                'PYTHONPATH': str(Path(__file__).parents[2] / 'src'), 'DISABLE_TELEMETRY': '1', 'CLAUDE_CODE_ENABLE_TELEMETRY': '0'}
         result = subprocess.run([os.environ['HX_CLAUDE_TEST_BIN'], '-p', 'Read the complete source file.',
             '--model', 'claude-sonnet-4-6', '--settings', str(settings), '--setting-sources', '',
@@ -67,12 +67,12 @@ print(json.dumps({'hookSpecificOutput':{'hookEventName':body['hook_event_name'],
             for item in value:
                 yield from strings(item)
     texts = list(strings(second['messages']))
-    for index, chunk in enumerate(chunks):
-        assert any('HX complete source segment ' + str(index) + '\n' + chunk in text for text in texts), index
-    assert any('TAIL_COMPLETE_SOURCE_SENTINEL' in text for text in texts)
-    assert all('Full output saved to' not in text for text in texts if 'HX complete source segment' in text)
     native = json.loads(Path(str(path) + '.native-event.json').read_text())
-    assert native['hook_event_name'] in {'PostToolUse', 'PostToolUseFailure'}
+    assert native['hook_event_name'] == 'PostToolUse'
+    assert native['tool_response']['file']['content'] == source
+    # One body: the native Read result. The hook adds only the completeness marker.
+    assert sum(text.count('TAIL_COMPLETE_SOURCE_SENTINEL') for text in texts) == 1
+    assert sum(text.count(marker) for text in texts) == 1
 
 
 @pytest.mark.skipif(not os.environ.get('HX_CODEX_TEST_BIN'), reason='requires explicitly selected installed Codex; loopback provider only')

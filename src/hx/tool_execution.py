@@ -7,7 +7,7 @@ import os
 import uuid
 from pathlib import Path
 
-from . import checks, output_reduction, passes
+from . import checks, output_reduction, passes, test_summary
 from .continuity_store import Conflict, ContinuityStore, canonical, digest, _id
 from .errors import ValidationError
 
@@ -15,7 +15,7 @@ CAPTURE_BYTES = 1024 * 1024
 TASK_CAPTURE_BYTES = 16 * CAPTURE_BYTES
 
 
-def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
+def execute(store, run_id, request_id, argv, *, cwd=None, env=None, report=None):
     _id(request_id)
     child = dict(os.environ if env is None else env)
     if not argv or len(argv) > 128 or any(not isinstance(value, str) or not value or '\0' in value for value in argv):
@@ -24,6 +24,7 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
         raise ValidationError('tool command exceeds 16384 bytes')
     from .file_inspection import require_non_file_output
     require_non_file_output(argv)
+    test_summary.bind(report, argv, '')
     with store.transaction() as tx:
         run = passes._active_run(tx, run_id)
         if child.get('HARNESS_ID') not in {None, run['worker_id']}:
@@ -33,7 +34,7 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
         directory = (workdir / (cwd or '.')).resolve()
         if not directory.is_relative_to(workdir):
             raise ValidationError('tool execution directory must remain inside the assignment')
-        identity = digest([run['task_revision'], argv, str(directory)])
+        identity = digest([run['task_revision'], argv, str(directory), report])
         previous = tx.db.execute('SELECT * FROM tool_executions WHERE run_id=? AND request_id=?', (run_id, request_id)).fetchone()
         if previous:
             if previous['input_hash'] != identity:
@@ -51,7 +52,9 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
             tx.db.execute("INSERT INTO tool_executions VALUES(?,?,?,'running',?)", (run_id, request_id, identity, canonical({'path': str(output), 'output_bytes': CAPTURE_BYTES})))
     if result is None:
         output.parent.mkdir(parents=True, exist_ok=True)
-        observed = checks.execute(argv, directory, child, output, 60, CAPTURE_BYTES)
+        command, report_path = test_summary.bind(report, argv, output.with_name(output.name + '.report'))
+        observed = checks.execute(command, directory, child, output, 60, CAPTURE_BYTES,
+                                  report=None if report is None else (report, report_path))
         with store.transaction() as tx:
             artifact = tx.put_artifact_file(output, owner_type='tool', owner_id=run_id + ':' + request_id, slot='output', max_bytes=CAPTURE_BYTES)
             result = {**observed, 'artifact_hash': artifact, 'command': argv}
@@ -68,10 +71,12 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None):
 
 def main(argv, root, *, env=None):
     parser = argparse.ArgumentParser(prog='hx tool-exec',
-                                     epilog='example: hx tool-exec --request tests-1 -- python3 -m pytest -q')
+                                     epilog='example: hx tool-exec --request tests-1 --report junit-xml -- python3 -m pytest -q --junit-xml={report}')
     parser.add_argument('--run')
     parser.add_argument('--request', required=True)
     parser.add_argument('--cwd')
+    parser.add_argument('--report', choices=test_summary.FORMATS,
+                        help='parse this machine-readable test report; a file report is named by the {report} argument')
     parser.add_argument('--root')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -81,6 +86,6 @@ def main(argv, root, *, env=None):
         raise ValidationError('tool execution requires its planned run')
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
     with ContinuityStore(root) as store:
-        result = execute(store, run_id, args.request, command, cwd=args.cwd, env=child)
+        result = execute(store, run_id, args.request, command, cwd=args.cwd, env=child, report=args.report)
     print(canonical(result))
     return 2 if result.get('requires_read') or result.get('reason') else int(result['exit_code'] != 0)

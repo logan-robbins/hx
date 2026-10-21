@@ -64,8 +64,13 @@ boundary contract below.
 Backing material parts are at most 40,000 UTF-8 bytes (10,000 estimated tokens using four
 bytes per token, an explicit heuristic). Each part names `path`, `sha256`, `bytes`,
 `payload_sha256`, `payload_bytes`, `part`, `parts`, `next_path`, `bundle_sha256`, and
-`bundle_bytes`, plus its typed source/channel metadata. The physical NEXT/END markers and all
-part/aggregate identities are verified before automatic full reconstruction. No mandatory
+`bundle_bytes`, plus its typed source/channel metadata. Each part's physical footer names
+`part k of n` and either `Read <next_path> next` or the end; part 1 also lists every part path
+in order. A native read of one part is that part's own complete read: the broker verifies the
+whole chain's part and aggregate identities, then delivers and receipts only that part. A chain
+counts as delivered only when every part has its own complete-read receipt for the same session,
+actor and checkpoint. Until then no other operation is admitted (the denial names the next
+unread part) and the completion, reset and restart drain stays pending. No mandatory
 instruction, assignment obligation or selected required fact is sliced to satisfy a budget.
 Complete native input that cannot fit its configured context/transport budget is refused.
 When reviewed instruction sources change, the next managed boundary closes admission and
@@ -73,12 +78,21 @@ requests a drained native restart with the current compiled bundle. The run/chec
 continues only after acknowledgment of that fresh complete input. Active frozen prefixes
 are never amended in place.
 
-Explicit native source-file reads prohibit offsets/limits and resolve the whole verified
-file or instruction chain in one logical call. Host-limited transports emit deterministic
-segments without model pagination. Only all required complete segments settle a successful
-read; incomplete delivery retains an action/completion barrier and permits full retry.
+Explicit native source-file reads prohibit offsets/limits and resolve one whole verified file
+or material part per call. Claude's own Read result is the delivery: `start.sh` sets
+`CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS` to the context threshold, which bounds every admitted
+read, and the post-read hook verifies `tool_response.file.content` against the admitted bytes
+and adds only a completeness marker. Claude shows CRLF line endings as LF; the receipt hashes
+the on-disk bytes, never the native body, and the marker says the endings were shown as LF. A
+capped, paged, failed or different native result fails the delivery. Codex and Pi hooks return
+the complete verified text in one response. Grok, Meta and the Partner, whose hosts cap one
+hook string, emit deterministic transport segments, one hook entry per segment, without model
+pagination; only all segments settle a successful read. Incomplete delivery retains an
+action/completion barrier and permits full retry.
 `hx file-read PATH` provides this same complete transport through one standalone native
-shell call when the harness has no dedicated file-read tool. Managed calls return only the
+shell call when the harness has no dedicated file-read tool. Claude workers are refused both
+shell brokers (`hx file-read`, managed `hx repo file`), whose stdout is only a marker; they Read
+the file, materializing another revision with `hx repo materialize` first. Managed calls return only the
 broker marker on stdout, and the logical read settles only after post-hook complete delivery;
 pipelines and lossy command wrappers are refused. Operator/protocol `hx repo file` returns
 full exact UTF-8 source with `bytes`, `sha256`, `total_lines`, and `complete: true`; managed
@@ -359,19 +373,29 @@ Equal in-flight requests share an execution. Reuse creates a new requesting-run 
 Corruption rejects reuse. Interrupted claims remain held until owned process/group death
 is proven; absent spawn identity remains unresolved.
 
-Every bounded execution parses its captured output once (`hx.test_summary`) into `summary`:
-`{framework, passed, failed, skipped, errors, failing, truncated}` for pytest, unittest,
-jest, vitest, go test, cargo test or dotnet test, else `null`. Counts are what the runner
-printed: 0 when reported by omission, `null` when never printed. `failing` lists at most 20
-unique failed or errored names of at most 512 characters in output order; `truncated` marks
-an omitted name. `hx check` prints `receipt_id`, `check_id`, `check_version`, `exit_code`,
-`valid`, `reused`, `execution_id`, `reusable`, `reasons`, `artifact_hash`, `summary` and
-`event_id`; the `check_result` event carries the same result. The `tool_result` event carries
-the execution observation with `summary`, `artifact_hash` and `command`; `hx tool-exec` prints
-`exit_code`, `reason`, `output_bytes`, `summary`, `event_id` and the reduction. When `summary`
-reports a failure, reduction keeps chunks naming a failing test, then other diagnostics, then
-head chunks, in that order within the unchanged byte bounds and Jev contract. A summary is a
-parse of emitted text, not an execution receipt.
+A recipe may declare `report`, the runner's machine-readable format: `junit-xml` (pytest
+`--junit-xml`), `trx` (`dotnet test --logger trx`), `go-json` (`go test -json`), `cargo-json`
+(cargo `--message-format=json` with libtest `--format json`) or `jest-json` (`jest --json`,
+vitest `--reporter=json`); `hx tool-exec --report FORMAT` declares the same. A file format
+names its path with the argument placeholder `{report}`, which hx binds to a file beside the
+captured output under the root (never the checkout) and removes after parsing; the JSON
+formats read `{report}` when named, else the captured output, skipping non-JSON lines. The
+execution parses that report once (`hx.test_summary`, `xml.etree`/`json`) into `summary`:
+`{format, passed, failed, skipped, errors, failing, truncated}` counted per test, else
+`null`; text output is never parsed. `failing` lists at most 20 unique failed or errored names
+of at most 512 characters in report order; `truncated` marks an omitted name. `hx check`
+prints `receipt_id`, `check_id`, `check_version`, `exit_code`, `valid`, `reused`,
+`execution_id`, `reusable`, `reasons`, `artifact_hash`, `summary` and `event_id`; the
+`check_result` event carries the same result. The `tool_result` event carries the execution
+observation with `summary`, `artifact_hash` and `command`; `hx tool-exec` prints `exit_code`,
+`reason`, `output_bytes`, `summary`, `event_id` and the reduction. A chunk is a diagnostic
+when it names error, fail, exception, traceback, panic or assert, or holds a line starting
+`E `. When `summary` records a failure, reduction keeps chunks naming a failing test, then
+other diagnostics, then head chunks, in that order within the unchanged byte bounds. Jev
+judges surplus chunks in at most four requests; without Jev or past that budget the
+reduction keeps diagnostics, then the tail, then the head, and names the reason in
+`fallback` (`null` when Jev judged). A character split by a chunk boundary starts the next
+chunk. A summary is a parse of the runner's report, not an execution receipt.
 
 ## .NET build broker (`hx build`)
 

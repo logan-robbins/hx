@@ -33,8 +33,11 @@ def test_jev_failure_does_not_substitute_tool_guesses(configured, monkeypatch):
     def fail(*a, **kw):
         raise jev.Unavailable('timeout')
     monkeypatch.setattr(jev, 'evaluate', fail)
-    with pytest.raises(ValidationError, match='Jev decision stopped'):
-        tool_catalog.discover(store, run, 'Find documentation.')
+    result = tool_catalog.discover(store, run, 'Find documentation.')
+    assert result['suggested'] == [] and result['ranking'] == 'unavailable: timeout'
+    # The bounded catalog page stays selectable by exact ID; nothing is guessed for the caller.
+    assert [item['id'] for item in result['unranked']] == sorted(set(tool_catalog.CATALOG['claude']['optional']))[:8]
+    assert tool_catalog.discover(store, run, 'NotebookEdit')['suggested'][0]['id'] == 'NotebookEdit'
 
 
 def test_launch_loading_keeps_required_tools_and_does_not_claim_live_reload(configured):

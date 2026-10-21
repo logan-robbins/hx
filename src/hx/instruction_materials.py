@@ -1,8 +1,9 @@
-"""Exact immutable material chains consumed as one logical complete read.
+"""Exact immutable material chains, read one complete part file at a time.
 
-Each numbered physical file carries a deterministic continuation footer. The
-broker verifies every complete physical file, removes only the verified footer,
-and returns the original UTF-8 payload without model-controlled pagination.
+Each numbered physical file is at most MAX_FILE_BYTES and carries a deterministic footer
+naming its place in the chain and the part to read next. A part read verifies the whole
+chain (every part, payload and the bundle identity) and delivers that part's physical bytes;
+the reader's chain is complete only when every part has its own complete-read receipt.
 """
 from __future__ import annotations
 
@@ -19,32 +20,43 @@ def _hash(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _chunks(data, capacity):
+    """`data` in pieces of at most `capacity` bytes, never splitting a UTF-8 character."""
+    chunks = []
+    while data:
+        end = min(capacity, len(data))
+        while end < len(data) and data[end] & 0xC0 == 0x80:
+            end -= 1
+        chunks.append(data[:end])
+        data = data[end:]
+    return chunks or [b'']
+
+
 def prepare(text: str, directory: Path, **metadata):
     data = text.encode('utf-8')
     bundle_hash = _hash(data)
     directory = Path(directory) / bundle_hash
-    # Reserve footer space independently of content or the caller's path length.
-    reserve = len(str(directory).encode()) + 512
-    capacity = MAX_FILE_BYTES - reserve
-    if capacity < 4:
-        raise ValidationError('material path leaves no room for a complete part')
-    chunks = []
-    remaining = data
-    while remaining:
-        end = min(capacity, len(remaining))
-        while end < len(remaining) and remaining[end] & 0xC0 == 0x80:
-            end -= 1
-        chunks.append(remaining[:end])
-        remaining = remaining[end:]
-    chunks = chunks or [b'']
+    # Part 1's footer lists every part path, so the reserve grows with the part count until
+    # the chunking fits it; it never depends on content.
+    count = 1
+    while True:
+        reserve = (len(str(directory).encode()) + 16) * (count + 1) + 512
+        if MAX_FILE_BYTES - reserve < 4:
+            raise ValidationError('material path leaves no room for a complete part')
+        chunks = _chunks(data, MAX_FILE_BYTES - reserve)
+        if len(chunks) <= count:
+            break
+        count = len(chunks)
     paths = [directory / f'{index:04d}.md' for index in range(1, len(chunks) + 1)]
     refs, files = [], {}
     for index, (path, payload) in enumerate(zip(paths, chunks), 1):
         next_path = str(paths[index]) if index < len(paths) else None
-        continuation = f'NEXT {next_path}' if next_path else 'END OF COMPLETE MATERIAL'
+        continuation = (f'Read {next_path} next; part {index} of {len(paths)}' if next_path
+                        else f'END OF COMPLETE MATERIAL; part {index} of {len(paths)}')
+        if index == 1 and len(paths) > 1:
+            continuation += '; the parts in order: ' + ', '.join(str(part) for part in paths)
         footer = (f'\n\n<!-- HX MATERIAL {bundle_hash} PART {index}/{len(paths)}; '
-                  f'PAYLOAD BYTES {len(payload)}; {continuation}. '
-                  'The runtime resolves the complete chain in the same logical read. -->\n').encode()
+                  f'PAYLOAD BYTES {len(payload)}; {continuation}. -->\n').encode()
         physical = payload + footer
         if len(physical) > MAX_FILE_BYTES:
             raise ValidationError('complete material part exceeds the file token cap')
@@ -99,6 +111,16 @@ def read_bundle(references):
     return complete
 
 
+def read_part(references, path):
+    """One part's physical bytes and reference, after verifying the whole chain it belongs to."""
+    read_bundle(references)
+    target = Path(path).absolute()
+    reference = next((ref for ref in references if Path(ref['path']).absolute() == target), None)
+    if reference is None:
+        raise ValidationError('file is not a part of this required material chain')
+    return verify_file(reference), reference
+
+
 def install(references, files):
     for reference in references:
         path = Path(reference['path'])
@@ -122,7 +144,7 @@ def install(references, files):
 
 
 def discover_bundle(path):
-    """Discover and verify managed continuations without a model following pointers."""
+    """The verified material chain holding `path`, so a read of one part is checked against all of it."""
     target = Path(path).absolute()
     manifest = target.parent / "bundle.json"
     if target.suffix != ".md" or not manifest.is_file() or manifest.is_symlink():

@@ -105,17 +105,24 @@ def test_partner_read_prohibits_slices_and_refuses_before_oversized_source_execu
         reads.require_admitted(instance, target)
 
 
-def test_partner_material_read_resolves_all_linked_parts_in_the_same_operation(instance):
+def test_partner_material_parts_are_each_a_complete_read_gated_until_all_are_read(instance):
+    from pathlib import Path
     from hx import instruction_materials
     boundary(instance)
     text = 'Full required instruction.\n' + 'i' * 70_000 + '\nFINAL REQUIRED INSTRUCTION.\n'
     references, files = instruction_materials.prepare(text, instance / 'run/partner/source-material')
     instruction_materials.install(references, files)
-    target = references[1]['path']
-    from pathlib import Path
-    request = observation(Path(target))
-    assert reads.admit(instance, request)['receipt']['bytes'] == len(text.encode())
-    assert deliver(instance, request)[0] == text
+    first, second = (Path(ref['path']) for ref in references)
+    request = observation(second, 'P2')
+    assert reads.admit(instance, request)['receipt']['bytes'] == references[1]['bytes']
+    assert deliver(instance, request)[0] == second.read_text()
+    shell = {'session_id': 'S', 'tool_use_id': 'B', 'tool_name': 'Bash', 'tool_input': {'command': 'true'}}
+    with pytest.raises(ValidationError, match=f'read {first} next \\(part 1 of 2\\)'):
+        reads.require_delivered(instance, shell)
+    request = observation(first, 'P1')
+    reads.admit(instance, request)
+    assert deliver(instance, request)[0] == first.read_text()
+    reads.require_delivered(instance, shell)
 
 
 def test_partner_read_resolves_an_immutable_repository_file_without_local_path(instance, tmp_path):

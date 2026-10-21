@@ -188,10 +188,18 @@ def require_delivered(root, observation=None):
     if args is not None:
         return  # Independent whole reads share a capacity reservation, not a barrier.
     with locked(root):
+        complete = []
         for _, state in _records(root):
             current = _context(root, state['actor'])
             if current['generation'] == state['generation'] and state['status'] == 'admitted':
                 raise ValidationError('complete Partner file delivery is pending; no further operation is admitted')
+            if current['generation'] == state['generation'] and state['status'] == 'complete':
+                complete.append((state['actor'], state['receipt']))
+        missing = file_reads.unread_parts(complete)
+        if missing:
+            path, part, parts = missing[0]
+            raise ValidationError(f'required material is incomplete; read {path} next (part {part} of {parts}) '
+                                  'before another operation')
 
 
 def require_admitted(root, path):
