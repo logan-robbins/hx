@@ -15,7 +15,7 @@ from .errors import ValidationError
 
 
 def decide(store, run_id, policy, state, questions, *, binding=None, env=None):
-    encoded = jev.encode(state, questions)
+    encoded = jev.encode(state, questions, root=store.root)
     with store.transaction() as tx:
         run = passes._active_run(tx, run_id)
         identity = digest([jev.MODEL, policy, run_id, run['task_revision'], binding, encoded.decode()])
@@ -39,7 +39,7 @@ def decide(store, run_id, policy, state, questions, *, binding=None, env=None):
                       (request, run['task_id'], identity, canonical({'status': 'running', 'policy': policy,
                           'owner': native_processes.probe(os.getpid())['identity']})))
     try:
-        answer = jev.evaluate(state, questions, key=key)
+        answer = jev.evaluate(state, questions, key=key, root=store.root)
         result = {'status': 'complete', 'retrieval_id': request, 'policy': policy, **answer}
         with store.transaction() as tx:
             current = passes._active_run(tx, run_id)

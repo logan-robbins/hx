@@ -104,8 +104,9 @@ def execute(root, job_id, payload, body, *, protocol, tools, on_spawn, env=None,
             '--disable-slash-commands', '--no-chrome', '--max-turns', str(MAX_TURNS), '--model', payload['model'],
             '--effort', payload['effort']]
         with (home / 'pass.json').open('rb') as input_file:
+            from . import credential_mask
             return checks.execute(argv, home, child, home / 'output.json', timeout_s, output_bytes,
-                                  stdin=input_file, on_spawn=on_spawn)
+                                  mask=credential_mask.for_root(root), stdin=input_file, on_spawn=on_spawn)
 
 
 def supersede_unpaid(store, table, job_id, prompt_version):

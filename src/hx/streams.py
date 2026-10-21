@@ -152,6 +152,9 @@ def append_record(root: Path, item_id: str, stream: str, record: dict) -> int:
     Oversized records are trimmed rather than dropped: the excerpt shrinks until the line
     fits, because a stream that silently loses a record is worse than a shorter excerpt.
     """
+    from . import credential_mask
+
+    record = credential_mask.for_root(root).apply(record)
     path = stream_path(root, item_id, stream)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock = _lock_path(root, item_id, stream)

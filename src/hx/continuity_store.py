@@ -28,6 +28,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from . import credential_mask
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
@@ -358,10 +359,12 @@ class Transaction:
             close(self, task_id)
 
     def put_artifact(self, data: bytes, *, owner_type: str, owner_id: str, slot: str) -> str:
-        """Install and reference bytes in this same transaction; rollback leaves only an orphan."""
+        """Install and reference bytes in this same transaction; rollback leaves only an orphan.
+        The loaded credentials are masked first (`credential_mask`), so the hash is of what is kept."""
         self._check()
         for value in (owner_type, owner_id, slot):
             _id(value)
+        data = credential_mask.for_root(self.store.root).apply_bytes(data)
         sha = hashlib.sha256(data).hexdigest()
         path = self.store.artifacts / sha
         if path.exists():
@@ -407,7 +410,9 @@ class Transaction:
 
     def put_artifact_file(self, source: Path, *, owner_type: str, owner_id: str, slot: str,
                           max_bytes: int = 64 * 1024 * 1024) -> str:
-        """Install output from disk without loading it into memory."""
+        """Install output from disk without loading it into memory. The loaded credentials are
+        masked chunk by chunk with a carry across the chunk boundary (`credential_mask.Stream`);
+        masking keeps length, so the bound, the size and the chunk offsets are those of the file."""
         self._check()
         for value in (owner_type, owner_id, slot):
             _id(value)
@@ -418,13 +423,18 @@ class Transaction:
         try:
             hasher = hashlib.sha256()
             size = 0
+            masking = credential_mask.for_root(self.store.root).stream()
             with os.fdopen(fd, "wb") as target, Path(source).open("rb") as handle:
                 for chunk in iter(lambda: handle.read(ARTIFACT_CHUNK_BYTES), b""):
                     size += len(chunk)
                     if size > max_bytes:
                         raise ValidationError("artifact file exceeds its byte bound")
+                    chunk = masking.feed(chunk)
                     hasher.update(chunk)
                     target.write(chunk)
+                tail = masking.finish()
+                hasher.update(tail)
+                target.write(tail)
                 target.flush()
                 os.fsync(target.fileno())
             sha = hasher.hexdigest()
@@ -493,6 +503,9 @@ class Transaction:
             _id(value)
         if kind not in EVENT_KINDS:
             raise ValidationError(f"unknown event kind {kind}")
+        # The loaded credentials are masked before the body is hashed, so a repeated capture of
+        # the same observation is idempotent on what the ledger keeps.
+        payload = credential_mask.for_root(self.store.root).apply(payload)
         body = canonical(payload)
         payload_hash = hashlib.sha256(body.encode()).hexdigest()
         existing = self.db.execute("SELECT * FROM events WHERE run_id=? AND capture_key=?", (run_id, capture_key)).fetchone()

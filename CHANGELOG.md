@@ -11,6 +11,20 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- `hx.credential_mask` (issue #5, docs/fleet-throughput-plan.md P0.6a, D15): the exact
+  credentials hx loads — `seed/token`, which `start.sh` exports as `ANTHROPIC_API_KEY` or
+  `CLAUDE_CODE_OAUTH_TOKEN`; the `envfile.SEED_KEYS` providers from the environment, the
+  instance env file and `seed/`; and the Jev key — are masked by equality, never by pattern
+  (§4.3), before a ledger event is hashed and stored, before an observation or a captured
+  check/tool output becomes an artifact (the observation before its identity, the capture as it
+  leaves the pipe, and every installed file chunk by chunk with a carry across the 64 KiB
+  boundary), before a hook stream record is written, and before any Jev request is serialized
+  (`jev.encode`). Each value is also masked in its three base64 alignments. Masking keeps
+  length (`*` runs), so sizes, offsets, chunk hashes and archives stay valid; values under 16
+  characters are left alone. The set is loaded once per process from the named keys only; a
+  rotation is seen by the next process, and a capture repeated after one stays idempotent.
+  Limits: the worker's own transcript and pane log hold what it printed, and ledger rows other
+  than events (task payloads, recipes, receipts, records) are written as given.
 - `hx compose --max-tokens` defaults to 16000 (`compose.DEFAULT_MAX_TOKENS`), not 8000: a compiled
   codex/meta assignment is about 8.3 KB and is counted in bytes when no tokenizer is present, so
   the default must hold the system's own largest native delivery. The live native path still
@@ -89,6 +103,13 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- `hx content fetch` no longer redacts by pattern: `content_store.redact(text, root)` masks the
+  loaded credentials exactly and the `authorization|token|secret|password` regex is deleted (it
+  missed `ANTHROPIC_API_KEY=…`, since `\b` does not fire after `_`, and `{"token": "…"}`;
+  issue #5). `hx models` masks with the same mechanism (`*` runs, not `[redacted]`).
+  `jev.encode` and `jev.evaluate` take the instance `root`, `checks.execute` takes the
+  instance mask, `observer.encode_observation` takes `root`, and `envfile.SEED_KEYS` is public.
+  `jev` imports `httpx` only when it calls. Nothing to do for an existing instance.
 - Claude's native Read is the whole-file delivery (docs/fleet-throughput-plan.md P0.5, D5). A
   live check with the real Claude Code 2.1.299 binary against a recording Messages API showed
   the native Read body stayed in the next request alongside hx's hook segments, so every

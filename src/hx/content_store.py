@@ -439,16 +439,12 @@ def search(root, queries: list[str], *, limit=3, source=None, content_type=None,
 
 # --- fetch --------------------------------------------------------------------------------------
 
-_SECRET_RE = re.compile(
-    r"(?i)\b(authorization|api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|token|secret|password|passwd)\b"
-    r"(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;\"']+)")
-_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+/=]+")
+def redact(text: str, root) -> str:
+    """Mask the exact credentials hx loaded for this instance (`credential_mask`); nothing is
+    redacted by pattern (fleet plan §4.3)."""
+    from . import credential_mask
 
-
-def redact(text: str) -> str:
-    """Mask values of authorization/token/secret/password/api_key-style patterns."""
-    text = _BEARER_RE.sub("Bearer ***", text)
-    return _SECRET_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}***", text)
+    return credential_mask.for_root(root).apply(text)
 
 
 def _ip_blocked(ip_str: str, strict: bool) -> bool:
@@ -567,7 +563,7 @@ def fetch_and_index(root, url: str, source=None, *, ttl_ms=86400000, force=False
     text = raw.decode(errors="ignore")
     if "html" in ctype or text.lstrip()[:20].lower().startswith(("<!doctype", "<html")):
         text = _html_to_markdown(text)
-    text = redact(text)
+    text = redact(text, root)
     result = _store(root, label, chunk_markdown(text), _sha(text), url=url)
     result["cached"] = False
     result["url"] = url

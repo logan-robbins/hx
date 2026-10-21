@@ -14,7 +14,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import check_artifacts, fingerprints, test_summary
+from . import check_artifacts, credential_mask, fingerprints, test_summary
 from .continuity_store import ContinuityStore, Conflict, _id, canonical, digest
 from .errors import ValidationError
 
@@ -119,15 +119,19 @@ def _stop(process):
     process.wait()
 
 
-def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, on_spawn=None, report=None):
+def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, mask=None, stdin=None, on_spawn=None, report=None):
     """Drain one pipe in 64 KiB chunks; output overflow/timeouts cannot pass.
 
-    `report` is a declared format and its bound file (None: the captured output); the file is
-    parsed once into `summary` and removed.
+    `mask` is the instance's `credential_mask.Mask`: captured output is masked as it leaves the
+    pipe, with a carry across chunks, so the file on disk never holds a loaded credential. Only
+    output that is read back in memory and never installed may omit it. `report` is a declared
+    format and its bound file (None: the captured output); the file is parsed once into
+    `summary` and removed.
     """
     started = time.monotonic()
     reason = None
     size = 0
+    masking = (mask if mask is not None else credential_mask.Mask(())).stream()
     child_observation = None
     group_absent = False
     with output.open("xb") as target:
@@ -157,7 +161,7 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
                             selected.unregister(key.fileobj)
                             break
                         available = max_bytes - size
-                        target.write(chunk[:available])
+                        target.write(masking.feed(chunk[:available]))
                         size += min(len(chunk), available)
                         if len(chunk) > available:
                             reason = "output_limit"
@@ -183,6 +187,7 @@ def execute(argv, cwd, env, output: Path, timeout_s, max_bytes, *, stdin=None, o
             raise
         finally:
             process.stdout.close()
+        target.write(masking.finish())
         target.flush()
         os.fsync(target.fileno())
     # The one parse of the declared report; tool results, check results and reduction reuse it.
@@ -354,6 +359,7 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
         output.parent.mkdir(parents=True, exist_ok=True)
         command, report = test_summary.bind(recipe.get("report"), argv, output.with_name(execution_id + ".report"))
         observed = execute(command, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"],
+                           mask=credential_mask.for_root(store.root),
                            on_spawn=lambda process: check_artifacts.spawned(store, execution_id, process),
                            report=(recipe["report"], report) if "report" in recipe else None)
     else:

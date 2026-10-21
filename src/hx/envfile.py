@@ -13,7 +13,7 @@ from .store import atomic_write_json
 
 AUTH_CONFIG = "config/auth.json"
 _KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-_SEED_KEYS = {
+SEED_KEYS = {
     "codex-token": ("OPENAI_API_KEY",),
     "grok-token": ("XAI_API_KEY", "GROK_API_KEY"),
     "meta-token": ("META_API_KEY",),
@@ -68,7 +68,7 @@ def sync_seed(root: Path) -> None:
     if not path:
         return
     values = parse(Path(path))
-    mapping = dict(_SEED_KEYS)
+    mapping = dict(SEED_KEYS)
     mapping["token"] = ("ANTHROPIC_API_KEY",)
     seed = root / "seed"
     seed.mkdir(parents=True, exist_ok=True)

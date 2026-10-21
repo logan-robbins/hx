@@ -252,18 +252,23 @@ def spool_size(store: ContinuityStore) -> int:
     return inline + artifacts
 
 
-def encode_observation(*, session_id: str, event: Event, fallback_identity: tuple) -> tuple[str, dict, bytes]:
-    """Shared native/log identity and artifact representation for a public event."""
+def encode_observation(*, session_id: str, event: Event, fallback_identity: tuple, root) -> tuple[str, dict, bytes]:
+    """Shared native/log identity and artifact representation for a public event. The loaded
+    credentials are masked first, so the observation hash, the capture key, the event payload
+    and the artifact all describe what the ledger keeps (`credential_mask`)."""
+    from . import credential_mask
+
     identity = ("native", session_id, event.kind, event.native_id) if event.native_id else fallback_identity
     # The immutable observation includes the decoder's public data only. Hook and
     # transcript observations with complementary fields keep distinct payloads,
     # linked by logical_id; reducers merge their evidence without guessing equality.
     logical_id = digest(identity)
-    observation = {"schema_version": 1, "kind": event.kind, "data": event.data, "usage": event.usage}
+    observation = credential_mask.for_root(root).apply(
+        {"schema_version": 1, "kind": event.kind, "data": event.data, "usage": event.usage})
     # Keep exact inspected paths available even when bulky output becomes an
     # artifact. Map discovery must not decode the entire result to recover them.
     paths = []
-    args = event.data.get('tool_input') if isinstance(event.data, dict) else None
+    args = observation["data"].get('tool_input') if isinstance(observation["data"], dict) else None
     if isinstance(args, dict):
         paths = [args[key] for key in ('path', 'file_path', 'filePath', 'target_file')
                  if isinstance(args.get(key), str) and len(args[key].encode()) <= 1024]
@@ -291,7 +296,7 @@ def encode_observation(*, session_id: str, event: Event, fallback_identity: tupl
 def append_observation(tx, *, run_id: str, stream_id: str, session_id: str,
                        event: Event, fallback_identity: tuple) -> dict:
     capture_key, payload, encoded = encode_observation(session_id=session_id, event=event,
-                                                      fallback_identity=fallback_identity)
+                                                      fallback_identity=fallback_identity, root=tx.store.root)
     if payload['evidence_scope'] == 'whole_file':
         from .evidence import verified_source
         try:

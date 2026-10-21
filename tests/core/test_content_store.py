@@ -89,14 +89,23 @@ def test_directory_index(tmp_path):
     assert out["alphakeyword"]
 
 
-def test_redact_masks_secrets(tmp_path):
-    text = "password: hunter2 api_key=abc123secret Authorization: Bearer xyz789 token = tok123"
-    out = cs.redact(text)
-    assert "hunter2" not in out
-    assert "abc123secret" not in out
-    assert "xyz789" not in out
-    assert "tok123" not in out
-    assert "***" in out
+def test_redact_masks_the_loaded_credentials_and_nothing_by_pattern(tmp_path):
+    """Issue #5, fleet plan §4.3: equality on the values hx loaded for this instance, no
+    `password:`/`token =` patterns. The pattern missed `ANTHROPIC_API_KEY=…` anyway."""
+    from hx import credential_mask
+
+    token = "sk-ant-oat01-content-store-fixture-" + "c" * 40
+    (tmp_path / "seed").mkdir()
+    (tmp_path / "seed" / "token").write_text(token + "\n")
+    credential_mask.reset()
+    try:
+        text = f"password: hunter2 Authorization: Bearer {token} ANTHROPIC_API_KEY={token} token = tok123"
+        out = cs.redact(text, tmp_path)
+    finally:
+        credential_mask.reset()
+    assert token not in out and len(out) == len(text)
+    assert out.count("*" * len(token)) == 2
+    assert "hunter2" in out and "tok123" in out
 
 
 def test_fetch_blocks_link_local(tmp_path):

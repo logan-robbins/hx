@@ -5,7 +5,7 @@ from hx import code_index, jev, learn
 
 
 def _fake_choice(monkeypatch, choice="testing"):
-    def evaluate(state, questions, *, key, endpoint=None, timeout=None):
+    def evaluate(state, questions, *, key, root, endpoint=None, timeout=None):
         answers = {}
         for name, question in questions.items():
             if question["type"] == "choice":

@@ -149,6 +149,7 @@ searched, not present · **✗** = a draft claim the code refutes.
 | D12 | Two FTS tables maintained on every write and never read | write cost | `code_store.py:93-108,196` |
 | D13 | tree-sitter gated to exactly 0.25.10, contrary to the no-version-pins rule | policy | `code_adapters.py:70,109` |
 | D14 | Companion spend discarded; Jev routes in the system prompt per pass | metering, cache | `checks.py:184-186`, `native_companion.py:95` |
+| D15 | Workers run with full permissions and whatever they print — an `env` dump, a verbose client log — carries the credentials hx itself loaded verbatim into the ledger, the artifacts, the hook streams and every Jev request; the one redaction is a pattern in `content_store.redact`, used by `fetch` alone, that misses `ANTHROPIC_API_KEY=…` (`\b` does not fire after `_`) and `{"token": "…"}` (issue #5) | leak | `continuity_store.py:490-514`, `jev_deltas.py:33`, `streams.py:149`, `content_store.py:442-451` |
 
 Smaller: Levenshtein over the first 5000 names (`code_snapshot.py:819`); one oversize file aborts an index; `facts.select_facts` and `runtime_policy.CONTEXT_BYTES` are dead; `hx loop --status` pages 16 runs; no test covers two worktrees at the same HEAD (`test_code_snapshots.py:202` covers different HEADs).
 
@@ -316,6 +317,27 @@ one body per read on Claude; hook count in the generated `settings.json` ≤ 8. 
 and 1 MiB per plan body; levels/groups are computed over the union of applied plans. Owner:
 `planning.py`, `dependency_packets.py`, `unit_execution.py`. Validation: cross-plan early-start
 test; validate/apply at 256 units stays < 2 s. Effort S–M.
+
+**P0.6a Mask the loaded credentials at capture and egress (D15, issue #5).** Mechanism. hx
+knows the exact values it loads — `seed/token` (exported by `start.sh` as `ANTHROPIC_API_KEY`
+or `CLAUDE_CODE_OAUTH_TOKEN`), the `envfile.SEED_KEYS` providers from the environment, the
+instance env file and `seed/`, and the Jev key — so `credential_mask` loads them once per
+process from those named keys only and replaces each literal occurrence, and its three base64
+alignments, with `*` of the same length: equality, never a pattern (§4.3), with a 16-character
+floor so a `1`, a `true` or a hostname survives. Four sinks: `append_event` before the payload
+hash (a repeated capture stays idempotent, also after a rotation); artifacts (`put_artifact`,
+`put_artifact_file` with a carry across the 64 KiB chunk boundary, the observation before its
+hash in `observer.encode_observation`, and the check/tool capture as it leaves the pipe in
+`checks.execute`); `streams.append_record`; and `jev.encode`, the one serialization point of
+every Jev caller. `content_store.redact` is the same mask and its regex is deleted. Length is
+kept so sizes, offsets and a `git archive` tar stay valid. Before P0.7: the Messages API
+companion is a new egress path and inherits the mask at `jev.encode`'s equivalent. Not
+covered: the worker's own transcript and pane log hold what it printed, and ledger rows other
+than events (task payloads, recipes, receipts, records) are written as given. Owner:
+`credential_mask.py`, `continuity_store.py`, `observer.py`, `checks.py`, `streams.py`,
+`jev.py`, `content_store.py`, `models_cmd.py`. Validation: `test_credential_mask` — the
+issue's three strings and a bare value, a value split across the chunk boundary, a short
+non-secret value, every base64 alignment, and a re-capture after rotation. Effort S.
 
 **P0.7 Script companions on the Messages API; cache-aware seams (§4.4).** Mechanism + profile,
 Claude default. (a) Build the `anthropic` transport that `config_harness.py:87-89` already
@@ -496,7 +518,8 @@ this lane plus `hx metrics --sizing` after a calibration wave, never from assert
 
 ## 7. Sequencing and sessions
 
-1. **P0.4, P0.5, P2.2** (S each): one session, one commit each; no design risk.
+1. **P0.4, P0.5, P2.2** (S each): one session, one commit each; no design risk. **P0.6a** (S)
+   follows in its own session and lands before 4: P0.7 adds an egress path.
 2. **P0.1** (M): own worktree session; touches the graph store and all readers.
 3. **P0.2 + P0.3** (M): own worktree session; the loop and the ledger openers.
 4. **P0.7** (M): own worktree session after 1 and 3; script companions and the cache-aware seam.
