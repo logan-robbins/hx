@@ -358,7 +358,8 @@ Dirty or different-source copies are refused before modification.
 ## Dependency packet plan (`schema_version: 2`)
 
 Top-level plan fields remain `schema_version`, `plan_id`, `expected_revision`, `repository`,
-`goal`, `constraints`, `tasks`. Each version-2 task has exactly:
+`goal`, `constraints`, `tasks`. A plan holds 1–256 tasks and at most 1 MiB of canonical JSON.
+Each version-2 task has exactly:
 
 ```text
 id, expected_revision, behavior, acceptance, workdir, write_paths, map_inputs,
@@ -371,7 +372,21 @@ outputs, prerequisites, resources, check_policy
 `contract`; `receipt` outputs have no `check_id`. A prerequisite is `{task_id,output_id,
 version,need}`. `need` is `hard`, `contract`, or `substitutable`. Early dependencies add
 `provider_output`, `provider_version`, and boolean `stand_in`; substitution requires true.
+A prerequisite on a unit of another applied plan in the same root adds that plan's `plan_id`
+and names the output by exact identity: the task must be a unit of that plan's head, and the
+output must be declared there at that version (an early need also at its provider version).
+A prerequisite inside the plan omits `plan_id`. Readiness refuses a producer that has since
+left the named plan.
 Only the current schema-2 dependency packet plan is accepted.
+
+`hx plan validate|apply` compute levels and parallel groups over every applied plan in the
+root, this plan's units replacing its previous head. The report lists this plan's units in
+fleet order (`dependency_levels`, `hard_dependency_levels`, `potential_parallel_groups`,
+`initial_units` = units without prerequisites) and adds `fleet`
+`{plans,units,waves,max_parallelism}` for the union. A cycle through another plan, a task ID
+another plan owns, or overlapping write scopes between independent units of this plan
+(ordering through another plan counts) is refused. `cross_plan_warnings` names units of other
+plans whose prerequisite this plan no longer declares at their version; replan those plans.
 
 Before edits, the worker submits `hx plan bind RUN --file FILE` with exactly:
 

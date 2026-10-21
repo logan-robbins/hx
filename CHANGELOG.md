@@ -11,6 +11,13 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- Plans at fleet scale (docs/fleet-throughput-plan.md P0.6; CONTRACTS.md § Dependency packet
+  plan): a prerequisite may name an output of another applied plan in the same root by exact
+  identity, `{plan_id,task_id,output_id,version,need}`. A plan holds up to 256 units (was 32)
+  and 1 MiB (was 256 KiB). `hx plan validate|apply` compute levels and parallel groups over the
+  union of applied plans and report `fleet` and `cross_plan_warnings`; integration discharge
+  re-evaluates consumers in every plan. Code freshness is proven once per worktree instead of
+  once per unit, twice: a 256-unit validate went from 29.6 s to 0.3 s.
 - `hx compose --max-tokens` defaults to 16000 (`compose.DEFAULT_MAX_TOKENS`), not 8000: a compiled
   codex/meta assignment is about 8.3 KB and is counted in bytes when no tokenizer is present, so
   the default must hold the system's own largest native delivery. The live native path still
