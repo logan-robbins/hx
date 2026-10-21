@@ -10,7 +10,26 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ## [Unreleased]
 
+### Changed
+- `check_policy` in a schema-2 plan is `{reviewer,required_checks,role}`, and
+  `config/planning.json` requires `role`: the configured seat role that executes the unit,
+  which the plan executor matches against `harness.json`. Add `role` to every plan and to
+  planning.json; a plan without it is refused. A draft request's `role` overrides the policy's.
+
 ### Added
+- The plan executor (docs/fleet-throughput-plan.md P1.1; CONTRACTS.md § Plan executor): with
+  `config/hx.json` `dispatch.auto` the application loop admits and launches ready units of
+  every applied plan onto idle seats whose role is the unit's `check_policy.role`, downstream
+  first, under box sessions shared by every root (a per-user, per-boot host ledger), a root
+  quota, a writer budget that exempts read-only units, a restore token bucket, a
+  process-growth breaker, per-role prechecks and a stale-base refusal that defer without a
+  failure, and merge backpressure at 2 × `delivery.json` `max_batch`. Launches are idempotent
+  under sha256(plan, task, revision, head); an uncertain native launch is never replayed.
+  `hx plan run PLAN [--dry-run] [--max N]` (Partner) runs one pass; `hx fleet pause|resume`
+  (operator) stops and restarts every pass. Two roots, 62 ready packets, real tmux and
+  tests/fakeclaude (tests/core/test_plan_dispatch_scale.py): ready→running p95 1 pass, zero
+  double launches, no budget exceeded; pass p50 1.9 s, pass start to live pane p50 13.6 s with
+  inline launches on a loaded 8-core box.
 - Plans at fleet scale (docs/fleet-throughput-plan.md P0.6; CONTRACTS.md § Dependency packet
   plan): a prerequisite may name an output of another applied plan in the same root by exact
   identity, `{plan_id,task_id,output_id,version,need}`. A plan holds up to 256 units (was 32)

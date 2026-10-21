@@ -125,11 +125,12 @@ class ContinuityStore:
                     if statement.strip():
                         self.db.execute(statement)
             self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-            from . import dependency_packets, check_artifacts, change_delivery, dotnet_build
+            from . import dependency_packets, check_artifacts, change_delivery, dotnet_build, plan_dispatch
             dependency_packets.initialize(self.db)
             check_artifacts.initialize(self.db)
             change_delivery.initialize(self.db)
             dotnet_build.initialize(self.db)
+            plan_dispatch.initialize(self.db)
             self.db.commit()
             self.db.execute("PRAGMA foreign_keys=ON")
         except BaseException:

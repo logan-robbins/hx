@@ -99,11 +99,12 @@ def _definition(body):
             raise ValidationError("unit write paths must contain at most 64 files/reserved prefixes")
         scope = sorted(set(write_scope(workdir, path) for path in unit["write_paths"]))
         policy = unit["check_policy"]
-        if not isinstance(policy, dict) or policy.keys() != {"reviewer", "required_checks"}:
-            raise ValidationError("packet check policy needs independent reviewer and required check IDs")
+        if not isinstance(policy, dict) or policy.keys() != {"reviewer", "required_checks", "role"}:
+            raise ValidationError("packet check policy needs independent reviewer, required check IDs, and the executing seat role")
         _id(policy["reviewer"])
-        if policy["reviewer"] == "partner":
-            raise ValidationError("packet policy reviewer must be an independent worker")
+        _id(policy["role"])
+        if "partner" in (policy["reviewer"], policy["role"]):
+            raise ValidationError("packet policy reviewer must be an independent worker and its role a worker seat role")
         if not isinstance(policy["required_checks"], list) or not 1 <= len(policy["required_checks"]) <= 16:
             raise ValidationError("packet policy requires 1–16 standard check IDs")
         for check_id in policy["required_checks"]:
@@ -450,7 +451,7 @@ def main(argv, root, *, env=None):
     parser = argparse.ArgumentParser(prog="hx plan")
     parser.add_argument("--root")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "assign", "audit", "finish", "materialize", "stop", "bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration"):
+    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "run", "assign", "audit", "finish", "materialize", "stop", "bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration"):
         examples = {
             "bind": "hx plan bind RUN_ID --file worker-checks.json",
             "binding": "hx plan binding RUN_ID",
@@ -458,13 +459,17 @@ def main(argv, root, *, env=None):
             "publish-contract": "hx plan publish-contract RUN_ID --output api --file receipts.json",
             "acquire-contract": "hx plan acquire-contract consumer --producer provider --output api --out /tmp/api-v1",
             "verify-integration": "hx plan verify-integration consumer --integration-run RUN_ID --producer provider --output api",
+            "run": "hx plan run PLAN_ID --dry-run",
         }
         command = subcommands.add_parser(action, epilog="example: " + examples[action] if action in examples else None)
         command.add_argument("--root", default=argparse.SUPPRESS)
         if action in {"unit", "assign", "materialize", "acquire-contract", "verify-integration"}:
             command.add_argument("task_id")
-        if action in {"ready", "replan"}:
+        if action in {"ready", "replan", "run"}:
             command.add_argument("plan_id")
+        if action == "run":
+            command.add_argument("--dry-run", action="store_true", help="report what one pass would admit and launch")
+            command.add_argument("--max", type=int, help="admit at most N units in this pass")
         if action == "assign":
             command.add_argument("--revision", required=True, type=int)
             command.add_argument("--worker", required=True)
@@ -533,6 +538,11 @@ def main(argv, root, *, env=None):
             result = assignment(store, args.task_id)
         elif args.command == "ready":
             result = unit_execution.ready(store, args.plan_id)
+        elif args.command == "run":
+            if args.max is not None and args.max < 1:
+                raise ValidationError("--max admits at least one unit")
+            from . import plan_dispatch
+            result = plan_dispatch.run(store, args.plan_id, env=env, dry_run=args.dry_run, maximum=args.max)
         elif args.command == "assign":
             result = unit_execution.assign(store, args.task_id, args.revision, args.worker)
         elif args.command == "audit":
