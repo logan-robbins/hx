@@ -11,6 +11,23 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Added
+- Inspected web search for Codex agents (docs/codex-search-guard.md). Codex's hosted
+  `web_search` runs inside the Responses API and fires no hook, so an optional
+  `config/codex.json` `search_guard` (`toolbox_url`, `content_safety_endpoint`, both required)
+  turns it off (`web_search = "disabled"`) and serves search as a Foundry toolbox MCP tool,
+  `mcp__foundry__web_search`: pre-approved, a 4000-token output limit, and
+  `adapters/codex/toolbox_headers.py` as its Entra `http_headers_helper`
+  (`FOUNDRY_TOOLBOX_TOKEN`, else `az`). `adapters/codex/search_guard.py` is matched to that tool
+  on every Codex agent, Partner included: `pre` denies an empty, over-400-character,
+  control-character or credential-shaped query (an unbroken 40+ character token that is not a
+  URL); `post` scans the result with Azure AI Content Safety Prompt Shields in 10K-character
+  chunks — the text, each resource's citation `_meta` (Codex 0.156.1 hands the model a
+  resource item whole) and `structuredContent` — and replaces it on an attack, a failed scan or
+  more than 60 000 characters. It always fails closed; the credential is `CONTENT_SAFETY_KEY`
+  or an `az` token, never written anywhere; `run/<id>/search-guard.jsonl` gets one line per
+  decision, credential-shaped query tokens withheld. `hx doctor` reports each Codex home's
+  search posture and fails a `search_guard` lacking a key. Proven against the installed
+  `codex exec` 0.156.1 through stubs (`HX_CODEX_TEST_BIN`); nothing has touched Azure yet.
 - `hx compose --max-tokens` defaults to 16000 (`compose.DEFAULT_MAX_TOKENS`), not 8000: a compiled
   codex/meta assignment is about 8.3 KB and is counted in bytes when no tokenizer is present, so
   the default must hold the system's own largest native delivery. The live native path still
@@ -104,6 +121,14 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   `null`, for an empty selection. Receipts already stored as valid stay valid; an existing
   instance changes nothing, and a recipe whose selection may legitimately match nothing adds
   `min_tests: 0`.
+
+- Every Codex home pins `web_search = "cached"` unless `config/codex.json` has a
+  `search_guard` (docs/codex-search-guard.md): hx launches Codex with a full-access sandbox,
+  which otherwise defaults the hosted search tool to live, and no hook sees that tool.
+  `hx doctor` fails a Codex home without it. Planned worker launches copy the package's
+  adapters and change at their next launch. A Partner on Codex runs the instance's own
+  `adapters/codex/install.sh`: delete it and rerun `hx install --skeleton-only` (which never
+  overwrites, and adds `search_guard.py` and `toolbox_headers.py`) before its next launch.
 
 - Claude's native Read is the whole-file delivery (docs/fleet-throughput-plan.md P0.5, D5). A
   live check with the real Claude Code 2.1.299 binary against a recording Messages API showed

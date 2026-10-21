@@ -238,6 +238,24 @@ def _codex_home(root: Path, home: Path, item_id: str) -> list[tuple[str, str, st
         found.append((OK, label, "hx hooks wired"))
     else:
         found.append((FAIL, label, "config.toml hooks are missing SessionStart/PostToolUse/Stop"))
+    try:  # The web search route (docs/codex-search-guard.md §4.6); _codex_instance judges the JSON.
+        guard = json.loads((root / "config" / "codex.json").read_text()).get("search_guard")
+    except (OSError, ValueError, AttributeError):
+        guard = None
+    if isinstance(guard, dict):
+        servers = config.get("mcp_servers") if isinstance(config.get("mcp_servers"), dict) else {}
+        foundry = servers.get("foundry") if isinstance(servers.get("foundry"), dict) else {}
+        matched = all(any(isinstance(group, dict) and group.get("matcher") == "mcp__foundry__web_search"
+                          for group in hooks.get(event) or []) for event in ("PreToolUse", "PostToolUse"))
+        if config.get("web_search") == "disabled" and foundry.get("url") == guard.get("toolbox_url") and matched:
+            found.append((OK, label, "web search guarded (foundry toolbox)"))
+        else:
+            found.append((FAIL, label, "config.toml does not route web search through the guarded foundry "
+                          "toolbox that config/codex.json `search_guard` names; `hx launch` rewrites it"))
+    elif config.get("web_search") == "cached":
+        found.append((OK, label, "web search cached (hosted search, unguarded)"))
+    else:
+        found.append((FAIL, label, "config.toml `web_search` is not `cached`; `hx launch` rewrites it"))
     return found
 
 
@@ -277,4 +295,10 @@ def _codex_instance(root: Path, ids: list[str]) -> list[tuple[str, str, str]]:
                 found.append((OK, "codex", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
             else:
                 found.append((FAIL, "codex", f"config/codex.json bin {binary!r} is missing or not executable"))
+            guard = body.get("search_guard") if isinstance(body, dict) else None
+            missing = [key for key in ("toolbox_url", "content_safety_endpoint") if guard is not None
+                       and not (isinstance(guard, dict) and isinstance(guard.get(key), str) and guard[key].strip())]
+            if missing:
+                found.append((FAIL, "codex", f"config/codex.json `search_guard` lacks {' and '.join(missing)}; "
+                              "install.sh refuses it"))
     return found
