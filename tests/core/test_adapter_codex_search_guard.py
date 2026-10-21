@@ -6,16 +6,10 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-from .search_guard_fixture import INJECTION, serve_shields
-
-ADAPTER = Path(__file__).resolve().parents[2] / "src" / "hx" / "skeleton" / "adapters" / "codex"
-GUARD = ADAPTER / "search_guard.py"
-#: A credential-shaped placeholder: one unbroken 50-character token.
-SECRET = "sk" + "A1b2C3d4" * 6
+from .search_guard_fixture import GUARD, INJECTION, SECRET, serve_shields
 
 
 @pytest.fixture(scope="module")
@@ -121,23 +115,34 @@ def test_post_scans_a_clean_result_once_and_notes_it_is_untrusted(guard):
     [sent] = guard.requests
     assert sent["path"] == "/contentsafety/text:shieldPrompt?api-version=2024-09-01"
     assert (sent["key"], sent["authorization"]) == ("stub-key", None)
-    assert sent["body"] == {"userPrompt": "seattle weather", "documents": ["Sunny, 18C. [1]"]}
+    document = ('Sunny, 18C. [1]\n{"annotations": [{"type": "url_citation", '
+                '"url": "https://weather.example/seattle"}]}')
+    assert sent["body"] == {"userPrompt": "seattle weather", "documents": [document]}
     [row] = guard.audit()
     assert (row["event"], row["chunks"], row["size"], row["urls"], row["prompt_attack"]) == (
-        "result_allowed", 1, 15, ["https://weather.example/seattle"], False)
+        "result_allowed", 1, len(document), ["https://weather.example/seattle"], False)
     assert "Sunny" not in guard.log.read_text(), "the audit never holds the result text"
 
 
 def test_post_reads_text_items_resource_text_and_structured_content(guard):
     response = {"content": [{"type": "text", "text": "alpha"}, {"type": "image", "data": "AAAA"},
-                            {"type": "resource", "resource": {"text": "beta"}}],
+                            {"type": "resource", "resource": {"uri": "u", "text": "beta"}}],
                 "structuredContent": {"k": "gamma"}}
     assert guard("post", hook({"search_query": "q"}, response)).returncode == 0
-    assert guard.requests[0]["body"]["documents"] == ['alpha\nbeta\n{"k": "gamma"}']
+    assert guard.requests[0]["body"]["documents"] == ['alpha\n{"type": "image", "data": "AAAA"}\nbeta\n{"k": "gamma"}']
+
+
+def test_post_scans_citation_metadata_codex_forwards_to_the_model(guard):
+    """Codex 0.156.1 hands the model a resource item whole, `_meta` included (scenario-checked)."""
+    response = toolbox_result("Sunny.", ["https://weather.example/seattle"])
+    response["content"][0]["resource"]["_meta"]["annotations"][0]["title"] = INJECTION
+    done = guard("post", hook({"search_query": "q"}, response))
+    assert json.loads(done.stdout)["decision"] == "block"
+    assert guard.requests[0]["body"]["documents"][0].startswith('Sunny.\n{"annotations": [{"type": "url_citation"')
 
 
 def test_post_scans_a_long_result_in_ten_thousand_character_chunks(guard):
-    done = guard("post", hook({"search_query": "q"}, toolbox_result("benign text. " * 2000)))
+    done = guard("post", hook({"search_query": "q"}, {"content": [{"type": "text", "text": "benign text. " * 2000}]}))
     assert "(3 chunks)" in json.loads(done.stdout)["hookSpecificOutput"]["additionalContext"]
     assert [len(sent["body"]["documents"][0]) for sent in guard.requests] == [10_000, 10_000, 6_000]
 
@@ -156,7 +161,7 @@ def test_post_blocks_an_injected_result_naming_chunk_and_sources(guard):
 
 
 def test_post_withholds_an_oversized_result_unscanned(guard):
-    done = guard("post", hook({"search_query": "q"}, toolbox_result("y" * 60_001)))
+    done = guard("post", hook({"search_query": "q"}, {"content": [{"type": "text", "text": "y" * 60_001}]}))
     assert "60001 characters, more than the 60000" in json.loads(done.stdout)["reason"]
     assert guard.requests == []
     assert [(row["event"], row["size"]) for row in guard.audit()] == [("result_blocked", 60_001)]

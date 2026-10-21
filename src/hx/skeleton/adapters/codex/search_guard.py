@@ -85,24 +85,30 @@ def query_problem(query: str) -> str | None:
 
 
 def result_text(tool_response) -> tuple[str, list[str]]:
-    """Every text the model will read in an MCP CallToolResult, and its citation URLs."""
+    """Every text the model will read in an MCP CallToolResult, and its citation URLs.
+
+    Codex 0.156.1 hands the model a resource item whole, `_meta` with its page-chosen citation
+    titles included, so that is scanned too; any other non-text item is scanned as its JSON.
+    """
     if isinstance(tool_response, str):
         return tool_response, []
     if not isinstance(tool_response, dict):
         return json.dumps(tool_response, ensure_ascii=False), []
     parts, urls = [], []
     for item in tool_response.get("content") or []:
-        if not isinstance(item, dict):
-            continue
-        if isinstance(item.get("text"), str):
+        resource = item.get("resource") if isinstance(item, dict) else None
+        if isinstance(item, dict) and isinstance(item.get("text"), str):
             parts.append(item["text"])
-        resource = item.get("resource") if isinstance(item.get("resource"), dict) else {}
-        if isinstance(resource.get("text"), str):
+        elif isinstance(resource, dict) and isinstance(resource.get("text"), str):
             parts.append(resource["text"])
-        meta = resource.get("_meta") if isinstance(resource.get("_meta"), dict) else {}
-        for note in meta.get("annotations") or []:
-            if isinstance(note, dict) and isinstance(note.get("url"), str):
-                urls.append(note["url"])
+            meta = resource.get("_meta")
+            if meta is not None:
+                parts.append(json.dumps(meta, ensure_ascii=False))
+            for note in (meta.get("annotations") if isinstance(meta, dict) else None) or []:
+                if isinstance(note, dict) and isinstance(note.get("url"), str):
+                    urls.append(note["url"])
+        else:
+            parts.append(json.dumps(item, ensure_ascii=False))
     if tool_response.get("structuredContent") is not None:
         parts.append(json.dumps(tool_response["structuredContent"], ensure_ascii=False))
     if not parts:
