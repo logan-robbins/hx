@@ -89,6 +89,22 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- A declared test report guards receipt validity (CONTRACTS.md § Scoped check execution
+  artifacts; logan-robbins/hx#4). A recipe with `report` is invalid, whatever the exit code,
+  with `report_missing_or_unparsed` when the report is absent, over 16 MiB, malformed or not in
+  its format, `no_tests_executed` when fewer than `min_tests` tests passed, failed or errored,
+  and `report_records_failures` when it records a failed or errored test. `min_tests` is a
+  non-negative integer admitted only with `report`, default 1, part of the recipe digest; 0
+  admits a selection that may match nothing. Before this, `go test -run`, `cargo test FILTER`
+  and `dotnet test --filter` matching nothing, a runner that never wrote its report, an
+  all-skipped run and a wrapper exiting 0 over failures each produced a valid receipt, which
+  completion, dependency packets and unit admission accept as proof. `hx.test_summary` returns
+  an all-zero summary for a recognised report with no test and `null` only for an absent,
+  oversized, malformed or unrecognised one, so `hx tool-exec --report` prints zeros, not
+  `null`, for an empty selection. Receipts already stored as valid stay valid; an existing
+  instance changes nothing, and a recipe whose selection may legitimately match nothing adds
+  `min_tests: 0`.
+
 - Claude's native Read is the whole-file delivery (docs/fleet-throughput-plan.md P0.5, D5). A
   live check with the real Claude Code 2.1.299 binary against a recording Messages API showed
   the native Read body stayed in the next request alongside hx's hook segments, so every

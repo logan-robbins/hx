@@ -419,9 +419,12 @@ names its path with the argument placeholder `{report}`, which hx binds to a fil
 captured output under the root (never the checkout) and removes after parsing; the JSON
 formats read `{report}` when named, else the captured output, skipping non-JSON lines. The
 execution parses that report once (`hx.test_summary`, `xml.etree`/`json`) into `summary`:
-`{format, passed, failed, skipped, errors, failing, truncated}` counted per test, else
-`null`; text output is never parsed. `failing` lists at most 20 unique failed or errored names
-of at most 512 characters in report order; `truncated` marks an omitted name. `hx check`
+`{format, passed, failed, skipped, errors, failing, truncated}` counted per test, all zero for
+a recognised report with no test (JUnit `testsuites`/`testsuite`, TRX `TestRun`, a go test2json
+or cargo/libtest event, jest `testResults`), else `null` when the report is absent, over
+16 MiB, malformed or not in the declared format; text output is never parsed. `failing` lists
+at most 20 unique failed or errored names of at most 512 characters in report order;
+`truncated` marks an omitted name. `hx check`
 prints `receipt_id`, `check_id`, `check_version`, `exit_code`, `valid`, `reused`,
 `execution_id`, `reusable`, `reasons`, `artifact_hash`, `summary` and `event_id`; the
 `check_result` event carries the same result. The `tool_result` event carries the execution
@@ -433,7 +436,13 @@ other diagnostics, then head chunks, in that order within the unchanged byte bou
 judges surplus chunks in at most four requests; without Jev or past that budget the
 reduction keeps diagnostics, then the tail, then the head, and names the reason in
 `fallback` (`null` when Jev judged). A character split by a chunk boundary starts the next
-chunk. A summary is a parse of the runner's report, not an execution receipt.
+chunk. A declared report guards the receipt: the result is invalid, whatever the exit code,
+with `report_missing_or_unparsed` when `summary` is `null`, `no_tests_executed` when
+`passed + failed + errors` is below the recipe's `min_tests` (a non-negative integer, default 1,
+admitted only with `report`; 0 admits a selection that may match nothing, never a missing
+report) and `report_records_failures` when the report records a failed or errored test.
+`min_tests` is part of the recipe digest. Receipts stored before this rule keep their recorded
+validity. `hx tool-exec` produces no receipt; its `summary` is a parse, not a verdict.
 
 ## .NET build broker (`hx build`)
 

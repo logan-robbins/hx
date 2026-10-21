@@ -108,7 +108,9 @@ hx complete done
 ```
 
 A test run's `summary` comes only from a declared report (`junit-xml`, `trx`, `go-json`,
-`cargo-json`, `jest-json`); `{report}` names the file hx reads outside your checkout.
+`cargo-json`, `jest-json`); `{report}` names the file hx reads outside your checkout. A check
+with `report` passes only when the report parsed, at least `min_tests` (default 1) tests ran
+and none failed; `hx check` names the reason otherwise.
 
 `hx complete done` requests managed completion: drain captured/managed work, execute approved
 checks, verify current source/environment/dependencies, publish exact declared outputs,

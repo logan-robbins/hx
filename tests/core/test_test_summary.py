@@ -123,12 +123,39 @@ def test_a_passing_report_is_not_a_failure(tmp_path):
 
 
 @pytest.mark.parametrize("report,text", [
-    ("junit-xml", ""), ("junit-xml", "<testsuites><testcase"), ("trx", "not xml"),
-    ("go-json", "ok  \texample.com/calc\t0.01s\n"), ("cargo-json", "test result: ok. 3 passed;\n"),
-    ("jest-json", "Tests: 1 failed, 1 total\n"), ("jest-json", "[1, 2]\n"),
+    ("junit-xml", ""), ("junit-xml", "<testsuites><testcase"), ("junit-xml", "<report/>"),
+    ("trx", "not xml"), ("trx", "<testsuites/>"),
+    ("go-json", "ok  \texample.com/calc\t0.01s\n"), ("go-json", '{"Package": "p"}\n'),
+    ("cargo-json", "test result: ok. 3 passed;\n"), ("cargo-json", '{"name": "calc"}\n'),
+    ("jest-json", "Tests: 1 failed, 1 total\n"), ("jest-json", "[1, 2]\n"), ("jest-json", '{"numTotalTests": 0}\n'),
 ])
-def test_text_or_malformed_reports_have_no_summary(tmp_path, report, text):
+def test_text_malformed_or_unrecognised_reports_have_no_summary(tmp_path, report, text):
     assert parse(tmp_path, report, text) is None
+
+
+# Each runner's report for a selection that matched nothing.
+EMPTY = [
+    ("junit-xml", '<testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="0"/></testsuites>'),
+    ("junit-xml", '<testsuite name="surefire" tests="0"/>'),
+    ("trx", '<TestRun id="1" name="ci" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results/>'
+            '<ResultSummary outcome="Completed"><Counters total="0" executed="0"/></ResultSummary></TestRun>'),
+    ("go-json", lines({"Action": "start", "Package": "example.com/calc"},
+                      {"Action": "output", "Package": "example.com/calc", "Output": "ok  \texample.com/calc\t0.012s [no tests to run]\n"},
+                      {"Action": "pass", "Package": "example.com/calc", "Elapsed": 0.012})),
+    ("cargo-json", "   Compiling calc v0.1.0\n" + lines(
+        {"reason": "compiler-artifact", "target": {"name": "calc"}, "fresh": False},
+        {"reason": "build-finished", "success": True},
+        {"type": "suite", "event": "started", "test_count": 0},
+        {"type": "suite", "event": "ok", "passed": 0, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 3})),
+    ("jest-json", json.dumps({"numTotalTests": 0, "success": True, "testResults": []})),
+]
+
+
+@pytest.mark.parametrize("report,text", EMPTY, ids=["junit", "junit-suite-root", "trx", "go", "cargo", "jest"])
+def test_a_recognised_report_with_no_test_is_a_zero_summary_not_an_absent_one(tmp_path, report, text):
+    summary = parse(tmp_path, report, text)
+    assert summary == expected(report, 0, 0, 0, 0, [])
+    assert not test_summary.failed(summary)
 
 
 def test_a_missing_or_oversized_report_has_no_summary(tmp_path, monkeypatch):
