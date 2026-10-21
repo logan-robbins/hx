@@ -2,21 +2,14 @@
 
 The `stop`-hook seam once blocked inside `flush()` until the Companion caught
 up, and a slow companion turned the turn into a hung "running Stop hook"
-indicator — while the hook-timeout killer circled. Now: signal once, take only
-when the pane can receive `/clear` and the Companion is caught up, else append
-a `seam_waiting` watcher record and leave the marker for the next boundary.
+indicator. Now the take waits only on the pane: `/clear` goes in when it can
+receive it, else a `seam_waiting` watcher record lands and the marker stays for
+the next boundary. The Companion's last installed state is the checkpoint.
 """
 
 from __future__ import annotations
 
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def observation_only_companion(monkeypatch):
-    """Readiness tests observe Partner state without waking a live session."""
-    from hx import companion
-    monkeypatch.setattr(companion, 'wake_due', lambda *a, **kw: [])
 
 
 def _behind(instance):
@@ -112,44 +105,6 @@ def test_malicious_session_id_is_not_a_glob(instance, tmp_path, monkeypatch):
     assert not seam_marker(instance, "partner").exists()
 
 
-def test_stop_defers_while_companion_behind(instance, monkeypatch):
-    """Marker stays, a watcher record lands, nothing is pasted, hook returns."""
-    from hx import goal as goal_mod
-    from hx import hook_stop
-    from hx import companion as companion_mod
-    from hx.streams import iter_records, stream_path
-
-    monkeypatch.setattr(goal_mod, "capture_pane", lambda *a, **k: "idle\n❯ ")
-    monkeypatch.setattr(companion_mod, "is_running", lambda *a, **k: True)
-    _behind(instance)
-    marker = _touch_marker(instance)
-
-    code, _ = hook_stop.handle(
-        {"hook_event_name": "Stop", "background_tasks": []}, "partner", instance, env={})
-    assert code == 0
-    assert marker.is_file(), "not ready: the marker stays for the next boundary"
-    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
-    assert records[-1]["event"] == "seam_waiting"
-    assert records[-1]["ready"] == "behind"
-    assert records[-1]["streams"]["partner-main"][0] < records[-1]["streams"]["partner-main"][1]
-
-
-def test_partner_checkpoint_allows_seam_without_companion(instance, monkeypatch):
-    """A dead Companion cannot force the Partner into native compaction."""
-    from hx import companion as companion_mod, goal as goal_mod
-    from hx.seam import seam
-
-    monkeypatch.setattr(goal_mod, "capture_pane", lambda *a, **k: "idle\n❯ ")
-    monkeypatch.setattr(goal_mod, "paste", lambda *a, **k: True)
-    monkeypatch.setattr(companion_mod, "is_running", lambda *a, **k: False)
-    _behind(instance)
-    _touch_marker(instance)
-    (instance / "PARTNER.md").write_text("# Partner state\n")
-    result = seam(instance, "partner", env={})
-    assert result["outcome"] == "taken"
-    assert "\n## Status\n" in (instance / "PARTNER.md").read_text()
-
-
 def test_take_waits_out_an_open_menu(instance, monkeypatch):
     """A `/clear` pasted over a menu awaiting the human would nuke the question."""
     from hx import goal as goal_mod
@@ -186,15 +141,15 @@ def test_take_proceeds_when_ready(instance, monkeypatch):
     assert records[-1]["event"] == "seam"
 
 
-def test_precompact_signals_without_blocking(instance, monkeypatch):
-    """`precompact` nudges and returns even with the Companion behind."""
-    from hx import hook_compact
-    from hx import flush
-    signalled = []
-    monkeypatch.setattr(flush, 'signal', lambda root, worker, **kw: signalled.append(worker))
+def test_precompact_records_without_running_a_pass(instance, monkeypatch):
+    """`precompact` records the pending compaction and returns; the loop's next pass sees it."""
+    from hx import companion, hook_compact
+    from hx.streams import iter_records, stream_path
 
+    monkeypatch.setattr(companion, "run_pass", lambda *a, **k: pytest.fail("precompact ran a pass"))
     _behind(instance)
     code, out = hook_compact.pre(
         {"hook_event_name": "PreCompact", "trigger": "auto"}, "partner", instance, env={})
     assert (code, out) == (0, "")
-    assert signalled == ['partner']
+    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
+    assert records[-1]["event"] == hook_compact.COMPACT_PENDING

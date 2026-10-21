@@ -1,8 +1,13 @@
-"""Partner orchestration passes and native ledger companion command routing.
+"""The Partner's Companion pass, and native ledger companion command routing.
 
-The Partner's optional companion maintains its bounded conversation notes through
-an explicit tmux pass. Worker observations and semantic patches use native
-companion jobs tied to their admitted run and frozen event range.
+A Partner pass is one Messages API exchange (`companion_api.exchange`): a
+byte-stable system block (`companion/BASE.md`, the role file and this agent's
+facts), the stream's prior step state and its new records in the user turn, and
+one tool whose input is the new state. hx validates it (`stepstate.validate`),
+evicts deterministically under budget (`stepstate.evict`), stamps the cursor and
+installs it. The application loop runs due passes in its Companion slots;
+`hx flush partner` runs them inline. Worker observations and semantic patches use
+native companion jobs tied to their admitted run and frozen event range.
 """
 
 from __future__ import annotations
@@ -10,63 +15,57 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
-import time
 from pathlib import Path
 
-from . import goal as goal_mod, store, streams, timestamps
+from . import companion_api, store, streams, timestamps
 from .config_harness import HarnessConfig, load_harness
+from .continuity_store import canonical, digest
 from .errors import HxError, NotFound, Refused
 from .ids import PARTNER
 from .stepstate import InvalidState, empty, evict, load as load_state, validate
 
-#: Spec 10, verbatim: the only thing hx ever pastes into a Companion pane besides `/clear`.
-POINTER = "Companion pass: read {path} and do what it says."
-
-#: The nine keys of CONTRACTS.md plus handoff/gtm-to-build.md gtm-8. Every key is written even
-#: when its value is empty: `companion/BASE.md` evaluates the seam policy from this file alone,
-#: and a Companion that finds a key missing has to guess whether it means "never" or "you
-#: forgot". An empty value is unambiguous, and the texts define what each one means.
-PASS_TEMPLATE = """# Companion pass
-stream: {stream}
-state: {state}
-log: {log}
-from_seq: {from_seq}
-write: {write}
-retry_reason: {retry_reason}
-context_tokens: {context_tokens}
-last_seam_ts: {last_seam_ts}
-open_subagents: {open_subagents}
-"""
-
-#: How many times hx re-wakes a Companion for the same pass before giving up (spec 10).
+#: The whole first request: system, prior state, new records and the tool.
+REQUEST_BYTES = 65536
+#: A rejected state is retried once, inside the same exchange.
 MAX_ATTEMPTS = 2
+
+_STRINGS = {"type": "array", "items": {"type": "string"}}
+_SEQS = {"type": "array", "items": {"type": "integer"}}
+STATE_SCHEMA = {"type": "object", "properties": {
+    "goal": {"type": "string"}, "constraints": _STRINGS,
+    "decisions": {"type": "array", "items": {"type": "object", "properties": {
+        "d": {"type": "string"}, "why": {"type": "string"}, "ev": _SEQS}, "required": ["d", "why", "ev"]}},
+    "open_steps": {"type": "array", "items": {"type": "object", "properties": {
+        "id": {"type": "string"}, "intent": {"type": "string"}, "next": {"type": "string"}, "ev": _SEQS},
+        "required": ["id", "intent", "next", "ev"]}},
+    "closed_steps": {"type": "array", "items": {"type": "object", "properties": {
+        "id": {"type": "string"}, "outcome": {"type": "string"}, "verified": {"type": "boolean"},
+        "commit": {"type": "string"}, "ev": _SEQS}, "required": ["id", "outcome", "verified", "commit", "ev"]}},
+    "dead_ends": _STRINGS,
+    "working_set": {"type": "object", "properties": {
+        "commits": {"type": "array", "items": {"type": "object", "properties": {
+            "sha": {"type": "string"}, "msg": {"type": "string"}}}},
+        "dirty": _STRINGS,
+        "files": {"type": "array", "items": {"type": "object", "properties": {
+            "path": {"type": "string"}, "note": {"type": "string"}}, "required": ["path", "note"]}},
+        "last_failure": {"type": "string"}, "hypothesis": {"type": "string"}}},
+    "blockers": _STRINGS, "subagents_open": _STRINGS},
+    "required": ["goal", "constraints", "decisions", "open_steps", "closed_steps", "dead_ends",
+                 "working_set", "blockers", "subagents_open"]}
+TOOLS = [{"name": "submit_state",
+          "description": "Submit the new step state for this stream. hx validates it, stamps seq and "
+                         "prompt_version, and installs it; a rejected state may be resubmitted once.",
+          "input_schema": {"type": "object", "properties": {
+              "state": STATE_SCHEMA,
+              "digest": {"type": "string", "description": "Closed subagent streams only: what the subagent "
+                         "did, what it committed, and what it left open or unproven."}},
+              "required": ["state"], "additionalProperties": False}}]
 
 
 def require_partner(item_id: str) -> None:
     """File passes maintain only the orchestrator's conversation state."""
     if item_id != PARTNER:
         raise Refused('worker companions require a ledger run and native companion job')
-
-
-def companion_dir(root: Path, item_id: str) -> Path:
-    return root / "run" / item_id / "companion"
-
-
-def companion_home(root: Path, item_id: str) -> Path:
-    return root / "run" / item_id / "companion-home"
-
-
-def system_prompt_path(root: Path, item_id: str) -> Path:
-    return root / "run" / item_id / "companion-system.md"
-
-
-def pass_path(root: Path, item_id: str, stream: str) -> Path:
-    return companion_dir(root, item_id) / f"{stream}.pass.md"
-
-
-def out_path(root: Path, item_id: str, stream: str) -> Path:
-    return companion_dir(root, item_id) / f"{stream}.out.json"
 
 
 def state_path(root: Path, item_id: str, stream: str) -> Path:
@@ -77,8 +76,8 @@ def digest_path(root: Path, item_id: str, stream: str) -> Path:
     return root / "state" / item_id / f"{stream}.digest.md"
 
 
-def attempts_path(root: Path, item_id: str, stream: str) -> Path:
-    return companion_dir(root, item_id) / f"{stream}.attempts"
+def usage_path(root: Path, item_id: str) -> Path:
+    return root / "run" / item_id / "companion-usage.jsonl"
 
 
 def _sha(path: Path) -> str:
@@ -112,21 +111,15 @@ def is_disabled(root: Path, item_id: str) -> bool:
         return False
 
 
-def compose_system_prompt(root: Path, config: HarnessConfig) -> Path:
-    """`BASE.md` + the role file + the harness facts, composed once at start (spec 10, 05).
-
-    This is the cached prefix: identical on every pass for this agent, and shared as far as
-    the role file with every other Companion on this model.
-    """
+def system_prompt(root: Path, config: HarnessConfig) -> str:
+    """`BASE.md` + the role file + the agent's facts: identical on every pass, so it caches."""
     require_partner(config.id)
     base = root / "companion" / "BASE.md"
     role = root / "companion" / "roles" / f"{config.role}.md"
     for path in (base, role):
         if not path.is_file():
             raise NotFound(f"{path}: missing; the Companion's system prompt is composed from it (spec 10)")
-
-    companion = config.companion or {}
-    budget = companion.get("state_budget_tokens", 10000)
+    budget = (config.companion or {}).get("state_budget_tokens", 10000)
     facts = "\n".join([
         "## This agent",
         "",
@@ -135,72 +128,12 @@ def compose_system_prompt(root: Path, config: HarnessConfig) -> Path:
         f"- role: `{config.role}`",
         f"- model the agent runs on: `{config.model}`, effort `{config.effort}`",
         f"- state budget: {budget} tokens (about {budget * 4} characters of JSON)",
-        f"- seam policy: not before {companion.get('seam_min_context_tokens', 60000)} context "
-        f"tokens, and not more often than every {companion.get('seam_min_interval_s', 600)}s",
-        "",
-        "You read no configuration at runtime. Everything you need is above, and each pass "
-        "tells you exactly which files to read and where to write.",
         "",
     ])
-    target = system_prompt_path(root, config.id)
-    store.atomic_write_text(target, f"{base.read_text()}\n\n{role.read_text()}\n\n{facts}")
-    return target
+    return f"{base.read_text()}\n\n{role.read_text()}\n\n{facts}"
 
 
-# --- the session ------------------------------------------------------------------------------
-
-
-def window(item_id: str) -> str:
-    return f"={item_id}:companion"
-
-
-def is_running(item_id: str, env=None) -> bool:
-    from . import tmux
-
-    result = subprocess.run(
-        [*tmux.tmux_command(env), "list-windows", "-t", f"={item_id}", "-F", "#{window_name}"],
-        capture_output=True, text=True, check=False,
-    )
-    return result.returncode == 0 and "companion" in result.stdout.split()
-
-
-def launch(root: Path, item_id: str, *, env=None) -> bool:
-    """Start the Companion session. Idempotent: a live window is left alone (spec 10)."""
-    require_partner(item_id)
-    config = config_for(root, item_id)
-    if is_disabled(root, item_id):
-        raise Refused('the Partner companion is disabled in harness configuration')
-    compose_system_prompt(root, config)
-    companion_dir(root, item_id).mkdir(parents=True, exist_ok=True)
-    if is_running(item_id, env):
-        return False
-
-    from .lifecycle import run_adapter
-
-    result = run_adapter(root, "start.sh", item_id, env, extra=["--companion"])
-    if result.returncode != 0:
-        raise HxError(
-            f"companion {item_id}: start.sh --companion failed:\n{result.stdout}{result.stderr}"
-        )
-
-    # Wait for its pane before returning. A wake into a pane that has not drawn yet defers,
-    # and for the very first pass there is no later turn to pick the deferral up — the
-    # Companion's own `stop` hook is what does that, and it has not run once yet.
-    wait_until_ready(item_id, env=env)
-    return True
-
-
-def wait_until_ready(item_id: str, *, env=None) -> None:
-    """Block until the Companion pane is at its prompt. No timeout, as everywhere in hx."""
-    session = f"{item_id}:companion"
-    while True:
-        pane = goal_mod.capture_pane(session, env)
-        if pane is not None and goal_mod.pane_is_idle(pane):
-            return
-        time.sleep(0.05)
-
-
-# --- one pass ----------------------------------------------------------------------------------
+# --- streams and cursors ----------------------------------------------------------------------
 
 
 def open_streams(root: Path, item_id: str) -> list[str]:
@@ -221,10 +154,9 @@ def cursor(root: Path, item_id: str, stream: str) -> int:
 
 
 def is_caught_up(root: Path, item_id: str) -> bool:
-    """True when every stream's state `seq` equals its log head — what `hx flush` waits for.
+    """True when every stream's state `seq` equals its log head — what `hx flush` reports.
 
-    Vacuously true with no Companion: there is no cursor that could be behind,
-    so a manual `hx seam` takes instead of waiting forever.
+    Vacuously true with no Companion: there is no cursor that could be behind.
     """
     if is_disabled(root, item_id):
         return True
@@ -241,161 +173,165 @@ def open_subagent_handles(root: Path, item_id: str) -> list[str]:
     ]
 
 
-def write_pass(root: Path, item_id: str, stream: str, *, retry_reason: str = "") -> Path:
-    """The pass file: the only thing that tells the Companion what this turn is about.
-
-    The three seam-policy values are hx's to supply, so the Companion never derives anything
-    or looks outside what it was handed (handoff/gtm-to-build.md gtm-8). An empty
-    `last_seam_ts` means no seam has been taken yet, which **satisfies** the interval
-    condition: an instance that has never seamed should take its first at the first quiet
-    step close, not be blocked until one has somehow already happened.
-    """
-    require_partner(item_id)
-    state = state_path(root, item_id, stream)
-    is_main = stream == f"{item_id}-main"
-    last_seam = last_seam_ts(root, item_id)
-
-    path = pass_path(root, item_id, stream)
-    store.atomic_write_text(path, PASS_TEMPLATE.format(
-        stream=stream,
-        state=str(state) if state.is_file() else "(none yet: this is the first pass)",
-        log=str(streams.stream_path(root, item_id, stream)),
-        from_seq=cursor(root, item_id, stream),
-        write=str(out_path(root, item_id, stream)),
-        retry_reason=retry_reason,
-        context_tokens=(streams.last_context_tokens(root, item_id) or 0) if is_main else "",
-        last_seam_ts=timestamps.from_unix(last_seam) if last_seam is not None else "",
-        open_subagents=",".join(open_subagent_handles(root, item_id)) if is_main else "",
-    ))
-    return path
+def _closed(root: Path, item_id: str, stream: str) -> bool:
+    return stream != f"{item_id}-main" and streams.stream_path(root, item_id, stream).name.endswith("-closed.jsonl")
 
 
-def wake(root: Path, item_id: str, stream: str, *, retry_reason: str = "", env=None) -> str:
-    """Write the pass, clear the Companion's conversation, and point it at the file.
-
-    `/clear` first, so every pass is stateless and the system prompt is the whole of the
-    cached prefix (spec 10). Returns `pasted` or `pending`.
-
-    `pending` means the pane was mid-turn, so the pass file stays on disk and the next wake
-    — any trigger, or `hx flush` — delivers it. That is the only delivery mechanism there is.
-    """
-    path = write_pass(root, item_id, stream, retry_reason=retry_reason)
-    out_path(root, item_id, stream).unlink(missing_ok=True)
-
-    session = f"{item_id}:companion"
-    pane = goal_mod.capture_pane(session, env)
-    if pane is None:
-        raise NotFound(
-            f"{item_id}: no Companion pane; `hx companion {item_id}` starts it (spec 10)"
-        )
-    if not goal_mod.pane_is_idle(pane):
-        return "pending"
-
-    try:
-        goal_mod.paste(session, "/clear", env)
-        goal_mod.paste(session, POINTER.format(path=path), env)
-    except subprocess.CalledProcessError as exc:
-        # The window went away between the pane check and the paste (live rehearsal
-        # 2026-09-21: a Companion exiting under the caller's feet took `hx complete` down with
-        # it). The pass file stays on disk for the next wake; the caller degrades like any
-        # other missing Companion.
-        raise NotFound(f"{item_id}: the Companion pane vanished mid-wake ({exc})") from exc
-    return "pasted"
-
-
-def ingest(root: Path, item_id: str, stream: str, *, env=None) -> dict | None:
-    """Validate, stamp and install what the Companion wrote. Called from its `stop` hook.
-
-    Returns the state written, or None when the pass produced nothing usable. A failure
-    rewrites the pass with `retry_reason` and re-wakes once; a second failure leaves the
-    prior state standing, which is the rule that matters: a corrupted step state is worse
-    than a stale one (spec 10).
-    """
+def due_streams(root: Path, item_id: str, *, force: bool = False) -> list[str]:
+    """Streams with `batch_records` new records; any new record when forced or the stream closed."""
     require_partner(item_id)
     if is_disabled(root, item_id):
-        return None
-    out = out_path(root, item_id, stream)
-    if not out.is_file():
-        return None
-
-    config = config_for(root, item_id)
-    previous = cursor(root, item_id, stream)
-    head = head_seq(root, item_id, stream)
-
-    failure = None
-    candidate = None
+        return []
     try:
-        candidate = validate(json.loads(out.read_text()), previous_seq=previous)
-    except json.JSONDecodeError as exc:
-        failure = f"{out.name} is not valid JSON: {exc}"
-    except InvalidState as exc:
-        failure = str(exc)
+        batch = 1 if force else (config_for(root, item_id).companion or {}).get("batch_records", 20)
+    except NotFound:
+        return []
+    return [stream for stream in open_streams(root, item_id)
+            if head_seq(root, item_id, stream) - cursor(root, item_id, stream) >= (1 if _closed(root, item_id, stream) else batch)]
 
-    if failure is not None:
-        out.unlink(missing_ok=True)
-        if _bump_attempts(root, item_id, stream) < MAX_ATTEMPTS:
-            # Write the pass with the reason and return. The next wake — any trigger, or
-            # `hx flush` — delivers whatever pass file is sitting there. One mechanism.
-            log_problem(root, item_id, f"{stream}: {failure}; pass rewritten with the reason")
-            write_pass(root, item_id, stream, retry_reason=failure)
-        else:
-            log_problem(
-                root, item_id,
-                f"{stream}: {failure}; retried once, still bad, keeping the prior state",
-            )
-            _clear_pass(root, item_id, stream)
-        return None
 
+# --- one pass ----------------------------------------------------------------------------------
+
+
+def _records(root: Path, item_id: str, stream: str, after: int, budget: int) -> list[dict]:
+    """Whole records after the cursor, oldest first, within `budget` bytes; never a partial one."""
+    taken, used = [], 0
+    for record in streams.iter_records(streams.stream_path(root, item_id, stream)):
+        seq = record.get("seq")
+        if type(seq) is not int or seq <= after:
+            continue
+        size = len(canonical(record).encode()) + 1
+        if taken and used + size > budget:
+            break
+        taken.append(record)
+        used += size
+    return taken
+
+
+def user_turn(root: Path, item_id: str, stream: str, previous: dict | None, records: list[dict]) -> str:
+    kind = "main" if stream == f"{item_id}-main" else "subagent, closed: also submit its digest" \
+        if _closed(root, item_id, stream) else "subagent, open"
+    lines = [
+        "# Companion pass",
+        f"stream: {stream} ({kind})",
+        f"from_seq: {previous.get('seq', 0) if previous else 0}",
+        f"through_seq: {records[-1]['seq']}",
+        f"open_subagents: {','.join(open_subagent_handles(root, item_id)) if kind == 'main' else ''}",
+        "",
+        "## Current step state",
+        canonical({key: value for key, value in previous.items() if key not in ("seq", "prompt_version", "ts")})
+        if previous else "none: this is the first pass for this stream",
+        "",
+        "## New records",
+        *(canonical(record) for record in records),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def run_pass(root: Path, item_id: str, stream: str, *, env=None, timeout_s=60) -> dict:
+    """One exchange for one stream: install the validated state, or keep the prior one."""
+    require_partner(item_id)
+    root = Path(root)
+    config = config_for(root, item_id)
+    if is_disabled(root, item_id):
+        return {"status": "idle", "purpose": "partner", "stream": stream}
+    payload = companion_api.runtime(root, config, purpose="partner")
+    system = system_prompt(root, config)
+    previous = load_state(state_path(root, item_id, stream))
+    after = int((previous or {}).get("seq") or 0)
+    fixed = len(system.encode()) + len(canonical(TOOLS).encode()) + len(canonical(previous or {}).encode()) + 1024
+    records = _records(root, item_id, stream, after, max(1, REQUEST_BYTES - fixed))
+    if not records:
+        return {"status": "idle", "purpose": "partner", "stream": stream}
+    user = user_turn(root, item_id, stream, previous, records)
+    payload["request_bytes"] = REQUEST_BYTES
+    transport = companion_api.preflight(root, payload, system=system, user=user, tools=TOOLS, timeout_s=timeout_s)
+    through = records[-1]["seq"]
     budget = (config.companion or {}).get("state_budget_tokens", 10000)
-    candidate, evicted = evict(candidate, budget)
-    if evicted:
-        log_problem(root, item_id, f"{stream}: over budget, evicted {', '.join(evicted)}")
+    outcome = {"attempts": 0, "installed": None, "error": None}
 
-    # hx owns the cursor and the stamp, not the model: a Companion that forgets to move `seq`
-    # would make hx re-feed the same records forever.
-    candidate["seq"] = max(int(candidate.get("seq") or 0), head)
-    candidate["prompt_version"] = prompt_version(root, config.role)
-    candidate["ts"] = timestamps.now()
-
-    store.atomic_write_json(state_path(root, item_id, stream), candidate)
-    out.unlink(missing_ok=True)
-    _clear_pass(root, item_id, stream)
-
-    if stream == f"{item_id}-main" and seam_is_due(root, config, candidate):
-        from .hook_log import seam_marker
-
-        marker = seam_marker(root, item_id)
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.touch()
-    return candidate
-
-
-def _clear_pass(root: Path, item_id: str, stream: str) -> None:
-    pass_path(root, item_id, stream).unlink(missing_ok=True)
-    attempts_path(root, item_id, stream).unlink(missing_ok=True)
-
-
-def _bump_attempts(root: Path, item_id: str, stream: str) -> int:
-    path = attempts_path(root, item_id, stream)
-    count = 0
-    if path.is_file():
+    def handle(name, arguments):
+        if name != "submit_state":
+            return "unknown tool; use submit_state", True, False
+        outcome["attempts"] += 1
         try:
-            count = int(path.read_text().strip() or 0)
-        except ValueError:
-            count = 0
-    count += 1
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(str(count))
-    return count
+            if not isinstance(arguments, dict) or not isinstance(arguments.get("state"), dict):
+                raise InvalidState("submit_state needs a `state` object")
+            note = arguments.get("digest")
+            if note is not None and not isinstance(note, str):
+                raise InvalidState("`digest` must be a string")
+            if _closed(root, item_id, stream) and not (note or "").strip():
+                raise InvalidState("a closed subagent stream needs its `digest`")
+            candidate = validate({**arguments["state"], "seq": through}, previous_seq=after)
+        except InvalidState as exc:
+            outcome["error"] = str(exc)
+            return str(exc), True, outcome["attempts"] >= MAX_ATTEMPTS
+        candidate, evicted = evict(candidate, budget)
+        if evicted:
+            log_problem(root, item_id, f"{stream}: over budget, evicted {', '.join(evicted)}")
+        # hx owns the cursor and the stamp, not the model.
+        candidate.update(seq=through, prompt_version=prompt_version(root, config.role), ts=timestamps.now())
+        store.atomic_write_json(state_path(root, item_id, stream), candidate)
+        if note and _closed(root, item_id, stream):
+            store.atomic_write_text(digest_path(root, item_id, stream), note.strip() + "\n")
+        outcome["installed"] = candidate
+        return "installed", False, True
+
+    usage = []
+    execution = companion_api.exchange(payload, credential=transport["credential"], system=system, user=user,
+                                       tools=TOOLS, handle=handle, record=usage.append, timeout_s=timeout_s, env=env)
+    usage_path(root, item_id).parent.mkdir(parents=True, exist_ok=True)
+    with usage_path(root, item_id).open("a") as log:
+        log.write(canonical({"ts": timestamps.now(), "stream": stream, "from_seq": after, "through_seq": through,
+                             "outcome": execution["outcome"], "usage": usage}) + "\n")
+    if outcome["installed"] is None:
+        error = outcome["error"] or execution.get("error") or execution["outcome"]
+        log_problem(root, item_id, f"{stream}: pass {after}..{through} not installed ({error}); the prior state stands")
+        return {"status": "unresolved", "purpose": "partner", "stream": stream, "error": error, "execution": execution}
+    return {"status": "committed", "purpose": "partner", "stream": stream, "seq": through, "execution": execution}
+
+
+def run_due(root: Path, item_id: str, *, force: bool = False, env=None) -> list[dict]:
+    """Every due stream, one pass each. `hx flush` calls this; the loop schedules its own."""
+    return [run_pass(root, item_id, stream, env=env) for stream in due_streams(root, item_id, force=force)]
+
+
+def select(ledger, *, exclude=frozenset()):
+    """The loop's next Partner stream due a pass. A failed window waits for new records."""
+    from .application_loop import _state
+    if not (ledger.root / "config" / PARTNER / "harness.json").is_file():
+        return None
+    for stream in due_streams(ledger.root, PARTNER):
+        if (PARTNER, stream) in exclude:
+            continue
+        window = digest([stream, cursor(ledger.root, PARTNER, stream), head_seq(ledger.root, PARTNER, stream)])
+        if _state(ledger, "partner-pass:" + stream).get("window") == window:
+            continue
+        return {"agent_id": PARTNER, "key": stream, "stream_id": stream, "window": window}
+    return None
+
+
+def assess(ledger, candidate, *, env=None, own=None):
+    """Run one selected Partner pass in a loop slot; its failure sticks to its window."""
+    from .application_loop import _save
+    try:
+        result = run_pass(ledger.root, PARTNER, candidate["stream_id"], env=env)
+    except (HxError, OSError) as exc:
+        result = {"status": "unresolved", "purpose": "partner", "stream": candidate["stream_id"], "error": str(exc)}
+    if result["status"] == "unresolved":
+        _save(ledger, "partner-pass:" + candidate["stream_id"], {"window": candidate["window"], "error": result["error"]})
+    return result
+
+
+def reconcile(ledger, *, skip=lambda job_id: False):
+    """Partner passes keep no durable running rows: nothing outlives its process."""
+    return []
 
 
 def log_problem(root: Path, item_id: str, message: str) -> None:
     from .hooks import log_error
 
     log_error(root, item_id, "companion", message)
-
-
-# --- the seam policy ------------------------------------------------------------------------------
 
 
 def last_seam_ts(root: Path, item_id: str) -> float | None:
@@ -408,116 +344,11 @@ def last_seam_ts(root: Path, item_id: str) -> float | None:
     return newest
 
 
-def activity(root: Path, item_id: str) -> dict:
-    """What hx can see of this agent's Companion right now (`hx board`/`hx show`, CONTRACTS.md).
-
-    A pass file under `run/<id>/companion/` means a pass is in flight: hx wrote it and the
-    Companion has not yet produced the state that makes hx delete it. `last_state_ts` is the
-    newest `ts` hx stamped on any of this agent's step states.
-    """
-    root = Path(root)
-    passes = []
-    pass_dir = root / "run" / item_id / "companion"
-    if pass_dir.is_dir():
-        passes = sorted(pass_dir.glob("*.pass.md"))
-    in_flight = passes[0] if passes else None
-    last_ts = None
-    streams_seen = 0
-    state_dir = root / "state" / item_id
-    if state_dir.is_dir():
-        for path in state_dir.glob("*.json"):
-            streams_seen += 1
-            try:
-                ts = json.loads(path.read_text()).get("ts")
-            except (OSError, json.JSONDecodeError, AttributeError):
-                continue
-            if isinstance(ts, str) and (last_ts is None or ts > last_ts):
-                last_ts = ts
-    return {
-        "pass_in_flight": in_flight is not None,
-        "pass_stream": in_flight.name[: -len(".pass.md")] if in_flight else None,
-        "pass_since": timestamps.from_mtime(in_flight) if in_flight else None,
-        "last_state_ts": last_ts,
-        "streams": streams_seen,
-    }
-
-
-def seam_is_due(root: Path, config: HarnessConfig, state: dict) -> bool:
-    """The Partner's soft seam needs closed work, budget, interval and no children."""
-    require_partner(config.id)
-    companion = config.companion or {}
-    if not state.get("closed_steps") or state.get("subagents_open"):
-        return False
-
-    if companion.get("disabled", False):
-        return False
-    tokens = streams.last_context_tokens(root, config.id)
-    if tokens is None or tokens < companion.get("seam_min_context_tokens", 60000):
-        return False
-
-    last = last_seam_ts(root, config.id)
-    if last is not None and (time.time() - last) < companion.get("seam_min_interval_s", 600):
-        return False
-    return True
-
-
-# --- wake triggers ---------------------------------------------------------------------------------
-
-
-def streams_needing_a_pass(root: Path, item_id: str, batch: int) -> list[str]:
-    """Streams with at least `batch_records` new records, plus any closed one with no digest."""
-    due = []
-    for stream in open_streams(root, item_id):
-        if head_seq(root, item_id, stream) - cursor(root, item_id, stream) >= batch:
-            due.append(stream)
-    return due
-
-
-def wake_due(root: Path, item_id: str, *, force: bool = False, env=None) -> list[str]:
-    """Wake the Companion for every stream that needs a pass. Called from the agent's hooks.
-
-    A no-op with no Companion: writing a pass file nobody will take would leave
-    the board showing a pass in flight forever.
-    """
-    require_partner(item_id)
-    if is_disabled(root, item_id):
-        return []
-    try:
-        config = config_for(root, item_id)
-    except NotFound:
-        return []
-    if not is_running(item_id, env):
-        return []
-    batch = 1 if force else (config.companion or {}).get("batch_records", 20)
-    woken = []
-    due = set(streams_needing_a_pass(root, item_id, batch))
-    # A pass file already on disk is one the Companion has not taken yet — a retry, or one
-    # written while it was busy. Delivering it comes first.
-    waiting = {p.name.removesuffix(".pass.md") for p in companion_dir(root, item_id).glob("*.pass.md")}
-    for stream in sorted(due | waiting):
-        if out_path(root, item_id, stream).is_file():
-            continue  # it is mid-pass on this stream
-        reason = ""
-        existing = pass_path(root, item_id, stream)
-        if existing.is_file():
-            for line in existing.read_text().splitlines():
-                if line.startswith("retry_reason:"):
-                    reason = line.split(":", 1)[1].strip()
-        try:
-            wake(root, item_id, stream, retry_reason=reason, env=env)
-            woken.append(stream)
-        except NotFound:
-            return woken  # no Companion pane; nothing to wake
-    return woken
-
-
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx companion", add_help=True)
     parser.add_argument("id")
-    parser.add_argument("--wake", metavar="STREAM", default=None,
-                        help="wake the Companion for one stream")
-    parser.add_argument("--ingest", metavar="STREAM", default=None,
-                        help="validate and install what it wrote (its stop hook does this)")
+    parser.add_argument("--pass", dest="stream_pass", metavar="STREAM", default=None,
+                        help="run one Partner pass for one stream now")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     parser.add_argument("--run", help="prepare and execute a planned ledger companion pass")
     parser.add_argument("--stream", default="main")
@@ -532,9 +363,9 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     args = parser.parse_args(argv)
 
     if args.learning:
-        from .continuity_store import ContinuityStore, canonical
+        from .continuity_store import ContinuityStore
         from . import learning_companion
-        if args.wake or args.ingest or args.record or args.map_snapshot or args.map_record or (args.job and args.run):
+        if args.stream_pass or args.record or args.map_snapshot or args.map_record or (args.job and args.run):
             parser.error("learning assessment cannot use context Companion options or combine job and run")
         with ContinuityStore(root) as ledger:
             if args.job:
@@ -555,10 +386,10 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
         return 0
 
     if args.run or args.job:
-        from .continuity_store import ContinuityStore, canonical
+        from .continuity_store import ContinuityStore
         from . import native_companion
-        if args.wake or args.ingest or (args.job and args.run):
-            parser.error("native companion requests cannot use Partner wake/ingest or combine job and run")
+        if args.stream_pass or (args.job and args.run):
+            parser.error("native companion requests cannot use a Partner pass or combine job and run")
         with ContinuityStore(root) as ledger:
             if args.job:
                 from .companion_protocol import row
@@ -582,19 +413,8 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     if args.request or args.record or args.prepare_only or args.map_snapshot or args.map_record:
         parser.error("planned companion options require --run")
 
-    if args.id != "partner":
+    if args.id != PARTNER:
         parser.error("worker companions require a ledger run or job")
-
-    if args.ingest:
-        state = ingest(root, args.id, args.ingest, env=env)
-        print(f"HX-COMPANION {args.id} {args.ingest} "
-              f"{'installed seq ' + str(state['seq']) if state else 'nothing'}")
-        return 0
-    if args.wake:
-        outcome = wake(root, args.id, args.wake, env=env)
-        print(f"HX-COMPANION {args.id} {args.wake} {outcome}")
-        return 0
-
-    started = launch(root, args.id, env=env)
-    print(f"HX-COMPANION {args.id} {'started' if started else 'already running'}")
+    results = [run_pass(root, args.id, args.stream_pass, env=env)] if args.stream_pass else run_due(root, args.id, force=True, env=env)
+    print(canonical(results))
     return 0

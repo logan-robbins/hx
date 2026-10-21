@@ -227,7 +227,7 @@ def test_installed_muse_failure_reaches_ledger_through_generated_hooks(instance,
         env = {key: os.environ[key] for key in ('PATH', 'TMPDIR') if key in os.environ}
         env.update(HOME=str(tmp_path), HARNESS_ROOT=str(instance), HX_PYTHON=sys.executable,
                    PYTHONPATH=str(SRC), **identity(run, 'meta'))
-        installed = subprocess.run(['bash', str(instance / 'adapters/meta/install.sh'), '--no-companion', 'eng-001'],
+        installed = subprocess.run(['bash', str(instance / 'adapters/meta/install.sh'), 'eng-001'],
                                    env=env, text=True, capture_output=True, timeout=10)
         assert installed.returncode == 0, installed.stderr
         home = instance / 'run/eng-001/home'

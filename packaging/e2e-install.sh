@@ -144,7 +144,6 @@ hx/skeleton/config/partner/harness.json
 hx/skills/hx-partner/SKILL.md
 hx/skills/hx-fleet/SKILL.md
 hx/skills/hx-worker/SKILL.md
-hx/skills/hx-companion/SKILL.md
 hx/packaging/tested-claude-versions.json
 hx/adapter_guard.py
 hx/native_controller.py

@@ -159,10 +159,7 @@ def stop(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str
         "digest": str(digest),
     })
 
-    # Spec 10 wake trigger: a subagent stopped, so its stream is ready for a final pass.
-    from . import companion as companion_mod
-
-    companion_mod.wake_due(root, item_id, force=True, env=env)
+    # A closed stream is due its final pass at the loop's next Companion turn.
     return 0, ""
 
 

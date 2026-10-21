@@ -227,13 +227,10 @@ def test_codex_install_writes_home_and_provisions_auth(instance, tmp_path):
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
     from .conftest import installed_skills, manifest_skills
     assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
-    companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
-    assert companion.is_file()
-    assert "companion-stop" in companion.read_text()
 
 
 def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_path):
-    """The Partner may run on Codex (spec 12): partner skills, still a Claude Companion."""
+    """The Partner may run on Codex (spec 12): partner skills."""
     _codex_token(instance)
     script = instance / "adapters" / "codex" / "install.sh"
     result = subprocess.run(
@@ -256,8 +253,6 @@ def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_pat
     assert not (home / "skills" / "hx-worker").exists(), "workers get hx-worker, the Partner does not"
     from .conftest import installed_skills, manifest_skills
     assert installed_skills(home / "skills") == manifest_skills(instance, "partner")
-    companion = instance / "run" / "partner" / "companion-home" / "settings.json"
-    assert companion.is_file()
     config = tomllib.loads((home / "config.toml").read_text())
     guards = config["hooks"].get("PreToolUse", [])
     assert len(guards) == 1 and 'matcher' not in guards[0]

@@ -98,7 +98,8 @@ def json_payload(store, event_id):
 
 @pytest.mark.parametrize('historical_status', ['prepared', 'reducing'])
 def test_closed_companion_retry_returns_frozen_identity_without_refresh_or_execution(planned, monkeypatch, historical_status):
-    from hx import companion_protocol, native_companion, prompt_compiler, sidecar_process
+    from hx import companion_protocol, native_companion, prompt_compiler
+    from .companion_http import silent
     from hx.continuity_store import Conflict
     store, run, _ = planned
     job = native_companion.prepare(store, 'eng-001', run, 'main', 'historical-request')
@@ -110,11 +111,10 @@ def test_closed_companion_retry_returns_frozen_identity_without_refresh_or_execu
     expected = companion_protocol.row(store, job['job_id'])
     monkeypatch.setattr(prompt_compiler, 'build', lambda *a, **kw: pytest.fail('closed requests cannot refresh instructions'))
     monkeypatch.setattr(native_companion, '_reduce', lambda *a, **kw: pytest.fail('closed requests cannot commit a reduction'))
-    monkeypatch.setattr(sidecar_process, 'preflight', lambda *a, **kw: pytest.fail('closed requests cannot prepare a model transport'))
-    monkeypatch.setattr(sidecar_process, 'execute', lambda *a, **kw: pytest.fail('closed requests cannot spawn a model'))
+    monkeypatch.setattr(native_companion.companion_api, 'preflight', lambda *a, **kw: pytest.fail('closed requests cannot prepare a model request'))
     assert native_companion.prepare(store, 'eng-001', run, 'main', 'historical-request') == expected
     with pytest.raises(Conflict, match='different inputs'):
         native_companion.prepare(store, 'eng-001', run, 'main', 'historical-request', record_ids=('different-record',))
-    with pytest.raises(Conflict, match='active run'):
+    with silent(), pytest.raises(Conflict, match='active run'):
         native_companion.execute(store, job['job_id'])
     assert companion_protocol.row(store, job['job_id']) == expected

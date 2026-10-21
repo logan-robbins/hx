@@ -38,8 +38,6 @@ EVENTS = {
     "postcompact": 5,
     # The turn marker ships with the M4 batch (spec 13).
     "stop": 5,
-    # The Companion's own `Stop`, in its own home: it installs what the pass produced.
-    "companion-stop": 6,
     # The Partner's `PreToolUse` guard over `config/partner/guard.json`. It shipped with
     # goal eng-008, not a build-lane goal; the number only feeds the never-shown
     # "not implemented" message.
@@ -56,7 +54,7 @@ EVENTS = {
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",
-    "precompact", "postcompact", "companion-stop", "guard", "request", "log-failure", "tool-start", "message",
+    "precompact", "postcompact", "guard", "request", "log-failure", "tool-start", "message",
     "stop-failure", "stop-cancelled", "session-end", "model-response",
 )
 
@@ -72,7 +70,6 @@ _HANDLERS = {
     # Log-only, and `precompact` never blocks (spec 02, 09.1; live findings E4 and E8).
     "precompact": hook_compact.pre,
     "postcompact": hook_compact.post,
-    "companion-stop": hook_stop.companion_handle,
     # Exit 2 blocks the call; its line goes to stderr, which is what the model is shown.
     "guard": hook_guard.handle,
 }
@@ -302,8 +299,6 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
             adapter = env.get("HX_CONTINUITY_ADAPTER")
             if not launch_id or not adapter:
                 raise HxError("planned hooks require the original launch identity and adapter")
-            if event == "companion-stop":
-                raise HxError("native executor capture cannot run the Partner orchestration companion handler")
             child = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
             if child and not (payload.get("session_id") or payload.get("sessionId") or payload.get("transcript_path")):
                 from .continuity_store import digest

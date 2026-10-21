@@ -5,10 +5,7 @@ It is put on PATH, or pinned in `config/claude.json`, in place of the real binar
 
   1. records its argv, its environment and its cwd to
      `$HARNESS_ROOT/run/<id>/fake-argv.json`, so a test can assert the exact launch argv of
-     spec 17.4. A Companion launch (`HX_ROLE=companion`) writes
-     `fake-argv-companion.json` instead: it shares `run/<id>/` with the main session and
-     starts at the same moment, so one name for both was a write-write race that left the
-     file with two half-objects in it. The write is atomic for the same reason;
+     spec 17.4. The write is atomic, so a reader never sees a partial file;
   2. stays alive reading stdin on a real tmux pane, appending every pasted line to
      `$HARNESS_ROOT/run/<id>/fake-input.log`, so a test can assert what `hx goal` pasted;
   3. emits scripted hook payloads, so a test can drive `hx-hook` the way a real session
@@ -29,7 +26,6 @@ from __future__ import annotations
 import datetime
 import json
 import os
-import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -92,49 +88,6 @@ def prompt() -> None:
     sys.stdout.flush()
 
 
-def companion_pass(line: str) -> None:
-    """Play the Companion: read the pass file, write the scripted out.json, fire its hook.
-
-    `HX_FAKE_COMPANION_SCRIPT` is a JSON list; one entry is consumed per pass. An entry is
-    `{"state": {...}}` for a step state, or `{"text": "..."}` to write that verbatim (which
-    is how a test drives the invalid-output path).
-    """
-    path = pathlib.Path(line[len("Companion pass: read "):].split(" and do what it says")[0])
-    fields = {}
-    for row in path.read_text().splitlines():
-        if ":" in row and not row.startswith("#"):
-            key, _, value = row.partition(":")
-            fields[key.strip()] = value.strip()
-
-    directory = run_dir()
-    (directory / "fake-passes.log").open("a").write(json.dumps(fields) + "\n")
-
-    script_path = os.environ.get("HX_FAKE_COMPANION_SCRIPT")
-    if not script_path or not pathlib.Path(script_path).is_file():
-        return
-    responses = json.loads(pathlib.Path(script_path).read_text())
-    if not responses:
-        return
-    seen = len((directory / "fake-passes.log").read_text().splitlines()) - 1
-    response = responses[min(seen, len(responses) - 1)]
-
-    out = pathlib.Path(fields.get("write", ""))
-    if not out.parent.is_dir():
-        return
-    if "text" in response:
-        out.write_text(response["text"])
-    else:
-        out.write_text(json.dumps(response.get("state", {})))
-
-    hook_bin = os.environ.get("HX_HOOK_BIN")
-    if hook_bin:
-        subprocess.run(
-            [*hook_bin.split(), "--id", os.environ.get("HARNESS_ID", "unknown"), "companion-stop"],
-            input=json.dumps({"hook_event_name": "Stop", "session_id": "fake-companion"}),
-            capture_output=True, text=True, check=False,
-        )
-
-
 def load_script() -> list[dict]:
     path = os.environ.get("HX_FAKE_SCRIPT")
     if not path or not Path(path).is_file():
@@ -158,12 +111,8 @@ def main() -> int:
         return 0
 
     directory = run_dir()
-    # One file per role: `hx launch` starts the main session and its Companion into the same
-    # `run/<id>/`, within milliseconds of each other. Sharing one name truncated one record
-    # mid-write and left invalid JSON behind. The temp-and-rename keeps a reader from ever
-    # seeing a partial file either.
-    name = ("fake-argv-companion.json" if os.environ.get("HX_ROLE") == "companion"
-            else "fake-argv.json")
+    # The temp-and-rename keeps a reader from ever seeing a partial file.
+    name = "fake-argv.json"
     record = json.dumps(
         {
             "ts": now(),
@@ -200,10 +149,6 @@ def main() -> int:
         for entry in script:
             if entry.get("on") == line:
                 emit(entry, hooks_log)
-        if line.strip().startswith("Companion pass: read "):
-            companion_pass(line.strip())
-            prompt()
-            continue
         if line.strip() == "/fake-exit":
             break
         # `/fake-hold` leaves the pane mid-turn, with no idle prompt, the way a real session

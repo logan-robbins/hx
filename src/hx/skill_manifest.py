@@ -33,7 +33,7 @@ from .errors import ValidationError
 MANIFEST = "manifest.json"
 
 #: The audiences of TOOL_SKILL_PLAN §Inventory a skill can be written for.
-AUDIENCE_NAMES = ("operator", "partner", "worker", "subagent", "companion")
+AUDIENCE_NAMES = ("operator", "partner", "worker", "subagent")
 #: Audiences that run as a worker for the refusal lint: what they carry must not name a
 #: command the worker is refused.
 WORKER_AUDIENCES = ("worker", "subagent")
@@ -139,11 +139,10 @@ def role_of(root: Path, item_id: str) -> str:
     return str(data.get("role") or "") if isinstance(data, dict) else ""
 
 
-def for_agent(directory: Path, root: Path, item_id: str, *, companion: bool = False,
-              env=None) -> list[str]:
-    """What `install.sh` installs into `<id>`'s home (or its Companion's home)."""
+def for_agent(directory: Path, root: Path, item_id: str, *, env=None) -> list[str]:
+    """What `install.sh` installs into `<id>`'s home."""
     env = os.environ if env is None else env
-    audience = "companion" if companion else ("partner" if item_id == "partner" else "worker")
+    audience = "partner" if item_id == "partner" else "worker"
     return select(load(directory), audience=audience, role=role_of(root, item_id),
                   enabled=enabled(root))
 
@@ -340,7 +339,7 @@ def check(directory: Path, root: Path | None = None) -> list[tuple[str, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """`python -m hx.skill_manifest select --skills DIR --root ROOT --id ID [--companion]`.
+    """`python -m hx.skill_manifest select --skills DIR --root ROOT --id ID`.
 
     Prints one skill name per line: what the adapters' `install.sh` copies into a home.
     """
@@ -350,10 +349,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--skills", required=True, help="the package skills directory")
     p.add_argument("--root", required=True, help="HARNESS_ROOT")
     p.add_argument("--id", required=True, help="the agent id")
-    p.add_argument("--companion", action="store_true", help="the Companion's home instead")
     args = parser.parse_args(argv)
     try:
-        names = for_agent(Path(args.skills), Path(args.root), args.id, companion=args.companion)
+        names = for_agent(Path(args.skills), Path(args.root), args.id)
     except ValidationError as exc:
         print(f"skill_manifest: {exc.message}", file=sys.stderr)
         return 2

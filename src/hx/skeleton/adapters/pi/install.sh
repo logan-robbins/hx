@@ -4,9 +4,6 @@
 # The home is PI_CODING_AGENT_DIR for this agent. It holds settings (project trust
 # never, compaction reserve below the native window), the hx extension, skills, and
 # auth.json built from seed/pi-token. Nothing is read from ~/.pi.
-#
-# The Companion is still a Claude session. After the Pi home is written this runs
-# adapters/claude/install.sh with HX_COMPANION_ONLY=1, which needs seed/token.
 set -euo pipefail
 
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
@@ -38,12 +35,6 @@ token_file=$root/seed/pi-token
 token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
-
-if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
-  claude_token=$root/seed/token
-  [ -f "$claude_token" ] || die \
-    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
-fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -126,10 +117,6 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"
   done
-fi
-
-if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
-  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
 fi
 
 printf 'install.sh: wrote %s (Pi home, trust never, hx extension)\n' "$home/settings.json"

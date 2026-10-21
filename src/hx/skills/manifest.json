@@ -26,15 +26,6 @@
     ],
     "optional": false
   },
-  "hx-companion": {
-    "audiences": [
-      "companion"
-    ],
-    "roles": [
-      "*"
-    ],
-    "optional": false
-  },
   "hx-setup": {
     "audiences": [
       "operator"

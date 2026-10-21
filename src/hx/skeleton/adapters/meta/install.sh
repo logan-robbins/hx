@@ -9,24 +9,11 @@
 # verifiable system-prompt flag, so the invariants, the persona, the identity line
 # and the learnings arrive through the SessionStart `context` hook at every boundary. Auth is META_API_KEY from seed/meta-token, exported at
 # launch; the home holds no credentials. Nothing is read from ~/.config/muse.
-#
-# The Companion is still a Claude session. After the meta home is written this runs
-# adapters/claude/install.sh with HX_COMPANION_ONLY=1, which needs seed/token.
 set -euo pipefail
 
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 
-# `--no-companion` skips the Claude Companion home: the agent runs with
-# `companion.disabled` in its harness.json, so there is nothing to install
-# for it and no `seed/token` to require.
-companion=1
-while :; do
-  case "${1:-}" in
-    --no-companion) companion=0; shift ;;
-    *) break ;;
-  esac
-done
-[ $# -eq 1 ] || die "usage: install.sh [--no-companion] <id>"
+[ $# -eq 1 ] || die "usage: install.sh <id>"
 id=$1
 case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
@@ -53,12 +40,6 @@ token_file=$root/seed/meta-token
 token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
-
-claude_token=$root/seed/token
-if [ "$companion" = 1 ]; then
-  [ -f "$claude_token" ] || die \
-    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
-fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -145,12 +126,6 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
     rm -rf "$home/muse/skills/$want"
     cp -R "$skills_src/$want" "$home/muse/skills/$want"
   done
-fi
-
-if [ "$companion" = 1 ]; then
-  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
-else
-  printf 'install.sh: companion disabled, skipping the Claude Companion home\n'
 fi
 
 printf 'install.sh: wrote %s (Muse home, Unrestricted, hx hooks)\n' "$home/muse/settings.json"

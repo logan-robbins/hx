@@ -86,11 +86,12 @@ def _retire(tx, run_id, keep):
 
 def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="forced",
           max_tokens=8000, optional_tokens=1000, instructions="", count_tokens=None, tokenizer_id=None,
-          prompt_manifest=None):
+          prompt_manifest=None, preview=False):
     """Freeze exactly what a worker will read, without acknowledging any events.
 
     Planned mode gates on extraction and known capture lag. Native reset also
     needs its adapter's turn-boundary barrier; this function never resets a model.
+    `preview` composes the same packet and returns its size and hash, recording nothing.
     """
     _id(request_id)
     if mode not in {"forced", "planned"} or type(max_tokens) is not int or max_tokens < 1 or type(optional_tokens) is not int or not 0 <= optional_tokens <= max_tokens:
@@ -119,7 +120,7 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
             instructions, version = context_instructions(store.root, run["worker_id"], path, workdir=task["payload"]["workdir"])
             prompt_bundle = {"manifest": str(path), "version": version}
             request_hash = digest({"request": request_hash, "prompt": prompt_bundle})
-        existing = tx.db.execute("SELECT request_hash FROM context_requests WHERE run_id=? AND request_id=?", (run_id, request_id)).fetchone()
+        existing = None if preview else tx.db.execute("SELECT request_hash FROM context_requests WHERE run_id=? AND request_id=?", (run_id, request_id)).fetchone()
         if existing:
             if existing[0] != request_hash:
                 raise Conflict("checkpoint request ID was reused with different inputs")
@@ -274,6 +275,8 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
             seen.add(content)
             selected[record_id] = record["version"]
         packet = text()
+        if preview:
+            return {"bytes": len(packet.encode()), "packet_hash": digest(packet), "pending": len(pending)}
         full_bytes = len(packet.encode())
         required_files = []
         if full_bytes > instruction_materials.MAX_FILE_BYTES:

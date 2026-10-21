@@ -106,7 +106,7 @@ def _grok_token(instance: Path) -> None:
     token.chmod(0o600)
 
 
-def test_grok_install_writes_a_minimal_home_and_the_companion(instance):
+def test_grok_install_writes_a_minimal_home(instance):
     _grok_token(instance)
     script = instance / "adapters" / "grok" / "install.sh"
     result = subprocess.run(
@@ -127,9 +127,6 @@ def test_grok_install_writes_a_minimal_home_and_the_companion(instance):
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
     from .conftest import installed_skills, manifest_skills
     assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
-    companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
-    assert companion.is_file()
-    assert "companion-stop" in companion.read_text()
     assert not (home / "auth.json").exists()
 
 

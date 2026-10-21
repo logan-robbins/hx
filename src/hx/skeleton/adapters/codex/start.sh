@@ -6,8 +6,7 @@
 # and sandbox_mode danger-full-access baked into the home config.
 # --dangerously-bypass-hook-trust runs the install-time hooks without a trust
 # review, which the CLI documents for automation that already vets hook
-# sources. The Companion is not started here; lifecycle calls
-# adapters/claude/start.sh --companion for that.
+# sources.
 set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
@@ -16,7 +15,6 @@ mode=session
 while :; do
   case "${1:-}" in
     --exec) mode=exec; shift ;;
-    --companion) die "refuse: the Companion is a Claude session; start.sh --companion is adapters/claude" ;;
     *) break ;;
   esac
 done

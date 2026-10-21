@@ -1,8 +1,9 @@
-"""Partner turn boundaries and orchestration-companion results.
+"""Partner turn boundaries.
 
-The Partner's stop hook records background work, signals an owed companion pass,
-and takes a pending reset when its conversation is quiet. Native worker stops
-are captured and reconciled through their admitted run instead.
+The Partner's stop hook records background work, decides a cache-aware seam
+(`token_controls.partner_regime`) and takes a pending one when its conversation
+is quiet. Native worker stops are captured and reconciled through their
+admitted run instead.
 """
 
 from __future__ import annotations
@@ -38,42 +39,28 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         "session_id": payload.get("session_id"),
     })
 
-    # Spec 10 wake trigger: `run/<id>/turn` touched. Batch-gated: the turn end is
-    # routine, and a forced wake per turn is Companion churn (see the module docstring).
-    from . import companion as companion_mod
-
-    companion_mod.wake_due(root, item_id, env=env)
-
+    from . import streams, transcripts
     from .hook_log import seam_marker
+    from .token_controls import COLD_MISS, partner_regime
 
+    usage = transcripts.last_usage(payload.get("transcript_path"))
+    if usage:
+        # The turn's last response: the context the next turn reads, and when it was last read.
+        counts = {field: usage[field] for field in transcripts.CONTEXT_FIELDS
+                  if isinstance(usage.get(field), int) and not isinstance(usage.get(field), bool)}
+        streams.append_record(root, item_id, f"{item_id}-main", {
+            "event": "turn_end", "context_tokens": sum(counts.values()),
+            "cache_read": counts.get("cache_read_input_tokens"),
+            "cache_creation": counts.get("cache_creation_input_tokens")})
     marker = seam_marker(root, item_id)
+    if not marker.exists() and partner_regime(root) == COLD_MISS:
+        # The turn's last response rewrote its prefix instead of reading it from the cache.
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(COLD_MISS)
     if marker.exists():
         # The `/clear` this queues runs after this hook returns — live-verified, spec 09.2
         # step 3. A seam that cannot be taken yet leaves its marker for the next boundary.
         from . import seam as seam_mod
 
         seam_mod.seam(root, item_id, env=env)
-    return 0, ""
-
-
-def companion_handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """The Companion's own `Stop`: install what its pass produced (spec 10, CONTRACTS.md).
-
-    It runs in the Companion's home, not the agent's, so it never sees the agent's turn. Its
-    job is the other half of the pass protocol: take `out.json`, validate it, stamp it, move
-    it into `state/`, and — if the pass was for a stream that still has new records, or a
-    retry is owed — wake the Companion again.
-    """
-    from . import companion as companion_mod
-    companion_mod.require_partner(item_id)
-
-    installed = []
-    for stream in companion_mod.open_streams(root, item_id):
-        if companion_mod.out_path(root, item_id, stream).is_file():
-            if companion_mod.ingest(root, item_id, stream, env=env) is not None:
-                installed.append(stream)
-
-    # Whatever is owed — a retry the ingest above rewrote, or a stream with new records —
-    # goes out on this wake.
-    companion_mod.wake_due(root, item_id, force=True, env=env)
     return 0, ""

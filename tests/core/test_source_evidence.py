@@ -1,4 +1,4 @@
-"""Whole source evidence remains exact across resets and sidecar boundaries."""
+"""Whole source evidence remains exact across resets and Companion requests."""
 import hashlib
 import json
 
@@ -80,13 +80,14 @@ def test_complete_source_refuses_when_remaining_independent_wire_budget_is_too_s
     assert not protocol.row(store, job['job_id'])['payload']['source_reads']
 
 
-def test_escaped_source_result_charges_its_exact_complete_mcp_wire_bytes(planned):
+def test_escaped_source_result_charges_its_exact_request_bytes(planned):
     store, run, _ = planned
     event, _ = capture_source(planned, '\x01' * 4000 + '\nTAIL\n')
     job = native_companion.prepare(store, 'eng-001', run, 'main', 'escaped-source')
     activate(store, job)
     result = evidence.read(store, event['event_id'])
-    wire = len(canonical({'content': [{'type': 'text', 'text': canonical(result)}], 'isError': False}).encode())
+    # The tool_result content is canonical(result), itself JSON-escaped in the request body.
+    wire = len(canonical(canonical(result)).encode())
     with store.transaction() as tx:
         protocol.update(tx, protocol.row(tx, job['job_id']), source_read_budget=wire - 1)
     with pytest.raises(ValidationError, match='no prefix was delivered'):
