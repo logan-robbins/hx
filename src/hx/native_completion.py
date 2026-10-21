@@ -52,7 +52,17 @@ def admission_closed(tx, run_id):
     return row is not None and json.loads(row[0])['status'] in {'requested', 'checking', 'stopping', 'publishing', 'completed'}
 
 
-def advance_one(store, *, env=None):
+def active(store):
+    return store.db.execute("""SELECT count(*) FROM runtime_cycles WHERE scope LIKE 'finish:%'
+        AND json_extract(payload,'$.status') IN ('requested','checking','stopping','publishing')""").fetchone()[0]
+
+
+def advance_one(store, *, env=None, jobs=None):
+    """Advance the next completion intent after the last one visited.
+
+    With `jobs`, an acceptance check runs in the loop's job runner: this call
+    submits it and returns `checking`, and a later call takes its receipt.
+    """
     from .application_loop import _save, _state
     after = _state(store, 'completion-round').get('after', '')
     found = store.db.execute("""SELECT scope,payload FROM runtime_cycles WHERE scope LIKE 'finish:%'
@@ -95,8 +105,18 @@ def advance_one(store, *, env=None):
         for check_id in sorted(completion_checks(task['payload'])):
             if check_id in intent['receipts']:
                 continue
-            checked = checks.run_check(store, run_id, check_id,
-                request_id='finish-' + intent['request_id'] + '-' + check_id, env=env)
+            request_id = 'finish-' + intent['request_id'] + '-' + check_id
+            if jobs is None:
+                checked = checks.run_check(store, run_id, check_id, request_id=request_id, env=env)
+            else:
+                key = ('check', run_id, request_id)
+                outcome = jobs.take(key)
+                if outcome is None:
+                    jobs.submit(key, lambda ledger: checks.run_check(ledger, run_id, check_id, request_id=request_id, env=env), store)
+                    outcome = jobs.take(key)
+                if outcome is None:
+                    return {'status': 'checking', 'run_id': run_id, 'check': check_id}
+                checked = outcome.result()
             if not checked['valid']:
                 intent.update(status='failed', failed_check=check_id, evidence='hx evidence ' + checked['event_id'])
                 # The never-twice question, advisory only (TOOL_SKILL_PLAN step 4).

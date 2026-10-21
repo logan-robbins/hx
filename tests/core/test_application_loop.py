@@ -13,16 +13,26 @@ from .test_map_updates import active
 def no_automatic_learning_model(monkeypatch):
     from hx import learning_companion
     # Existing context scheduling tests exercise their own paid lane only.
-    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: {'status': 'idle'})
-    monkeypatch.setattr(learning_companion, 'reconcile', lambda *a, **kw: None)
+    monkeypatch.setattr(learning_companion, 'select', lambda *a, **kw: None)
+    monkeypatch.setattr(learning_companion, 'reconcile', lambda *a, **kw: [])
+
+
+def lane(monkeypatch, kind, run):
+    """Give one Companion kind a candidate every turn and replace its paid pass with `run`."""
+    from hx import learning_companion
+    if kind == 'context':
+        monkeypatch.setattr(loop, '_context_select', lambda *a, **kw: {'run_id': 'R', 'stream_id': 'main'})
+        monkeypatch.setattr(loop, '_context_pass', run)
+    else:
+        monkeypatch.setattr(learning_companion, 'select', lambda *a, **kw: {'agent_id': 'eng-001', 'key': 'main'})
+        monkeypatch.setattr(learning_companion, 'assess', run)
 
 
 def test_two_companions_alternate_without_sharing_cursors(planned, monkeypatch):
-    from hx import learning_companion
     store, run, _ = planned
     calls = []
-    monkeypatch.setattr(loop, '_context_tick', lambda *a, **kw: calls.append('context') or {'status': 'committed'})
-    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: calls.append('learning') or {'status': 'committed'})
+    lane(monkeypatch, 'context', lambda *a, **kw: calls.append('context') or {'status': 'committed'})
+    lane(monkeypatch, 'learning', lambda *a, **kw: calls.append('learning') or {'status': 'committed'})
     for expected in ('context', 'learning', 'context', 'learning'):
         assert loop.tick(store)['companion_kind'] == expected
     assert calls == ['context', 'learning', 'context', 'learning']
@@ -31,13 +41,12 @@ def test_two_companions_alternate_without_sharing_cursors(planned, monkeypatch):
 
 
 def test_context_failure_does_not_stop_independent_learner(planned, monkeypatch):
-    from hx import learning_companion
     store, _, _ = planned
     def failed(*a, **kw):
         raise loop.Conflict('Context evidence is unresolved.')
-    monkeypatch.setattr(loop, '_context_tick', failed)
+    lane(monkeypatch, 'context', failed)
     seen = []
-    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: seen.append(1) or {'status': 'committed'})
+    lane(monkeypatch, 'learning', lambda *a, **kw: seen.append(1) or {'status': 'committed'})
     assert loop.tick(store)['status'] == 'unresolved'
     result = loop.tick(store)
     assert result['companion_kind'] == 'learning' and result['status'] == 'committed'
@@ -45,26 +54,28 @@ def test_context_failure_does_not_stop_independent_learner(planned, monkeypatch)
 
 
 def test_learning_failure_does_not_stop_context_or_repeat_paid_loop(planned, monkeypatch):
-    from hx import learning_companion
     store, _, _ = planned
     loop._save(store, 'companion-turn', {'next': 'learning'})
     calls = []
     def unavailable(*a, **kw):
         calls.append('learning')
         raise loop.Conflict('Learning assessment is unresolved.')
-    monkeypatch.setattr(learning_companion, 'tick', unavailable)
-    monkeypatch.setattr(loop, '_context_tick', lambda *a, **kw: calls.append('context') or {'status': 'committed'})
+    lane(monkeypatch, 'learning', unavailable)
+    lane(monkeypatch, 'context', lambda *a, **kw: calls.append('context') or {'status': 'committed'})
     assert loop.tick(store)['status'] == 'unresolved'
     assert loop.tick(store)['status'] == 'committed'
     assert calls == ['learning', 'context']
 
 
 def test_pending_learning_does_not_delay_completion(planned, monkeypatch):
-    from hx import learning_companion, native_completion
+    from hx import native_completion
     store, _, _ = planned
-    monkeypatch.setattr(native_completion, 'advance_one', lambda *a, **kw: {'status': 'completed'})
-    monkeypatch.setattr(learning_companion, 'tick', lambda *a, **kw: pytest.fail('Completion has priority.'))
+    order = []
+    monkeypatch.setattr(native_completion, 'advance_one', lambda *a, **kw: order.append('completion') or {'status': 'completed'})
+    loop._save(store, 'companion-turn', {'next': 'learning'})
+    lane(monkeypatch, 'learning', lambda *a, **kw: order.append('learning') or {'status': 'committed'})
     assert loop.tick(store)['status'] == 'completed'
+    assert order == ['completion', 'learning']
 
 
 def test_automatic_delta_pass_commits_once_and_leaves_late_events(planned, monkeypatch):
@@ -146,10 +157,10 @@ def test_live_companion_process_keeps_slot(planned, monkeypatch):
         tx.db.execute("UPDATE companion_jobs SET status='running' WHERE job_id=?", (job['job_id'],))
         companion_protocol.update(tx, companion_protocol.row(tx, job['job_id']), process={'identity': {'pid': 123}})
     monkeypatch.setattr(loop.native_processes, 'current', lambda identity: {'identity': identity})
-    assert loop.reconcile_companion(store)['status'] == 'running'
+    assert loop.reconcile_companion(store)[0]['status'] == 'running'
     monkeypatch.setattr(loop.native_processes, 'current', lambda identity: None)
     monkeypatch.setattr(loop.native_processes, 'probe', lambda pid: None)
-    assert loop.reconcile_companion(store)['status'] == 'unresolved'
+    assert loop.reconcile_companion(store)[0]['status'] == 'unresolved'
     assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 0
 
 
@@ -165,7 +176,7 @@ def test_pending_only_pass_is_not_recovered_as_accepted(planned, monkeypatch):
         companion_protocol.update(tx, companion_protocol.row(tx, job['job_id']), process={'identity': {'pid': 123}})
     monkeypatch.setattr(loop.native_processes, 'current', lambda identity: None)
     monkeypatch.setattr(loop.native_processes, 'probe', lambda pid: None)
-    assert loop.reconcile_companion(store)['status'] == 'unresolved'
+    assert loop.reconcile_companion(store)[0]['status'] == 'unresolved'
 
 
 def test_loop_cli_advances_empty_root(instance, capsys):

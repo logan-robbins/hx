@@ -213,9 +213,12 @@ def test_overlapping_leases_conflict_across_plans_and_worktrees(fleet, tmp_path)
 def test_start_run_cannot_bypass_planning_readiness(fleet):
     store, repo = fleet[:2]
     planning.apply(store, plan(fleet, [unit(repo, "a"), unit(repo, "b", prerequisites=[dependency("a")])]))
-    with pytest.raises(Conflict, match="completion proof"):
+    with pytest.raises(Conflict, match="prepared before the ledger writer"):
         with store.transaction() as tx:
             tx.start_run("b", 1, "eng-001")
+    with pytest.raises(Conflict, match="completion proof"):
+        with store.transaction() as tx:
+            tx.start_run("b", 1, "eng-001", prepared=units.prepare_admission(store.root, tx.task("b")["payload"]))
     assert store.db.execute("SELECT count(*) FROM unit_runs").fetchone()[0] == 0
 
 

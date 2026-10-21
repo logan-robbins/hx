@@ -37,8 +37,12 @@ def status(tx, run_id):
     row = tx.db.execute("""SELECT count(*),coalesce(sum(q.bytes),0) FROM native_producer_queue q
         JOIN native_bindings b USING(binding_id) WHERE b.run_id=?""", (run_id,)).fetchone()
     fault = tx.db.execute("SELECT reason FROM native_capture_gaps WHERE run_id=?", (run_id,)).fetchone()
-    return {"pending_deliveries": row[0], "pending_bytes": row[1], "gap": fault[0] if fault else None,
-            "lag": bool(row[0] or fault)}
+    # A deferred hook may be a tool start the loop has not replayed yet; every
+    # drain, restart, reset and completion barrier reaches this through require_drained.
+    from .hook_spool import pending
+    deferred = len(pending(getattr(tx, "store", tx).root, run_id))
+    return {"pending_deliveries": row[0], "pending_bytes": row[1], "deferred_hooks": deferred,
+            "gap": fault[0] if fault else None, "lag": bool(row[0] or fault or deferred)}
 
 
 def require_drained(tx, run_id):
@@ -156,8 +160,11 @@ def retry(store, *, limit=RETRY_RECORDS, byte_budget=BATCH_BYTES):
     return results
 
 
-def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload):
-    """Session-less children stay within their launch, never the newest task."""
+def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload, delivery_id=None):
+    """Session-less children stay within their launch, never the newest task.
+
+    A deferred hook keeps its `delivery_id`, so replaying one that staged
+    before it deferred delivers the same observation once."""
     _id(launch_id)
     if payload.get("_hx_capture_error"):
         raise ValidationError("native hook input could not be read within its capture bound")
@@ -181,4 +188,4 @@ def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload):
             raise ValidationError("message capture requires a Pi completed user or assistant message")
         decoder = "pi-v1"
     return produce(store, run_id=run_id, worker_id=worker_id, adapter=adapter, session_id=session,
-                   stream_id=stream, payload=observed, decoder=decoder)
+                   stream_id=stream, payload=observed, decoder=decoder, delivery_id=delivery_id)

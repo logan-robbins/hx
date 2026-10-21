@@ -161,12 +161,35 @@ def _scope(payload):
     return scopes
 
 
-def admit(tx, task):
-    """Called inside start_run's writer transaction before any run is inserted."""
+def prepare_admission(root, payload):
+    """Read the worktree before any writer is taken: freshness, cleanliness, file sizes.
+
+    Hashing every source file under the ledger lock stalled every hook. A
+    refusal here is carried to admit, which raises it in its usual order.
+    """
+    from .code_freshness import require
+    from .file_limits import scan_repo
+    try:
+        require(root, payload, bootstrap=False)
+        state = workspace(payload, clean=True)
+        return {"workspace": state, "file_sizes": scan_repo(payload["workdir"])}
+    except (Conflict, ValidationError) as exc:
+        return {"error": exc}
+
+
+def admit(tx, task, prepared):
+    """Called inside start_run's writer transaction before any run is inserted.
+
+    `prepared` comes from prepare_admission, outside the transaction. A clean
+    worktree at the same commit and tree has exactly the scanned content, so
+    the cheap identity recheck here stands in for rehashing.
+    """
     from .planning import overlaps
     payload = task["payload"]
     if not payload.get("dependency_packet"):
         raise ValidationError("assignment requires a current dependency packet plan")
+    if prepared is None:
+        raise Conflict("planned admission requires worktree inputs prepared before the ledger writer; assign through hx plan assign")
     if not tx.db.execute("SELECT 1 FROM plan_units u JOIN plan_heads h ON h.plan_id=u.plan_id AND h.revision=u.plan_revision WHERE u.task_id=? AND u.task_revision=?", (task["task_id"], task["revision"])).fetchone():
         raise Conflict("current plan does not include this task revision")
     if tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", (task["task_id"], task["revision"])).fetchone():
@@ -187,15 +210,15 @@ def admit(tx, task):
     for row in tx.db.execute("SELECT canonical_path FROM leases l JOIN runs r USING(run_id) WHERE repository=? AND r.ended_at IS NULL", (payload["repository"],)):
         if any(overlaps(path, row[0]) for path in scopes):
             raise Conflict(f"write lease overlaps active owner: {row[0]}")
-    from .code_freshness import require
-    require(tx.store.root, payload,bootstrap=False)
+    if "error" in prepared:
+        raise prepared["error"]
     from .dependency_packets import guard_resources
     guard_resources(tx, task)
-    state = workspace(payload, clean=True)
-    from .file_limits import scan_repo
-    file_sizes = scan_repo(payload["workdir"])
+    state = prepared["workspace"]
+    if workspace(payload, clean=True) != state:
+        raise Conflict("unit worktree changed while its admission inputs were prepared; retry the assignment")
     return {"workspace": state, "prerequisites": _prerequisites(tx, task, state),
-            "file_sizes": file_sizes}
+            "file_sizes": prepared["file_sizes"]}
 
 
 def bind(tx, task, run_id, admission):
@@ -211,11 +234,24 @@ def bind(tx, task, run_id, admission):
 
 
 def ready(store, plan_id):
-    result = []
-    with store.transaction() as tx:
+    result, prepared = [], {}
+    # Readiness only reads: snapshots never take the writer, and the worktree
+    # scans run between them.
+    with store.snapshot() as tx:
         rows = tx.db.execute("SELECT u.task_id,u.task_revision FROM plan_units u JOIN plan_heads h ON h.plan_id=u.plan_id AND h.revision=u.plan_revision WHERE u.plan_id=? ORDER BY u.task_id", (plan_id,)).fetchall()
         if not rows:
             raise ValidationError("unknown plan")
+        payloads = {}
+        for row in rows:
+            task = tx.task(row["task_id"])
+            if task is not None and not tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", tuple(row)).fetchone():
+                payloads[row["task_id"]] = task["payload"]
+    for task_id, payload in payloads.items():
+        try:
+            prepared[task_id] = prepare_admission(store.root, payload)
+        except KeyError as exc:
+            prepared[task_id] = {"error": ValidationError(f"planned unit lacks {exc.args[0]}")}
+    with store.snapshot() as tx:
         for row in rows:
             try:
                 task = _task(tx, row["task_id"])
@@ -226,7 +262,7 @@ def ready(store, plan_id):
                 if tx.db.execute("SELECT 1 FROM unit_completions WHERE task_id=? AND task_revision=?", tuple(row)).fetchone():
                     result.append({"task_id": row["task_id"], "status": ("deployable" if packet_readiness["deployable"] else "packet_covered"), "readiness": packet_readiness})
                     continue
-                admission = admit(tx, task)
+                admission = admit(tx, task, prepared.get(row["task_id"]))
                 result.append({"task_id": row["task_id"], "status": "ready", "readiness": packet_readiness,
                                "file_sizes": admission["file_sizes"]})
             except (Conflict, ValidationError) as exc:
@@ -244,9 +280,10 @@ def assign(store, task_id, revision, worker_id):
         raise Conflict('planned assignment changed before source preparation')
     from .code_freshness import require
     require(store.root,json.loads(current['payload']),bootstrap=True)
+    prepared = prepare_admission(store.root, json.loads(current['payload']))
     with store.transaction() as tx:
         _task(tx, task_id)
-        run_id = tx.start_run(task_id, revision, worker_id)
+        run_id = tx.start_run(task_id, revision, worker_id, prepared=prepared)
         task = _task(tx, task_id, active_run=run_id)
         admission = json.loads(tx.db.execute("SELECT payload FROM unit_runs WHERE run_id=?", (run_id,)).fetchone()[0])
         return {"run_id": run_id, "task_id": task_id, "revision": revision, "worker_id": worker_id, "assignment": task["payload"],

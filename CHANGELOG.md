@@ -158,6 +158,49 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   0.25.10: any `tree-sitter` CLI is used and its version is recorded in the extractor
   generation. Schema version 2: an existing index is refused; remove
   `state/code-index/index.db` and rebuild with `hx code index`.
+- Fleet throughput P0.2 and P0.3 (docs/fleet-throughput-plan.md). Ledger schema 22; rebuild
+  instances with `hx install`.
+  - **Ledger openers.** `ContinuityStore.reader` is query-only and runs DDL-free snapshots.
+    `ContinuityStore.attach` opens an installed ledger with no DDL and no writer lock.
+    `budget=` bounds each writer-lock wait and raises `LedgerBusy`. `hx evidence`, file
+    reads, runtime policy and `hx loop --status` use the reader. Hooks and loop jobs attach.
+  - **Long work happens before the writer lock.** Every such site re-verifies its inputs
+    inside the transaction:
+    - `scan_repo` hashing is done by `unit_execution.prepare_admission`. `start_run(...,
+      prepared=)` refuses a planned admission without it, and refuses one whose worktree
+      changed after it was scanned.
+    - Bundle compilation and configuration hashing run in `native_launch.prepare`, and
+      launch-input verification in `native_launch.verify`; `confirm` re-checks them inside
+      the writer.
+    - Check identity and blob reads run in `dependency_packets.publish_contract`.
+    - Compaction runs its context compilation in `continue_context`.
+    - `observer.register` and `native_capture.bind` return an existing source or binding
+      from a snapshot.
+  - **A contended planned hook never denies.** If the writer is not free within
+    `hooks.LEDGER_BUDGET_S` (5 s per commit), the hook lets the operation run and writes its
+    whole delivery under `state/hook-spool/`. Later hooks of that run queue behind it.
+    - Each tick replays the spool in order. A tool start is recorded as admitted
+      (`native_tools.record_executed`). A deferred complete-file read is recorded as
+      undelivered, so the agent re-reads it.
+    - A delivery that cannot be applied becomes the run's capture gap.
+    - Until replayed, deferred hooks are capture lag in `native_producer.status` (new
+      `deferred_hooks`), so drain, restart, reset and completion wait for them.
+    - The guard and intentional refusals still exit 2.
+  - **Checks and Companion passes leave the tick.**
+    - `hx loop` runs acceptance checks and both Companion kinds on `loop_jobs.Jobs`, a
+      thread pool of `loop.workers` threads (config/hx.json, default 4).
+    - The tick submits a job and reaps its result on a later tick. A check in flight shows
+      as `checking`, and the tick reports `waiting` while jobs run, listing them under
+      `companions`.
+    - Completion is no longer gated by another run's Companion.
+    - `--once` and tests run jobs inline.
+  - **Counted Companion slots.** The two unique single-slot indexes are gone.
+    `companion.max_concurrent` (default 1) bounds running context and learning jobs together.
+    A pass with no free slot raises `SlotBusy` and stays prepared.
+  - **Round-robin cursors.** Native restart, token reset, context Companion selection and
+    learning selection each rotate on their own cursor (`restart-round`, `reset-round`,
+    `companion-round`, `learning-round`), so one stuck pane cannot hold the others.
+
 - Chat is a machine channel (docs/prompt-runtime.md): `continuity/prompts/common.md` states it
   once, so every compiled bundle carries it exactly once. No narration between tool calls,
   explanation, recap, greeting, closing offer or chat question; a needed decision is a typed

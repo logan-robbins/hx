@@ -1,8 +1,16 @@
 """Transactional authority for current-task continuity (versioned schema).
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
-transaction. Model calls and tool execution belong outside this boundary.
-The ledger is the sole assignment, run, proof and publication authority.
+transaction. Model calls, tool execution, source hashing and prompt compilation
+belong outside this boundary. The ledger is the sole assignment, run, proof and
+publication authority.
+
+Three openers. `ContinuityStore(root)` is the mutating opener of the loop and CLI
+mutations: it creates or verifies the schema under the writer lock. `attach` joins
+an initialized ledger without DDL or any lock at open; reads go through `snapshot`
+(a WAL read that never waits for the writer) and only explicit writes take the
+lock, each waiting at most an optional budget before `LedgerBusy`. `reader` is
+`attach` with every statement refused unless it reads. Hooks attach; queries read.
 """
 
 from __future__ import annotations
@@ -23,7 +31,7 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -37,6 +45,10 @@ HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 class Conflict(HxError):
     """The read version no longer matches; retry from a fresh snapshot."""
+
+
+class LedgerBusy(HxError):
+    """The writer lock did not become available within the caller's budget."""
 
 
 def canonical(value: object) -> str:
@@ -63,23 +75,44 @@ from .continuity_schema import SCHEMA
 class ContinuityStore:
     """One local fleet authority; use a separate connection per thread/process."""
 
-    def __init__(self, root: Path, *, timeout: float = 10.0):
+    def __init__(self, root: Path, *, timeout: float = 10.0, mode: str = "write", budget: float | None = None):
+        if mode not in {"write", "attach", "read"}:
+            raise ValidationError("continuity: opener mode is write, attach or read")
+        if budget is not None and (not math.isfinite(budget) or budget <= 0):
+            raise ValidationError("continuity: a ledger budget must be positive and finite")
         self.root = Path(root)
         self.path = self.root / "state" / "continuity.sqlite"
         self.artifacts = self.root / "state" / "artifacts"
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.artifacts.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.path, timeout=timeout, isolation_level=None)
+        self.mode = mode
+        self.budget = budget
+        if mode == "write":
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.artifacts.mkdir(parents=True, exist_ok=True)
+        elif not self.path.is_file():
+            # Connecting would create an empty file; only the mutating opener initializes.
+            raise ValidationError("continuity: ledger is not initialized; run hx install or start the loop")
+        self.db = sqlite3.connect(self.path, timeout=timeout if budget is None else min(timeout, budget),
+                                  isolation_level=None, check_same_thread=True)
         self.db.row_factory = sqlite3.Row
         try:
             self.db.execute("PRAGMA foreign_keys=ON")
-            self.db.execute("PRAGMA journal_mode=WAL")
-            self.db.execute("PRAGMA synchronous=FULL")
             # Per-connection page cache, not a total process RSS limit. Keep large
             # temporary sorts on disk instead of growing alongside worker count.
             self.db.execute("PRAGMA cache_size=-2048")
             self.db.execute("PRAGMA temp_store=FILE")
             self.db.execute("PRAGMA mmap_size=0")
+            if mode != "write":
+                # No DDL and no lock: the header read is a plain WAL read.
+                version = self.db.execute("PRAGMA user_version").fetchone()[0]
+                if version != SCHEMA_VERSION:
+                    raise ValidationError(f"continuity: ledger schema {version} is not {SCHEMA_VERSION}; recreate this prerelease instance")
+                # A reader never commits, so NORMAL only governs the checkpoints it never runs.
+                self.db.execute("PRAGMA synchronous=" + ("NORMAL" if mode == "read" else "FULL"))
+                if mode == "read":
+                    self.db.execute("PRAGMA query_only=ON")
+                return
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA synchronous=FULL")
             self.db.execute("BEGIN IMMEDIATE")
             version = self.db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, SCHEMA_VERSION):
@@ -104,6 +137,16 @@ class ContinuityStore:
             self.db.close()
             raise
 
+    @classmethod
+    def attach(cls, root: Path, *, timeout: float = 10.0, budget: float | None = None) -> ContinuityStore:
+        """Join an initialized ledger: no DDL or lock at open, writes only when asked."""
+        return cls(root, timeout=timeout, mode="attach", budget=budget)
+
+    @classmethod
+    def reader(cls, root: Path, *, timeout: float = 10.0, budget: float | None = None) -> ContinuityStore:
+        """Read-only opener for queries; every transaction is a snapshot."""
+        return cls(root, timeout=timeout, mode="read", budget=budget)
+
     def close(self) -> None:
         self.db.close()
 
@@ -114,10 +157,39 @@ class ContinuityStore:
         self.close()
 
     @contextmanager
-    def transaction(self) -> Iterator[Transaction]:
+    def snapshot(self) -> Iterator[Transaction]:
+        """One consistent WAL read. It never takes or waits for the writer lock."""
         if self.db.in_transaction:
             raise ValidationError("continuity: nested transactions are not supported")
-        self.db.execute("BEGIN IMMEDIATE")
+        guard = self.mode != "read"
+        if guard:
+            self.db.execute("PRAGMA query_only=ON")
+        try:
+            self.db.execute("BEGIN")
+            tx = Transaction(self, readonly=True)
+            try:
+                yield tx
+            finally:
+                tx.active = False
+                self.db.rollback()
+        finally:
+            if guard:
+                self.db.execute("PRAGMA query_only=OFF")
+
+    @contextmanager
+    def transaction(self) -> Iterator[Transaction]:
+        if self.mode == "read":
+            with self.snapshot() as tx:
+                yield tx
+            return
+        if self.db.in_transaction:
+            raise ValidationError("continuity: nested transactions are not supported")
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            if self.budget is not None and busy(exc):
+                raise LedgerBusy(f"continuity: the writer lock did not become available within {self.budget:g} s") from exc
+            raise
         tx = Transaction(self)
         try:
             yield tx
@@ -162,6 +234,12 @@ class ContinuityStore:
             return removed
 
 
+def busy(exc: BaseException) -> bool:
+    """SQLite lock contention, as opposed to corruption, I/O or a schema error."""
+    return (isinstance(exc, sqlite3.OperationalError)
+            and getattr(exc, "sqlite_errorcode", 0) & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED))
+
+
 def _sync_directory(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY)
     try:
@@ -171,18 +249,22 @@ def _sync_directory(path: Path) -> None:
 
 
 class Transaction:
-    def __init__(self, store: ContinuityStore):
+    def __init__(self, store: ContinuityStore, *, readonly: bool = False):
         self.store = store
         self.db = store.db
         self.changed = False
         self.active = True
+        self.readonly = readonly
 
     def _check(self) -> None:
-        if not self.active or not self.db.in_transaction:
+        # A deferred snapshot has no SQLite transaction until its first read.
+        if not self.active or not (self.readonly or self.db.in_transaction):
             raise ValidationError("continuity: transaction is closed")
 
     def _change(self) -> None:
         self._check()
+        if self.readonly:
+            raise ValidationError("continuity: a read snapshot cannot change the ledger")
         self.changed = True
 
     def task(self, task_id: str) -> dict | None:
@@ -221,7 +303,9 @@ class Transaction:
             bind_task(self, task_id, revision, payload)
         return revision
 
-    def start_run(self, task_id: str, task_revision: int, worker_id: str, *, map_revision: int = 0) -> str:
+    def start_run(self, task_id: str, task_revision: int, worker_id: str, *, map_revision: int = 0,
+                  prepared: dict | None = None) -> str:
+        """`prepared` is unit_execution.prepare_admission's worktree reading for a planned task."""
         self._check()
         task = self.task(task_id)
         if task is None or task["revision"] != task_revision:
@@ -234,7 +318,7 @@ class Transaction:
         admission = None
         if "plan_id" in task["payload"]:
             from .unit_execution import admit
-            admission = admit(self, task)
+            admission = admit(self, task, prepared)
         run_id = str(uuid.uuid4())
         self._change()
         self.db.execute(

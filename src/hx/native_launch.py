@@ -98,25 +98,34 @@ def prepare(ledger, worker, run_id, request_id, *, env=None, resume_from=None):
     root = ledger.root.resolve()
     launch_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "hx-launch:" + run_id + ":" + request_id))
     capsule = root / "run" / worker / "launches" / launch_id / "root"
-    with ledger.transaction() as tx:
+    def owned(tx):
         run, task, admission = unit_execution._run(tx, run_id)
         if run["worker_id"] != worker or run["phase"] == "paused":
             raise Conflict("native preparation requires this worker's unpaused assignment")
-        manifest = prompt_compiler.build(root, worker)
-        manifest, rendered = prompt_compiler.verified_bundle(root, worker, Path(manifest["manifest_path"]),
-                                                             workdir=task["payload"]["workdir"])
-        from .native_restart import workspace as restart_workspace
         if resume_from:
             predecessor = tx.db.execute("SELECT run_id,status FROM native_launches WHERE launch_id=?", (resume_from,)).fetchone()
             if not predecessor or tuple(predecessor) != (run_id, 'archived'):
                 raise Conflict('restart requires a retired launch of this same active assignment')
-        state = restart_workspace(task['payload']) if resume_from else unit_execution.workspace(task["payload"], clean=True)
+        return task, admission
+    with ledger.snapshot() as tx:
+        task, _ = owned(tx)
+    # Compile instructions and read the worktree before taking the writer;
+    # every hook waits behind it. The transaction rechecks what it relies on.
+    workdir = task["payload"]["workdir"]
+    manifest = prompt_compiler.build(root, worker)
+    manifest, rendered = prompt_compiler.verified_bundle(root, worker, Path(manifest["manifest_path"]), workdir=workdir)
+    from .native_restart import workspace as restart_workspace
+    state = restart_workspace(task['payload']) if resume_from else unit_execution.workspace(task["payload"], clean=True)
+    configuration = _configuration(root, worker, workdir)
+    config_hashes = {name: hashlib.sha256(data).hexdigest() for name, data in configuration.items()}
+    with ledger.transaction() as tx:
+        task, admission = owned(tx)
+        if task["payload"]["workdir"] != workdir:
+            raise Conflict("native preparation assignment changed while its inputs were read; retry")
         if not resume_from and state != admission["workspace"]:
             raise Conflict("fresh native launch requires the exact admitted worktree state")
         if unit_execution._prerequisites(tx, task, state) != admission["prerequisites"]:
             raise Conflict("native launch prerequisite proof changed since admission")
-        configuration = _configuration(root, worker, task["payload"]["workdir"])
-        config_hashes = {name: hashlib.sha256(data).hexdigest() for name, data in configuration.items()}
         request_hash = digest({"run": run_id, "worker": worker, "request": request_id,
                                "prompt": manifest["version"], "configuration": config_hashes, "resume_from": resume_from})
         previous = _row(tx, run_id)
@@ -194,10 +203,34 @@ def environment(root, launch, *, env=None):
             "HX_SKILLS_DIR": "", "HX_PYTHON": sys.executable}
 
 
-def verify(ledger, run_id):
-    """Revalidate prepared inputs before an installer/controller uses them."""
-    with ledger.transaction() as tx:
-        return verify_inputs(tx, run_id)
+def verify(ledger, run_id, *, states=("prepared",), check_evidence=True):
+    """Revalidate prepared inputs before an installer/controller uses them.
+
+    Compiling instructions and reading the worktree run in a read snapshot, so
+    no hook waits on them. A writer that acts on the result calls `confirm`.
+    """
+    with ledger.snapshot() as tx:
+        return verify_inputs(tx, run_id, states=states, check_evidence=check_evidence)
+
+
+def confirm(tx, verified, *, check_evidence=True):
+    """Inside a writer: the launch `verify` read is unchanged, unpaused, and current."""
+    launch = _row(tx, verified["run_id"])
+    if launch is None or any(launch[key] != verified[key] for key in ("launch_id", "status", "payload")):
+        raise Conflict("native launch changed while its inputs were verified; retry")
+    run, _, _ = unit_execution._run(tx, verified["run_id"])
+    if run["phase"] == "paused":
+        raise Conflict("native launch assignment is paused")
+    if check_evidence:
+        _current_evidence(tx, launch)
+    return launch
+
+
+def _current_evidence(tx, launch):
+    packet = context_packets._read(tx, launch["payload"]["checkpoint_id"], launch["run_id"])
+    cursors, pending = context_packets._pending(tx, launch["run_id"])
+    if cursors != packet["cursors"] or pending != packet["pending"] or context_packets._sources(tx, launch["run_id"]) != packet["capture"]:
+        raise Conflict("native launch has newer execution evidence; compose current context")
 
 
 def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
@@ -236,7 +269,6 @@ def verify_inputs(tx, run_id, *, states=("prepared",), check_evidence=True):
         raise Conflict('native launch required material references changed')
     if packet["packet_hash"] != payload["packet_hash"] or _bytes(Path(payload["packet_path"]), 262144) != packet["text"].encode():
         raise Conflict("native launch context packet changed")
-    cursors, pending = context_packets._pending(tx, run_id)
-    if check_evidence and (cursors != packet["cursors"] or pending != packet["pending"] or context_packets._sources(tx, run_id) != packet["capture"]):
-        raise Conflict("native launch has newer execution evidence; compose current context")
+    if check_evidence:
+        _current_evidence(tx, launch)
     return launch

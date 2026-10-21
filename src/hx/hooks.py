@@ -4,8 +4,12 @@ Partner observation failures are logged; missing context/source delivery also
 invalidates admission for the next operation. Its configured tool guard may
 explicitly deny an operation. Worker startup,
 request and tool admission errors deny execution; observation failures retain a
-capture gap instead of inventing successful evidence. Native host crashes and
-hook timeouts still require process reconciliation before ownership is released.
+capture gap instead of inventing successful evidence. A planned hook attaches to
+the ledger without its writer lock and reads through snapshots. When the writer
+is unavailable within `LEDGER_BUDGET_S`, the hook passes the operation through
+and defers its whole delivery to the application loop, which replays it in
+order; contention never denies. Native host crashes and hook timeouts still
+require process reconciliation before ownership is released.
 """
 
 from __future__ import annotations
@@ -75,6 +79,19 @@ _HANDLERS = {
 
 ERROR_LOG = "hook-errors.log"
 
+#: Seconds one planned hook commit may wait for the ledger writer. Well inside
+#: the native hosts' hook timeouts; past it, the hook defers to the loop.
+LEDGER_BUDGET_S = 5.0
+
+
+def unavailable(exc: BaseException) -> bool:
+    """The ledger was contended or out of budget, directly or as a refusal's cause."""
+    from .continuity_store import LedgerBusy, busy
+    from .native_tools import AdmissionDenied
+    if isinstance(exc, AdmissionDenied):
+        exc = exc.__cause__
+    return isinstance(exc, LedgerBusy) or (exc is not None and busy(exc))
+
 
 def error_log_path(root: Path, item_id: str) -> Path:
     return root / "logs" / item_id / ERROR_LOG
@@ -121,6 +138,126 @@ def check_id(item_id: str, env) -> None:
         raise HxError(f"--id {item_id} does not match HARNESS_ID {running}")
 
 
+def planned(ledger, delivery, *, write, replay=False):
+    """One planned hook's ledger work: admission, capture, sources, lifecycle, tokens.
+
+    `write` carries output to the native host. The loop replays a deferred
+    delivery with `replay`: its tool call already executed, so it is recorded
+    rather than admitted, and a complete-file read it never delivered stays
+    incomplete.
+    """
+    run_id, launch_id, adapter, item_id = (delivery[key] for key in ("run_id", "launch_id", "adapter", "worker_id"))
+    event, payload, read_segment = delivery["event"], delivery["payload"], delivery["read_segment"]
+    child = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
+    if replay and event in {'log', 'log-failure'} and read_segment:
+        return 0  # Segment hooks deliver content only; the first one carries the observation.
+    from .hook_contract import validate
+    from .native_producer import hook
+    validate(ledger, run_id=run_id, launch_id=launch_id, adapter=adapter, worker_id=item_id)
+    from .native_launch import _row
+    from . import token_controls
+    launch = _row(ledger, run_id)
+    if replay and event == "tool-start":
+        # The deferred call already executed; record it so drain and settlement see it.
+        from .native_tools import record_executed
+        record_executed(ledger, run_id, launch_id, payload)
+    elif not replay:
+        if launch and event in {'request', 'tool-start'}:
+            token_controls.guard(ledger, launch)
+        if event == "tool-start":
+            from .native_tools import admit
+            admit(ledger, run_id, launch_id, payload, adapter=adapter)
+    complete_read = None
+    broker_error = None
+    if launch and event in {'log', 'log-failure'}:
+        from .file_reads import is_read, broker_result
+        if is_read(payload) and replay:
+            # A deferred hook delivered nothing; the read stays incomplete until repeated.
+            broker_error = 'complete-file delivery was deferred under ledger contention and did not reach the agent'
+            payload = {**payload, 'tool_response': {'error': broker_error},
+                       'is_error': True, 'hook_event_name': 'PostToolUse'}
+        elif is_read(payload):
+            from .unit_execution import _run
+            with ledger.snapshot() as tx:
+                _, task, _ = _run(tx, run_id)
+            from .file_read_delivery import SEGMENTED_ADAPTERS, emit, native_marker
+            try:
+                if adapter in SEGMENTED_ADAPTERS:
+                    complete_read = emit(ledger, launch, task['payload'], payload,
+                        read_segment or 0, write=write,
+                        event='PostToolUseFailure' if event == 'log-failure' else 'PostToolUse')
+                    if complete_read is None:
+                        return 0
+                else:
+                    result = broker_result(ledger, launch, task['payload'], payload)
+                    if adapter == 'claude' and result is not None:
+                        # Claude's own Read result is the delivery; the hook adds only its marker.
+                        result = {**result, 'marker': native_marker(result, payload)}
+                    complete_read = result
+            except (HxError, OSError) as exc:
+                broker_error = str(exc)
+                payload = {**payload, 'tool_response': {'error': broker_error},
+                           'is_error': True, 'hook_event_name': 'PostToolUse'}
+            # Capture exactly what the hook emits to the native host.
+            # The native preview is never treated as the full file.
+            if complete_read is not None:
+                payload = {**payload, 'tool_response': complete_read['text'], 'is_error': False,
+                           'hook_event_name': 'PostToolUse'}
+    hook(ledger, run_id=run_id, worker_id=item_id,
+         adapter=adapter, launch_id=launch_id,
+         event='log' if complete_read is not None or broker_error else event, payload=payload,
+         delivery_id=delivery["delivery_id"])
+    from .native_sources import observe as observe_sources
+    observe_sources(ledger, run_id=run_id, launch_id=launch_id,
+                    worker_id=item_id, adapter=adapter, event=event, payload=payload)
+    if event == 'precompact' and not child:
+        from .native_launch import _row
+        from .compaction_policy import prepare_native_compaction
+        launch = _row(ledger, run_id)
+        if launch and launch['status'] == 'submitted':
+            write(prepare_native_compaction(ledger, launch, payload))
+    if event in {"context", "request"}:
+        from .native_controller import observe
+        line = observe(ledger, run_id, launch_id, event, payload)
+        if line:
+            if event == 'context' and adapter in {'claude', 'codex', 'meta'}:
+                write(json.dumps({'hookSpecificOutput': {
+                    'hookEventName': 'SessionStart', 'additionalContext': line}}))
+            elif adapter != 'grok':
+                write(line)
+    if launch:
+        token_controls.observe(ledger, launch, event, payload)
+    if complete_read is not None:
+        if adapter == 'pi':
+            write(json.dumps({'hx_complete_read': complete_read}))
+        elif adapter == 'codex':
+            write(json.dumps({'hookSpecificOutput': {
+                'hookEventName': 'PostToolUse',
+                'additionalContext': complete_read['text']}}))
+        elif adapter == 'claude':
+            write(json.dumps({'hookSpecificOutput': {
+                'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',
+                'additionalContext': complete_read['marker']}}))
+    elif broker_error and not read_segment:
+        write(json.dumps({'hookSpecificOutput': {
+            'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',
+            'additionalContext': 'Complete-file delivery failed: ' + broker_error
+                + '. The file has not been delivered completely; retry the whole file before another operation.'}}))
+    return 0
+
+
+def replay(store, delivery):
+    """Apply a deferred planned hook inside the loop; its output reaches no one."""
+    return planned(store, delivery, write=lambda value: None, replay=True)
+
+
+def _defer(root, delivery, reason):
+    from . import hook_spool
+    hook_spool.record(root, delivery, reason)
+    print(f"hx-hook: {delivery['event']}: {reason}; passed through and deferred to the application loop", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     env = os.environ if env is None else env
@@ -161,9 +298,6 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
             payload = {**payload, '_hx_context_segment': args.context_segment or 0}
 
         if env.get("HX_CONTINUITY_RUN") and event != "guard":
-            from .continuity_store import ContinuityStore
-            from .hook_contract import validate
-            from .native_producer import hook
             launch_id = env.get("HX_CONTINUITY_LAUNCH")
             adapter = env.get("HX_CONTINUITY_ADAPTER")
             if not launch_id or not adapter:
@@ -174,89 +308,22 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
             if child and not (payload.get("session_id") or payload.get("sessionId") or payload.get("transcript_path")):
                 from .continuity_store import digest
                 payload = {**payload, "session_id": "launch:" + digest([launch_id, child])}
-            with ContinuityStore(root) as ledger:
-                validate(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id, adapter=adapter, worker_id=item_id)
-                from .native_launch import _row
-                from . import token_controls
-                launch = _row(ledger, env['HX_CONTINUITY_RUN'])
-                if launch and event in {'request', 'tool-start'}:
-                    token_controls.guard(ledger, launch)
-                if event == "tool-start":
-                    from .native_tools import admit
-                    admit(ledger, env["HX_CONTINUITY_RUN"], launch_id, payload, adapter=adapter)
-                complete_read = None
-                broker_error = None
-                if launch and event in {'log', 'log-failure'}:
-                    from .file_reads import is_read, broker_result
-                    if is_read(payload):
-                        from .unit_execution import _run
-                        with ledger.transaction() as tx:
-                            _, task, _ = _run(tx, env['HX_CONTINUITY_RUN'])
-                        from .file_read_delivery import SEGMENTED_ADAPTERS, emit, native_marker
-                        try:
-                            if adapter in SEGMENTED_ADAPTERS:
-                                def write_segment(value):
-                                    print(value, flush=True)
-                                complete_read = emit(ledger, launch, task['payload'], payload,
-                                    args.read_segment or 0, write=write_segment,
-                                    event='PostToolUseFailure' if event == 'log-failure' else 'PostToolUse')
-                                if complete_read is None:
-                                    return 0
-                            else:
-                                result = broker_result(ledger, launch, task['payload'], payload)
-                                if adapter == 'claude' and result is not None:
-                                    # Claude's own Read result is the delivery; the hook adds only its marker.
-                                    result = {**result, 'marker': native_marker(result, payload)}
-                                complete_read = result
-                        except (HxError, OSError) as exc:
-                            broker_error = str(exc)
-                            payload = {**payload, 'tool_response': {'error': broker_error},
-                                       'is_error': True, 'hook_event_name': 'PostToolUse'}
-                        # Capture exactly what the hook emits to the native host.
-                        # The native preview is never treated as the full file.
-                        if complete_read is not None:
-                            payload = {**payload, 'tool_response': complete_read['text'], 'is_error': False,
-                                       'hook_event_name': 'PostToolUse'}
-                hook(ledger, run_id=env["HX_CONTINUITY_RUN"], worker_id=item_id,
-                     adapter=adapter, launch_id=launch_id,
-                     event='log' if complete_read is not None or broker_error else event, payload=payload)
-                from .native_sources import observe as observe_sources
-                observe_sources(ledger, run_id=env["HX_CONTINUITY_RUN"], launch_id=launch_id,
-                                worker_id=item_id, adapter=adapter, event=event, payload=payload)
-                if event == 'precompact' and not child:
-                    from .native_launch import _row
-                    from .compaction_policy import prepare_native_compaction
-                    launch = _row(ledger, env['HX_CONTINUITY_RUN'])
-                    if launch and launch['status'] == 'submitted':
-                        print(prepare_native_compaction(ledger, launch, payload))
-                if event in {"context", "request"}:
-                    from .native_controller import observe
-                    line = observe(ledger, env["HX_CONTINUITY_RUN"], launch_id, event, payload)
-                    if line:
-                        if event == 'context' and adapter in {'claude', 'codex', 'meta'}:
-                            print(json.dumps({'hookSpecificOutput': {
-                                'hookEventName': 'SessionStart', 'additionalContext': line}}))
-                        elif adapter != 'grok':
-                            print(line)
-                if launch:
-                    token_controls.observe(ledger, launch, event, payload)
-                if complete_read is not None:
-                    if adapter == 'pi':
-                        print(json.dumps({'hx_complete_read': complete_read}))
-                    elif adapter == 'codex':
-                        print(json.dumps({'hookSpecificOutput': {
-                            'hookEventName': 'PostToolUse',
-                            'additionalContext': complete_read['text']}}))
-                    elif adapter == 'claude':
-                        print(json.dumps({'hookSpecificOutput': {
-                            'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',
-                            'additionalContext': complete_read['marker']}}))
-                elif broker_error and not args.read_segment:
-                    print(json.dumps({'hookSpecificOutput': {
-                        'hookEventName': 'PostToolUseFailure' if event == 'log-failure' else 'PostToolUse',
-                        'additionalContext': 'Complete-file delivery failed: ' + broker_error
-                            + '. The file has not been delivered completely; retry the whole file before another operation.'}}))
-            return 0
+            import uuid
+            delivery = {"run_id": env["HX_CONTINUITY_RUN"], "launch_id": launch_id, "adapter": adapter,
+                        "worker_id": item_id, "event": event, "payload": payload, "read_segment": args.read_segment,
+                        "delivery_id": str(uuid.uuid4())}
+            from . import hook_spool
+            if hook_spool.pending(root, delivery["run_id"]):
+                # Keep this run's observations in order behind its deferred ones.
+                return _defer(root, delivery, "an earlier observation of this run is deferred")
+            from .continuity_store import ContinuityStore
+            try:
+                with ContinuityStore.attach(root, budget=LEDGER_BUDGET_S) as ledger:
+                    return planned(ledger, delivery, write=lambda value: print(value, flush=True))
+            except BaseException as exc:
+                if unavailable(exc):
+                    return _defer(root, delivery, "ledger unavailable within the hook budget")
+                raise
 
         if item_id != "partner":
             raise HxError("worker hooks require an admitted run and native launch identity")
@@ -319,7 +386,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
                 try:
                     from .continuity_store import ContinuityStore
                     from .native_producer import gap
-                    with ContinuityStore(root) as ledger:
+                    with ContinuityStore.attach(root, budget=LEDGER_BUDGET_S) as ledger:
                         gap(ledger, env["HX_CONTINUITY_RUN"], item_id, "planned hook observation failed: " + event)
                 except Exception:
                     pass  # Storage failure is still reported to the native hook.

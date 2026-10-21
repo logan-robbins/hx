@@ -298,7 +298,7 @@ def main(argv, root, *, env=None):
     path = Path(args.path).expanduser().resolve()
     if child.get('HX_CONTINUITY_RUN'):
         from .continuity_store import ContinuityStore
-        with ContinuityStore(Path(child.get('HX_CONTINUITY_AUTHORITY', root))) as ledger:
+        with ContinuityStore.reader(Path(child.get('HX_CONTINUITY_AUTHORITY', root))) as ledger:
             admitted = ledger.db.execute('''SELECT r.source_stamp FROM native_reads r
                 JOIN native_tool_calls c USING(launch_id,session_id,actor_id,call_id)
                 JOIN native_launches l USING(launch_id) WHERE l.run_id=? AND c.status='admitted' ''',

@@ -21,10 +21,27 @@ def workspace(task):
 
 
 def advance_one(store, *, env=None):
+    """Advance the first pending restart that can move, round-robin after the last one visited.
+
+    A busy pane or undrained capture yields its turn instead of holding every
+    other restart behind it.
+    """
     from .application_loop import _state, _save
-    row = store.db.execute("SELECT scope,payload FROM runtime_cycles WHERE (scope LIKE 'tools:%' OR scope LIKE 'instructions:%') AND json_extract(payload,'$.status')='pending_restart' ORDER BY scope LIKE 'instructions:%' DESC,scope LIMIT 1").fetchone()
-    if not row:
-        return None
+    after = _state(store, 'restart-round').get('after', '')
+    for row in store.db.execute("SELECT scope,payload FROM runtime_cycles WHERE (scope LIKE 'tools:%' OR scope LIKE 'instructions:%') AND json_extract(payload,'$.status')='pending_restart' ORDER BY scope<=?,scope", (after,)).fetchall():
+        try:
+            result = _advance(store, row, env=env)
+        except BaseException:
+            _save(store, 'restart-round', {'after': row['scope']})
+            raise
+        if result:
+            _save(store, 'restart-round', {'after': row['scope']})
+            return result
+    return None
+
+
+def _advance(store, row, *, env=None):
+    from .application_loop import _state, _save
     run_id = row['scope'].split(':', 1)[1]
     instruction_refresh = row['scope'].startswith('instructions:')
     current = native_launch._row(store, run_id)

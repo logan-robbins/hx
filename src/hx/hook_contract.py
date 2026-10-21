@@ -29,7 +29,7 @@ def installation_args(root: Path, item_id: str, adapter: str, env) -> list[str]:
     _id(launch_id)
     if adapter != declared or load_harness(root / "config" / item_id / "harness.json", check_cross_file=False).flavor != adapter:
         raise ValidationError("planned hook adapter differs from the executor configuration")
-    with ContinuityStore(root) as ledger, ledger.transaction() as tx:
+    with ContinuityStore.attach(root) as ledger, ledger.transaction() as tx:
         _run(tx, run_id, item_id)
         previous = tx.db.execute("SELECT run_id,worker_id,adapter FROM native_launch_contracts WHERE launch_id=?", (launch_id,)).fetchone()
         expected = (run_id, item_id, adapter)

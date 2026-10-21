@@ -309,7 +309,7 @@ CREATE TABLE companion_jobs (
                     job_id TEXT PRIMARY KEY, request_key TEXT UNIQUE NOT NULL,
                     run_id TEXT NOT NULL REFERENCES runs(run_id), pass_id TEXT UNIQUE NOT NULL REFERENCES passes(pass_id),
                     worker_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL);
-CREATE UNIQUE INDEX companion_active_slot ON companion_jobs((1)) WHERE status='running';
+CREATE INDEX companion_job_status ON companion_jobs(status);
 
 CREATE TABLE learning_cursors (
     agent_id TEXT NOT NULL,stream_id TEXT NOT NULL,assessed_seq INTEGER NOT NULL DEFAULT 0,
@@ -319,7 +319,7 @@ CREATE TABLE learning_jobs (
     job_id TEXT PRIMARY KEY,request_key TEXT NOT NULL UNIQUE,agent_id TEXT NOT NULL,
     stream_id TEXT NOT NULL,run_id TEXT,status TEXT NOT NULL,payload TEXT NOT NULL
 );
-CREATE UNIQUE INDEX learning_active_slot ON learning_jobs((1)) WHERE status='running';
+CREATE INDEX learning_job_status ON learning_jobs(status);
 CREATE TABLE native_reads (
                     launch_id TEXT NOT NULL, session_id TEXT NOT NULL, actor_id TEXT NOT NULL,
                     call_id TEXT NOT NULL, checkpoint_id TEXT NOT NULL, read_key TEXT NOT NULL,

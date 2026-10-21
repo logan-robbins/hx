@@ -155,8 +155,8 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     parser.add_argument("--root")
     args = parser.parse_args(argv)
     caller = os.environ if env is None else env
-    with ContinuityStore(root) as store:
-        with store.transaction() as tx:
+    with ContinuityStore.reader(root) as store:
+        with store.snapshot() as tx:
             row, _, whole, _ = describe(tx, args.event_id)
             if whole and (caller.get('HARNESS_ID') or caller.get('HX_CONTINUITY_RUN')):
                 raise ValidationError('source and instruction evidence cannot use native shell output; '

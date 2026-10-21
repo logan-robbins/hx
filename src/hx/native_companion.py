@@ -15,6 +15,7 @@ from .config_harness import load_harness
 from .continuity_store import Conflict, canonical, digest, _id
 from .errors import ValidationError
 from .events import is_bookkeeping as _bookkeeping
+from .loop_jobs import companion_slots
 from .facts import FIELDS, LIST_FIELDS, RequiredContextOverflow
 from .native_launch import _bytes
 
@@ -133,6 +134,18 @@ def prepare(store, worker, run_id, stream_id, request_id, *, record_ids=(), map_
     return protocol.row(store, job_id)
 
 
+class SlotBusy(Conflict):
+    """Every Companion slot is running; the pass stays prepared for a later turn."""
+
+
+def occupied(tx, slots):
+    """Inside the slot-claiming writer: refuse when both kinds already fill `slots`."""
+    running = tx.db.execute("""SELECT (SELECT count(*) FROM companion_jobs WHERE status='running')
+        + (SELECT count(*) FROM learning_jobs WHERE status='running')""").fetchone()[0]
+    if running >= slots:
+        raise SlotBusy(f"all {slots} Companion execution slots are running")
+
+
 def status(store, job_id):
     job = protocol.row(store, job_id)
     return {"job_id": job_id, "pass_id": job["pass_id"], "status": job["status"],
@@ -157,30 +170,28 @@ def execute(store, job_id, *, env=None, timeout_s=60):
     prompt_compiler.verified_bundle(store.root, job["worker_id"], Path(payload["manifest"]),
         workdir=body["task"]["workdir"], audience="companion")
     transport = sidecar_process.preflight(store.root, payload, body, protocol="companion_protocol", timeout_s=timeout_s)
-    # One root-wide model slot keeps low-memory hosts serial. A crash retains
-    # running ownership until explicit process reconciliation, without a TTL.
-    try:
-        with store.transaction() as tx:
-            current = protocol.row(tx, job_id)
-            if current["status"] != "prepared":
-                return status(tx, job_id)
-            passes._active_run(tx, job["run_id"])
-            if tx.db.execute("SELECT 1 FROM learning_jobs WHERE status='running'").fetchone():
-                raise Conflict("learning Companion owns the root execution slot")
-            companion_map.check_scope(tx, body, versions=True)
-            cursor = tx.db.execute("SELECT classified_seq,revision FROM cursors WHERE run_id=? AND stream_id=?",
-                                   (job["run_id"], body["stream_id"])).fetchone()
-            if tuple(cursor) != (body["from_seq"], body["cursor_revision"]):
-                raise Conflict("companion pass cursor changed before execution")
-            for record_id, version in body["record_versions"].items():
-                record = tx.record(record_id)
-                if record is None or record["version"] != version or record["validity"] != "current":
-                    raise Conflict("companion selected record changed before execution")
-                passes._check_sources(record["inputs"], body["task"], tx)
-            tx._change()
-            tx.db.execute("UPDATE companion_jobs SET status='running' WHERE job_id=?", (job_id,))
-    except sqlite3.IntegrityError as exc:
-        raise Conflict("another companion owns the root execution slot") from exc
+    # Both Companion kinds share companion.max_concurrent model slots (default
+    # one keeps low-memory hosts serial). A crash retains running ownership
+    # until explicit process reconciliation, without a TTL.
+    slots = companion_slots(store.root)
+    with store.transaction() as tx:
+        current = protocol.row(tx, job_id)
+        if current["status"] != "prepared":
+            return status(tx, job_id)
+        passes._active_run(tx, job["run_id"])
+        occupied(tx, slots)
+        companion_map.check_scope(tx, body, versions=True)
+        cursor = tx.db.execute("SELECT classified_seq,revision FROM cursors WHERE run_id=? AND stream_id=?",
+                               (job["run_id"], body["stream_id"])).fetchone()
+        if tuple(cursor) != (body["from_seq"], body["cursor_revision"]):
+            raise Conflict("companion pass cursor changed before execution")
+        for record_id, version in body["record_versions"].items():
+            record = tx.record(record_id)
+            if record is None or record["version"] != version or record["validity"] != "current":
+                raise Conflict("companion selected record changed before execution")
+            passes._check_sources(record["inputs"], body["task"], tx)
+        tx._change()
+        tx.db.execute("UPDATE companion_jobs SET status='running' WHERE job_id=?", (job_id,))
     execution = None
     pending_hash = None
     try:
