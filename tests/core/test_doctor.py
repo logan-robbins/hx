@@ -233,18 +233,57 @@ def test_codex_instance_accepts_login_homes_without_a_token(instance):
     assert ("codex-token", OK) in statuses(_codex_instance(instance, ["eng-001"]))
 
 
+CODEX_POSTURE = 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n'
+CODEX_HOOKS = "[[hooks.SessionStart]]\n[[hooks.PostToolUse]]\n[[hooks.Stop]]\n"
+TOOLBOX = "https://acct.services.ai.azure.com/api/projects/p/toolboxes/t/mcp?api-version=v1"
+
+
 def test_codex_home_checks_posture_and_hooks(instance):
-    good = _codex_home(
-        instance,
-        'approval_policy = "never"\n'
-        'sandbox_mode = "danger-full-access"\n'
-        "[[hooks.SessionStart]]\n"
-        "[[hooks.PostToolUse]]\n"
-        "[[hooks.Stop]]\n",
-    )
+    good = _codex_home(instance, CODEX_POSTURE + 'web_search = "cached"\n' + CODEX_HOOKS)
     assert not [c for c in good if c[0] == FAIL]
     bad = _codex_home(instance, 'approval_policy = "never"\n')
     assert [c for c in bad if c[0] == FAIL]
+
+
+def test_codex_home_without_a_search_guard_requires_cached_hosted_search(instance):
+    """docs/codex-search-guard.md §4.6: a full-access sandbox would default it to live."""
+    good = _codex_home(instance, CODEX_POSTURE + 'web_search = "cached"\n' + CODEX_HOOKS)
+    assert (OK, "home:eng-001", "web search cached (hosted search, unguarded)") in good
+    for posture in ('web_search = "live"\n', ""):
+        bad = _codex_home(instance, CODEX_POSTURE + posture + CODEX_HOOKS)
+        assert [detail for status, _, detail in bad if status == FAIL] == [
+            "config.toml `web_search` is not `cached`; `hx launch` rewrites it"]
+
+
+def test_codex_home_with_a_search_guard_requires_the_guarded_toolbox(instance):
+    (instance / "config" / "codex.json").write_text(json.dumps({"search_guard": {
+        "toolbox_url": TOOLBOX, "content_safety_endpoint": "https://cs.cognitiveservices.azure.com"}}))
+    search = '[[hooks.{0}]]\nmatcher = "mcp__foundry__web_search"\n[[hooks.{0}.hooks]]\ntype = "command"\n'
+    guarded = {"web_search": 'web_search = "disabled"\n', "server": f'[mcp_servers.foundry]\nurl = "{TOOLBOX}"\n',
+               "pre": search.format("PreToolUse"), "post": search.format("PostToolUse")}
+    good = _codex_home(instance, CODEX_POSTURE + "".join(guarded.values()) + CODEX_HOOKS)
+    assert (OK, "home:eng-001", "web search guarded (foundry toolbox)") in good
+    assert not [c for c in good if c[0] == FAIL]
+    for broken in ({"web_search": 'web_search = "cached"\n'}, {"server": '[mcp_servers.foundry]\nurl = "x"\n'},
+                   {"pre": ""}, {"post": search.format("PostToolUse").replace("mcp__foundry__", "")}):
+        bad = _codex_home(instance, CODEX_POSTURE + "".join({**guarded, **broken}.values()) + CODEX_HOOKS)
+        assert [detail for status, _, detail in bad if status == FAIL] == [
+            "config.toml does not route web search through the guarded foundry toolbox that "
+            "config/codex.json `search_guard` names; `hx launch` rewrites it"], broken
+
+
+@pytest.mark.parametrize("search_guard, named", [
+    ({"toolbox_url": TOOLBOX}, "content_safety_endpoint"),
+    ({"content_safety_endpoint": "https://cs.example"}, "toolbox_url"),
+    ({}, "toolbox_url and content_safety_endpoint"),
+    ("on", "toolbox_url and content_safety_endpoint"),
+])
+def test_codex_instance_names_a_missing_search_guard_key(instance, search_guard, named):
+    from hx.doctor import _codex_instance
+
+    (instance / "config" / "codex.json").write_text(json.dumps({"bin": "/bin/sh", "search_guard": search_guard}))
+    checks = _codex_instance(instance, [])
+    assert (FAIL, "codex", f"config/codex.json `search_guard` lacks {named}; install.sh refuses it") in checks
 
 
 def test_a_versioned_binary_path_fails(instance):
