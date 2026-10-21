@@ -16,6 +16,7 @@ class GraphConnection(sqlite3.Connection):
     snapshot = None
     historical = False
     snapshot_maps = None
+    snapshot_roots = None
     snapshot_scopes = None
     membership_cache = None
     graph_cache = None
@@ -24,7 +25,7 @@ class GraphConnection(sqlite3.Connection):
 
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS repos(repo TEXT PRIMARY KEY, root TEXT NOT NULL, head TEXT, dirty INTEGER NOT NULL, indexed_at REAL);
+CREATE TABLE IF NOT EXISTS repos(repo TEXT NOT NULL, root TEXT NOT NULL, head TEXT, dirty INTEGER NOT NULL, indexed_at REAL, PRIMARY KEY(repo,root));
 CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY, repo TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL,
  size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, symbols TEXT NOT NULL, body TEXT NOT NULL,generation TEXT NOT NULL DEFAULT '', UNIQUE(repo,path));
 CREATE TABLE IF NOT EXISTS symbols(repo TEXT NOT NULL,name TEXT NOT NULL,qualified TEXT NOT NULL,kind TEXT NOT NULL,
@@ -55,6 +56,10 @@ CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 """
 
 
+# One namespace holds N checkout roots; version 2 keys `repos` and `checkout_heads` by root.
+SCHEMA_VERSION = 2
+
+
 def db_path(root):
     return Path(root) / "state" / "code-index" / "index.db"
 
@@ -72,14 +77,14 @@ def _connect(root, *, existing=False, trigram=None):
     from .errors import ValidationError
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     existing_tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()
-    if version != 1 and (version != 0 or existing_tables):
+    if version != SCHEMA_VERSION and (version != 0 or existing_tables):
         conn.close()
         raise ValidationError("unsupported code index schema; remove the derived index and rebuild with hx code index")
     from . import code_journal, code_snapshot
     conn.executescript(SCHEMA + code_snapshot.SCHEMA + code_journal.SCHEMA)
     conn.execute("CREATE INDEX IF NOT EXISTS snapshot_ref_kind ON snapshot_ref_postings(kind,repo,path,artifact)")
     conn.execute("CREATE INDEX IF NOT EXISTS symbol_qualified_folded ON symbols(repo,qualified_folded)")
-    conn.execute("PRAGMA user_version=1")
+    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     if trigram is None:
         option = conn.execute(
             "SELECT value FROM metadata WHERE key='config.trigram'"
@@ -90,25 +95,6 @@ def _connect(root, *, existing=False, trigram=None):
             "INSERT OR REPLACE INTO metadata VALUES('config.trigram',?)",
             ("true" if trigram else "false",),
         )
-    for table, tokenizer in [
-        ("code_search", "porter unicode61"),
-        ("code_trigram", "trigram"),
-    ]:
-        present = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE name=?", (table,)
-        ).fetchone()
-        if table == "code_trigram" and not trigram:
-            conn.execute("DROP TABLE IF EXISTS " + table)
-            continue
-        try:
-            conn.execute(
-                f"CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(repo UNINDEXED,path,symbols,body,content='files',content_rowid='id',tokenize='{tokenizer}')"
-            )
-            if not present:
-                conn.execute(f"INSERT INTO {table}({table}) VALUES('rebuild')")
-        except sqlite3.OperationalError:
-            if table != "code_trigram":
-                raise
     import zlib
 
     conn.create_function(
@@ -192,27 +178,7 @@ def span_sha(text, line, end_line):
     ).hexdigest()
 
 
-def fts_tables(conn):
-    if conn.snapshot is not None:
-        return []
-    return [
-        r[0]
-        for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE name IN ('code_search','code_trigram')"
-        )
-    ]
-
-
 def delete_file(conn, repo, path):
-    row = conn.execute(
-        "SELECT * FROM files WHERE repo=? AND path=?", (repo, path)
-    ).fetchone()
-    if row:
-        for table in fts_tables(conn):
-            conn.execute(
-                f"INSERT INTO {table}({table},rowid,repo,path,symbols,body) VALUES('delete',?,?,?,?,?)",
-                (row["id"], repo, path, row["symbols"], row["body"]),
-            )
     conn.execute("DELETE FROM files WHERE repo=? AND path=?", (repo, path))
     conn.execute("DELETE FROM exclusions WHERE repo=? AND path=?", (repo, path))
     for table, key in [
@@ -266,9 +232,7 @@ def decorate(conn, row):
     stale = bool(result.get("stale"))
     key = (identity, path)
     if key not in conn.source_cache:
-        repo = conn.execute(
-            "SELECT root FROM repos WHERE repo=?", (identity,)
-        ).fetchone()
+        checkout = (conn.snapshot_roots or {}).get(identity)
         if conn.snapshot is not None:
             file = (
                 graph["files"][0]
@@ -283,9 +247,9 @@ def decorate(conn, row):
                 (*key, *key),
             ).fetchone()
         actual = None
-        if repo and repo[0] and path:
-            target = Path(repo[0]) / path
-            if target.parent.resolve().is_relative_to(Path(repo[0]).resolve()):
+        if checkout and path:
+            target = Path(checkout) / path
+            if target.parent.resolve().is_relative_to(Path(checkout).resolve()):
                 try:
                     actual = hashlib.sha256(source_bytes(target)).hexdigest()
                 except OSError:
@@ -308,13 +272,13 @@ def decorate(conn, row):
             file and generation and file["generation"] != generation[0]
         )
         mode_changed = False
-        if conn.snapshot is not None and repo and path:
+        if conn.snapshot is not None and checkout and path:
             mode = graph.get("mode") if graph else None
             try:
-                stat = (Path(repo[0]) / path).lstat()
+                stat = (Path(checkout) / path).lstat()
                 actual_mode = (
                     "120000"
-                    if (Path(repo[0]) / path).is_symlink()
+                    if (Path(checkout) / path).is_symlink()
                     else "100755"
                     if stat.st_mode & 0o111
                     else "100644"
@@ -336,10 +300,7 @@ def decorate(conn, row):
             and result.get("line")
             and result.get("anchor_sha")
         ):
-            repo = conn.execute(
-                "SELECT root FROM repos WHERE repo=?", (identity,)
-            ).fetchone()
-            text = (Path(repo[0]) / path).read_text()
+            text = (Path(checkout) / path).read_text()
             stale |= (
                 span_sha(text, result["line"], result["end_line"])
                 != result["anchor_sha"]

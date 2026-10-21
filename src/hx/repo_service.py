@@ -428,6 +428,17 @@ def code_request(root, argv, env=None):
             clean.append(value)
     want_owners = "--owners" in clean
     clean = [a for a in clean if a != "--owners"]
+    # The server answers from its own cwd, so a read names the client's checkout.
+    if (
+        clean
+        and clean[0] not in {"index", "audit", "journal"}
+        and not any(a == "--repo" or a.startswith("--repo=") for a in clean)
+    ):
+        from .code_snapshot import caller_checkout
+
+        checkout = caller_checkout()
+        if checkout is not None:
+            clean += ["--repo", str(checkout)]
     result = request(path, {"method": "code", "argv": clean})
     if clean and clean[0] in {'contract', 'contracts'} and isinstance(result['result'], list):
         from .code_metadata import join_publications

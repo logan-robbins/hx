@@ -37,41 +37,36 @@ def scope(root, repository, paths, *, bootstrap=False, local=False):
     identity = store.namespace(repo)
     paths = list(paths)
     conn = store.connect(root, existing=True)
-    record = (
-        conn.execute("SELECT * FROM repos WHERE repo=?", (identity,)).fetchone()
-        if conn
-        else None
-    )
-    checkout = (
-        conn.execute(
-            "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
-            (str(repo), identity),
-        ).fetchone()
-        if conn
-        else None
-    )
-    if bootstrap and (record is None or checkout is None):
+
+    def bound():
+        # Only this checkout's own binding proves its scope; another checkout of
+        # the namespace, or its live staging rows, never do.
+        return (
+            conn.execute(
+                "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
+                (str(repo), identity),
+            ).fetchone()
+            if conn
+            else None
+        )
+
+    selected = bound()
+    if bootstrap and selected is None:
         if conn:
             conn.close()
         from .code_build import index_repo
 
         index_repo(root, repo)
         conn = store.connect(root, existing=True)
-        record = conn.execute(
-            "SELECT * FROM repos WHERE repo=?", (identity,)
-        ).fetchone()
-    selected = None
-    if conn:
+        selected = bound()
+    record = None
+    if selected:
         from .code_snapshot import activate
 
-        selected = conn.execute(
-            "SELECT snapshot FROM checkout_heads WHERE root=? AND repo=?",
-            (str(repo), identity),
-        ).fetchone()
-        if selected:
-            snap = activate(conn, selected[0], identity, historical=False, paths=paths)
-            record = dict(record) if record else {}
-            record.update(root=str(repo), head=snap["head"])
+        snap = activate(
+            conn, selected[0], identity, historical=False, paths=paths, root=repo
+        )
+        record = dict(root=str(repo), head=snap["head"])
     reasons = []
     changed = []
     try:

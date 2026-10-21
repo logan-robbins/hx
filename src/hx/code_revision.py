@@ -268,6 +268,7 @@ def _index_revision(
             parent=parent["identity"] if parent else None,
             complete=True,
             activate_checkout=False,
+            dirty=(),
         )
         conn.execute(
             "INSERT OR REPLACE INTO snapshot_refs VALUES(?,?,?)",

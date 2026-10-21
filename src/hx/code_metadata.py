@@ -76,7 +76,8 @@ def owners(root, result):
         ]
 
 
-def register_contracts(conn, file):
+def register_contracts(conn, file, caller=None):
+    """Record contracts and publish them into each namespace's caller checkout."""
     records = json.loads(Path(file).read_text())
     if isinstance(records, dict):
         records = [records]
@@ -99,7 +100,7 @@ def register_contracts(conn, file):
         if path.is_absolute() or ".." in path.parts:
             raise ValueError("contract path must be repository relative")
         if not conn.execute(
-            "SELECT 1 FROM repos WHERE repo=?", (record["repo"],)
+            "SELECT 1 FROM checkout_heads WHERE repo=?", (record["repo"],)
         ).fetchone():
             raise ValueError("contract repository is not indexed")
         conn.execute(
@@ -109,35 +110,28 @@ def register_contracts(conn, file):
                 for k in ("repo", "name", "path", "version", "producer", "sha")
             ),
         )
-    from .code_snapshot import capture_external
+    from .code_snapshot import capture_external, checkout_root
 
     for identity in sorted({str(record["repo"]) for record in records}):
-        repository = conn.execute(
-            "SELECT root FROM repos WHERE repo=?", (identity,)
-        ).fetchone()[0]
-        capture_external(conn, identity, repository)
+        capture_external(
+            conn,
+            identity,
+            checkout_root(conn, identity, caller),
+            {str(r["path"]) for r in records if str(r["repo"]) == identity},
+            (),
+        )
     conn.commit()
     return len(records)
 
 
 def contracts(conn, name=None, *, repo=None, limit=100):
-    if conn.snapshot is not None:
-        from .code_snapshot import metadata_facts
+    from .code_snapshot import metadata_facts
 
-        rows = metadata_facts(conn, "contracts", name, repo=repo, limit=limit)
-    else:
-        rows = conn.execute(
-            "SELECT * FROM contracts WHERE (? IS NULL OR lower(name)=?) AND (? IS NULL OR repo=?) ORDER BY repo,name,path,version LIMIT ?",
-            (name, name.casefold() if name else None, repo, repo, limit),
-        )
     result = []
-    for row in rows:
+    for row in metadata_facts(conn, "contracts", name, repo=repo, limit=limit):
         value = store.decorate(conn, row)
-        root = conn.execute(
-            "SELECT root FROM repos WHERE repo=?", (row["repo"],)
-        ).fetchone()[0]
         difference = store.git(
-            root,
+            conn.snapshot_roots[row["repo"]],
             "diff",
             "--name-only",
             row["sha"],
@@ -156,10 +150,8 @@ def contracts(conn, name=None, *, repo=None, limit=100):
     return result
 
 
-def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=100):
+def run(conn, command, name=None, *, repo=None, root=None, limit=100):
     if command in {"contracts", "contract"}:
-        if register:
-            register_contracts(conn, register)
         return contracts(conn, name, repo=repo, limit=limit)
     if command == "projects":
         if conn.snapshot is not None:
@@ -242,13 +234,22 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
                 )
             )
         return result
-    namespaces = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT * FROM repos WHERE (? IS NULL OR repo=?) ORDER BY repo LIMIT ?",
-            (repo, repo, limit),
+    # One entry per selected namespace: the checkout this read answers for.
+    namespaces = []
+    for identity, checkout in sorted(conn.snapshot_roots.items())[:limit]:
+        if repo is not None and identity != repo:
+            continue
+        record = conn.execute(
+            "SELECT * FROM main.repos WHERE repo=? AND root=?", (identity, checkout or "")
+        ).fetchone()
+        selected = conn.snapshot_maps[identity]
+        entry = (
+            dict(record)
+            if record
+            else dict(repo=identity, root=checkout or "", head=selected["head"], dirty=0, indexed_at=None)
         )
-    ]
+        entry["snapshot"] = selected["identity"]
+        namespaces.append(entry)
     from .code_freshness import scope
 
     for entry in namespaces:
@@ -319,13 +320,14 @@ def run(conn, command, name=None, *, repo=None, register=None, root=None, limit=
         data["references"] += 1
         data["resolved_references"] += row["lane"] == "resolved"
     from .code_adapters import detect
+    from .code_snapshot import source_search_tables
 
     return dict(
         repos=namespaces,
         coverage=coverage,
         extractors=detect(),
         index_bytes=store.db_path(root).stat().st_size,
-        tokenizers=store.fts_tables(conn),
+        tokenizers=source_search_tables(conn),
         excluded_files=[
             dict(r)
             for r in conn.execute(

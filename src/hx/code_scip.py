@@ -204,18 +204,25 @@ def _ingest(conn, identity, data, *, extractor="scip"):
     )
 
 
-def ingest(conn, identity, data, *, extractor="scip", snapshot=True):
+def ingest(conn, identity, data, *, extractor="scip", snapshot=True, checkout=None):
+    """Replace one extractor's resolved rows; with `snapshot`, publish them into
+    `checkout` (default: the namespace's only root)."""
+    touched = "SELECT path FROM symbols WHERE repo=? AND lane='resolved' AND extractor=? UNION SELECT path FROM refs WHERE repo=? AND lane='resolved' AND extractor=? UNION SELECT src_path FROM edges WHERE repo=? AND lane='resolved' AND extractor=?"
     conn.execute("SAVEPOINT scip_ingestion")
     try:
+        paths = {r[0] for r in conn.execute(touched, (identity, extractor) * 3)}
         result = _ingest(conn, identity, data, extractor=extractor)
         if snapshot:
-            from .code_snapshot import capture_external
+            from .code_snapshot import capture_external, checkout_root
 
-            repository = conn.execute(
-                "SELECT root FROM repos WHERE repo=?", (identity,)
-            ).fetchone()
+            paths.update(r[0] for r in conn.execute(touched, (identity, extractor) * 3))
             result["snapshot"] = capture_external(
-                conn, identity, repository[0] if repository else ""
+                conn,
+                identity,
+                str(checkout) if checkout else checkout_root(conn, identity) or "",
+                paths,
+                ("resolved",),
+                contracts=False,
             )
         conn.execute("RELEASE scip_ingestion")
         conn.symbol_cache.clear()
@@ -315,7 +322,7 @@ def index(conn, identity, repo, checkout, *, prepare_only=False, suffixes=None):
             results.append(
                 dict(status="prepared", extractor=binary, data=data)
                 if prepare_only
-                else ingest(conn, identity, data, extractor=binary)
+                else ingest(conn, identity, data, extractor=binary, checkout=repo)
             )
         except (OSError, ValueError) as exc:
             results.append(dict(status="degraded", extractor=binary, reason=str(exc)))

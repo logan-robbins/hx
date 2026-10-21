@@ -35,29 +35,53 @@ def jsonl(file):
 
 
 def import_graph(
-    root, identity, symbols_file, edges_file, *, repo_path=None, extractor="external"
+    root,
+    identity,
+    symbols_file,
+    edges_file,
+    *,
+    repo_path=None,
+    extractor="external",
+    caller=None,
 ):
+    """Anchor and publish into one checkout: `repo_path`, else the caller's.
+
+    Without either, a namespace with one registered root imports into it and a
+    namespace with none imports unanchored; several roots are ambiguous.
+    """
     if not identity or not extractor:
         raise ValueError("namespace and extractor must be nonempty")
+    from .code_snapshot import capture_external, checkout_root
+
     conn = store.connect(root)
     try:
-        registered = conn.execute(
-            "SELECT root FROM repos WHERE repo=?", (identity,)
-        ).fetchone()
-        repo = (
-            Path(repo_path).resolve()
-            if repo_path
-            else Path(registered[0])
-            if registered and registered[0]
-            else None
-        )
+        registered = [
+            Path(r[0])
+            for r in conn.execute(
+                "SELECT root FROM repos WHERE repo=? AND root<>''", (identity,)
+            )
+        ]
+        if repo_path:
+            repo = Path(repo_path).resolve()
+        else:
+            selected = checkout_root(conn, identity, caller)
+            repo = Path(selected) if selected else None
         if repo is not None:
             if not repo.is_dir():
                 raise ValueError("import repository does not exist")
             if store.db_path(root).resolve().is_relative_to(repo):
                 raise ValueError("graph state must be outside the repository")
-            if registered and registered[0] and Path(registered[0]).resolve() != repo:
+            if registered and repo not in registered and store.namespace(
+                repo
+            ) != store.namespace(registered[0]):
                 raise ValueError("namespace already names another repository")
+        touched = {
+            r[0]
+            for r in conn.execute(
+                "SELECT path FROM symbols WHERE repo=? AND lane='imported' AND extractor=? UNION SELECT src_path FROM edges WHERE repo=? AND lane='imported' AND extractor=?",
+                (identity, extractor, identity, extractor),
+            )
+        }
         conn.execute(
             "INSERT OR IGNORE INTO repos VALUES(?,?,?,?,?)",
             (
@@ -123,6 +147,7 @@ def import_graph(
             )
             insert_symbol(conn, identity, row)
             symbols += 1
+            touched.add(row["path"])
             locations[row["qualified"]] = row["path"]
             locations.setdefault(row["name"], row["path"])
         for row in jsonl(edges_file):
@@ -154,9 +179,10 @@ def import_graph(
                 evidence=row["evidence"],
             )
             edges += 1
-        from .code_snapshot import capture_external
-
-        snapshot = capture_external(conn, identity, str(repo) if repo else "")
+            touched.add(src)
+        snapshot = capture_external(
+            conn, identity, str(repo) if repo else "", touched
+        )
         conn.commit()
         return dict(
             repo=identity,

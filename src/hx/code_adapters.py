@@ -64,10 +64,11 @@ def detect():
             version = run([binary, "--version"], maximum=8192).strip()
         except OSError, ValueError:
             continue
+        # The version is recorded (and folded into the extractor generation), never gated.
         available = (
             "Universal Ctags" in version
             if tool == "ctags"
-            else version.startswith("tree-sitter 0.25.10")
+            else version.startswith("tree-sitter ")
         )
         result[tool] = {"available": available, "binary": binary, "version": version}
     grammars = []
@@ -106,7 +107,7 @@ def parse_tags(output):
                 )
             )
         elif line.strip():
-            raise ValueError("unrecognized tree-sitter 0.25.10 tags output")
+            raise ValueError("unrecognized tree-sitter tags output")
     return rows
 
 
@@ -218,7 +219,7 @@ def syntax(repo, path, text, symbols, refs, detected):
                 )
                 if rows:
                     return _merge(
-                        text, path, symbols, list(refs), rows, "tree-sitter-0.25.10"
+                        text, path, symbols, list(refs), rows, "tree-sitter"
                     )
             except OSError, ValueError:
                 pass
