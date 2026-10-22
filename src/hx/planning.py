@@ -454,7 +454,7 @@ def main(argv, root, *, env=None):
     parser = argparse.ArgumentParser(prog="hx plan")
     parser.add_argument("--root")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "run", "assign", "audit", "finish", "materialize", "stop", "bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration"):
+    for action in ("validate", "apply", "draft", "replan", "changes", "unit", "ready", "run", "assign", "audit", "finish", "materialize", "stop", "bind", "binding", "approve-binding", "publish-contract", "acquire-contract", "verify-integration", "partition"):
         examples = {
             "bind": "hx plan bind RUN_ID --file worker-checks.json",
             "binding": "hx plan binding RUN_ID",
@@ -463,6 +463,7 @@ def main(argv, root, *, env=None):
             "acquire-contract": "hx plan acquire-contract consumer --producer provider --output api --out /tmp/api-v1",
             "verify-integration": "hx plan verify-integration consumer --integration-run RUN_ID --producer provider --output api",
             "run": "hx plan run PLAN_ID --dry-run",
+            "partition": "hx plan partition --repo WT --scope src/billing src/ledger --out /tmp/plan.json",
         }
         command = subcommands.add_parser(action, epilog="example: " + examples[action] if action in examples else None)
         command.add_argument("--root", default=argparse.SUPPRESS)
@@ -483,11 +484,15 @@ def main(argv, root, *, env=None):
         if action == "changes":
             command.add_argument("--plan", dest="plan_id")
             command.add_argument("--detail", action="store_true")
-        if action in {"draft", "replan", "acquire-contract"}:
+        if action in {"draft", "replan", "acquire-contract", "partition"}:
             command.add_argument("--out", required=action == "acquire-contract")
-        if action == "draft":
+        if action in {"draft", "partition"}:
             command.add_argument("--repo", required=True)
+        if action == "draft":
             command.add_argument("--snapshot", required=True)
+        if action == "partition":
+            command.add_argument("--scope", nargs="+", help="lane paths; default: each top-level directory")
+            command.add_argument("--plan-id", default="partition", help="plan_id of the --out draft")
         if action == "approve-binding":
             command.add_argument("--binding", required=True)
         if action == "publish-contract":
@@ -537,6 +542,17 @@ def main(argv, root, *, env=None):
                 result = goal_templates.replan(store, args.plan_id)
             else:
                 result = goal_templates.changes(store, plan_id=args.plan_id, details=args.detail)
+        elif args.command == "partition":
+            from . import goal_templates, plan_partition
+            result = plan_partition.report(store.root, Path(args.repo), args.scope, plan_partition.merge_rules(store.root))
+            if args.out:
+                _id(args.plan_id)
+                destination = Path(args.out).resolve()
+                if destination.is_relative_to(result["checkout"]):
+                    raise ValidationError("partition --out writes outside the product checkout")
+                from .store import atomic_write_text
+                atomic_write_text(destination, canonical(plan_partition.draft(result, goal_templates.check_policy(store), args.plan_id)) + "\n")
+                result["file"] = str(destination)
         elif args.command == "unit":
             result = assignment(store, args.task_id)
         elif args.command == "ready":

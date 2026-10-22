@@ -175,6 +175,13 @@ def _dispatch(root, body):
                     "telemetry": [dict(r) for r in conn.execute("SELECT * FROM telemetry ORDER BY method")],
                     "latency": [dict(r) for r in conn.execute("SELECT * FROM latency ORDER BY method")],
                     "request_bytes": MAX_REQUEST, "response_bytes": MAX_RESPONSE}
+    if method == "partition":
+        from .plan_partition import report, validated
+        scopes = body.get("scopes")
+        if not isinstance(body.get("repository"), str) or not (
+                scopes is None or isinstance(scopes, list) and all(isinstance(s, str) for s in scopes)):
+            raise ValidationError("partition request names a repository checkout and optional scope paths")
+        return report(root, body["repository"], scopes, validated(body.get("merge", [])), local=True)
     if method == "contract-stubs":
         from .code_stubs import apply
         if not isinstance(body.get("file"), str):

@@ -178,7 +178,8 @@ configured credentials; instance setup does not authorize changing personal harn
 kind together. `seam` is the cache-aware seam profile: `soft_fraction` (number in (0, 1],
 default 0.6), `cache_ttl_s` (integer 0–86400, default 300; 3600 for a 1-hour cache) and
 `min_benefit_bytes` (integer 0–2^30, default 65536). `notifications.per_tick` (integer 1–256,
-default 8) bounds the notifications one tick delivers. Any other key or value is refused. Each
+default 8) bounds the notifications one tick delivers. `partition.merge` lists at most 64
+`hx plan partition` pairing rules (§ Dependency packet plan). Any other key or value is refused. Each
 agent's harness `companion` has `provider` (`anthropic`, the default and the only built
 transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
 `state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
@@ -272,9 +273,14 @@ custom imported kinds. These never validate map relations. `conform` returns
 stale, clean}`; overloads, generic constraints and default values cannot certify
 clean parity. `projects [NAME]` returns manifests and project dependencies;
 `map --budget BYTES [--focus PATH...]` returns ranked files with scope headers,
-definitions and fan-in. `stats` reports each selected namespace's checkout (`root`,
+definitions and fan-in. `map`, `submaps` and `hx plan partition` read file links through one
+bounded postings query over the checkout's current snapshot (at most 250 000 links, never
+the JSON graph views): a `calls` reference links to every same-named declaration in another
+file (a Natural reference only to an object kind), `imports` resolve to indexed paths or a
+uniquely declared name, and a link is stale when either file is. `stats` reports each selected namespace's checkout (`root`,
 `head`, `snapshot`), coverage, tools with their versions, tokenizers and database bytes. `submaps` returns modularity, directory baseline
-and candidate components with bounded member/boundary lists, `read_versions`
+and candidate components with bounded member lists and boundary links
+`{repo,from_path,to_path,kind,lane,status,stale}`, `read_versions`
 and `put` operations; the caller supplies its current run/snapshot patch envelope.
 
 `hx code import --namespace NS [--repo PATH] [--extractor TOOL] --symbols FILE
@@ -428,6 +434,30 @@ refuse unapproved bindings; this does not sandbox arbitrary shell programs.
 and passing scoped proof while the provider is active. Published versions are immutable.
 The published files' declarations are registered as `hx code` contract stubs (§ `hx code`);
 the ledger row is the authority, so retrying an already published version re-registers them.
+`partition --repo WT [--scope PATH...] [--plan-id ID] [--out FILE]` (Partner) partitions one
+indexed checkout from the code graph. Scopes are repository-relative lanes, by default each
+top-level directory; only files under a scope that declare a symbol take part. It returns
+`{repository, checkout, scopes, files, links, stale_links, truncated, providers, families,
+pairs, cycles, units, waves, width, depth, notes}`:
+`providers` are declarations whose callers sit in two or more scopes, ranked by caller
+files (`fan_in`), then scopes; `families` give every other file to its smallest caller (by
+bytes) so a callee is built once, a file nothing in scope calls heading its own, and provider
+files always head theirs; `pairs` are links matched by a `config/hx.json` `partition.merge`
+rule, which joins the two families; `cycles` are `{unit, heads}`, the unit heads whose needs
+formed a cycle, merged into one unit; `units` list `{id, head, files, provides, needs: [{unit, need}], wave}`, a need being
+`contract` on a provider file and `hard` otherwise; `waves` are Kahn levels over the hard
+needs (the plan's `hard_dependency_levels`), `width` the widest and `depth` their count. A
+merge rule is `{id, kind?, from?, to?}`: `kind` is `imports|calls|tests`, `from` matches the
+calling file by exact `path`, directory `prefix` or case-insensitive `suffix`, and `to` adds
+the declaration's `name`, `name_prefix`, `name_suffix` (case-insensitive) or `symbol_kind`;
+all given fields must hold, no patterns. `--out` (outside the checkout) writes a schema-2
+plan `hx plan validate` accepts: one unit per family group with a `source` output on its
+files, a `contract` output on its provider files, `hard` prerequisites on `source` and
+`contract` ones on `contract` (provider output `source`), check policy from
+`config/planning.json`. It refuses a truncated link read, more than 256 units, or a unit over
+64 files or needs. The graph cannot name interface files, so a provider's contract output is
+its source files and publish-contract freezes them: split an interface file out before
+applying. With a repository service configured the service computes the report.
 `acquire-contract TASK --producer ID --output ID --out DIR` exports only a declared
 prerequisite and reports stand-in permission plus the pending real provider/version.
 `verify-integration TASK --integration-run RUN --producer ID --output ID` requires completed

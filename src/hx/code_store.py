@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 
 
 # One namespace holds N checkout roots; version 2 keys `repos` and `checkout_heads` by root.
-SCHEMA_VERSION = 2
+# Version 3 posts symbol kinds, reference extractors and edge targets for the link query.
+SCHEMA_VERSION = 3
 
 
 def db_path(root):

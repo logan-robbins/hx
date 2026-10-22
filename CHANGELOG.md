@@ -11,12 +11,29 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Changed
+- The code index schema is version 3: symbol postings carry the declaration kind, reference
+  postings the extractor and edge postings the original target, for the bounded link query.
+  Remove `state/code-index/index.db` (and the repository service's) and rebuild with
+  `hx code index`; a version-2 index is refused.
+- `hx code map` and `submaps` read file links through one bounded postings query
+  (`code_queries.links`, at most 250 000 links) instead of loading every edge through
+  `edges(limit=1_000_000)` and the JSON graph views; `submaps` boundary links are now
+  `{repo,from_path,to_path,kind,lane,status,stale}`, and an import of the file itself is no
+  longer a link.
 - `check_policy` in a schema-2 plan is `{reviewer,required_checks,role}`, and
   `config/planning.json` requires `role`: the configured seat role that executes the unit,
   which the plan executor matches against `harness.json`. Add `role` to every plan and to
   planning.json; a plan without it is refused. A draft request's `role` overrides the policy's.
 
 ### Added
+- `hx plan partition --repo WT [--scope PATH...] [--out plan.json]` (Partner;
+  docs/fleet-throughput-plan.md P1.4; CONTRACTS.md § Dependency packet plan) reports, from the
+  code graph, the shared providers (declarations called from two or more scopes, ranked by
+  fan-in), family heads (each callee built once by its smallest caller), pairs merged by
+  `config/hx.json` `partition.merge` rules (structural matches on paths and declaration names),
+  needs, merged cycles, and waves with width and depth over hard needs; `--out` drafts the
+  multi-unit schema-2 plan with contract outputs for providers and `need: contract`
+  prerequisites for their consumers, which `hx plan validate` accepts.
 - Published contracts answer the code graph before merge (docs/fleet-throughput-plan.md P1.4;
   CONTRACTS.md § `hx code`): `hx plan publish-contract` registers the published files'
   declarations under the plan's repository namespace with lane `contract` and the ledger row as

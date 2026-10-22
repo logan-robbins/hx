@@ -107,6 +107,7 @@ Search existing capabilities before building. Schedule all ready independent pac
 subject to dependency proofs, source ownership, resource leases and host capacity.
 
   plan draft/validate/apply     define and record graph-driven dependency packets
+  plan partition --repo WT     graph providers, families and waves; --out drafts the plan
   plan ready/assign            inspect readiness and admit a packet
   plan run PLAN [--dry-run]    admit and launch ready packets on idle seats within budgets
   launch ID --run RUN --request REQUEST  advance the admitted native worker
@@ -173,6 +174,7 @@ AUDIENCES: dict[str, set[str]] = {
         "board", "show", "metrics", "goals",
         "plan draft", "plan replan", "plan changes", "plan validate", "plan apply", "plan unit",
         "plan ready", "plan run", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
+        "plan partition",
         "map init", "map import", "map export", "map overlay", "map propose", "map refresh",
         "map publish", "map plan-context", "map get", "map check", "map anchor",
         "learn pending", "learn accept", "learn reject", "learn list",
