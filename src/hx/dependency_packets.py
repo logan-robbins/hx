@@ -242,6 +242,8 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
         cwd = (Path(workdir) / recipe['cwd']).resolve()
         identities[name] = (checks.source_identity(cwd,recipe,child),
                             fingerprints.environment(cwd,recipe['argv'],recipe['environment'],child)[0])
+    from . import code_stubs
+    stubs = code_stubs.extract(blobs)
     with store.transaction() as tx:
         _, task, _ = _run(tx,run_id)
         if task['payload']['workdir'] != workdir or workspace(task['payload'],clean=True) != before:
@@ -257,18 +259,22 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
             old = json.loads(previous[0])
             if any(old[key] != proof[key] for key in ('files','checks','task_revision')):
                 raise Conflict('published contract version is immutable; revise the output version')
-            return old
-        for path, entry in files.items():
-            proof['artifacts'][path] = tx.put_artifact(blobs[path],owner_type='contract',owner_id=digest([task['task_id'],output_id,output['version']]),slot=digest(path))
-        for name, receipt_id in receipt_ids.items():
-            receipt = _receipt(tx,receipt_id)
-            source, environment = identities[name]
-            if not source['complete'] or not environment['complete'] or source['hash'] != receipt['inputs_hash'] or environment['hash'] != receipt['environment_hash']:
-                raise Conflict('contract check inputs changed at publication')
-        tx._change()
-        tx.db.execute('INSERT INTO unit_contracts VALUES(?,?,?,?,?)',(task['task_id'],task['revision'],output_id,output['version'],canonical(proof)))
-        milestone(tx,task,'contract_published',output_id,{'run_id':run_id,'output_id':output_id,'version':output['version'],'contract_hash':digest(proof)})
-        return proof
+            proof = old
+        else:
+            for path, entry in files.items():
+                proof['artifacts'][path] = tx.put_artifact(blobs[path],owner_type='contract',owner_id=digest([task['task_id'],output_id,output['version']]),slot=digest(path))
+            for name, receipt_id in receipt_ids.items():
+                receipt = _receipt(tx,receipt_id)
+                source, environment = identities[name]
+                if not source['complete'] or not environment['complete'] or source['hash'] != receipt['inputs_hash'] or environment['hash'] != receipt['environment_hash']:
+                    raise Conflict('contract check inputs changed at publication')
+            tx._change()
+            tx.db.execute('INSERT INTO unit_contracts VALUES(?,?,?,?,?)',(task['task_id'],task['revision'],output_id,output['version'],canonical(proof)))
+            milestone(tx,task,'contract_published',output_id,{'run_id':run_id,'output_id':output_id,'version':output['version'],'contract_hash':digest(proof)})
+    # The ledger row is the authority; its graph stubs are derived, so a retried
+    # publication re-registers them after a failed graph write.
+    code_stubs.send(store.root,code_stubs.publication(store.root,task,proof,stubs),env)
+    return proof
 
 
 def acquire_contract(store, task_id, producer, output_id, destination):

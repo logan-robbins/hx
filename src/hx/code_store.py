@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS project_edges(repo TEXT NOT NULL,src_path TEXT NOT NU
  PRIMARY KEY(repo,src_path,dst_text));
 CREATE TABLE IF NOT EXISTS contracts(repo TEXT NOT NULL,name TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL,
  producer TEXT NOT NULL,sha TEXT NOT NULL,PRIMARY KEY(repo,name,path,version));
+CREATE TABLE IF NOT EXISTS contract_stubs(ledger TEXT NOT NULL,repo TEXT NOT NULL,plan_id TEXT NOT NULL,task_id TEXT NOT NULL,
+ task_revision INTEGER NOT NULL,output_id TEXT NOT NULL,version INTEGER NOT NULL,commit_sha TEXT NOT NULL,ordinal INTEGER NOT NULL,
+ path TEXT NOT NULL,name_folded TEXT NOT NULL,qualified_folded TEXT NOT NULL,data TEXT NOT NULL,
+ PRIMARY KEY(ledger,task_id,output_id,version,ordinal));
+CREATE INDEX IF NOT EXISTS contract_stub_name ON contract_stubs(repo,name_folded);
+CREATE INDEX IF NOT EXISTS contract_stub_qualified ON contract_stubs(repo,qualified_folded);
 CREATE TABLE IF NOT EXISTS exclusions(repo TEXT NOT NULL,path TEXT NOT NULL,sha256 TEXT NOT NULL,size INTEGER NOT NULL,reason TEXT NOT NULL,PRIMARY KEY(repo,path));
 CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 """

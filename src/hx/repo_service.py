@@ -175,6 +175,11 @@ def _dispatch(root, body):
                     "telemetry": [dict(r) for r in conn.execute("SELECT * FROM telemetry ORDER BY method")],
                     "latency": [dict(r) for r in conn.execute("SELECT * FROM latency ORDER BY method")],
                     "request_bytes": MAX_REQUEST, "response_bytes": MAX_RESPONSE}
+    if method == "contract-stubs":
+        from .code_stubs import apply
+        if not isinstance(body.get("file"), str):
+            raise ValidationError("contract stubs request names its operation file")
+        return apply(root, json.loads(Path(body["file"]).read_text()))
     if method == "scope":
         from .code_freshness import scope
         return scope(root, body["repository"], body["paths"], bootstrap=body.get("bootstrap", False), local=True)

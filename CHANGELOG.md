@@ -17,6 +17,15 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   planning.json; a plan without it is refused. A draft request's `role` overrides the policy's.
 
 ### Added
+- Published contracts answer the code graph before merge (docs/fleet-throughput-plan.md P1.4;
+  CONTRACTS.md § `hx code`): `hx plan publish-contract` registers the published files'
+  declarations under the plan's repository namespace with lane `contract` and the ledger row as
+  `provenance`, so `hx code type|signature|symbols|search|contract NAME` answer in every consumer
+  worktree before the stub is merged, and `--expect exists` holds throughout. Each checkout
+  shadows a stub at read time once its own index has the real declaration at the same path;
+  a later output version replaces the stubs and a new producer revision removes them. With a
+  repository service configured the stubs live in the service's graph (new `contract-stubs`
+  method).
 - Inspected web search for Codex agents (docs/codex-search-guard.md). Codex's hosted
   `web_search` runs inside the Responses API and fires no hook, so an optional
   `config/codex.json` `search_guard` (`toolbox_url`, `content_safety_endpoint`, both required)

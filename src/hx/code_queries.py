@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import code_store as store
 
-LANES = {"resolved": 0, "syntax": 1, "text": 2, "imported": 3}
+LANES = {"resolved": 0, "syntax": 1, "text": 2, "imported": 3, "contract": 4}
 CAP = 100
 
 
@@ -18,6 +18,7 @@ def symbols(conn, name, *, repo=None, limit=CAP, path=None):
         return [dict(r) for r in conn.symbol_cache[key]]
     if conn.snapshot is not None:
         from .code_snapshot import matching_facts
+        from .code_stubs import declarations
 
         rows = matching_facts(
             conn,
@@ -29,6 +30,10 @@ def symbols(conn, name, *, repo=None, limit=CAP, path=None):
             limit=min(CAP, limit),
         )
         result = [store.decorate(conn, r) for r in rows]
+        # Published contracts answer every checkout until it indexes the real declaration.
+        result += declarations(
+            conn, name, repo=repo, path=path, limit=min(CAP, limit) - len(result)
+        )
         conn.symbol_cache[key] = result
         return [dict(r) for r in result]
     rows = conn.execute(

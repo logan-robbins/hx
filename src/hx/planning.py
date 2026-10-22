@@ -413,6 +413,9 @@ def apply(store, body):
                 tx.db.execute("INSERT OR IGNORE INTO plan_prerequisites VALUES(?,?,?,?,?)",
                     (task_id, task_revision, dependency["task_id"], dependency["output_id"], dependency["version"]))
         tx.enqueue("plan_changed", f"plan:{body['plan_id']}:{revision}", result)
+    # A new producer revision supersedes its earlier publications and their graph stubs.
+    from .code_stubs import prune
+    prune(store.root, {task_id: version for task_id, version in task_versions.items() if version > 1})
     return result
 
 

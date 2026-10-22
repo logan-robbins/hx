@@ -253,8 +253,10 @@ certified. See [Natural source support](docs/search-and-retrieval.md#natural-sou
 `symbols`, `type`, `signature`, `tests-for` return declaration rows:
 `{repo, name, qualified, kind, path, line, end_line, signature, lane, extractor,
 anchor_sha, attributes, stale, unanchored}`. `lane` is
-`resolved|syntax|text|imported`; declaration signatures come from source headers
-or an external parser's supplied signature. `callers` returns reference sites with
+`resolved|syntax|text|imported|contract`; declaration signatures come from source headers
+or an external parser's supplied signature. `contract` rows are published contract stubs
+(below) and add `provenance: {ledger, plan_id, task_id, task_revision, output_id, version,
+commit}`. `callers` returns reference sites with
 `reference: resolved|syntactic|imported`; `--count` returns
 `{count, fan_in: "files", stale}`. `register` returns registration references.
 `search` retains `{path,title,snippet,score,layer}` with provenance added; `layer`
@@ -289,8 +291,21 @@ freshness.
 `{name,path,version,producer,repo,sha}` records; `repo` must already be indexed,
 `sha` is the published Git commit; records publish into the caller's checkout of each
 namespace. `contract NAME` returns matching published
-records across namespaces. `--owners` adds `{worker,task,run}` entries from the
-continuity ledger's current leases; the graph has no ownership columns.
+records across namespaces, then the namespace's published contract stubs for NAME with
+`superseded: true|false` for the caller's checkout. `--owners` adds `{worker,task,run}`
+entries from the continuity ledger's current leases; the graph has no ownership columns.
+
+Published contract stubs: `hx plan publish-contract` registers every declaration in the
+published files under the plan's `repository` namespace, lane `contract`, keyed by the
+ledger root and the immutable ledger row. Every checkout of that namespace — consumer
+worktrees that have not merged the stub included — answers `symbols|type|signature|search`
+from them after its own rows, so `--expect exists` holds before merge. A stub is shadowed
+per checkout, at read time, once that checkout's snapshot has a non-contract declaration at
+the same path with the same qualified name (or name and kind); other checkouts keep it.
+Publishing a later version of the output replaces the earlier version's stubs, and a new
+producer task revision removes all of its earlier revisions' stubs. `--at` reads see only
+the immutable snapshot. With a repository service configured, stubs live in the service's
+graph and every instance sharing it reads them.
 
 Resolved indexing is explicit: `index --resolved --indexer-checkout PATH` requires
 a separate clean checkout at the same committed HEAD. The SCIP CLI and applicable
@@ -411,6 +426,8 @@ refuse unapproved bindings; this does not sandbox arbitrary shell programs.
 
 `publish-contract RUN --output ID --file RECEIPTS` publishes exact regular interface files
 and passing scoped proof while the provider is active. Published versions are immutable.
+The published files' declarations are registered as `hx code` contract stubs (§ `hx code`);
+the ledger row is the authority, so retrying an already published version re-registers them.
 `acquire-contract TASK --producer ID --output ID --out DIR` exports only a declared
 prerequisite and reports stand-in permission plus the pending real provider/version.
 `verify-integration TASK --integration-run RUN --producer ID --output ID` requires completed
