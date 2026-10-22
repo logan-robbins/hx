@@ -6,8 +6,7 @@ busy one reads it between tool calls (spec 01.1, verified against
 code.claude.com/docs/en/cross-session-messaging).
 
 The socket and token are per process and are recorded to `run/partner/socket.json` by the
-`context` hook at every `SessionStart`, so they survive `/clear` (spec 09, 12). That hook is
-M2; until then the file is written by hand in tests.
+`context` hook at every `SessionStart`, so they survive `/clear` (spec 09, 12).
 
 The wire format is an auth line then the message, each newline-terminated; the socket answers
 nothing (spec 08, live-verified E6).
@@ -41,11 +40,7 @@ def socket_path(root: Path) -> Path:
 
 
 def read_socket(root: Path) -> tuple[str, str] | None:
-    """(socket path, token) from `run/partner/socket.json`, or None when it is unusable.
-
-    Both the hook's own environment-variable names and short keys are accepted, because the
-    `context` hook writes what Claude Code exported to it (spec 09).
-    """
+    """(socket path, token) from `run/partner/socket.json`, or None when it is unusable."""
     path = socket_path(root)
     if not path.is_file():
         return None
@@ -55,8 +50,8 @@ def read_socket(root: Path) -> tuple[str, str] | None:
         return None
     if not isinstance(data, dict):
         return None
-    address = data.get("socket") or data.get("CLAUDE_CODE_MESSAGING_SOCKET")
-    token = data.get("token") or data.get("CLAUDE_CODE_MESSAGING_TOKEN") or ""
+    address = data.get("socket")
+    token = data.get("token") or ""
     if not address:
         return None
     return str(address), str(token)
@@ -68,16 +63,6 @@ ACCEPTED, NO_SOCKET, REFUSED = "accepted", "no-socket", "refused"
 #: Exit code when the Partner was not reached. Callers treat a failed wake as a warning: the
 #: work is done and recorded either way, and `hx heartbeat` will try again.
 NOT_REACHED_EXIT = 3
-
-
-def _partner_flavor(root: Path) -> str:
-    """This instance's Partner flavor; `claude` when nothing says otherwise."""
-    from .config_harness import flavor_of
-
-    try:
-        return flavor_of(root, PARTNER)
-    except Exception:
-        return "claude"
 
 
 def _paste_to_partner(text: str) -> str:
@@ -104,19 +89,20 @@ def _paste_to_partner(text: str) -> str:
 def wake_partner_status(root: Path, text: str) -> str:
     """`accepted`, `no-socket`, or `refused`. Never blocks and never retries.
 
-    `no-socket` means `run/partner/socket.json` is absent or unusable — the Partner has not
-    started a session yet, so nothing has recorded a socket. `refused` means the file named a
-    socket and the connection or the write failed: a stale file from a dead session, or a
-    Partner that is not listening.
+    A Claude Partner is reached through its socket. `no-socket` means `run/partner/socket.json`
+    is absent or unusable — the Partner has not started a session yet, so nothing has recorded
+    a socket. `refused` means the file named a socket and the connection or the write failed:
+    a stale file from a dead session, or a Partner that is not listening.
 
-    A Partner that does not run on Claude has no socket to record, so a wake that the
-    socket path does not accept falls back to pasting into its pane.
+    A Partner on any other flavor has no socket; its wake is pasted into its pane.
     """
+    from .config_harness import flavor_of
+
+    if flavor_of(Path(root), PARTNER) != "claude":
+        return _paste_to_partner(text)
     found = read_socket(Path(root))
     if found is None:
-        if _partner_flavor(Path(root)) == "claude":
-            return NO_SOCKET
-        return _paste_to_partner(text)
+        return NO_SOCKET
     address, token = found
     payloads = [
         json.dumps({"type": "auth", "token": token}),
@@ -129,9 +115,7 @@ def wake_partner_status(root: Path, text: str) -> str:
             client.sendall(("\n".join(payloads) + "\n").encode())
         return ACCEPTED
     except (OSError, ValueError):
-        if _partner_flavor(Path(root)) == "claude":
-            return REFUSED
-        return _paste_to_partner(text)
+        return REFUSED
 
 
 def wake_partner(root: Path, text: str) -> bool:
