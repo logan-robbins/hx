@@ -106,7 +106,6 @@ endpoint.
 ```json
 {
   "bin": "/opt/homebrew/bin/codex",
-  "version": "0.156.1",
   "search_guard": {
     "toolbox_url": "https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox>/mcp?api-version=v1",
     "content_safety_endpoint": "https://<resource>.cognitiveservices.azure.com"

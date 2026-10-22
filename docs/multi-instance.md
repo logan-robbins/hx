@@ -7,7 +7,7 @@ between them. Everything below was learned running thirteen instances on one 96-
 
 ## 1. One instance per area, each on its own tmux server
 
-- `hx install --root /path/fleet/instances/<area> --claude <pinned binary> --skeleton-only` creates
+- `hx install --root /path/fleet/instances/<area> --claude <binary> --skeleton-only` creates
   the layout without launching anything; a second `install` is idempotent and never overwrites.
   Launch later with `hx launch partner` / `hx ui` once the Partner's files are in place.
 - Every hx command for an instance runs with `HX_TMUX="tmux -L hx-<area>"` (`src/hx/tmux.py`
@@ -43,10 +43,10 @@ between them. Everything below was learned running thirteen instances on one 96-
   before the first launch and record it in the fleet table.
 - Record every agent binary by its **stable launcher path**, never a versioned file. The Muse
   launcher's auto-update replaced `muse-bin-1.4.3-…` with `1.4.4-…` and deleted the old file within
-  the day; every instance pinned to the versioned path failed `hx doctor` at once. `config/meta.json`
-  and friends name `~/.local/bin/muse`, `/usr/bin/codex` and a version-less `claude` path; the
-  `version` field is a note, not a gate; a fleet-wide `pins-check` (grep for a version-like path
-  component, then `-x`) runs with the board. A running process keeps its unlinked binary, so the
+  the day; every instance that recorded the versioned path failed `hx doctor` at once.
+  `config/meta.json` and friends name `~/.local/bin/muse`, `/usr/bin/codex` and a version-less
+  `claude` path; a fleet-wide `bin-path` check (grep for a version-like path component, then
+  `-x`) runs with the board. A running process keeps its unlinked binary, so the
   deletion hurts the next launch, not the current one.
 - A usage-limited native process is unresolved execution. Reconcile worker drain/shutdown
   through its original run/request and owned-process identity; do not start a replacement to
