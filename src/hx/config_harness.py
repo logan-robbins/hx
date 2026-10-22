@@ -321,18 +321,18 @@ def validate_harness(
 
 
 def flavor_of(root: Path, item_id: str) -> str:
-    """The adapter directory name for an id. Unreadable config stays `claude`."""
+    """The adapter directory name `config/<id>/harness.json` declares; `claude` when it names none."""
     path = root / "config" / item_id / "harness.json"
-    if not path.is_file():
-        return "claude"
     try:
         data = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return "claude"
-    if not isinstance(data, dict):
-        return "claude"
-    flavor = data.get("flavor") or "claude"
-    return flavor if flavor in FLAVORS else "claude"
+    except FileNotFoundError:
+        raise ValidationError(f"{path}: missing (spec 05)") from None
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"{path}: not valid JSON: {exc}") from exc
+    flavor = data.get("flavor", "claude") if isinstance(data, dict) else None
+    if not isinstance(flavor, str) or flavor not in FLAVORS:
+        raise ValidationError(f"{path}: `flavor` must be one of {', '.join(FLAVORS)}, got `{flavor!r}`")
+    return flavor
 
 
 def load_harness(

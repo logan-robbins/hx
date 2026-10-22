@@ -133,8 +133,9 @@ configuration, commands, and the boundaries of reusable proof.
 ## Requirements and current limits
 
 hx requires Python 3.14, `tmux`, `git`, and a supported Claude installation for the
-Partner. Other native harnesses can be assigned as workers when configured. TypeSafe
-API access is required for Jev; the runtime has no inference fallback for Jev decisions.
+Partner. Other native harnesses can be assigned as workers when configured. Jev needs
+`TYPESAFE_API_KEY` in the process environment or the instance env file; the runtime has no
+inference fallback for Jev decisions.
 See [getting started](docs/getting-started.md) for credentials and installation.
 
 Worker tasks use one dependency packet lifecycle. A configured source workdir precedes admission; optional provisioning is needed only when no
@@ -146,8 +147,7 @@ require a current repository graph. The ledger is authoritative for task state a
 Tests exercise named lifecycle, concurrency, recovery, graph, and proof boundaries. They do
 not establish general model extraction accuracy or a live engineering-to-QA fleet result.
 Deployment eligibility retains exact integration and tested-artifact obligations; the product's
-configured external release mechanism performs authorized deployment. Obsolete unreleased
-store/plan formats are replaced, with no compatibility workflow.
+configured external release mechanism performs authorized deployment.
 
 ## Documentation
 

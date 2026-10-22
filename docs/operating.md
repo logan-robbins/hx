@@ -67,5 +67,4 @@ Local landing does not push remotely. Deployment uses the product's configured r
 within the human's authorization.
 
 `hx up` and `hx heartbeat` recover the Partner/UI/root service and advance existing durable
-native intents. They do not start unlaunched reservations. Current packet/store schemas are
-required; this unreleased product replaces obsolete state instead of maintaining old workflows.
+native intents. They do not start unlaunched reservations.

@@ -291,7 +291,7 @@ def _workdir_of(root: Path, item_id: str) -> Path | None:
     return path if path.is_absolute() else root / path
 
 
-def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str, str]]:
+def skill_isolation(root: Path, flavors: dict[str, str], env=None) -> list[tuple[str, str, str]]:
     """`skills-isolation` warnings: skills that could reach a worker from outside its home.
 
     A worker's workdir is a product checkout, and its `.claude/skills`, `.agents/skills` or
@@ -303,7 +303,7 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
     """
     env = os.environ if env is None else env
     rows: list[tuple[str, str, str]] = []
-    workers = [item_id for item_id in ids if item_id != "partner"]
+    workers = [item_id for item_id in flavors if item_id != "partner"]
     for item_id in workers:
         workdir = _workdir_of(root, item_id)
         if workdir is None:
@@ -313,7 +313,7 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
             rows.append((WARN, "skills-isolation",
                          f"{item_id}: workdir {workdir} contains {', '.join(found)}; a checkout's "
                          "skills must never load into a worker (docs/two-worlds.md, Skills)"))
-    host_workers = [i for i in workers if flavor_of(root, i) in HOST_SKILL_FLAVORS]
+    host_workers = [i for i in workers if flavors[i] in HOST_SKILL_FLAVORS]
     home = env.get("HOME")
     if host_workers and home:
         host = Path(home) / ".agents" / "skills"
@@ -567,12 +567,18 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     ids = sorted(e.name for e in config_dir.iterdir() if e.is_dir() and ID_RE.match(e.name)) if config_dir.is_dir() else []
     if not ids:
         checks.append((WARN, "agents", "no config/<id>/ yet"))
+    flavors: dict[str, str] = {}
+    for item_id in ids:
+        try:
+            flavors[item_id] = flavor_of(root, item_id)
+        except ValidationError as exc:
+            checks.append((FAIL, f"harness:{item_id}", str(exc)))
     for item_id in ids:
         checks.extend(_persona_sources(root, item_id))
         home = _agent_home(root, item_id)
-        if home is None:
+        flavor = flavors.get(item_id)
+        if home is None or flavor is None:
             continue
-        flavor = flavor_of(root, item_id)
         if item_id == "partner" and flavor not in PARTNER_FLAVORS:
             checks.append((
                 FAIL, f"flavor:{item_id}",
@@ -611,38 +617,38 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             # non-interactive any more (CONTRACTS.md `run/<id>/home/.claude.json`).
             checks.append(_first_launch_state(home, item_id))
 
-    pi_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "pi"]
+    pi_ids = [item_id for item_id in ids if flavors.get(item_id) == "pi"]
     if pi_ids:
         checks.extend(_pi_instance(root))
-    grok_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "grok"]
+    grok_ids = [item_id for item_id in ids if flavors.get(item_id) == "grok"]
     if grok_ids:
         checks.extend(_grok_instance(root))
-    meta_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "meta"]
+    meta_ids = [item_id for item_id in ids if flavors.get(item_id) == "meta"]
     if meta_ids:
         checks.extend(_meta_instance(root))
-    codex_ids = [item_id for item_id in ids if flavor_of(root, item_id) == "codex"]
+    codex_ids = [item_id for item_id in ids if flavors.get(item_id) == "codex"]
     if codex_ids:
         checks.extend(_codex_instance(root, codex_ids))
     # Two-worlds isolation for skill discovery (TOOL_SKILL_PLAN step 7).
-    checks.extend(skill_isolation(root, ids, env))
+    checks.extend(skill_isolation(root, flavors, env))
 
     # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
     # 2026-09-20 directive). Checked from the session environment tmux reports and from the
     # argv of the process in the pane, because either one alone can be stale.
     # A Pi session has neither flag; it is checked for its own config dir and --no-approve.
     for item_id in ids:
-        if item_id != "partner" or not tmux.has_session(item_id, env):
+        if item_id != "partner" or item_id not in flavors or not tmux.has_session(item_id, env):
             continue
-        if flavor_of(root, item_id) == "pi":
+        if flavors[item_id] == "pi":
             for status, detail in live_pi_checks(root, item_id, env):
                 checks.append((status, f"pi:{item_id}", detail))
-        elif flavor_of(root, item_id) == "grok":
+        elif flavors[item_id] == "grok":
             for status, detail in live_grok_checks(root, item_id, env):
                 checks.append((status, f"grok:{item_id}", detail))
-        elif flavor_of(root, item_id) == "meta":
+        elif flavors[item_id] == "meta":
             for status, detail in live_meta_checks(root, item_id, env):
                 checks.append((status, f"meta:{item_id}", detail))
-        elif flavor_of(root, item_id) == "codex":
+        elif flavors[item_id] == "codex":
             for status, detail in live_codex_checks(root, item_id, env):
                 checks.append((status, f"codex:{item_id}", detail))
         else:

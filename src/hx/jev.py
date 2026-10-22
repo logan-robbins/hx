@@ -6,14 +6,13 @@ import asyncio
 import json
 import math
 import os
-import shlex
 import time
 from pathlib import Path
 
 import httpx
 
 from .continuity_store import canonical
-from .errors import ValidationError
+from .errors import HxError, ValidationError
 
 MODEL = "jev-1.13.0"
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
@@ -28,43 +27,19 @@ class Unavailable(Exception):
 
 
 def credential(root, env=None):
+    """`TYPESAFE_API_KEY` from the process environment, else from the instance env file."""
     env = os.environ if env is None else env
     value = env.get("TYPESAFE_API_KEY")
     if not value:
-        path = Path(env.get("TYPESAFE_API_KEY_FILE")
-                    or Path.home() / "workspace/.env/TYPESAFE_API_KEY").expanduser()
+        from . import envfile
         try:
-            # Also accept .env/KEY notation for a named entry in a dotenv file.
-            dotenv = path.name == ".env"
-            if path.name == "TYPESAFE_API_KEY" and path.parent.is_file():
-                path, dotenv = path.parent, True
-            with path.open("rb") as source:
-                if dotenv:
-                    value, scanned = None, 0
-                    while scanned <= 65536:
-                        raw = source.readline(8193)
-                        if not raw:
-                            break
-                        scanned += len(raw)
-                        line = raw.decode().strip().removeprefix("export ").lstrip()
-                        if line.split("=", 1)[0].strip() == "TYPESAFE_API_KEY" and "=" in line:
-                            parts = shlex.split(line.split("=", 1)[1], comments=True)
-                            value = parts[0] if len(parts) == 1 else None
-                            break
-                    if value is None:
-                        raise Unavailable("missing_credentials")
-                else:
-                    raw = source.read(8193)
-                    if len(raw) > 8192:
-                        raise Unavailable("invalid_credentials")
-                    value = raw.decode().strip()
-            if value.startswith("TYPESAFE_API_KEY="):
-                value = value.split("=", 1)[1].strip().strip('"\'')
-        except FileNotFoundError:
-            raise Unavailable("missing_credentials") from None
-        except (OSError, ValueError):
+            path = envfile.settings(Path(root)).get("env_file")
+            value = envfile.parse(Path(path)).get("TYPESAFE_API_KEY") if path else None
+        except HxError:
             raise Unavailable("invalid_credentials") from None
-    if not isinstance(value, str) or not value or len(value) > 8192 or any(ord(char) < 33 or ord(char) > 126 for char in value):
+        if not value:
+            raise Unavailable("missing_credentials")
+    if not isinstance(value, str) or len(value) > 8192 or any(ord(char) < 33 or ord(char) > 126 for char in value):
         raise Unavailable("invalid_credentials")
     return value
 

@@ -483,3 +483,12 @@ def test_a_partner_only_section_is_exempt_only_in_a_skill_the_partner_also_carri
     assert skill_manifest.refused_mentions(text, AUDIENCES, partner_sections=True) == []
     leaked = text + "\nAnd `hx code contracts --register d.jsonl` here.\n"
     assert skill_manifest.refused_mentions(leaked, AUDIENCES, partner_sections=True) == ["code contracts"]
+
+
+def test_a_broken_harness_file_fails(instance):
+    agent = instance / "config" / "eng-001"
+    agent.mkdir(parents=True, exist_ok=True)
+    (agent / "harness.json").write_text("{not json")
+    checks = run_checks(instance)
+    assert ("harness:eng-001", FAIL) in statuses(checks)
+    assert "not valid JSON" in detail_for(checks, "harness:eng-001")[0]

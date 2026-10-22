@@ -1,7 +1,6 @@
 # HX contracts
 
-HX is one unreleased product. Each record, document and table has one shape and carries no
-version field; nothing is migrated or retained as a parallel workflow.
+Each record, document and table has one shape.
 
 ## Directive and planning authority
 

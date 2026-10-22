@@ -106,11 +106,19 @@ def test_input_bound_prevents_any_network_call(monkeypatch):
         jev.evaluate('x' * 4000, QUESTIONS, key='fixture')
 
 
-def test_named_dotenv_key_is_read_without_copying_other_entries(tmp_path):
-    path = tmp_path / '.env'
-    path.write_text('UNRELATED=not-used\nexport TYPESAFE_API_KEY="fixture-key" # comment\nOTHER=not-read\n')
-    assert jev.credential(tmp_path, {'TYPESAFE_API_KEY_FILE': str(path / 'TYPESAFE_API_KEY')}) == 'fixture-key'
-    assert jev.credential(tmp_path, {'TYPESAFE_API_KEY_FILE': str(path)}) == 'fixture-key'
+def test_the_credential_comes_from_the_environment_or_the_instance_env_file(tmp_path):
+    from hx import envfile
+    with pytest.raises(jev.Unavailable, match='missing_credentials'):
+        jev.credential(tmp_path, {})
+    (tmp_path / 'config').mkdir()
+    env_file = tmp_path / 'fleet.env'
+    env_file.write_text('UNRELATED=not-used\nexport TYPESAFE_API_KEY="file-key"\n')
+    envfile.configure(tmp_path, str(env_file))
+    assert jev.credential(tmp_path, {}) == 'file-key'
+    assert jev.credential(tmp_path, {'TYPESAFE_API_KEY': 'env-key'}) == 'env-key'
+    env_file.unlink()
+    with pytest.raises(jev.Unavailable, match='invalid_credentials'):
+        jev.credential(tmp_path, {})
 
 
 def facts(planned):
@@ -164,12 +172,12 @@ def test_failed_jev_settles_events_unclassified_and_the_companion_pass_proceeds(
     assert store.db.execute('SELECT count(*) FROM retrieval_runs').fetchone()[0] == 0
 
 
-def test_missing_credentials_never_reach_the_service(planned, monkeypatch, tmp_path):
+def test_missing_credentials_never_reach_the_service(planned, monkeypatch):
     store, run, event = planned
     monkeypatch.delenv('TYPESAFE_API_KEY')
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no credential, no request'))
     body = passes.prepare(store, run, 'main', prompt_version='test')
-    result = jev_deltas.classify(store, body, env={'TYPESAFE_API_KEY_FILE': str(tmp_path / 'absent')})
+    result = jev_deltas.classify(store, body, env={})
     assert result['status'] == 'unclassified' and result['reason'] == 'missing_credentials'
     assert result['events'] == {event['event_id']: {'route': 'unclassified'}}
 

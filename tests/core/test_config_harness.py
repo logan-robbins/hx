@@ -272,3 +272,20 @@ def test_the_skeleton_harness_files_validate():
 def test_episode_configuration_is_not_a_runtime_option(field):
     with pytest.raises(ValidationError,match='unknown.*companion'):
         validate_harness({**WORKER,'companion':{field:1}},'config/eng-001/harness.json',dir_name='eng-001')
+
+
+def test_flavor_of_refuses_a_missing_or_broken_harness(tmp_path):
+    from hx.config_harness import flavor_of
+
+    with pytest.raises(ValidationError, match="missing"):
+        flavor_of(tmp_path, "eng-001")
+    config = tmp_path / "config" / "eng-001"
+    config.mkdir(parents=True)
+    (config / "harness.json").write_text("{not json")
+    with pytest.raises(ValidationError, match="not valid JSON"):
+        flavor_of(tmp_path, "eng-001")
+    (config / "harness.json").write_text(json.dumps({"flavor": "gemini"}))
+    with pytest.raises(ValidationError, match="flavor"):
+        flavor_of(tmp_path, "eng-001")
+    (config / "harness.json").write_text(json.dumps({}))
+    assert flavor_of(tmp_path, "eng-001") == "claude"

@@ -62,8 +62,8 @@ hx install --root ~/hx
 
 When the user supplies a dotenv file, add `--env-file /absolute/path/to/.env`. It is saved
 in the instance. Existing OAuth and provider seed tokens take precedence. The file can
-contain `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY`, plus other environment
-variables agents need.
+contain `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` and `TYPESAFE_API_KEY` (Jev), plus
+other environment variables agents need.
 
 Without an OAuth token or a usable env fallback, the first run stops with exit 4 and
 prints two steps. Relay them verbatim and wait: the human runs `claude setup-token`

@@ -203,3 +203,15 @@ def test_doctor_fails_when_bin_hx_dangles(tmp_path):
 
     failures = [c for c in run_checks(root) if c[0] == FAIL and c[1] == "bin"]
     assert failures, "a dangling bin/hx must fail the doctor"
+
+
+def test_a_broken_hx_json_is_refused(tmp_path):
+    import pytest
+
+    from hx.errors import HxError
+
+    root = tmp_path / "instance"
+    install_skeleton(root)
+    (root / "config" / "hx.json").write_text("{not json")
+    with pytest.raises(HxError, match="not valid JSON"):
+        install_skeleton(root)

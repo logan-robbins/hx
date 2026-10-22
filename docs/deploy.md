@@ -1,6 +1,6 @@
 # Deploying hx
 
-HX is one unreleased product. Install its current package, create one instance, and configure
+Install the package, create one instance, and configure
 that instance for the project. The [system design](system-design.md) describes the complete
 directive-to-release lifecycle; [getting started](getting-started.md) covers initial setup.
 

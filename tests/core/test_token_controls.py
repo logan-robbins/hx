@@ -89,7 +89,7 @@ def test_hard_reset_never_waits_on_classification_and_submits_once(configured, m
     assert context_packets.issue(store, run, request_id='after-reset', mode='forced', preview=True)['pending'] == 1
 
 
-def test_seam_fires_without_a_jev_credential_or_a_companion_pass(configured, monkeypatch, tmp_path):
+def test_seam_fires_without_a_jev_credential_or_a_companion_pass(configured, monkeypatch):
     from hx import jev, native_companion
     store, _, run = configured
     row, sent = submitted(configured, monkeypatch)
@@ -97,7 +97,7 @@ def test_seam_fires_without_a_jev_credential_or_a_companion_pass(configured, mon
     with store.transaction() as tx:
         tx.append_event(run, 'main', 'pending', 'tool_result', {'text': 'Current result.'})
     monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
-    env = {'TYPESAFE_API_KEY_FILE': str(tmp_path / 'absent')}
+    env = {}
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no credential, no request'))
     monkeypatch.setattr(native_companion, 'execute', lambda *a, **kw: pytest.fail('a seam never waits on a model'))
     with pytest.raises(AdmissionDenied, match='threshold'):

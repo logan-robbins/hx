@@ -112,25 +112,19 @@ def entry_points() -> dict[str, str]:
     """Absolute paths of `hx` and `hx-hook` (CONTRACTS.md `config/hx.json`).
 
     The entry-point scripts sit next to the running interpreter — that is where `uv tool
-    install` and a venv both put them — so resolve from `sys.executable` first and fall back
-    to PATH. Hook commands in every `run/<id>/home/settings.json` reference these, so an
-    install into another venv or tool directory is followed by another `hx install`, which
-    re-records them (spec 17.1).
+    install` and a venv put them. Hook commands in every `run/<id>/home/settings.json`
+    reference these, so an install into another venv or tool directory is followed by another
+    `hx install`, which re-records them (spec 17.1).
     """
     # `sys.executable` unresolved: inside a venv that is the venv's own python, which is the
     # interpreter hx runs on and the one whose bin/ holds the entry-point scripts. Resolving
     # it would jump to the base installation, where they are not.
-    found: dict[str, str] = {}
-    bindirs = [Path(sys.executable).absolute().parent, Path(sys.prefix) / "bin"]
-    for key, name in (("hx_bin", "hx"), ("hook_bin", "hx-hook")):
-        for bindir in bindirs:
-            candidate = bindir / name
-            if candidate.is_file():
-                found[key] = str(candidate)
-                break
-        else:
-            found[key] = shutil.which(name) or ""
-    return found
+    bindir = Path(sys.executable).absolute().parent
+    found = {key: bindir / name for key, name in (("hx_bin", "hx"), ("hook_bin", "hx-hook"))}
+    missing = [str(path) for path in found.values() if not path.is_file()]
+    if missing:
+        raise HxError(f"{', '.join(missing)}: not next to {sys.executable}; the hx install is broken")
+    return {key: str(path) for key, path in found.items()}
 
 
 def write_hx_json(root: Path) -> dict[str, str]:
@@ -139,12 +133,15 @@ def write_hx_json(root: Path) -> dict[str, str]:
     # The entry points are rewritten; anything else the instance records there (`skills`,
     # `learnings`, `learnings_prefix`; CONTRACTS.md) survives a re-install.
     path = root / "config" / "hx.json"
-    try:
-        kept = json.loads(path.read_text()) if path.is_file() else {}
-    except json.JSONDecodeError:
-        kept = {}
-    merged = {**kept, **recorded} if isinstance(kept, dict) else dict(recorded)
-    store.atomic_write_json(path, merged)
+    kept: dict = {}
+    if path.is_file():
+        try:
+            kept = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            raise HxError(f"{path}: not valid JSON: {exc}") from None
+        if not isinstance(kept, dict):
+            raise HxError(f"{path}: not a JSON object")
+    store.atomic_write_json(path, {**kept, **recorded})
     link_bin(root, recorded)
     return recorded
 

@@ -172,8 +172,6 @@ for bounded recovery and evidence retrieval, not routine Partner context.
 The SQLite continuity ledger is authoritative for assignments, runs, captured events,
 companion passes, map overlays, checkpoints, receipts, leases, and durable publication.
 Board, detail, UI, context, and completion project the same task/run identities.
-The unreleased product accepts only its current store and packet schemas; obsolete state
-is replaced rather than maintained through a compatibility path.
 
 ## Companion, Jev, and context control
 
