@@ -246,9 +246,7 @@ def open_handles(root: Path, item_id: str) -> tuple[str | None, str]:
     return _relative(root, mapping_path), "\n".join(lines)
 
 
-def status_parts(
-    root: Path, item_id: str, stream: str, *, fallback: str = ""
-) -> list[tuple[str, str | None, str]]:
+def status_parts(root: Path, item_id: str, stream: str) -> list[tuple[str, str | None, str]]:
     """Partner orchestration step state and open research children."""
     parts = [("Step state", *step_state(root, item_id, stream))]
     parts.append(("Open subagent handles", *open_handles(root, item_id)))
@@ -327,8 +325,7 @@ def compose_text(
     parts.append(_section("Who your subagents are", *subagents(root, item_id)))
     source, text = task(root, item_id, subagent_prompt or "")
     parts.append(_section("Task", source, text))
-    for title, source, body in status if status is not None else status_parts(
-            root, item_id, stream, fallback=text):
+    for title, source, body in status if status is not None else status_parts(root, item_id, stream):
         parts.append(_section(title, source, body))
     return "\n".join(parts).rstrip("\n") + "\n"
 
@@ -344,7 +341,7 @@ def compose(
     if not (root / "config" / item_id).is_dir():
         raise NotFound(f"{item_id}: missing harness configuration")
     if is_main_stream(item_id, stream):
-        status = status_parts(root, item_id, stream, fallback=task(root, item_id)[1])
+        status = status_parts(root, item_id, stream)
         return write_status(root, item_id, status)
     path = context_path(root, item_id, stream)
     store.atomic_write_text(
