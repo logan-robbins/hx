@@ -39,8 +39,8 @@ Top-level fields are exactly:
 plan_id, expected_revision, repository, goal, constraints, tasks
 ```
 
-A plan contains 1–32 observable behavior units, a matching repository UUID, up to 32 complete
-constraints, and at most 256 KiB. Each unit contains exactly:
+A plan contains 1–256 observable behavior units, a matching repository UUID, up to 32 complete
+constraints, and at most 1 MiB. Each unit contains exactly:
 
 ```text
 id, expected_revision, behavior, acceptance, workdir, write_paths, map_inputs,

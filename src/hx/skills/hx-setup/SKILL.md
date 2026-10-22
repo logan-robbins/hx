@@ -164,9 +164,6 @@ HARNESS_ROOT=~/hx hx show partner         # PARTNER.md, the pane, its Companion
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/   # 200
 ```
 
-If the human wants proof their own Claude was not touched, hash `~/.claude` before and after
-with the repository's `tools/claude-home-hash.sh ~/.claude`; the two manifests are identical.
-
 ## 5. Models and cost
 
 `config/<id>/harness.json` carries each agent's `model` and `effort`; `config/models.json`

@@ -81,7 +81,7 @@ tmux session `partner`, and starts the UI at `http://127.0.0.1:8765/`.
 
 ```bash
 HARNESS_ROOT=<instance> hx doctor
-tmux list-windows -t '=partner'   # main and companion
+tmux list-windows -t '=partner'   # main
 tmux ls                            # sessions: partner, ui
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/   # 200
 ```

@@ -22,11 +22,9 @@ This skill is optional. It is installed only on instances whose `config/hx.json`
 {"skills": ["hx-conversion"]}
 ```
 
-The commands below come from the code graph's contract registry. If one answers with an
-unknown-command usage error on this build, the registry has not landed yet. Say so in the
-first line of `## Open decision` and stop. Do not reconstruct the answer by grepping both
-trees: a grep cannot tell you what is registered, and a guess here is how second interfaces
-get built.
+The commands below come from the code graph's contract registry. Do not reconstruct their
+answers by grepping both trees: a grep cannot tell you what is registered, and a guess here
+is how second interfaces get built.
 
 ## The order of a conversion
 

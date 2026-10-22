@@ -1,7 +1,7 @@
 # Provider models
 
 Every current model ID per provider, taken from each provider's own
-documentation and models API (verified October 2026). Listed, not ranked:
+documentation and models API. Listed, not ranked:
 which one a given agent uses is instance config. Pin versioned IDs, never
 aliases, in shipped config.
 

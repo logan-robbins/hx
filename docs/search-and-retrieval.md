@@ -283,11 +283,10 @@ in code, as do the 4,000-byte / 16-question / 500 ms Jev bounds.
 
 ## Status and boundaries
 
-These commands are operator and worker tools available now. Automatic
-consultation of the code index during plan brief construction, and routing
-of planned-run tool output through intent indexing before Jev surplus
-judgment, remain follow-on integration; the planned packet path is
-unchanged. Indexes are rebuildable derived state under `state/` and are
+These commands are operator and worker tools. Automatic consultation of
+the code index during plan brief construction, and routing of planned-run
+tool output through intent indexing before Jev surplus judgment, remain
+follow-on integration. Indexes are rebuildable derived state under `state/` and are
 never the ledger's authority.
 
 ## Prompt caching and companion actions

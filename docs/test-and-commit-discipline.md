@@ -1,9 +1,8 @@
 # Test kinds, commit size, and sign-off cadence
 
 Meta-rules for how agents work, independent of what they build. hx already
-enforces pieces of this (declared checks at completion, scoped retrieval,
-lane gates in `tools/milestone-check.sh`); this document standardises the
-rest so the Partner, workers, and subagents all follow the same discipline
+enforces pieces of this (declared checks at completion, scoped retrieval);
+this document standardises the rest so the Partner, workers, and subagents all follow the same discipline
 and the harness can measure whether they did.
 
 ## Test kinds and when each is required
@@ -23,7 +22,7 @@ Rules:
   tier-appropriate obligations. The harness worker binds exact
   checks and coverage before editing; an independent configured reviewer approves
   adequacy. The Partner schedules dependencies and does not author test procedures.
-- Full-suite green (`tools/milestone-check.sh` with no lane, the CI form) is
+- Full-suite green (`pytest -q`, the CI form) is
   required at the configured integration/release boundary for anything touching shared infrastructure
   (store, CLI dispatch, hooks, runtime policy). Lane-scoped green is enough
   for local packet coverage of a change contained in one lane. Broad required checks

@@ -665,7 +665,7 @@ Every Companion pass is one bounded Messages API exchange: `POST /v1/messages` w
 `anthropic-version: 2023-06-01`, a byte-stable system block marked
 `cache_control: {type: ephemeral}`, the frozen slice in the user turn, the pass protocol's
 tools with `tool_choice: auto`, and `output_config.effort` from the harness. The model answers
-by tool use; hx validates the tool input exactly as before (`passes.commit`, the learning
+by tool use; hx validates the tool input (`passes.commit`, the learning
 assessment checks, `stepstate.validate`). `read_evidence` calls and one rejected submission
 continue the same exchange, for at most three requests; the third carries a last-round notice.
 There is no Companion session, pane, temporary home or subprocess. Each response's usage
