@@ -84,6 +84,14 @@ def host_jobs_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(host_jobs, "directory", lambda: tmp_path / "host-jobs")
 
 
+@pytest.fixture(autouse=True)
+def search_ledger(tmp_path, monkeypatch):
+    """Each test reuses searches only from its own host search ledger (`hx.search_coverage`)."""
+    from hx import search_coverage
+
+    monkeypatch.setattr(search_coverage, "directory", lambda: tmp_path / "host-search")
+
+
 @pytest.fixture
 def child_env():
     """`clean_env` as a fixture, for tests that drive the adapters through bash."""

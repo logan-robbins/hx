@@ -40,19 +40,23 @@ def directory():
     return Path(tempfile.gettempdir()) / f'hx-jobs-{os.getuid()}'
 
 
-def connect():
+def ledger(folder, schema):
+    """This boot's SQLite ledger in `folder`, a directory private to this user."""
     # Boot identity isolates stale host state; HOME is never read or replaced.
     boot = hashlib.sha256(native_processes.boot().encode()).hexdigest()[:16]
-    folder = directory()
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     if folder.is_symlink() or folder.stat().st_uid != os.getuid():
-        raise Conflict('host job directory has unsafe ownership')
+        raise Conflict('host ledger directory has unsafe ownership')
     db = sqlite3.connect(folder / f'{boot}.sqlite', timeout=10, isolation_level=None)
     db.row_factory = sqlite3.Row
-    for statement in SCHEMA.split(';'):
+    for statement in schema.split(';'):
         if statement.strip():
             db.execute(statement)
     return db
+
+
+def connect():
+    return ledger(directory(), SCHEMA)
 
 
 def _row(row):

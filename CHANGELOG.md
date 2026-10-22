@@ -11,6 +11,15 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Changed
+- Native search reuse is box-wide and commit-keyed (docs/fleet-throughput-plan.md P1.3;
+  CONTRACTS.md § Admission and native execution). A scoped Grep or Glob result is keyed by
+  repository namespace, commit, the query relative to the checkout and the scope's content (file
+  contents for a search, names and sizes for a listing) instead of the absolute worktree and
+  inode metadata, so one lane's result serves every lane, worktree and root at that commit whose
+  scope matches, with paths served under the reader's own checkout; a changed file invalidates
+  only its own worktree. The cache moved from the per-root `search_coverage` table to the host
+  ledger `hx-search-UID` in the temp directory; a workdir that is not a Git checkout with a
+  commit is not cached. The ledger schema is 24; recreate prerelease instances.
 - Equal-input .NET builds, test shards and checks run once per box
   (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker, § Scoped check
   execution artifacts). Check, build and test identities hash checkout paths relative to the
@@ -22,7 +31,6 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   original. A joined build is adopted into the joiner's checkout place
   (`state/dotnet/jobs/<seed>/<checkout>/artifacts`) and evaluated there; `fresh` no longer
   refuses a live equal build but joins it. The restore and build caches are keyed by that place.
-  The ledger schema is 23; recreate prerelease instances.
 - `hx build` slot limits come from config, not from the last `--jobs` any root passed
   (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker). `--jobs` is gone from
   `hx build build` and `hx build test`; set `pools.build` (1–64, default 2) and `pools.test`

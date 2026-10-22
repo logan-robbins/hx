@@ -126,7 +126,7 @@ def _admit(store, run_id, launch_id, payload, adapter):
         except ValidationError as exc:
             raise AdmissionDenied(str(exc)) from exc
     from . import search_coverage
-    search = search_coverage.prepare(store, snapshot, task['payload'], payload)
+    search = search_coverage.prepare(task['payload'], payload)
     with store.transaction() as tx:
         row = native_launch._row(tx, run_id)
         if row is None:

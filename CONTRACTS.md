@@ -117,6 +117,17 @@ that ceiling or the pass's frozen context allowance is refused before content is
 `hx exec` and `tool-exec` refuse
 recognized source-dump commands before execution instead of reducing their output.
 Search candidates and reduced non-file command output retain their separate bounded contracts.
+A scoped native search or listing (Grep, Glob and their harness equivalents) inside the task
+workdir of a Git checkout with a commit is reused box-wide from a per-user, per-boot host ledger
+(`hx-search-UID` in the temp directory). Its key is the repository namespace, the commit, the
+query with paths relative to the checkout, and the scope's content: relative names and kinds of
+at most 256 entries, with sizes for a listing and SHA-256 file contents for a search; a scope
+with a symbolic link or more entries is not cached. A result of at most 2048 bytes is recorded
+only when the scope is unchanged at settlement; paths under the checkout are stored as
+`{repository}` and served under the requesting checkout, and a result naming its checkout any
+other way is not recorded. An equal later search in any lane, worktree or root is refused with
+the cached result, marked complete only when the tool reported a complete, untruncated result.
+The ledger keeps 128 results per namespace and 256 in all.
 Complete transport is evidence of emitted content, not proof of model attention or obedience.
 
 `hx complete done` requests managed completion under the caller's `HX_CONTINUITY_RUN`.
