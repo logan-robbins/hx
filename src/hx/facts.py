@@ -12,8 +12,6 @@ from dataclasses import dataclass
 
 from .errors import ValidationError
 
-FACT_SCHEMA_VERSION = 1
-
 # Required and optional text fields. Lists are checked separately below.
 FIELDS = {
     "goal": (("text",), ()),
@@ -33,11 +31,9 @@ def validate_payload(kind: str, payload: dict) -> dict:
         raise ValidationError(f"unknown fact kind {kind}")
     if not isinstance(payload, dict):
         raise ValidationError("fact payload must be an object")
-    if type(payload.get("schema_version")) is not int or payload["schema_version"] != FACT_SCHEMA_VERSION:
-        raise ValidationError("fact requires schema_version=1")
     required, optional = FIELDS[kind]
     lists = LIST_FIELDS.get(kind, set())
-    unknown = payload.keys() - {"schema_version", *required, *optional, *lists}
+    unknown = payload.keys() - {*required, *optional, *lists}
     if unknown:
         raise ValidationError(f"{kind}: unknown fields: {', '.join(sorted(unknown))}")
     for key in required:

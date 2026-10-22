@@ -283,7 +283,7 @@ def test_recorded_exchange_reads_scoped_evidence_and_commits_patch(planned, with
     body = protocol.frozen(store, job)
     response = answer(body, [create(event, text='The parser rejects unknown fields.')])
     if with_map:
-        response['map_patch'] = {'schema_version': 1, 'patch_id': 'pass-'+body['pass_id'], 'task_id': 'T',
+        response['map_patch'] = {'patch_id': 'pass-'+body['pass_id'], 'task_id': 'T',
             'run_id': run, 'snapshot': snapshot, 'read_versions': {'parser': 1}, 'evidence_ids': [event['event_id']],
             'operations': [{'op': 'put', 'record': {**node, 'version': 2, 'summary': 'The parser rejects unknown fields.'}}]}
     read = {'event_id': event['event_id'], 'offset': 0, 'limit': 1024}

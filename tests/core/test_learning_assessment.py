@@ -23,7 +23,7 @@ def activate(store, job):
 
 
 def response(job, *, proposals=None, pending=None):
-    return {'schema_version': 1, 'event_digest': job['payload']['body']['event_digest'],
+    return {'event_digest': job['payload']['body']['event_digest'],
             'proposals': proposals or [], 'pending_event_ids': pending or []}
 
 

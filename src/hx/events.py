@@ -240,15 +240,15 @@ def pi_v1(body: dict) -> list[Event]:
 
 
 def normalized_v1(body: dict) -> list[Event]:
-    if body.get("schema_version") != 1 or body.get("kind") not in EVENT_KINDS or not isinstance(body.get("data"), dict):
-        raise DecodeGap("normalized event requires schema_version=1, a known kind, and data")
+    if body.get("kind") not in EVENT_KINDS or not isinstance(body.get("data"), dict):
+        raise DecodeGap("normalized event requires a known kind and data")
     return [Event(body["kind"], body["data"], body.get("native_event_id"), _usage(body.get("usage")))]
 
 
 def public_batch_v1(body: dict) -> list[Event]:
     records = body.get("events")
-    if body.get("schema_version") != 1 or not isinstance(records, list) or len(records) > 16:
-        raise DecodeGap("public hook batch requires schema_version=1 and at most 16 observations")
+    if not isinstance(records, list) or len(records) > 16:
+        raise DecodeGap("public hook batch requires a list of at most 16 observations")
     result = []
     for record in records:
         if not isinstance(record, dict):

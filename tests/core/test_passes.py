@@ -23,14 +23,14 @@ def ledger(tmp_path):
 
 
 def answer(frozen, operations=(), disposition="extracted"):
-    return {"schema_version": 1, "pass_id": frozen["pass_id"], "task_revision": frozen["task_revision"],
+    return {"pass_id": frozen["pass_id"], "task_revision": frozen["task_revision"],
             "event_digest": frozen["event_digest"], "operations": list(operations),
             "dispositions": {e["event_id"]: disposition for e in frozen["events"]}}
 
 
 def create(event, identifier="F1", kind="finding", **payload):
     return {"op": "create", "record_id": identifier, "expected_version": 0, "record": {
-        "kind": kind, "payload": {"schema_version": 1, **(payload or {"text": "Ingest advanced to cursor 41."})},
+        "kind": kind, "payload": payload or {"text": "Ingest advanced to cursor 41."},
         "evidence": [event["event_id"]], "inputs": {}, "reason": "needed for the cursor fix",
         "expires_when": "source changes"}}
 

@@ -32,7 +32,6 @@ def record(tx, **overrides):
                   payload={"text": "ingest advances a cursor"}, evidence=[], inputs={},
                   reason="needed for edit", expires_when="source changes")
     kwargs.update(overrides)
-    kwargs["payload"] = {"schema_version": 1, **kwargs["payload"]}
     return tx.put_record("F1", **kwargs)
 
 
@@ -121,7 +120,7 @@ def test_record_cas_and_evidence_scoping(ledger):
         record(tx, payload={"text": "lost update"})
     with store.transaction() as tx:
         assert record(tx, expected_version=1, payload={"text": "updated"}) == 2
-        assert tx.record("F1")["payload"] == {"schema_version": 1, "text": "updated"}
+        assert tx.record("F1")["payload"] == {"text": "updated"}
         tx.put_task("T2", {"goal": "different"}, expected_revision=0)
         other = tx.start_run("T2", 1, "eng-002")
         evidence = tx.append_event(other, "main", "two", "tool_result", {})

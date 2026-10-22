@@ -22,7 +22,7 @@ def test_native_reset_rebuilds_current_packet_without_semantic_call(runtime, mon
         event = tx.append_event(run, 'main', 'latest-correction', 'correction', {'text': 'Preserve the public signature.'})
         run_row = tx.db.execute('SELECT task_id FROM runs WHERE run_id=?', (run,)).fetchone()
         tx.put_record('now', expected_version=0, task_id=run_row[0], kind='finding',
-            payload={'schema_version': 1, 'text': 'The parser now preserves the public signature.'},
+            payload={'text': 'The parser now preserves the public signature.'},
             evidence=[event['event_id']], inputs={}, reason='Current implementation.', expires_when='task ends')
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('forced compaction cannot await a model'))
     line = native_controller.observe(store, run, row['launch_id'], 'context',
@@ -71,7 +71,7 @@ def test_long_continuation_keeps_all_unicode_and_final_constraints_without_hook_
     with store.transaction() as tx:
         event = tx.append_event(run, 'main', 'large-current-condition', 'correction', {'text': full})
         tx.put_record('large-current-constraint', expected_version=0, task_id='implement', kind='constraint',
-            payload={'schema_version': 1, 'text': full}, evidence=[event['event_id']], inputs={}, reason='Current mandatory condition.', expires_when='task ends')
+            payload={'text': full}, evidence=[event['event_id']], inputs={}, reason='Current mandatory condition.', expires_when='task ends')
     output = native_controller.observe(store, run, row['launch_id'], 'context',
         {'source': 'compact', 'session_id': row['payload']['native_session']})
     current = native_launch._row(store, run)

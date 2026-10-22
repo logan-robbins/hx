@@ -159,7 +159,7 @@ def vocabulary(repository):
     if not path.exists():
         return None
     body = appmap.read_json(path, 65536)
-    if body.keys() != {'schema_version', 'records'} or body['schema_version'] != 1 or not isinstance(body['records'], dict) or len(body['records']) > 128:
+    if body.keys() != {'records'} or not isinstance(body['records'], dict) or len(body['records']) > 128:
         raise ValidationError('invalid portable application vocabulary')
     for identity, item in body['records'].items():
         appmap.identifier(identity)
@@ -174,7 +174,7 @@ def portable_vocabulary(store, repository, snapshot, records):
     """Prepare a bounded metadata update before any map publication writes."""
     repository = Path(repository)
     path = repository / '.hx/map/vocabulary.json'
-    body = vocabulary(repository) or {'schema_version': 1, 'records': {}}
+    body = vocabulary(repository) or {'records': {}}
     repo_id = appmap.manifest(repository)['repo_id']
     for record in records:
         terms = [row[0] for row in store.db.execute('SELECT term FROM map_aliases WHERE repository=? AND snapshot=? AND record_id=? AND version=? ORDER BY term LIMIT 32',

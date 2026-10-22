@@ -25,7 +25,7 @@ def commit(repo):
 
 
 def record(identifier="compiler", kind="component", **changes):
-    value = {"schema_version": 1, "id": identifier, "version": 1, "kind": kind,
+    value = {"id": identifier, "version": 1, "kind": kind,
              "claim": "required", "summary": "The compiler preserves current obligations.",
              "data": {"responsibility": "Assemble bounded continuation context."},
              "anchors": [], "edges": [], "attributes": {}, "replaces": []}
@@ -198,7 +198,7 @@ def test_import_verifies_committed_objects_despite_assume_unchanged_flags(mapped
 
 
 @pytest.mark.parametrize("change", [
-    {"schema_version": 99}, {"kind": "unknown"}, {"attributes": {"unscoped": True}},
+    {"kind": "unknown"}, {"attributes": {"unscoped": True}},
     {"anchors": [{"path": "../outside", "symbol": None, "sha256": "0" * 64}]},
     {"anchors": [{"path": ".hx/map/manifest.json", "symbol": None, "sha256": "0" * 64}]},
 ])

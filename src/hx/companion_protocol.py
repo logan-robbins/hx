@@ -28,7 +28,7 @@ RECORD_SCHEMA = {"type": "object", "properties": {
     "required": ["kind", "payload", "evidence", "inputs", "reason", "expires_when"]}
 
 PATCH_SCHEMA = {"type": "object", "properties": {
-    "schema_version": {"type": "integer", "enum": [1]}, "pass_id": {"type": "string"},
+    "pass_id": {"type": "string"},
     "event_digest": {"type": "string"}, "task_revision": {"type": "integer"},
     "operations": {"type": "array", "items": {"type": "object", "properties": {
         "op": {"type": "string", "enum": ["create", "supersede", "compress", "invalidate", "drop"]},
@@ -38,7 +38,7 @@ PATCH_SCHEMA = {"type": "object", "properties": {
     "dispositions": {"type": "object", "additionalProperties": {"type": "string", "enum": DISPOSITIONS}},
     "event_reasons": {"type": "object", "additionalProperties": {"type": "string"}},
     "map_patch": {"type": "object"}},
-    "required": ["schema_version", "pass_id", "event_digest", "task_revision", "operations", "dispositions"]}
+    "required": ["pass_id", "event_digest", "task_revision", "operations", "dispositions"]}
 
 TOOLS = [
     {"name": "read_evidence", "description": "Read evidence named in this frozen pass. Source/instruction evidence requires event_id alone and returns the complete original file in one call, or refuses. Ordinary non-file observations require offset and limit. No filesystem access.",

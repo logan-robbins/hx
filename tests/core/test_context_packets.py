@@ -35,7 +35,7 @@ def fact(assignment, name="F1", kind="finding", payload=None, inputs=None, **kwa
     with store.transaction() as tx:
         old = tx.record(name)
         tx.put_record(name, expected_version=old["version"] if old else 0, task_id="implement", kind=kind,
-            payload={"schema_version": 1, **(payload or {"text": "The cursor remains frozen until every event is classified."})},
+            payload=payload or {"text": "The cursor remains frozen until every event is classified."},
             evidence=[event["event_id"]], inputs=inputs or {}, reason="Required by the current unit.",
             expires_when="The current source or task changes.", **kwargs)
 

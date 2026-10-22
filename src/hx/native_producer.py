@@ -113,8 +113,8 @@ def produce(store, *, run_id, worker_id, adapter, session_id, stream_id, payload
         if payload.get(key) not in (None, "") and payload[key] != session_id:
             raise Conflict("producer observation differs from its native session")
     events = decode(decoder, payload)
-    public = {"schema_version": 1, "session_id": session_id, "events": [
-        {"schema_version": 1, "kind": event.kind, "data": event.data,
+    public = {"session_id": session_id, "events": [
+        {"kind": event.kind, "data": event.data,
          "native_event_id": event.native_id, "usage": event.usage} for event in events]}
     binding = native_capture.bind(store, run_id=run_id, worker_id=worker_id, adapter=adapter,
                                  session_id=session_id, stream_id=stream_id, decoder="public-batch-v1", retain_late=True)

@@ -17,7 +17,7 @@ runtime.
 ## Repository format
 
 Commit `.hx/map/manifest.json` and one JSON file per record. The manifest contains
-`schema_version: 1` and a persistent UUID `repo_id`. Record folders are `behaviors`,
+exactly a persistent UUID `repo_id`. Record folders are `behaviors`,
 `components`, `interfaces`, `files`, `checks`, and `resources`. The filename is the
 record ID. This splits unrelated Git changes into independent files.
 
@@ -25,7 +25,6 @@ Each record has exactly these fields:
 
 ```json
 {
-  "schema_version": 1,
   "id": "context-compiler",
   "version": 1,
   "kind": "component",
@@ -43,7 +42,7 @@ Each record has exactly these fields:
 anchors. An observed file record must anchor its declared path. IDs use lowercase
 letters, digits, dots, underscores, or hyphens, up to 128 characters. Versions are
 positive integers; `replaces` records split/merge lineage. Namespaced attributes retain
-unfamiliar values. Unfamiliar structural types require a schema migration.
+unfamiliar values. Unfamiliar structural types are refused.
 
 | Kind | Exact `data` fields |
 |---|---|
@@ -120,7 +119,6 @@ immutable and visible to other workers.
 
 ```json
 {
-  "schema_version": 1,
   "patch_id": "discover-packet-contract",
   "task_id": "TASK",
   "run_id": "RUN",
@@ -129,7 +127,6 @@ immutable and visible to other workers.
   "operations": [{
     "op": "put",
     "record": {
-      "schema_version": 1,
       "id": "packet-contract",
       "version": 1,
       "kind": "interface",

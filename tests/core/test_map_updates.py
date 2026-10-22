@@ -38,7 +38,7 @@ def patch(active, *, index=0, patch_id="patch-1", nodes=None, reads=None, operat
         nodes = [node]
     if operations is None:
         operations = [{"op": "put", "record": node} for node in nodes]
-    return {"schema_version": 1, "patch_id": patch_id, "task_id": f"T{index}", "run_id": runs[index],
+    return {"patch_id": patch_id, "task_id": f"T{index}", "run_id": runs[index],
             "snapshot": overlay, "read_versions": reads if reads is not None else {"compiler": 1, "bounded-context": 1},
             "operations": operations, "evidence_ids": [events[index]]}
 
