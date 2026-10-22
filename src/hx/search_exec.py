@@ -28,17 +28,11 @@ SMALL = 5_000
 HUGE = 102_400
 MAX_RETURN = 6_000
 _LANGUAGES = {"python": ".py", "javascript": ".js", "typescript": ".js", "shell": ".sh"}
-_ALIASES = {"py": "python", "js": "javascript", "ts": "typescript", "bash": "shell", "sh": "shell"}
-
-
-def _norm(language: str) -> str:
-    lang = _ALIASES.get(language.lower(), language.lower())
-    return lang
 
 
 def _run(language, code, *, cwd=None, timeout=30, env_extra=None):
     """Run code, return (exit_code, stdout_bytes, stderr_bytes, timed_out)."""
-    lang = _norm(language)
+    lang = language
     if lang not in _LANGUAGES:
         raise ValueError(f"unsupported language: {language}")
     if lang in ("javascript", "typescript") and not shutil.which("node"):
@@ -145,7 +139,7 @@ def _error(message: str) -> dict:
 
 
 def execute(root, language, code, *, cwd=None, timeout=30, intent=None, background=False) -> dict:
-    lang = _norm(language)
+    lang = language
     if lang not in _LANGUAGES:
         return _error(f"unsupported language: {language}")
     if lang in ("javascript", "typescript") and not shutil.which("node"):
@@ -208,7 +202,7 @@ def execute_file(root, path, language, code, *, timeout=30, intent=None) -> dict
     target = Path(path)
     if not target.is_file():
         return _error(f"file not found: {path}")
-    lang = _norm(language)
+    lang = language
     try:
         require_non_file_code(lang, code, bound_file=True)
     except ValidationError as exc:
@@ -314,7 +308,7 @@ def main(argv, root, *, env=None) -> int:
     ex.add_argument("--timeout", type=int, default=30)
     ex.add_argument("--root", help=argparse.SUPPRESS)
 
-    ef = sub.add_parser("file", aliases=["exec-file"], help="run code against FILE_CONTENT",
+    ef = sub.add_parser("file", help="run code against FILE_CONTENT",
                         epilog='example: hx exec file app.log --language python --code "print(len(FILE_CONTENT))"')
     ef.add_argument("path")
     ef.add_argument("--language", required=True)
@@ -332,14 +326,14 @@ def main(argv, root, *, env=None) -> int:
     bt.add_argument("--root", help=argparse.SUPPRESS)
 
     argv = list(argv)
-    if argv and argv[0] not in {"file", "exec-file", "batch", "-h", "--help"}:
+    if argv and argv[0] not in {"file", "batch", "-h", "--help"}:
         argv = ["exec", *argv]  # `hx exec --language ...` is the bare form
     args = parser.parse_args(argv)
     root = Path(root)
     if args.command == "exec":
         result = execute(root, args.language, args.code,
                          timeout=args.timeout, intent=args.intent)
-    elif args.command in {"file", "exec-file"}:
+    elif args.command == "file":
         result = execute_file(root, args.path, args.language, args.code,
                               timeout=args.timeout, intent=args.intent)
     else:
