@@ -18,7 +18,7 @@ workers establish implementation/parity evidence within their assigned packets.
 Every directive follows current graph exploration and search/reuse before construction.
 Choose packet boundaries from behavior/dependencies and maximize useful parallel work within
 ownership, source safety, resources, and capacity. Request size does not select packet count.
-The only assignment contract is the current schema-2 packet with approved worker bindings.
+The only assignment contract is the dependency packet with approved worker bindings.
 Configure source workdirs at project setup; provision an additional directory only when needed and accept it before admission. `hx plan assign` reserves
 a run; then explicitly `hx launch ID --run RUN --request REQUEST` advances native startup.
 A reservation alone does not prove packet delivery or execution.
@@ -85,7 +85,7 @@ it retains prior paths and refuses dirty or different-source copies.
 
 ## Worker bindings and early interfaces
 
-Current schema-2 plans declare `check_policy` and `resources`; workers bind executable checks.
+Dependency packet plans declare `check_policy` and `resources`; workers bind executable checks.
 Behavior/acceptance and output obligations remain fixed. Policy names an independent
 reviewer and required check IDs. Worker bindings supply exact recipes and a coverage map
 for every `acceptance.N`, `output.ID`, and deferred `integration.PRODUCER/CONTRACT`.

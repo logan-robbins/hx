@@ -98,7 +98,7 @@ def test_repeated_native_identity_keeps_provenance_but_distinct_calls_survive(le
     assert other["event_ids"] != first["event_ids"]
     source_path = store.root / "native.jsonl"
     source_path.write_text(json.dumps(tool()) + "\n")
-    source = register(store, run_id=run, stream_id="main", session_id="S1", path=source_path, decoder="hook-v1")
+    source = register(store, run_id=run, stream_id="main", session_id="S1", path=source_path, decoder="hook")
     drain(store, source)
     assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 2
     assert store.db.execute("SELECT event_id FROM event_origins").fetchone()[0] == first["event_ids"][0]
@@ -118,7 +118,7 @@ def test_missing_native_ids_never_deduplicate_by_output(ledger):
 
 def test_pi_sessionless_events_preserve_public_text_and_usage_only(ledger):
     store, run = ledger
-    session = binding(store, run, adapter="pi", decoder="pi-v1")
+    session = binding(store, run, adapter="pi", decoder="pi")
     ignored = enqueue(store, session, "streaming", {"type": "message_update", "private": "secret thought"})
     assert ignored["event_ids"] == []
     result = enqueue(store, session, "final", {"type": "message_end", "message": {
@@ -191,13 +191,13 @@ def test_concurrent_retry_has_one_delivery_and_event(ledger):
     assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
-def test_schema_three_reopen_preserves_existing_task(ledger):
+def test_reopen_preserves_existing_task(ledger):
     store, _ = ledger
-    with ContinuityStore(store.root) as upgraded:
-        with upgraded.transaction() as tx:
+    with ContinuityStore(store.root) as reopened:
+        with reopened.transaction() as tx:
             assert tx.task("T")["payload"]["goal"] == "Capture the original run."
-        assert upgraded.db.execute("SELECT count(*) FROM native_bindings").fetchone()[0] == 0
-        assert not upgraded.db.execute("PRAGMA foreign_key_check").fetchall()
+        assert reopened.db.execute("SELECT count(*) FROM native_bindings").fetchone()[0] == 0
+        assert not reopened.db.execute("PRAGMA foreign_key_check").fetchall()
 
 
 def test_capture_cli_binds_and_acknowledges_durable_delivery(ledger, run_hx, child_env):

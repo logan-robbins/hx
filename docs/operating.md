@@ -24,7 +24,7 @@ hx plan apply --file plan.json
 hx plan ready PLAN
 ```
 
-Current plans use schema 2. The Partner names behavior, acceptance, allowed writes, current
+The Partner names behavior, acceptance, allowed writes, current
 map references, exact output/dependency versions, resources, and check policy. Workers own
 implementation and executable checks; a configured independent reviewer approves their binding.
 

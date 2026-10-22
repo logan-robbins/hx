@@ -10,7 +10,6 @@ def test_cli_views_use_packet_projection(tmp_path,run_hx,command):
     result=run_hx(*command,'--root',str(tmp_path))
     assert result.returncode==0,result.stderr
     document=json.loads(result.stdout)
-    assert document['schema_version']==2
     assert document['tasks'][0]['task_id']=='orders.work'
     assert 'items' not in document and 'work_item' not in document
 

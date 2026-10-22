@@ -1,7 +1,7 @@
 # HX contracts
 
-HX is one unreleased product. Current schemas define authoritative state; obsolete schemas
-are refused and replaced rather than migrated or retained as parallel workflows.
+HX is one unreleased product. Each record, document and table has one shape and carries no
+version field; nothing is migrated or retained as a parallel workflow.
 
 ## Directive and planning authority
 
@@ -13,7 +13,7 @@ Request size does not select packet count. Freshness proves current evidence, no
 understanding. Derived source edges remain candidates until anchored semantic validation.
 For conversion, index the existing source first and retain separate source/target namespaces.
 
-All public worker assignment and native launch use an accepted schema-2 packet plan. Its
+All public worker assignment and native launch use an accepted dependency packet plan. Its
 full schema, worker binding, early interfaces, and source/deployment proof are below.
 The SQLite ledger owns task/run revisions, progress, events, records, check bindings,
 receipts, ownership, packet coverage, integration, and delivery. Files are bounded context
@@ -155,10 +155,10 @@ The Partner messaging endpoint record `run/partner/socket.json` has exactly `soc
 
 ## Read-only fleet and UI projections
 
-`hx board --json` and `GET /api/board` return schema 2:
+`hx board --json` and `GET /api/board` return:
 
 ```text
-schema_version, root_abs, ts, ledger_revision, plans, tasks, runs, leases,
+root_abs, ts, ledger_revision, plans, tasks, runs, leases,
 progress, checkpoints, checks, milestones, delivery, truncated, proof_note
 ```
 
@@ -197,9 +197,8 @@ agent's harness `companion` has `provider` (`anthropic`, the default and the onl
 transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
 `state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
 `config/models.json` `max_output_tokens`, else derived from the window.
-`config/planning.json` has `schema_version: 1`, independent `reviewer`, `required_checks`, and
-the executing seat `role`; a draft request's `role` overrides it. This policy document version
-is separate from the schema-2 packet plan. The `dispatch` section of `config/hx.json` configures
+`config/planning.json` has exactly an independent `reviewer`, `required_checks`, and
+the executing seat `role`; a draft request's `role` overrides it. The `dispatch` section of `config/hx.json` configures
 the plan executor (§ Plan executor).
 
 Packaged skills are selected by the audience/role manifest. Worker subagents retain the
@@ -242,9 +241,8 @@ the maintained-file budget remain fully indexed and appear in the mandatory size
 The separate parser resource bound refuses indexing before publishing partial coverage.
 Binary bodies are excluded and counted in `skipped`; streamed fingerprints remain in
 `exclusions` for scope freshness. No file-count cap applies.
-A derived index without current namespaces is rebuilt from source; an index of another
-schema version is refused until it is removed and rebuilt. Extractor-generation changes
-invalidate old candidates before the next refresh.
+A derived index without current namespaces is rebuilt from source. Extractor-generation
+changes invalidate old candidates before the next refresh.
 
 Natural UTF-8 source exports use `lane=syntax`, `extractor=stdlib-natural`.
 Extension matching and symbol lookup are case insensitive. `.nat` is a generic
@@ -395,11 +393,11 @@ ownership or rewrite its workdir; replan to the new checkout before admission.
 set of an existing clean sparse copy at that exact source, preserving earlier paths.
 Dirty or different-source copies are refused before modification.
 
-## Dependency packet plan (`schema_version: 2`)
+## Dependency packet plan
 
-Top-level plan fields remain `schema_version`, `plan_id`, `expected_revision`, `repository`,
+Top-level plan fields are exactly `plan_id`, `expected_revision`, `repository`,
 `goal`, `constraints`, `tasks`. A plan holds 1–256 tasks and at most 1 MiB of canonical JSON.
-Each version-2 task has exactly:
+Each task has exactly:
 
 ```text
 id, expected_revision, behavior, acceptance, workdir, write_paths, map_inputs,
@@ -418,7 +416,6 @@ and names the output by exact identity: the task must be a unit of that plan's h
 output must be declared there at that version (an early need also at its provider version).
 A prerequisite inside the plan omits `plan_id`. Readiness refuses a producer that has since
 left the named plan.
-Only the current schema-2 dependency packet plan is accepted.
 
 `hx plan validate|apply` compute levels and parallel groups over every applied plan in the
 root, this plan's units replacing its previous head. The report lists this plan's units in
@@ -463,8 +460,8 @@ needs (the plan's `hard_dependency_levels`), `width` the widest and `depth` thei
 merge rule is `{id, kind?, from?, to?}`: `kind` is `imports|calls|tests`, `from` matches the
 calling file by exact `path`, directory `prefix` or case-insensitive `suffix`, and `to` adds
 the declaration's `name`, `name_prefix`, `name_suffix` (case-insensitive) or `symbol_kind`;
-all given fields must hold, no patterns. `--out` (outside the checkout) writes a schema-2
-plan `hx plan validate` accepts: one unit per family group with a `source` output on its
+all given fields must hold, no patterns. `--out` (outside the checkout) writes a dependency
+packet plan `hx plan validate` accepts: one unit per family group with a `source` output on its
 files, a `contract` output on its provider files, `hard` prerequisites on `source` and
 `contract` ones on `contract` (provider output `source`), check policy from
 `config/planning.json`. It refuses a truncated link read, more than 256 units, or a unit over
@@ -712,7 +709,7 @@ restart, reset or Companion turn waits behind another run's job. Restart, reset 
 Companion kind take turns across runs on their own cursors.
 
 Learning assessment tools are exactly `read_evidence` (one complete frozen evidence object,
-without offsets) and `submit_assessment`. Responses require `schema_version: 1`,
+without offsets) and `submit_assessment`. Responses require
 `event_digest`, `proposals`, and `pending_event_ids`, with optional `ignored_event_reasons`
 mapping explicitly ignored event IDs to reasons. Each proposal contains exactly
 `category`, `scope` (global or paired role), `signal`, `check`, and nonempty `evidence_ids`.

@@ -23,8 +23,8 @@ def check_policy(store):
     path = store.root / 'config' / 'planning.json'
     if path.is_file():
         body = appmap.read_json(path,16000)
-        if not isinstance(body,dict) or body.keys() != {'schema_version','reviewer','required_checks','role'} or type(body['schema_version']) is not int or body['schema_version'] != 1:
-            raise ValidationError('config/planning.json requires schema_version=1, reviewer, required_checks, role')
+        if not isinstance(body,dict) or body.keys() != {'reviewer','required_checks','role'}:
+            raise ValidationError('config/planning.json requires exactly reviewer, required_checks, role')
         return {'reviewer':body['reviewer'],'required_checks':body['required_checks'],'role':body['role']}
     config = store.root / 'config'
     reviewers = []
@@ -93,7 +93,7 @@ def draft(store, repository, snapshot, request):
                 prerequisites=[],resources=[],check_policy=policy)
     if writes:
         unit['outputs'].append(dict(id='source', version=1, kind='source', paths=writes,obligation='Publish exact source implementing the requested behavior.'))
-    plan = dict(schema_version=2, plan_id=request['plan_id'], expected_revision=0, repository=brief['repo_id'],
+    plan = dict(plan_id=request['plan_id'], expected_revision=0, repository=brief['repo_id'],
                 goal=request['goal'], constraints=request.get('constraints', []), tasks=[unit])
     # Exact check authoring belongs to the worker; missing mapped recipes are advisory.
     unknowns = [item for item in brief['discovery'] if item != 'Identify a check that asserts the requested behavior; no current declared check was selected.']

@@ -17,7 +17,7 @@ def seed_check(active):
     store, repo, _, component, _, _, _, _, _ = active
     policy=store.root/'config/planning.json'
     policy.parent.mkdir(parents=True,exist_ok=True)
-    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['compiler-check'],'role':'backend-engineer'}))
+    policy.write_text(json.dumps({'reviewer':'qa-001','required_checks':['compiler-check'],'role':'backend-engineer'}))
     recipe = definition("print('compiler contract checked')")
     recipe.update(id='compiler-check', argv=['python3', '-c', "print('compiler contract checked')"], inputs=['compiler.py'])
     node = record('compiler-check', 'check', data={'recipe': recipe})
@@ -82,7 +82,6 @@ def test_completed_goal_teaches_next_goal_without_research(active, monkeypatch):
     assert followup['plan']['tasks'][0]['write_paths'] == []
     assert followup['recipe_suggestions'] == draft['recipe_suggestions']
     assert 'checks' not in followup['plan']['tasks'][0]
-    assert draft['plan']['schema_version']==2
 
 
 def test_transfer_and_scoped_export_make_findings_portable(active, tmp_path):
@@ -169,7 +168,7 @@ def test_high_fanout_context_is_bounded_and_preserves_unselected_edges(active):
     updated = copy.deepcopy(hub)
     updated.update(version=2, summary='The hub coordinates current dependencies.')
     result = answer(body, [])
-    result['map_patch'] = dict(schema_version=1, patch_id='pass-' + body['pass_id'], task_id='hub-task', run_id=run,
+    result['map_patch'] = dict(patch_id='pass-' + body['pass_id'], task_id='hub-task', run_id=run,
         snapshot=snapshot, read_versions=body['map_scope']['read_versions'], operations=[{'op': 'put', 'record': updated}], evidence_ids=[event['event_id']])
     passes.commit(store, body['pass_id'], result)
     assert len(appmap.get_record(store, repo, snapshot, 'hub')['record']['edges']) == 15
@@ -191,7 +190,7 @@ def test_new_assignment_learns_first_map_entry_from_large_observation(active):
     anchor = next(item for item in body['discovery_anchors'] if item['path'] == 'new.py')
     node = record('new-function', 'file', claim='observed', data={'path': 'new.py'}, anchors=[anchor])
     result = answer(body, [])
-    result['map_patch'] = dict(schema_version=1, patch_id='pass-' + body['pass_id'], task_id='T0', run_id=runs[0],
+    result['map_patch'] = dict(patch_id='pass-' + body['pass_id'], task_id='T0', run_id=runs[0],
         snapshot=snapshot, read_versions={'new-function': 0}, operations=[{'op': 'put', 'record': node}], evidence_ids=[body['events'][-1]['event_id']])
     passes.commit(store, body['pass_id'], result)
     assert appmap.get_record(store, repo, snapshot, 'new-function')['record']['anchors'] == [anchor]
@@ -238,7 +237,7 @@ def test_owner_finishes_mapped_edit_while_other_consumers_require_replan(active)
     current.update(version=current['version'] + 1, anchors=[appmap.source_anchor(repo, 'compiler.py', 'Compiler.build')])
     with store.transaction() as tx:
         event = tx.append_event(run, 'main', 'repair-map', 'tool_result', {'path': 'compiler.py'})
-    map_updates.propose(store, repo, dict(schema_version=1, patch_id='owner-map-repair', task_id='owner', run_id=run,
+    map_updates.propose(store, repo, dict(patch_id='owner-map-repair', task_id='owner', run_id=run,
         snapshot=snapshot, read_versions={'compiler': 2}, operations=[dict(op='put', record=current)], evidence_ids=[event['event_id']]))
     assert {item['task_id'] for item in goal_templates.changes(store)} == {'consumer'}
     git(repo, 'add', 'compiler.py')

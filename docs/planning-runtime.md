@@ -33,10 +33,10 @@ Graph candidates and Jev rankings do not validate semantic edges or prove absenc
 
 ## Current plan contract
 
-Only `schema_version: 2` is accepted. Top-level fields are exactly:
+Top-level fields are exactly:
 
 ```text
-schema_version, plan_id, expected_revision, repository, goal, constraints, tasks
+plan_id, expected_revision, repository, goal, constraints, tasks
 ```
 
 A plan contains 1–32 observable behavior units, a matching repository UUID, up to 32 complete

@@ -12,7 +12,7 @@ when only the latter is present. Unknown keys pass through; hx-hook ignores
 what it does not read. Two deliberate gaps, not oversights:
 
 - context tokens: native hook payloads do not supply a context-window total.
-  Versioned source capture records supported attempt usage separately.
+  Source capture records supported attempt usage separately.
 - persona: worker instructions are frozen in the launch manifest and installed
   once through the configured native channel; context hooks restore task checkpoints.
 """

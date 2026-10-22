@@ -101,7 +101,7 @@ def test_worker_report_preserves_scoped_captured_usage_without_guessing_residenc
     usage={'input_tokens':100,'cache_read_input_tokens':80,'output_tokens':20}
     with store.transaction() as tx:
         tx.db.execute('INSERT INTO native_bindings VALUES(?,?,?,?,?,?,?)',
-            ('usage-binding',run,'main','claude','session','claude-jsonl-v1',json.dumps(usage)))
+            ('usage-binding',run,'main','claude','session','claude',json.dumps(usage)))
         tx.db.execute('INSERT INTO runtime_cycles VALUES(?,?)',('tokens:'+launch['launch_id'],json.dumps({'tokens':180,'reset':'none'})))
     result=prompt_cache.agent_report(store.root,'eng-001')
     assert result['provider_usage'][0]['latest_usage']==usage
@@ -129,7 +129,7 @@ def test_partner_orchestration_report_and_cli_remain_available(instance,capsys):
     assert result['agents'][0]['kind']=='partner'
     assert result['agents'][0]['invariant']['identity_bytes']>0
     assert prompt_cache.main(['report','partner','--json'],instance)==0
-    assert json.loads(capsys.readouterr().out)['schema_version']==2
+    assert json.loads(capsys.readouterr().out)['agents'][0]['kind']=='partner'
     assert prompt_cache.main(['report','eng-001'],instance)==0
     assert 'unmeasured' in capsys.readouterr().out
 

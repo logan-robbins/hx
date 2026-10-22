@@ -279,7 +279,7 @@ def _worker_report(root, item_id, *, env=None):
             metadata=json.loads(checkpoint['payload'])
             result['checkpoint']={key:checkpoint[key] for key in ('checkpoint_id','packet_hash','task_revision','acknowledged','size')}
             result['checkpoint'].update(charged_tokens=metadata['charged_tokens'],tokenizer=metadata['tokenizer'])
-        usage=rows(db,'''SELECT binding_id,stream_id,session_id,decoder_version,latest_usage
+        usage=rows(db,'''SELECT binding_id,stream_id,session_id,decoder,latest_usage
             FROM native_bindings WHERE run_id=? ORDER BY binding_id LIMIT 257''',(row['run_id'],))
         result['provider_usage']=[{**entry,'latest_usage':json.loads(entry['latest_usage']) if entry['latest_usage'] else UNMEASURED}
                                   for entry in usage[:256]]
@@ -352,7 +352,7 @@ def report(root, item_id: str | None = None, *, now: str | None = None, env=None
         if item_id not in ids:
             raise NotFound(f"unknown id: {item_id} (no config/{item_id}/)")
         ids = [item_id]
-    return {"schema_version":2,"ts": now or timestamps.now(),
+    return {"ts": now or timestamps.now(),
             "agents": [agent_report(root, i, now=now, env=env) for i in ids]}
 
 

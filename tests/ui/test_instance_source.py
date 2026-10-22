@@ -36,8 +36,3 @@ def test_sweep_ignores_obsolete_files(tmp_path):
     (tmp_path/'pods').mkdir()
     assert source.scan()==before
 
-
-def test_fixture_refuses_old_schema(tmp_path):
-    (tmp_path/'board.json').write_text(json.dumps({'items':[]}))
-    with pytest.raises(SourceError,match='schema_version=2'):
-        FixtureSource(tmp_path).board()

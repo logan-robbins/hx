@@ -38,7 +38,7 @@ def record(root: Path, delivery: dict, reason: str) -> Path:
     """Atomically write one deferred delivery; never touches the ledger."""
     target = _run_directory(root, delivery["run_id"])
     target.mkdir(parents=True, exist_ok=True)
-    body = json.dumps({"schema_version": 1, "delivery": delivery, "reason": reason[:512], "at": time.time()},
+    body = json.dumps({"delivery": delivery, "reason": reason[:512], "at": time.time()},
                       sort_keys=True).encode()
     if len(body) > RECORD_BYTES:
         raise HxError("deferred hook delivery exceeds its spool bound")

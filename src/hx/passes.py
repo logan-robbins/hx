@@ -84,7 +84,7 @@ def prepare(store: ContinuityStore, run_id: str, stream_id: str, *,
             _check_sources(record["inputs"], tx.task(run["task_id"])["payload"], tx)
             selected[record_id] = record
         pass_id = str(uuid.uuid4())
-        body = {"schema_version": 1, "pass_id": pass_id, "run_id": run_id, "stream_id": stream_id,
+        body = {"pass_id": pass_id, "run_id": run_id, "stream_id": stream_id,
                 "task_id": run["task_id"], "task_revision": run["task_revision"],
                 "task": tx.task(run["task_id"])["payload"], "prompt_version": prompt_version,
                 "from_seq": cursor["classified_seq"], "to_seq": cursor["classified_seq"],
@@ -225,11 +225,10 @@ def _write_operation(tx, operation: dict, frozen: dict, run: dict, allowed_evide
 
 
 def commit(store: ContinuityStore, pass_id: str, response: dict) -> dict:
-    fields = {"schema_version", "pass_id", "event_digest", "task_revision", "operations", "dispositions"}
+    fields = {"pass_id", "event_digest", "task_revision", "operations", "dispositions"}
     if (not isinstance(response, dict) or not fields <= response.keys() or response.keys() - fields - {"event_reasons", "map_patch"}
-        or type(response.get("schema_version")) is not int or response["schema_version"] != 1
         or type(response.get("task_revision")) is not int):
-        raise ValidationError("pass response has missing/unknown fields or schema")
+        raise ValidationError("pass response has missing/unknown fields")
     if response["pass_id"] != pass_id or not isinstance(response["operations"], list) or not isinstance(response["dispositions"], dict):
         raise ValidationError("pass response identity/operations/dispositions are invalid")
     response_hash = digest(response)

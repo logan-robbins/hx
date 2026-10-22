@@ -156,7 +156,7 @@ def prepare(store, agent_id, stream_id, request_id, *, run_id=None):
                          config.learning.get('batch_records', 32), remaining)
         if not events:
             return None
-        body = {'schema_version': 1, 'agent_id': agent_id, 'role': config.role, 'flavor': config.flavor,
+        body = {'agent_id': agent_id, 'role': config.role, 'flavor': config.flavor,
                 'source': 'ledger' if run_id else 'partner', 'source_run_id': run_id, 'source_stream_id': stream_id,
                 'stream_id': cursor_key, 'from_seq': cursor['assessed_seq'], 'to_seq': events[-1]['seq'],
                 'cursor_revision': cursor['revision'], 'events': events,

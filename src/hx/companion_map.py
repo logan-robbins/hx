@@ -227,11 +227,11 @@ def finalize(tx, body, prepared, result):
 def instructions():
     return (" When map_scope is supplied, optionally include map_patch in the same response. "
         "It commits atomically with facts and dispositions. Reuse the supplied records; do not search for more. "
-        "Map patch fields: schema_version=1, patch_id='pass-'+pass_id, task_id, run_id, snapshot, "
+        "Map patch fields: patch_id='pass-'+pass_id, task_id, run_id, snapshot, "
         "read_versions (preserve map_scope.read_versions; add at most four new IDs at version 0), operations, evidence_ids. "
         "Operations: {op:put,record:<complete map record>} or {op:invalidate,id,reason}. "
         "Put version is expected read version+1; absent selected IDs have version 0. "
-        "New IDs require observed claims anchored to paths in frozen evidence or selected records. New or changed edges need endpoint read versions; unchanged omitted edges retain runtime status. Record fields: schema_version=1,id,version,kind, "
+        "New IDs require observed claims anchored to paths in frozen evidence or selected records. New or changed edges need endpoint read versions; unchanged omitted edges retain runtime status. Record fields: id,version,kind, "
         "claim=required/observed/hypothesis,summary,data,anchors,edges,attributes,replaces. "
         "current_anchors supplies verified current source locations and hashes for changed files. "
         "Use them to repair source anchors only when the observed behavior supports the semantic claim. "

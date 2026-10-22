@@ -23,7 +23,7 @@ for line in sys.stdin:
     skill = tmp_path / 'SKILL.md'
     skill.write_text('---\nname: checks\ndescription: Run focused checks.\n---\nUse the assigned check command.\n')
     (tmp_path / 'config').mkdir()
-    (tmp_path / 'config/capabilities.json').write_text(json.dumps({'schema_version': 1,
+    (tmp_path / 'config/capabilities.json').write_text(json.dumps({
         'servers': {'local': {'command': [sys.executable, str(server)]}}, 'skills': {'checks': str(skill)}}))
     capabilities.index(tmp_path)
     with ContinuityStore(tmp_path) as store:
@@ -63,7 +63,7 @@ def test_shipped_skills_load_whole_with_current_catalog_purposes(tmp_path):
     package = Path(capabilities.__file__).resolve().parent / 'skills'
     names = ('hx-signoff', 'hx-conversion')
     (tmp_path / 'config').mkdir()
-    (tmp_path / 'config/capabilities.json').write_text(json.dumps({'schema_version': 1, 'servers': {},
+    (tmp_path / 'config/capabilities.json').write_text(json.dumps({'servers': {},
         'skills': {name: str(package / name / 'SKILL.md') for name in names}}))
     assert capabilities.index(tmp_path)['capabilities'] == 2
     with ContinuityStore(tmp_path) as store:
@@ -109,7 +109,7 @@ def _modern(tmp_path, mode):
     server, log = tmp_path / 'modern.py', tmp_path / 'methods.log'
     server.write_text(MODERN_SERVER)
     (tmp_path / 'config').mkdir()
-    (tmp_path / 'config/capabilities.json').write_text(json.dumps({'schema_version': 1,
+    (tmp_path / 'config/capabilities.json').write_text(json.dumps({
         'servers': {'modern': {'command': [sys.executable, str(server), str(log), mode]}}, 'skills': {}}))
     return log
 

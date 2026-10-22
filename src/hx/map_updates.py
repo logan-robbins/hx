@@ -103,9 +103,9 @@ def create_overlay(store: ContinuityStore, repository: Path, baseline: str) -> d
 
 
 def validate(body):
-    fields = {"schema_version", "patch_id", "task_id", "run_id", "snapshot", "read_versions", "operations", "evidence_ids"}
-    if not isinstance(body, dict) or body.keys() != fields or type(body["schema_version"]) is not int or body["schema_version"] != 1:
-        raise ValidationError("map patch has missing or unknown structure/schema")
+    fields = {"patch_id", "task_id", "run_id", "snapshot", "read_versions", "operations", "evidence_ids"}
+    if not isinstance(body, dict) or body.keys() != fields:
+        raise ValidationError("map patch has missing or unknown structure")
     if len(canonical(body).encode()) > PATCH_BYTES:
         raise ValidationError("map patch exceeds 256 KiB")
     appmap.identifier(body["patch_id"])

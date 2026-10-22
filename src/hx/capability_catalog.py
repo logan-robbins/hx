@@ -156,12 +156,12 @@ class MCP:
 def config(root):
     path = Path(root) / 'config/capabilities.json'
     if not path.exists():
-        return {'schema_version': 1, 'servers': {}, 'skills': {}}
+        return {'servers': {}, 'skills': {}}
     if path.stat().st_size > 65536:
         raise ValidationError('capability registration exceeds 64 KiB')
     body = json.loads(path.read_text())
-    if body.keys() != {'schema_version', 'servers', 'skills'} or body['schema_version'] != 1:
-        raise ValidationError('capabilities require schema_version=1, servers and skills')
+    if body.keys() != {'servers', 'skills'}:
+        raise ValidationError('capabilities require exactly servers and skills')
     return body
 
 

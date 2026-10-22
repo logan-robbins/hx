@@ -9,7 +9,7 @@ from hx.facts import Fact, RequiredContextOverflow, render_fact, select_facts, v
 
 
 def fact(identifier, kind, **fields):
-    return Fact(identifier, 1, kind, {"schema_version": 1, **fields})
+    return Fact(identifier, 1, kind, fields)
 
 
 def test_compact_use_location_and_continuation():
@@ -122,13 +122,11 @@ def test_duplicate_versions_conflict_and_identical_references_deduplicate():
 
 
 @pytest.mark.parametrize("kind,payload", [
-    ("finding", {"schema_version": True, "text": "bad version"}),
-    ("finding", {"schema_version": 2, "text": "future version"}),
-    ("finding", {"schema_version": 1, "text": "", "path": "src/x"}),
-    ("finding", {"schema_version": 1, "text": "fact", "symbol": "unknown_file"}),
-    ("finding", {"schema_version": 1, "text": "fact", "unrendered_qualifier": "must not lose"}),
-    ("cursor", {"schema_version": 1, "step": "x", "phase": "running"}),
-    ("command", {"schema_version": 1, "command": "x", "cwd": "/", "purpose": "test", "env": "bad"}),
+    ("finding", {"text": "", "path": "src/x"}),
+    ("finding", {"text": "fact", "symbol": "unknown_file"}),
+    ("finding", {"text": "fact", "unrendered_qualifier": "must not lose"}),
+    ("cursor", {"step": "x", "phase": "running"}),
+    ("command", {"command": "x", "cwd": "/", "purpose": "test", "env": "bad"}),
 ])
 def test_invalid_or_unrenderable_fields_reject_instead_of_disappearing(kind, payload):
     with pytest.raises(ValidationError):

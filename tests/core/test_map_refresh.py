@@ -8,7 +8,7 @@ import uuid
 import pytest
 
 from hx import appmap, checks, map_dependencies, map_refresh, map_updates, passes
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from .test_appmap import mapped, record
 from .test_checks import definition
@@ -28,10 +28,10 @@ def bound(active):
         event = tx.append_event(run, "main", "observed", "tool_result", {"text": "Compiler preserves current obligations."})
         for name, inputs in (("dependent", {"map": [reference(active)]}), ("independent", {})):
             tx.put_record(name, expected_version=0, task_id="bound", kind="finding",
-                payload={"schema_version": 1, "text": "The compiler preserves obligations."}, evidence=[event["event_id"]],
+                payload={"text": "The compiler preserves obligations."}, evidence=[event["event_id"]],
                 inputs=inputs, reason="Needed to complete the goal.", expires_when="Source changes.")
         tx.put_record("required", expected_version=0, task_id="bound", kind="constraint",
-            payload={"schema_version": 1, "text": "Retain exact commands."}, evidence=[event["event_id"]],
+            payload={"text": "Retain exact commands."}, evidence=[event["event_id"]],
             inputs={}, reason="User requirement.", expires_when="Goal closes.")
     return active, run, {"PATH": os.defpath, "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1"}
 
@@ -112,7 +112,7 @@ def test_config_anchor_change_invalidates_recipe_fact(active):
     map_updates.propose(store, repo, patch(active, nodes=[updated]))
     with store.transaction() as tx:
         tx.put_record("recipe-fact", expected_version=0, task_id="T0", kind="finding",
-            payload={"schema_version": 1, "text": "Use the debug build configuration."}, evidence=[active[8][0]],
+            payload={"text": "Use the debug build configuration."}, evidence=[active[8][0]],
             inputs={"map": [reference(active, version=2)]}, reason="Build requirement.", expires_when="Build configuration changes.")
     (repo / "build.cfg").write_text("mode=release\n")
     queue(active, ["build.cfg"])
@@ -201,7 +201,7 @@ def test_fact_bound_in_frozen_pass_cannot_commit_after_source_changes(bound):
     changed_source(active)
     queue(active)
     drain(active)
-    response = {"schema_version": 1, "pass_id": frozen["pass_id"], "event_digest": frozen["event_digest"],
+    response = {"pass_id": frozen["pass_id"], "event_digest": frozen["event_digest"],
         "task_revision": frozen["task_revision"], "operations": [],
         "dispositions": {event["event_id"]: "no_change" for event in frozen["events"]}}
     with pytest.raises(Conflict):
@@ -225,7 +225,7 @@ def test_binding_obligations_cannot_be_made_source_expirable(bound):
     with pytest.raises(ValidationError, match="cannot expire"):
         with active[0].transaction() as tx:
             tx.put_record("bad-goal", expected_version=0, task_id="bound", kind="goal",
-                payload={"schema_version": 1, "text": "Keep the user's original goal."}, evidence=[],
+                payload={"text": "Keep the user's original goal."}, evidence=[],
                 inputs={"map": [reference(active)]}, reason="Goal.", expires_when="Source changes.")
 
 
@@ -241,11 +241,10 @@ def test_explicit_task_revision_can_rebind_after_reconciliation(bound):
     assert store.db.execute("SELECT task_revision FROM task_replan_queue WHERE task_id='bound'").fetchone()[0] == 1
 
 
-def test_schema_seven_reopen_retains_source_index_and_cli_drains(active, run_hx):
+def test_reopen_retains_source_index_and_cli_drains(active, run_hx):
     store, repo, _, _, _, _, overlay, _, _ = active
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT count(*) FROM map_sources").fetchone()[0] == 2
+    with ContinuityStore(store.root) as reopened:
+        assert reopened.db.execute("SELECT count(*) FROM map_sources").fetchone()[0] == 2
     changed_source(active)
     result = run_hx("map", "refresh", "--repo", str(repo), "--snapshot", overlay, "--path", "compiler.py", "--limit", "1", "--root", str(store.root))
     assert result.returncode == 0, result.stderr
@@ -270,7 +269,7 @@ def test_invalid_binding_fails_before_writing_task_or_fact_even_if_caller_catche
             tx.put_task("invalid-binding", {"workdir": str(repo), "map_inputs": [missing]}, expected_revision=0)
         with pytest.raises(Conflict):
             tx.put_record("invalid-fact", expected_version=0, task_id="T0", kind="finding",
-                payload={"schema_version": 1, "text": "Unverified relationship."}, evidence=[], inputs={"map": [missing]},
+                payload={"text": "Unverified relationship."}, evidence=[], inputs={"map": [missing]},
                 reason="Discovery.", expires_when="Source changes.")
         assert tx.task("invalid-binding") is None and tx.record("invalid-fact") is None
 

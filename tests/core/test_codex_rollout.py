@@ -122,8 +122,8 @@ def test_planned_codex_hook_registers_its_versioned_source(launched):
     store, run, _, home, _ = launched
     path = home / "S.jsonl"
     assert hook(launched, path, last_assistant_message="Final hook evidence.") == 0
-    source = store.db.execute("SELECT source_id,decoder_version FROM capture_sources WHERE run_id=?", (run,)).fetchone()
-    assert source["decoder_version"] == DECODER
+    source = store.db.execute("SELECT source_id,decoder FROM capture_sources WHERE run_id=?", (run,)).fetchone()
+    assert source["decoder"] == DECODER
     append(path, meta(), row("response_item", type="message", id="A", role="assistant", content=[{"type": "output_text", "text": "Delayed final evidence."}]))
     assert observer.drain(store, source["source_id"])["events"] == 2
     with pytest.raises(Conflict, match="child ancestry"):

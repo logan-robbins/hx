@@ -19,7 +19,7 @@ size does not determine packet count. Maximize useful parallelism for every dire
 schedule all justified ready work within free source/resource leases, separate worktrees,
 and host capacity. Static waves do not require waiting when a contract unlocks work early.
 
-Use the current schema-2 plan for every assignment. Name behavior, acceptance, frozen source
+Use the dependency packet plan for every assignment. Name behavior, acceptance, frozen source
 scope, current map inputs, exact output/provider versions, resources, and inherited check
 policy. The worker owns implementation, definition of done, and executable checks; a separate
 configured reviewer approves their adequacy. Keep hard dependencies hard. Allow a conforming

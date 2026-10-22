@@ -221,9 +221,9 @@ def test_scoped_transcript_stops_ingesting_after_task_amendment(capture):
     home = store.root.resolve()
     info = home.stat()
     path = home / "owned.jsonl"
-    registration = dict(run_id=run, stream_id="native", path=path, decoder="claude-v1", session_id="S",
+    registration = dict(run_id=run, stream_id="native", path=path, decoder="claude", session_id="S",
         native_scope={"root": str(home), "root_identity": [info.st_dev, info.st_ino],
-            "actor_id": None, "launch_id": "original", "branch_policy": "claude-linear-v1"})
+            "actor_id": None, "launch_id": "original", "branch_policy": "claude-linear"})
     source = observer.register(store, **registration)
     with store.transaction() as tx:
         task_id = tx.db.execute("SELECT task_id FROM runs WHERE run_id=?", (run,)).fetchone()[0]

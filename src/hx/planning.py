@@ -66,8 +66,8 @@ def _declared(declared, dependency):
 
 def _definition(body):
     """The plan's own units, their declared outputs, and its prerequisites on other applied plans."""
-    if not isinstance(body, dict) or body.keys() != {"schema_version", "plan_id", "expected_revision", "repository", "goal", "constraints", "tasks"} or type(body["schema_version"]) is not int or body["schema_version"] != 2:
-        raise ValidationError("plan requires schema_version=2 and the current packet fields")
+    if not isinstance(body, dict) or body.keys() != {"plan_id", "expected_revision", "repository", "goal", "constraints", "tasks"}:
+        raise ValidationError("plan requires exactly plan_id, expected_revision, repository, goal, constraints and tasks")
     if len(canonical(body).encode()) > PLAN_BYTES:
         raise ValidationError("plan exceeds 1 MiB; decompose the goal into smaller planning scopes")
     _id(body["plan_id"])

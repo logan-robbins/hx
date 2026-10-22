@@ -29,9 +29,9 @@ UNSOUND = frozenset({"incomplete_source_identity", "source_changed_during_check"
 
 
 def validate(recipe: dict) -> str:
-    fields = {"schema_version", "id", "argv", "cwd", "inputs", "environment", "timeout_s", "max_output_bytes"}
-    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - {"source", "report"} or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
-        raise ValidationError("check recipe requires schema_version=1, id, argv, cwd, inputs, environment, timeout_s, max_output_bytes")
+    fields = {"id", "argv", "cwd", "inputs", "environment", "timeout_s", "max_output_bytes"}
+    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - {"source", "report"}:
+        raise ValidationError("check recipe requires id, argv, cwd, inputs, environment, timeout_s, max_output_bytes")
     if len(canonical(recipe).encode()) > MAX_RECIPE_BYTES:
         raise ValidationError("check recipe exceeds 16 KiB")
     _id(recipe["id"])
@@ -282,8 +282,6 @@ def receipt_intact(store, row):
     try:
         payload = json.loads(row["payload"])
         provenance = payload.get("provenance")
-        if payload.get("schema_version") != 2:
-            return False
         return (check_artifacts.intact(store, provenance)
                 and provenance["artifact_hash"] == row["artifact_hash"]
                 and provenance["identity_hash"] == check_artifacts.identity(row["check_version"],
@@ -322,8 +320,7 @@ def current(store: ContinuityStore, run_id: str, receipt_id: str, *,
     if not _artifact_intact(store, row["artifact_hash"]):
         reasons.append("output_missing_or_corrupt")
     provenance = payload.get("provenance")
-    if payload.get("schema_version") != 2 or (
-            not check_artifacts.intact(store, provenance)
+    if (not check_artifacts.intact(store, provenance)
             or provenance["artifact_hash"] != row["artifact_hash"]
             or provenance["identity_hash"] != check_artifacts.identity(row["check_version"],
                 {"hash": row["inputs_hash"]}, {"hash": row["environment_hash"]})):
@@ -365,7 +362,7 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
                           "reasons": [*result["reasons"], "output_missing_or_corrupt"]}
             if result["valid"] and receipt is not None:
                 payload = json.loads(receipt["payload"])
-                if payload.get("schema_version") != 2 or not check_artifacts.intact(store, payload.get("provenance")):
+                if not check_artifacts.intact(store, payload.get("provenance")):
                     result = {**result, "valid": False, "reusable": False,
                               "reasons": [*result["reasons"], "execution_provenance_missing_or_corrupt"]}
             return result
@@ -454,7 +451,7 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
             result["joined"] = {"root": joined["root"], "execution_id": joined["execution_id"]}
         event = tx.append_event(run_id, "checks", f"check:{execution_id}", "check_result", result)
         result["event_id"] = event["event_id"]
-        payload = {"schema_version": 2, "result": result, "reusable": result["reusable"],
+        payload = {"result": result, "reusable": result["reusable"],
                    "argv": recipe["argv"], "resolved_argv": argv, "cwd": str(cwd), "recipe": recipe,
                    "source_before": before, "source_after": after, "environment_before": before_env,
                    "environment_after": after_env, "execution": observed, "completed_at": time.time()}

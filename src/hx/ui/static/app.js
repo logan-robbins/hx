@@ -1,5 +1,5 @@
 "use strict";
-// All views consume the version 2 packet projection. Worker reports are claims;
+// All views consume the packet projection. Worker reports are claims;
 // check receipts and lifecycle milestones remain separately visible.
 const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const link = id => `<a href="#show/${encodeURIComponent(id)}">${esc(id)}</a>`;
@@ -53,7 +53,6 @@ async function render() {
   try {
     const view=await api(route.startsWith("show/") ? `/api/show/${encodeURIComponent(decodeURIComponent(route.slice(5)))}` : "/api/board");
     if (version !== refreshVersion) return;
-    if (view.schema_version !== 2) throw Error("Expected the packet projection.");
     board=view;
     const active=view.runs.filter(r=>r.ended_at === null).length;
     let html=route.startsWith("show/") ? detail(view) : route === "runs" ? `<h1>Execution and ownership</h1>${runs(view)}<h2>Leases</h2>${table(["Repository","Path","Run"],view.leases.map(l=>[esc(l.repository),esc(l.canonical_path),link(l.run_id)]))}` : route === "delivery" ? `<h1>Delivery evidence</h1>${delivery(view)}` : `<div class="eyebrow">Dependency graphs</div><h1>Planned work</h1><p>Every packet carries a result, exact dependencies, ownership and proof obligations.</p><div class="stats">${[[view.plans.length,"Plans"],[view.tasks.length,"Packets"],[active,"Active runs"],[view.leases.length,"Write leases"]].map(([n,label])=>`<div class="stat"><strong>${n}</strong><span>${label}</span></div>`).join("")}</div>${packets(view)}`;

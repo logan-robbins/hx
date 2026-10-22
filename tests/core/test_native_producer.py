@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from hx import hooks, hook_contract, native_capture, native_producer as relay, observer
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from .test_native_capture import ledger, tool
 
@@ -325,9 +325,8 @@ def test_concurrent_hook_retries_capture_once(ledger):
     assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
-def test_current_schema_reopen_retains_empty_producer_state(tmp_path):
+def test_reopen_retains_empty_producer_state(tmp_path):
     with ContinuityStore(tmp_path) as store:
         assert queued(store) == 0
-    with ContinuityStore(tmp_path) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert queued(upgraded) == 0
+    with ContinuityStore(tmp_path) as reopened:
+        assert queued(reopened) == 0

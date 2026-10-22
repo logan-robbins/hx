@@ -372,7 +372,7 @@ def test_sdk_mapped_solution_reuses_build_for_exact_output_shards(sdk,monkeypatc
         if options['artifacts_path']:
             props.update(ArtifactsPath=str(options['artifacts_path']),UseArtifactsOutput='true')
         reference={'project':str(repo/'Lib.csproj'),'global_properties':props}
-        return {'schema_version':1,'complete':True,'platform':props['Platform'],'reader_hash':'fake-sdk-v1',
+        return {'complete':True,'platform':props['Platform'],'reader_hash':'fake-sdk-v1',
                 'nodes':[{'project':str(repo/'Test.csproj'),'global_properties':props,'references':[reference]},
                          {**reference,'references':[]}]}
     monkeypatch.setattr(dotnet_solution,'mapping',mapping)

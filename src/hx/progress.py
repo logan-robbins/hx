@@ -117,7 +117,7 @@ def update(store: ContinuityStore, body: dict, *, worker_id: str | None = None) 
         cursor_id = f"cursor-{digest(task_id)[:32]}"
         old_cursor = tx.record(cursor_id)
         step_name = active[0]["step_id"] if active else (old_cursor["payload"]["step"] if old_cursor else task_id)
-        cursor = {"schema_version": 1, "step": step_name, "phase": body["phase"], "next": body["next"]}
+        cursor = {"step": step_name, "phase": body["phase"], "next": body["next"]}
         if body["blocker"] is not None:
             cursor["blocker"] = body["blocker"]
         step_row = tx.db.execute("SELECT payload,evidence FROM progress_steps WHERE task_id=? AND step_id=?", (task_id, step_name)).fetchone()

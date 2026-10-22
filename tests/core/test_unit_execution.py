@@ -158,7 +158,7 @@ def test_unread_transcript_blocks_completion_and_late_append_blocks_dependency(f
     bind(store, run)
     path = tmp_path / "transcript.jsonl"
     path.write_text("")
-    source = observer.register(store, run_id=run, stream_id="native", path=path, decoder="hook-v1", session_id="S")
+    source = observer.register(store, run_id=run, stream_id="native", path=path, decoder="hook", session_id="S")
     observer.drain(store, source)
     # The observer has not seen these bytes; its stored pending_tail is false.
     path.write_text('{"event":"stop","last_assistant_message":"Done."}\n')

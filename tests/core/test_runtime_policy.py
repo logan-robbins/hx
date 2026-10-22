@@ -223,7 +223,7 @@ def test_required_full_assignment_parts_are_each_read_completely_before_other_wo
     with store.transaction() as tx:
         evidence = tx.db.execute('SELECT event_id FROM events WHERE run_id=? ORDER BY rowid LIMIT 1', (run,)).fetchone()[0]
         tx.put_record('required-full', expected_version=0, task_id='implement', kind='constraint',
-            payload={'schema_version': 1, 'text': complete_constraint}, evidence=[evidence], inputs={},
+            payload={'text': complete_constraint}, evidence=[evidence], inputs={},
             reason='All exact clauses are required by this assigned unit.', expires_when='The Partner replaces this constraint.')
     row = submitted(runtime)
     references = [item for item in row['payload']['required_files'] if item.get('kind') == 'assignment']
@@ -293,7 +293,7 @@ def test_assignment_read_revalidates_required_facts_inside_final_writer(runtime,
     with store.transaction() as tx:
         evidence = tx.db.execute('SELECT event_id FROM events WHERE run_id=? ORDER BY rowid LIMIT 1', (run,)).fetchone()[0]
         tx.put_record('required-race', expected_version=0, task_id='implement', kind='constraint',
-            payload={'schema_version': 1, 'text': 'Retain this exact acceptance condition.\n' * 1500},
+            payload={'text': 'Retain this exact acceptance condition.\n' * 1500},
             evidence=[evidence], inputs={}, reason='Required acceptance conditions.', expires_when='Partner replaces it.')
     row = submitted(runtime)
     references = [item for item in row['payload']['required_files'] if item.get('kind') == 'assignment']
@@ -304,7 +304,7 @@ def test_assignment_read_revalidates_required_facts_inside_final_writer(runtime,
         reading = inspect(*args, **kwargs)
         with store.transaction() as tx:
             tx.put_record('required-race', expected_version=1, task_id='implement', kind='constraint',
-                payload={'schema_version': 1, 'text': 'The required condition has changed.'},
+                payload={'text': 'The required condition has changed.'},
                 evidence=[evidence], inputs={}, reason='Partner replaced this constraint.', expires_when='Partner replaces it.')
         return reading
 

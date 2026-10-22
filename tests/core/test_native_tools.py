@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from hx import hooks, native_controller as controller, native_launch, native_producer, native_tools, unit_execution
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from .test_appmap import mapped
 from .test_context_packets import assignment
 from .test_map_updates import active
@@ -193,13 +193,12 @@ def test_drain_refuses_requests_and_cli_is_replayable(runtime, capsys):
     assert native_producer.status(store, run)['gap'] is None
 
 
-def test_schema_thirteen_reopen_preserves_launch_and_adds_tool_registry(configured):
+def test_reopen_preserves_launch_with_empty_tool_registry(configured):
     store, _, run = configured
     native_launch.prepare(store, 'eng-001', run, 'launch', env={})
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
-        assert native_launch._row(upgraded, run)['status'] == 'prepared'
-        assert upgraded.db.execute('SELECT count(*) FROM native_tool_calls').fetchone()[0] == 0
+    with ContinuityStore(store.root) as reopened:
+        assert native_launch._row(reopened, run)['status'] == 'prepared'
+        assert reopened.db.execute('SELECT count(*) FROM native_tool_calls').fetchone()[0] == 0
 
 
 @pytest.mark.parametrize('separate_session', [False, True])

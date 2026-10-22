@@ -14,7 +14,7 @@ file links through the bounded postings query (`code_queries.links`) and reports
   where the needs form a cycle, and waves: Kahn levels over the hard needs, as
   `planning` computes start levels, with their width and depth.
 
-`--out` writes the units as a schema-2 plan that `hx plan validate` accepts. The graph
+`--out` writes the units as a dependency packet plan that `hx plan validate` accepts. The graph
 cannot name interface files, so a provider's contract output is its source files and
 publish-contract freezes them; split an interface file out before applying the draft.
 """
@@ -335,7 +335,7 @@ def report(root, checkout, scopes=None, rules=(), *, local=False):
 
 
 def draft(result, policy, plan_id):
-    """The partition's units as a schema-2 plan: a source output per unit, a contract
+    """The partition's units as a dependency packet plan: a source output per unit, a contract
     output on each provider's files, and hard or contract prerequisites per need."""
     from .planning import MAX_UNITS
 
@@ -369,7 +369,7 @@ def draft(result, policy, plan_id):
                       "acceptance": ["Every file of the unit is implemented and its required checks pass."],
                       "workdir": result["checkout"], "write_paths": unit["files"], "map_inputs": [],
                       "check_policy": dict(policy), "resources": [], "outputs": outputs, "prerequisites": prerequisites})
-    return {"schema_version": 2, "plan_id": plan_id, "expected_revision": 0, "repository": result["repository"],
+    return {"plan_id": plan_id, "expected_revision": 0, "repository": result["repository"],
             "goal": f"Build {len(tasks)} graph-partitioned units of {result['checkout']} in {result['depth']} waves.",
             "constraints": ["Each unit writes only its own files; consumers of a provider build on its published contract."],
             "tasks": tasks}

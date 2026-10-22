@@ -138,7 +138,7 @@ bounded captured deltas and proposes structured task/map updates; it does not ex
 commands. Jev judges bounded observation and routing candidates, not dependency truth,
 absence, or deployment readiness.
 
-Every worker assignment is admitted through the current schema-2 packet plan. Source
+Every worker assignment is admitted through the dependency packet plan. Source
 materialization and the accepted workdir precede admission. Assignment reserves a run;
 `hx launch ID --run RUN --request REQUEST` explicitly starts/reconciles its native controller.
 Blockers and corrections become typed progress and accepted plan revisions. Only verified

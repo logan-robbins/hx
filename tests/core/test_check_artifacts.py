@@ -15,7 +15,7 @@ from hx.evidence import read
 
 
 def recipe(script="print('scoped proof')", complete=True):
-    return {"schema_version": 1, "id": "unit", "argv": [sys.executable, "-c", script], "cwd": ".",
+    return {"id": "unit", "argv": [sys.executable, "-c", script], "cwd": ".",
             "inputs": [], "source": {"complete": complete, "inputs": ["unit.py"], "dependencies": ["dependency.py"]},
             "environment": {"complete": True, "executables": [], "inputs": [], "external_versions": {}},
             "timeout_s": 3, "max_output_bytes": 10000}

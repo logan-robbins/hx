@@ -24,7 +24,7 @@ def test_compression_erases_old_payload_and_drop_keeps_only_identity(planned):
     with store.transaction() as tx:
         record = tx.record('F1')
     assert record['version'] == 3 and record['validity'] == 'dropped'
-    assert record['payload'] == {'schema_version': 1} and record['evidence'] == []
+    assert record['payload'] == {} and record['evidence'] == []
 
 
 def test_quota_failure_rolls_back_patch_and_event_cursor(planned):
@@ -46,7 +46,7 @@ def test_closed_task_erases_current_facts_and_semantic_cache(planned):
         from hx.task_retention import close
         close(tx, 'T')
         record = tx.record('old')
-    assert record['validity'] == 'dropped' and record['payload'] == {'schema_version': 1}
+    assert record['validity'] == 'dropped' and record['payload'] == {}
     assert store.db.execute('SELECT count(*) FROM retrieval_runs').fetchone()[0] == 0
     assert native_companion.prepare(store, 'eng-001', run, 'main', 'closed')['job_id'] == job['job_id']
 

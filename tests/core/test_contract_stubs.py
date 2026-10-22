@@ -15,8 +15,9 @@ from hx import code_index, code_stubs, planning, repo_service, unit_execution as
 from hx import dependency_packets as packets
 from .test_appmap import git, mapped  # noqa: F401  (fixture)
 from .test_checks import definition
-from .test_dependency_packets import binding, packet, packet_plan, run_receipts
+from .test_dependency_packets import binding, packet, run_receipts
 from .test_map_updates import active  # noqa: F401  (fixture)
+from .test_planning import plan
 from .test_unit_execution import commit, fleet  # noqa: F401  (fixture)
 
 API = "class Adapter:\n    def adapt(self, value):\n        return value\n"
@@ -34,7 +35,7 @@ def producer_plan(fleet, tmp_path):
 
 def publish(fleet, producer):
     store, repo = fleet[:2]
-    planning.apply(store, packet_plan(fleet, [producer]))
+    planning.apply(store, plan(fleet, [producer]))
     run = units.assign(store, "producer", 1, "eng-001")["run_id"]
     check = definition(f"from pathlib import Path; assert Path('api.py').read_text() == {API!r}")
     check["id"] = "contract-check"
@@ -105,7 +106,7 @@ def test_a_new_producer_revision_or_contract_version_removes_its_stubs(fleet, tm
     units.stop(store, run)
     code_index.index_repo(store.root, repo)
     outputs = [dict(output, version=output["version"] + 1) for output in producer["outputs"]]
-    revised = packet_plan(fleet, [dict(producer, expected_revision=1, outputs=outputs,
+    revised = plan(fleet, [dict(producer, expected_revision=1, outputs=outputs,
                                        behavior="The API names a renamed adapter type.")])
     revised["expected_revision"] = 1
     assert planning.apply(store, revised)["task_versions"] == {"producer": 2}

@@ -131,7 +131,7 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
                'available': observed['exit_code'] == 0 and help_result['exit_code'] == 0}
     reasons = set()
     if not sdk['available'] or not sdk['query']:
-        return {'schema_version': 1, 'project': str(project), 'configuration': configuration,
+        return {'project': str(project), 'configuration': configuration,
                 'framework': framework, 'runtime': runtime, 'nodes': [], 'sdk': sdk,
                 'complete': False, 'reasons': ['SDK lacks evaluated property/item query support'],
                 'hash': digest(relocate({'project': str(project), 'args': args, 'sdk': sdk})), 'anchors': anchors}
@@ -367,7 +367,7 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
             identity[key] = sorted(identity[key])
         identity['inputs'] = sorted(identity['inputs'], key=lambda x: (x['kind'], x['path']))
         identity_nodes.append(identity)
-    result = {'schema_version': 1, 'project': str(project), 'cwd': str(cwd), 'configuration': configuration,
+    result = {'project': str(project), 'cwd': str(cwd), 'configuration': configuration,
               'framework': framework, 'runtime': runtime, 'platform': platform, 'sdk': sdk, 'nodes': nodes,
               'solution_mapping': mapping,
               'source': source, 'environment': environment, 'resolved_dotnet': resolved[0],

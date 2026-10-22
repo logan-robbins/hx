@@ -47,7 +47,7 @@ def _usage(value) -> dict | None:
     return result or None
 
 
-def hook_v1(body: dict) -> list[Event]:
+def hook(body: dict) -> list[Event]:
     aliases = {"toolName": "tool_name", "toolInput": "tool_input", "toolResult": "tool_response",
                "tool_result": "tool_response", "toolUseId": "tool_use_id", "sessionId": "session_id",
                "hookEventName": "hook_event_name", "backgroundTasks": "background_tasks",
@@ -124,7 +124,7 @@ def hook_v1(body: dict) -> list[Event]:
     raise DecodeGap(f"unsupported hook event {event}")
 
 
-def claude_v1(body: dict) -> list[Event]:
+def claude(body: dict) -> list[Event]:
     kind = body.get("type")
     if kind == "attachment":
         attachment = body.get("attachment")
@@ -172,7 +172,7 @@ def claude_v1(body: dict) -> list[Event]:
     return results
 
 
-def pi_v1(body: dict) -> list[Event]:
+def pi(body: dict) -> list[Event]:
     kind = body.get("type")
     if kind in {"session", "model_change", "thinking_level_change", "custom", "label", "session_info",
                 "message_start", "message_update", "tool_execution_update"}:
@@ -239,21 +239,21 @@ def pi_v1(body: dict) -> list[Event]:
                   data, native, _usage(message.get("usage")))]
 
 
-def normalized_v1(body: dict) -> list[Event]:
-    if body.get("schema_version") != 1 or body.get("kind") not in EVENT_KINDS or not isinstance(body.get("data"), dict):
-        raise DecodeGap("normalized event requires schema_version=1, a known kind, and data")
+def normalized(body: dict) -> list[Event]:
+    if body.get("kind") not in EVENT_KINDS or not isinstance(body.get("data"), dict):
+        raise DecodeGap("normalized event requires a known kind and data")
     return [Event(body["kind"], body["data"], body.get("native_event_id"), _usage(body.get("usage")))]
 
 
-def public_batch_v1(body: dict) -> list[Event]:
+def public_batch(body: dict) -> list[Event]:
     records = body.get("events")
-    if body.get("schema_version") != 1 or not isinstance(records, list) or len(records) > 16:
-        raise DecodeGap("public hook batch requires schema_version=1 and at most 16 observations")
+    if not isinstance(records, list) or len(records) > 16:
+        raise DecodeGap("public hook batch requires a list of at most 16 observations")
     result = []
     for record in records:
         if not isinstance(record, dict):
             raise DecodeGap("public hook batch contains a non-object observation")
-        result.extend(normalized_v1(record))
+        result.extend(normalized(record))
     return result
 
 
@@ -262,17 +262,17 @@ def codex_rollout(body):
     return decode(body)
 
 
-DECODERS = {"hook-v1": hook_v1, "claude-v1": claude_v1, "pi-v1": pi_v1, "codex-rollout-0.156.1": codex_rollout, "normalized-v1": normalized_v1,
-            "public-batch-v1": public_batch_v1}
+DECODERS = {"hook": hook, "claude": claude, "pi": pi, "codex-rollout-0.156.1": codex_rollout, "normalized": normalized,
+            "public-batch": public_batch}
 
 
-def decode(version: str, body: dict) -> list[Event]:
-    if version not in DECODERS or not isinstance(body, dict):
+def decode(decoder: str, body: dict) -> list[Event]:
+    if decoder not in DECODERS or not isinstance(body, dict):
         raise DecodeGap("unregistered decoder or non-object source record")
     try:
-        events = DECODERS[version](body)
+        events = DECODERS[decoder](body)
     except (KeyError, TypeError, ValueError) as exc:
-        raise DecodeGap(f"invalid {version} record structure") from exc
+        raise DecodeGap(f"invalid {decoder} record structure") from exc
     for event in events:
         if event.native_id is not None and (not isinstance(event.native_id, str) or not event.native_id or len(event.native_id) > 512):
             raise DecodeGap("invalid native event identity")

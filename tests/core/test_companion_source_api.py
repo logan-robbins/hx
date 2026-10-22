@@ -28,7 +28,7 @@ def test_recorded_exchange_preserves_whole_source_over_fifty_thousand_characters
     else:
         job = learning_companion.prepare(store, 'eng-001', 'main', 'complete-source', run_id=run)
         body = job['payload']['body']
-        submit = ('submit-assessment', {'assessment': {'schema_version': 1, 'event_digest': body['event_digest'],
+        submit = ('submit-assessment', {'assessment': {'event_digest': body['event_digest'],
                                                        'proposals': [], 'pending_event_ids': []}})
         execute = learning_companion.execute
     with replay('read-evidence', submit, read={'event_id': event['event_id']}) as sent:

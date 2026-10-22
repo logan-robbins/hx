@@ -60,7 +60,7 @@ def classify(store, body, *, env=None):
         result = None
         if index < MAX_REQUESTS and unavailable is None:
             try:
-                result = jev_decisions.decide(store, body['run_id'], 'event-deltas-v1',
+                result = jev_decisions.decide(store, body['run_id'], 'event-deltas',
                     {**base, 'events': observations}, questions,
                     binding={'records': body['record_versions'], 'events': body['event_digest']}, env=env)
             except jev.Unavailable as exc:

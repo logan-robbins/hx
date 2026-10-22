@@ -27,7 +27,6 @@ from .continuity_store import HASH, ContinuityStore, Conflict, canonical, digest
 from .errors import ValidationError
 from .store import atomic_write_text
 
-SCHEMA_VERSION = 1
 RECORD_BYTES = 65536
 SOURCE_BYTES = 1024 * 1024
 SOURCE_TOKENS = 40000
@@ -74,9 +73,9 @@ def _texts(value, field):
 
 
 def validate_record(record: dict) -> None:
-    fields = {"schema_version", "id", "version", "kind", "claim", "summary", "data", "anchors", "edges", "attributes", "replaces"}
-    if not isinstance(record, dict) or record.keys() != fields or type(record["schema_version"]) is not int or record["schema_version"] != SCHEMA_VERSION:
-        raise ValidationError("map record has unsupported structure or schema")
+    fields = {"id", "version", "kind", "claim", "summary", "data", "anchors", "edges", "attributes", "replaces"}
+    if not isinstance(record, dict) or record.keys() != fields:
+        raise ValidationError("map record has unsupported structure")
     if len(canonical(record).encode()) > RECORD_BYTES:
         raise ValidationError("map record exceeds 64 KiB; split its responsibility")
     identifier(record["id"])
@@ -298,7 +297,7 @@ def read_json(path: Path, limit=RECORD_BYTES) -> dict:
 
 def manifest(repository: Path) -> dict:
     body = read_json(_directory(repository) / "manifest.json", 4096)
-    if body.keys() != {"schema_version", "repo_id"} or type(body["schema_version"]) is not int or body["schema_version"] != SCHEMA_VERSION:
+    if body.keys() != {"repo_id"}:
         raise ValidationError("unsupported map manifest structure")
     try:
         if str(uuid.UUID(body["repo_id"])) != body["repo_id"]:
@@ -684,7 +683,7 @@ def initialize(repository: Path) -> dict:
     path = directory / "manifest.json"
     if path.exists():
         return manifest(repository)
-    body = {"schema_version": SCHEMA_VERSION, "repo_id": str(uuid.uuid4())}
+    body = {"repo_id": str(uuid.uuid4())}
     # Publish a complete manifest without replacing another initializer's ID.
     # Keep temporary files outside the map's structural directory.
     with tempfile.TemporaryDirectory(prefix=".map-init-", dir=directory.parent) as temporary:

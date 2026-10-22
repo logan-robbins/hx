@@ -51,7 +51,7 @@ def test_sparse_update_preserves_unrelated_records_and_original_field_evidence(l
         for name, kind, payload in (("constraint", "constraint", {"text": "Preserve late events."}),
                                     ("decision", "decision", {"choice": "SQLite", "because": "Cursor and facts commit together."})):
             tx.put_record(name, expected_version=0, task_id="T", kind=kind,
-                payload={"schema_version": 1, **payload}, evidence=[first["event_id"]], inputs={},
+                payload=payload, evidence=[first["event_id"]], inputs={},
                 reason="Current task requirement.", expires_when="Task closes.")
     for revision in range(1, 6):
         update(store, request(run, revision, step_updates=[], next=f"Continue attempt {revision}."))

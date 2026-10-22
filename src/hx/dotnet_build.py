@@ -177,7 +177,7 @@ def _request(store, kind, run_id, request_id, recipe, cwd, worker_id):
             return row['job_id'], payload, None
         revision = _owner(tx, run_id, worker_id, cwd, recipe.get('project'))
         job_id = str(uuid.uuid4())
-        payload = {'schema_version': 1, 'recipe': recipe, 'phase': 'queued', 'children': [],
+        payload = {'recipe': recipe, 'phase': 'queued', 'children': [],
                    'task_revision': revision, 'started_at': time.time(), 'owner': None,
                    'host_slot': str(store.root.resolve()) + '/' + job_id}
         tx._change()
@@ -443,7 +443,7 @@ def _adopt(store, job_id, outcome, recipe, tree, project, cwd, child, sdk, optio
         if missing:
             return None
         build_id = job_id
-        adopted = {'schema_version': 1, 'build_id': job_id, 'artifact_hash': artifact['artifact_hash'], 'manifest': artifact['manifest'],
+        adopted = {'build_id': job_id, 'artifact_hash': artifact['artifact_hash'], 'manifest': artifact['manifest'],
                    'manifest_hash': artifact['manifest_hash'], 'recipe': recipe, 'graph': evaluated, 'graph_hash': evaluated['hash'],
                    'modules': modules, 'complete': True, 'tree': str(tree), 'anchors': anchors,
                    'origin': {'root': str(origin), 'build_id': artifact['build_id']}}
@@ -464,7 +464,7 @@ def build(store, project, *, cwd=None, env=None, configuration='Debug', framewor
     _limits(timeout_s, max_output_bytes)
     dotnet_graph.properties(configuration, framework, runtime, platform=platform)
     if source_contract is not None:
-        checks.validate({'schema_version': 1, 'id': 'closure', 'argv': [dotnet], 'cwd': '.', 'inputs': [],
+        checks.validate({'id': 'closure', 'argv': [dotnet], 'cwd': '.', 'inputs': [],
             'source': source_contract, 'environment': {'complete': True, 'executables': [], 'inputs': [], 'external_versions': {}},
             'timeout_s': timeout_s, 'max_output_bytes': max_output_bytes})
     child = managed_environment(store, env)
@@ -608,7 +608,7 @@ def _produce(store, job_id, recipe, tree, own, initial, current, project, cwd, c
         try:
             with store.transaction() as tx:
                 sha, manifest = dotnet_artifacts.capture(tx, tree, job_id, archive)
-                artifact = {'schema_version': 1, 'build_id': job_id, 'artifact_hash': sha, 'manifest': manifest,
+                artifact = {'build_id': job_id, 'artifact_hash': sha, 'manifest': manifest,
                             'manifest_hash': digest(manifest), 'recipe': recipe, 'graph': after,
                             'graph_hash': after['hash'], 'modules': modules, 'complete': not reasons, 'tree': str(tree),
                             'anchors': own}

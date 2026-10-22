@@ -9,7 +9,7 @@ for existing behavior and contracts before building; reuse known providers and d
 Keep unknown relationships explicit. Maximize useful parallel work within the accepted
 scope, resource leases, and host capacity. Packet count follows decomposition, not ask size.
 
-Workers use admitted schema-2 packets. Bind exact checks and obligation coverage before
+Workers use admitted dependency packets. Bind exact checks and obligation coverage before
 edits/proof, and wait for the configured independent reviewer to approve the frozen binding.
 Preserve source identity and exact dependency versions. A stand-in requires explicit packet
 permission and leaves a real-provider integration obligation.

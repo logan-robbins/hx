@@ -60,7 +60,7 @@ def snapshot(root, identity=None):
     An identity can name a task, run, worker or plan. Overview lists are capped;
     identity reads select their records directly rather than filtering that cap.
     """
-    result = dict(schema_version=2, root_abs=str(Path(root).resolve()), ts=timestamps.now(),
+    result = dict(root_abs=str(Path(root).resolve()), ts=timestamps.now(),
                   ledger_revision=0, plans=[], tasks=[], runs=[], leases=[], progress=[],
                   checkpoints=[], checks=[], milestones=[], delivery={'changes': [], 'candidates': []},
                   truncated=False, proof_note='Recorded state; plan ready and change status revalidate current proof.')

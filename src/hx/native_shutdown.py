@@ -37,7 +37,7 @@ def advance(ledger, worker, run_id, request_id, *, env=None):
         identity = row["payload"].get("pane", {}).get("process") or row["payload"].get("supervisor_process")
         if not identity:
             raise Conflict("native shutdown lacks a process-instance receipt; do not adopt a PID or replacement pane")
-        if row["payload"].get("supervisor") not in {"shell-wait-v1", "receipt-wait-v1"}:
+        if row["payload"].get("supervisor") != "receipt-wait":
             raise Conflict("native shutdown requires its original controlled waiting supervisor")
         native_controller.drain(ledger, worker, run_id, request_id, env=env)
         row = native_launch._row(ledger, run_id)

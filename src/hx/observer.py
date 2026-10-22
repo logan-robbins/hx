@@ -125,7 +125,7 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
                 or (native_scope["actor_id"] is not None and
                     (not isinstance(native_scope["actor_id"], str) or not 1 <= len(native_scope["actor_id"]) <= 512))
                 or (decoder, native_scope.get("branch_policy")) not in {
-                    ("claude-v1", "claude-linear-v1"), ("codex-rollout-0.156.1", "codex-0.156.1-v1")}
+                    ("claude", "claude-linear"), ("codex-rollout-0.156.1", "codex-0.156.1-v1")}
                 or branch_ids is not None
                 or not Path(native_scope["root"]).is_absolute()
                 or ".." in Path(native_scope["root"]).parts
@@ -162,7 +162,7 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
                 raise Conflict("native source path or stream was rebound; reconcile its original registration")
             if previous["path"] == str(path) and previous.get("branch_ids") != branch_ids:
                 raise Conflict("native branch changed; start a new run before registering its source")
-        payload = {"schema_version": 1, "path": str(path), "session_id": session_id,
+        payload = {"path": str(path), "session_id": session_id,
                    "branch_ids": branch_ids, "branch_live": False, "last_native_id": None, "identity": None,
                    "anchor": None, "gaps": [], "pending_tail": False, "latest_usage": None,
                    "decoded_bytes": 0, "last_observed_size": 0}
@@ -191,7 +191,7 @@ def _branch_active(body: dict, state: dict) -> bool:
     if state.get("native_scope", {}).get("branch_policy") == "codex-0.156.1-v1":
         from .codex_rollout import active
         return active(body, state)
-    if state.get("native_scope", {}).get("branch_policy") == "claude-linear-v1":
+    if state.get("native_scope", {}).get("branch_policy") == "claude-linear":
         return _claude_branch_active(body, state)
     if "parentId" not in body:
         return True
@@ -259,7 +259,7 @@ def encode_observation(*, session_id: str, event: Event, fallback_identity: tupl
     # transcript observations with complementary fields keep distinct payloads,
     # linked by logical_id; reducers merge their evidence without guessing equality.
     logical_id = digest(identity)
-    observation = {"schema_version": 1, "kind": event.kind, "data": event.data, "usage": event.usage}
+    observation = {"kind": event.kind, "data": event.data, "usage": event.usage}
     # Keep exact inspected paths available even when bulky output becomes an
     # artifact. Map discovery must not decode the entire result to recover them.
     paths = []
@@ -273,7 +273,7 @@ def encode_observation(*, session_id: str, event: Event, fallback_identity: tupl
     encoded = canonical(observation).encode()
     observation_hash = hashlib.sha256(encoded).hexdigest()
     capture_key = f"{logical_id}:{observation_hash}"
-    payload = {"schema_version": 1, "logical_id": logical_id, "observation_hash": observation_hash,
+    payload = {"logical_id": logical_id, "observation_hash": observation_hash,
                "identity_certain": event.native_id is not None,
                "session_id": session_id, "native_id": event.native_id}
     from .evidence import source_evidence
@@ -326,7 +326,7 @@ def _capture(tx, source: dict, state: dict, event: Event, offset: int, index: in
         fallback_identity=("offset", source["source_id"], source["generation"], offset, index))
     tx._change()
     tx.db.execute("INSERT OR IGNORE INTO event_origins VALUES(?,?,?,?,?)",
-                  (captured["event_id"], source["source_id"], source["generation"], offset, source["decoder_version"]))
+                  (captured["event_id"], source["source_id"], source["generation"], offset, source["decoder"]))
     if event.usage is not None:
         state["latest_usage"] = event.usage
     return captured
@@ -407,14 +407,14 @@ def drain(store: ContinuityStore, source_id: str, *, byte_budget: int = BATCH_BY
                         # Branch selection changes scalar fields only; ancestry is
                         # shared read-only instead of serializing the entire state.
                         branch_state = state.copy()
-                        events = decode(source["decoder_version"], body) if _branch_active(body, branch_state) else []
+                        events = decode(source["decoder"], body) if _branch_active(body, branch_state) else []
                         del body
                     except (UnicodeDecodeError, json.JSONDecodeError, DecodeGap) as exc:
                         _gap(state, f"decode failed: {type(exc).__name__}", start)
                         state["pending_tail"] = True
                         break
-                    charge = sum(len(canonical({"schema_version": 1, "kind": event.kind,
-                                                "data": event.data, "usage": event.usage}).encode()) + 2048 for event in events)
+                    charge = sum(len(canonical({"kind": event.kind, "data": event.data,
+                                                "usage": event.usage}).encode()) + 2048 for event in events)
                     if used + charge > spool_limit:
                         state["pending_tail"] = True
                         state["backpressure"] = "capture spool full"

@@ -62,11 +62,6 @@ CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 """
 
 
-# One namespace holds N checkout roots; version 2 keys `repos` and `checkout_heads` by root.
-# Version 3 posts symbol kinds, reference extractors and edge targets for the link query.
-SCHEMA_VERSION = 3
-
-
 def db_path(root):
     return Path(root) / "state" / "code-index" / "index.db"
 
@@ -81,17 +76,10 @@ def _connect(root, *, existing=False, trigram=None):
     conn.source_cache = {}
     conn.symbol_cache = {}
     conn.execute("PRAGMA journal_mode=WAL")
-    from .errors import ValidationError
-    version = conn.execute("PRAGMA user_version").fetchone()[0]
-    existing_tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()
-    if version != SCHEMA_VERSION and (version != 0 or existing_tables):
-        conn.close()
-        raise ValidationError("unsupported code index schema; remove the derived index and rebuild with hx code index")
     from . import code_journal, code_snapshot
     conn.executescript(SCHEMA + code_snapshot.SCHEMA + code_journal.SCHEMA)
     conn.execute("CREATE INDEX IF NOT EXISTS snapshot_ref_kind ON snapshot_ref_postings(kind,repo,path,artifact)")
     conn.execute("CREATE INDEX IF NOT EXISTS symbol_qualified_folded ON symbols(repo,qualified_folded)")
-    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     if trigram is None:
         option = conn.execute(
             "SELECT value FROM metadata WHERE key='config.trigram'"

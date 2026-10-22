@@ -73,7 +73,7 @@ def capture(store, directory, change_id, batch_id=None):
     from argparse import Namespace
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    body = {'schema_version': 1, 'captured_at': dt.datetime.now(dt.timezone.utc).isoformat(),
+    body = {'captured_at': dt.datetime.now(dt.timezone.utc).isoformat(),
             'boundaries': snapshot(store, change_id, batch_id)}
     with store.transaction() as tx:
         artifact = tx.put_artifact(canonical(body).encode(), owner_type='delivery_handoff', owner_id=digest(body), slot='capture')
@@ -89,8 +89,6 @@ def check(store, directory, *, live=False):
     try:
         wrapper = json.loads((directory / MANIFEST).read_text())
         body = wrapper['capture']
-        if body['schema_version'] != 1:
-            raise ValidationError('unsupported delivery handoff schema')
         with store.transaction() as tx:
             if tx.read_artifact(wrapper['artifact']) != canonical(body).encode():
                 raise ValidationError('handoff capture differs from its authoritative immutable artifact')

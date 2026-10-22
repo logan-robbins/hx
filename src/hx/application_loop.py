@@ -104,7 +104,7 @@ def _reconcile_context(store, job_id):
         if current['status'] != 'running':
             return native_companion.status(store, job['job_id'])
         body = companion_protocol.frozen(tx, current)
-        pending = {'schema_version': 1, 'pass_id': body['pass_id'], 'event_digest': body['event_digest'],
+        pending = {'pass_id': body['pass_id'], 'event_digest': body['event_digest'],
                    'task_revision': body['task_revision'], 'operations': [],
                    'dispositions': {event['event_id']: 'pending' for event in body['events']}}
         ref = tx.db.execute("SELECT hash FROM artifact_refs WHERE owner_type='pass' AND owner_id=? AND slot='result'", (job['pass_id'],)).fetchone()

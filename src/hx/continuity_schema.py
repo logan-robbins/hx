@@ -48,7 +48,7 @@ CREATE TABLE capture_sources (
     source_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     stream_id TEXT NOT NULL, revision INTEGER NOT NULL, generation TEXT NOT NULL,
     committed_offset INTEGER NOT NULL CHECK(committed_offset>=0),
-    decoder_version TEXT NOT NULL, payload TEXT NOT NULL
+    decoder TEXT NOT NULL, payload TEXT NOT NULL
 );
 CREATE TABLE passes (
     pass_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, stream_id TEXT NOT NULL,
@@ -124,7 +124,7 @@ CREATE TABLE event_origins (
     event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE,
     source_id TEXT NOT NULL REFERENCES capture_sources(source_id),
     generation TEXT NOT NULL, byte_offset INTEGER NOT NULL,
-    decoder_version TEXT NOT NULL,
+    decoder TEXT NOT NULL,
     PRIMARY KEY(event_id,source_id,generation,byte_offset)
 );
 CREATE INDEX origin_source ON event_origins(source_id,generation,byte_offset);
@@ -136,7 +136,7 @@ CREATE TABLE artifact_chunks (
 CREATE TABLE native_bindings (
     binding_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
     stream_id TEXT NOT NULL, adapter TEXT NOT NULL, session_id TEXT NOT NULL,
-    decoder_version TEXT NOT NULL, latest_usage TEXT,
+    decoder TEXT NOT NULL, latest_usage TEXT,
     UNIQUE(adapter,session_id,stream_id),
     FOREIGN KEY(run_id,stream_id) REFERENCES cursors(run_id,stream_id)
 );

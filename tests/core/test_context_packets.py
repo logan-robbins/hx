@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from hx import checks, context_packets as packets, instruction_materials, observer, planning, progress, prompt_compiler, unit_execution
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from hx.facts import RequiredContextOverflow
 from .test_appmap import mapped
@@ -35,7 +35,7 @@ def fact(assignment, name="F1", kind="finding", payload=None, inputs=None, **kwa
     with store.transaction() as tx:
         old = tx.record(name)
         tx.put_record(name, expected_version=old["version"] if old else 0, task_id="implement", kind=kind,
-            payload={"schema_version": 1, **(payload or {"text": "The cursor remains frozen until every event is classified."})},
+            payload=payload or {"text": "The cursor remains frozen until every event is classified."},
             evidence=[event["event_id"]], inputs=inputs or {}, reason="Required by the current unit.",
             expires_when="The current source or task changes.", **kwargs)
 
@@ -180,7 +180,7 @@ def test_facts_do_not_cross_tasks_when_worker_is_reused(assignment):
     fact(assignment, payload={"text": "OLD TASK SPECIFIC FACT"})
     packets.issue(store, run, request_id="old")
     unit_execution.stop(store, run)
-    body = {"schema_version": 2, "plan_id": "new-plan", "expected_revision": 0,
+    body = {"plan_id": "new-plan", "expected_revision": 0,
             "repository": planning.assignment(store, "implement")["repository"],
             "goal": "Verify a different goal.", "constraints": [], "tasks": [unit(repo, "new-unit")]}
     planning.apply(store, body)
@@ -208,7 +208,7 @@ def test_capture_lag_includes_bytes_not_yet_seen_by_observer(assignment, tmp_pat
     store, _, run, _ = assignment
     source = tmp_path / "native.jsonl"
     source.write_bytes(b"")
-    source_id = observer.register(store, run_id=run, stream_id="native", path=source, decoder="hook-v1", session_id="S")
+    source_id = observer.register(store, run_id=run, stream_id="native", path=source, decoder="hook", session_id="S")
     observer.drain(store, source_id)
     ready = packets.issue(store, run, request_id="empty", mode="planned")
     assert ready["extraction_ready"]
@@ -264,15 +264,6 @@ def test_provider_counter_is_versioned_and_byte_fallback_preserves_unicode(assig
     assert packet["charged_tokens"] == len(packet["text"].encode())
     with pytest.raises(ValidationError, match="counter requires"):
         packets.issue(store, run, request_id="unnamed", count_tokens=lambda text: len(text))
-
-
-def test_unsupported_schema_is_rejected_without_checkpoint_migration(assignment):
-    store, _, run, _ = assignment
-    store.db.execute("DROP TABLE context_requests")
-    store.db.execute("PRAGMA user_version=9")
-    with pytest.raises(ValidationError, match="unsupported schema 9"):
-        ContinuityStore(store.root)
-    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 9
 
 
 def test_progress_cannot_clear_scope_pause_and_context_preserves_it(assignment):
