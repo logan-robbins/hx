@@ -84,7 +84,3 @@ The deploy gate requires same-source integration, resolved real-provider obligat
 tested immutable artifact. The project's configured release system performs deployment and
 health checks. HX does not imply a remote push or deployment from local landing. See
 [agent-scale runtime](agent-scale-runtime.md) for the commands and evidence contracts.
-
-Package installation and instance creation are separate operations. Use the current instance
-and store schemas; obsolete unreleased state is refused and replaced. Preserve needed project
-source and evidence before replacing an obsolete instance.
