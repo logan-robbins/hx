@@ -10,9 +10,10 @@ output, whose non-JSON lines are skipped.
 
 `summarize(format, path)` returns `{"format", "passed", "failed", "skipped", "errors",
 "failing", "truncated"}` counted per test from the report, or None when the report is absent,
-malformed, larger than REPORT_BYTES or holds no test. `failing` holds at most 20 unique failed or
-errored names of at most 512 characters in report order; `truncated` is true when a name was left
-out. Text output is never parsed.
+malformed, larger than REPORT_BYTES or not in the declared format. A recognised report with no
+test is an all-zero summary: a selection that matched nothing is a parse, not a missing report.
+`failing` holds at most 20 unique failed or errored names of at most 512 characters in report
+order; `truncated` is true when a name was left out. Text output is never parsed.
 """
 from __future__ import annotations
 
@@ -49,6 +50,8 @@ def bind(report, argv, path):
 
 
 class _Counts:
+    """Per-test counts; `seen` records that the report was recognised in its declared format."""
+
     def __init__(self, report):
         self.report = report
         self.counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
@@ -79,6 +82,8 @@ def _local(tag):
 
 
 def _junit(root, counts):
+    if _local(root.tag) in {"testsuites", "testsuite"}:
+        counts.seen = True
     for case in root.iter():
         if _local(case.tag) != "testcase":
             continue
@@ -90,6 +95,8 @@ def _junit(root, counts):
 
 
 def _trx(root, counts):
+    if _local(root.tag) == "TestRun":
+        counts.seen = True
     for result in root.iter():
         if _local(result.tag) != "UnitTestResult":
             continue
@@ -100,6 +107,8 @@ def _trx(root, counts):
 
 def _go(event, counts, packages):
     action, package, test = event.get("Action"), event.get("Package"), event.get("Test")
+    if isinstance(action, str):
+        counts.seen = True
     if action not in {"pass", "fail", "skip"} or not isinstance(package, str):
         return
     if test:
@@ -112,6 +121,8 @@ def _go(event, counts, packages):
 
 
 def _cargo(event, counts, state):
+    if isinstance(event.get("reason"), str) or isinstance(event.get("type"), str):
+        counts.seen = True
     if event.get("reason") == "compiler-message":
         message = event.get("message")
         if isinstance(message, dict) and message.get("level") == "error":

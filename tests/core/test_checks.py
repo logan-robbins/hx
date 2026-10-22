@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from hx import checks, fingerprints
+from hx import checks, fingerprints, test_summary
 from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
 from hx.errors import ValidationError
 from hx.evidence import read
@@ -346,6 +346,109 @@ def test_a_check_without_a_declared_report_has_no_summary_and_a_file_report_need
         checks.validate({**definition(), "report": "junit-xml"})
     with pytest.raises(ValidationError, match="report format"):
         checks.validate({**definition(), "report": "text"})
+
+
+def reporting(report, text=None, exit_code=0, **extra):
+    """A recipe whose runner emits `text` as its declared report (None: writes nothing) and exits `exit_code`.
+
+    File formats are written to the bound `{report}` path; the JSON formats go to stdout.
+    """
+    emit = "" if text is None else (f"open(sys.argv[1], 'w').write({text!r}); " if report in test_summary.FILE_FORMATS
+                                    else f"sys.stdout.write({text!r}); ")
+    recipe = {**definition(f"import sys; {emit}print('ran'); sys.exit({exit_code})"), "report": report, **extra}
+    if report in test_summary.FILE_FORMATS:
+        recipe["argv"] = [*recipe["argv"], "{report}"]
+    return recipe
+
+
+def events(*records):
+    return "".join(json.dumps(record) + "\n" for record in records)
+
+
+# What each runner emits when its selection matches nothing and it (or a wrapper) exits 0.
+EMPTY_REPORTS = {
+    "junit-xml": '<testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="0" time="0.004"/></testsuites>',
+    "trx": '<TestRun id="5c1f" name="ci" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results/>'
+           '<ResultSummary outcome="Completed"><Counters total="0" executed="0" passed="0" failed="0"/></ResultSummary></TestRun>',
+    "go-json": events({"Action": "start", "Package": "example.com/calc"},
+                      {"Action": "output", "Package": "example.com/calc", "Output": "ok  \texample.com/calc\t0.012s [no tests to run]\n"},
+                      {"Action": "pass", "Package": "example.com/calc", "Elapsed": 0.012}),
+    "cargo-json": events({"reason": "build-finished", "success": True},
+                         {"type": "suite", "event": "started", "test_count": 0},
+                         {"type": "suite", "event": "ok", "passed": 0, "failed": 0, "ignored": 0, "measured": 0, "filtered_out": 3}),
+    "jest-json": json.dumps({"numTotalTests": 0, "numPassedTests": 0, "numFailedTests": 0, "numPendingTests": 0,
+                             "success": True, "testResults": []}) + "\n",
+}
+
+
+def zero(report):
+    return {"format": report, "passed": 0, "failed": 0, "skipped": 0, "errors": 0, "failing": [], "truncated": False}
+
+
+@pytest.mark.parametrize("report", sorted(EMPTY_REPORTS))
+def test_a_selection_that_matched_no_test_cannot_pass(setup, report):
+    store, run, _, env = setup
+    result = checks.run_check(store, run, "unit", recipe=reporting(report, EMPTY_REPORTS[report]), env=env)
+    assert result["exit_code"] == 0 and not result["valid"] and not result["reusable"]
+    assert result["reasons"] == ["no_tests_executed"] and result["summary"] == zero(report)
+
+
+@pytest.mark.parametrize("report,text", [
+    ("junit-xml", None), ("go-json", "ok  \texample.com/calc\t0.012s\n"), ("jest-json", '{"numTotalTests": 0}\n'),
+], ids=["never-written", "text-not-json", "json-not-a-report"])
+def test_a_missing_or_unrecognised_report_cannot_pass(setup, report, text):
+    store, run, _, env = setup
+    result = checks.run_check(store, run, "unit", recipe=reporting(report, text), env=env)
+    assert result["exit_code"] == 0 and not result["valid"]
+    assert result["reasons"] == ["report_missing_or_unparsed"] and result["summary"] is None
+
+
+def test_a_run_that_only_skipped_cannot_pass(setup):
+    store, run, _, env = setup
+    skipped = ('<testsuites><testsuite><testcase classname="t" name="a"><skipped/></testcase>'
+               '<testcase classname="t" name="b"><skipped/></testcase></testsuite></testsuites>')
+    result = checks.run_check(store, run, "unit", recipe=reporting("junit-xml", skipped), env=env)
+    assert not result["valid"] and result["reasons"] == ["no_tests_executed"]
+    assert result["summary"]["skipped"] == 2 and result["summary"]["passed"] == 0
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_a_report_recording_failures_cannot_pass_whatever_the_exit_code(setup, exit_code):
+    store, run, _, env = setup
+    failing = ('<testsuites><testsuite><testcase classname="t" name="a"/>'
+               '<testcase classname="t" name="b"><failure message="assert 1 == 2"/></testcase></testsuite></testsuites>')
+    result = checks.run_check(store, run, "unit", recipe=reporting("junit-xml", failing, exit_code), env=env)
+    assert result["exit_code"] == exit_code and not result["valid"] and not result["reusable"]
+    assert result["reasons"] == [*(["nonzero_exit"] if exit_code else []), "report_records_failures"]
+    assert result["summary"]["failing"] == ["t::b"]
+    assert store.db.execute("SELECT valid FROM receipts").fetchone()[0] == 0
+    assert "receipt_not_reusable" in checks.current(store, run, result["receipt_id"], env=env)["reasons"]
+
+
+def test_min_tests_sets_the_executed_floor_and_changes_the_recipe_digest(setup):
+    store, run, _, env = setup
+    empty = reporting("go-json", EMPTY_REPORTS["go-json"])
+    assert checks.validate({**empty, "min_tests": 0}) != checks.validate(empty)
+    allowed = checks.run_check(store, run, "unit", recipe={**empty, "min_tests": 0}, env=env)
+    assert allowed["valid"] and allowed["reusable"] and allowed["summary"] == zero("go-json")
+    again = checks.run_check(store, run, "unit", recipe={**empty, "min_tests": 0}, env=env)
+    assert again["reused"] and again["valid"] and again["summary"] == zero("go-json")
+    # 0 admits an empty selection, never a missing report.
+    absent = checks.run_check(store, run, "unit", recipe=reporting("junit-xml", None, min_tests=0), env=env)
+    assert not absent["valid"] and absent["reasons"] == ["report_missing_or_unparsed"]
+    two = '<testsuites><testsuite><testcase classname="t" name="a"/><testcase classname="t" name="b"/></testsuite></testsuites>'
+    short = checks.run_check(store, run, "unit", recipe=reporting("junit-xml", two, min_tests=3), env=env)
+    assert not short["valid"] and short["reasons"] == ["no_tests_executed"] and short["summary"]["passed"] == 2
+    assert checks.run_check(store, run, "unit", recipe=reporting("junit-xml", two, min_tests=2), env=env)["valid"]
+
+
+@pytest.mark.parametrize("recipe", [
+    {**definition(), "min_tests": 1},
+    *({**definition(), "report": "go-json", "min_tests": value} for value in (-1, True, "1", 1.0, None)),
+], ids=["without-report", "negative", "bool", "string", "float", "null"])
+def test_min_tests_must_be_a_non_negative_integer_with_a_report(recipe):
+    with pytest.raises(ValidationError, match="min_tests"):
+        checks.validate(recipe)
 
 
 def test_spawn_failure_has_no_summary(tmp_path):

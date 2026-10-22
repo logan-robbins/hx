@@ -30,7 +30,8 @@ UNSOUND = frozenset({"incomplete_source_identity", "source_changed_during_check"
 
 def validate(recipe: dict) -> str:
     fields = {"schema_version", "id", "argv", "cwd", "inputs", "environment", "timeout_s", "max_output_bytes"}
-    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - {"source", "report"} or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
+    optional = {"source", "report", "min_tests"}
+    if not isinstance(recipe, dict) or not fields <= recipe.keys() or recipe.keys() - fields - optional or type(recipe["schema_version"]) is not int or recipe["schema_version"] != 1:
         raise ValidationError("check recipe requires schema_version=1, id, argv, cwd, inputs, environment, timeout_s, max_output_bytes")
     if len(canonical(recipe).encode()) > MAX_RECIPE_BYTES:
         raise ValidationError("check recipe exceeds 16 KiB")
@@ -66,6 +67,8 @@ def validate(recipe: dict) -> str:
                 raise ValidationError(f"source {field} must be a bounded string array")
     if "report" in recipe:
         test_summary.bind(recipe["report"], recipe["argv"], "")
+    if "min_tests" in recipe and ("report" not in recipe or type(recipe["min_tests"]) is not int or recipe["min_tests"] < 0):
+        raise ValidationError("min_tests must be a non-negative integer and needs a declared report")
     return digest(recipe)
 
 
@@ -425,6 +428,15 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
         reasons.append("source_changed_during_check")
     if any(before_env[key] != after_env[key] for key in ("hash", "observation_hash")):
         reasons.append("environment_changed_during_check")
+    if "report" in recipe:
+        # The declared report guards the receipt: a run that proved nothing cannot pass on exit 0.
+        summary = observed["summary"]
+        if summary is None:
+            reasons.append("report_missing_or_unparsed")
+        elif summary["passed"] + summary["failed"] + summary["errors"] < recipe.get("min_tests", 1):
+            reasons.append("no_tests_executed")
+        if test_summary.failed(summary):
+            reasons.append("report_records_failures")
     with store.transaction() as tx:
         try:
             _assignment(tx, run_id, check_id, recipe, worker_id)
