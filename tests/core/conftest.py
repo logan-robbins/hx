@@ -72,6 +72,8 @@ def clean_env(**extra: str) -> dict[str, str]:
         if not key.startswith(("HARNESS_", "CLAUDE_", "HX_"))
     }
     env["PYTHONPATH"] = str(SRC)
+    # hx runs every adapter with the interpreter it runs on (`lifecycle.run_adapter`).
+    env["HX_PYTHON"] = sys.executable
     env.update(extra)
     return env
 

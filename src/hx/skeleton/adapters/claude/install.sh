@@ -2,8 +2,7 @@
 # adapters/claude/install.sh <id> — write the per-agent Claude Code home (spec 11, 17.3).
 #
 # Writes $HARNESS_ROOT/run/<id>/home/settings.json with:
-#   - the hx hooks of spec 09.1, each carrying `--id <id>`, pointed at the hook binary
-#     recorded in config/hx.json (CONTRACTS.md), falling back to $HARNESS_ROOT/bin/hx-hook.
+#   - the hx hooks of spec 09.1, each carrying `--id <id>`, pointed at $HARNESS_ROOT/bin/hx-hook.
 #     The Partner alone also gets the `guard` PreToolUse hook over config/partner/guard.json;
 #     no worker is ever guarded (spec 09.1)
 #   - instruction-files mode `claude-md`, so no AGENTS.md is ever discovered
@@ -30,14 +29,9 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
-# The interpreter hx itself runs on, recorded as `python_bin` in config/hx.json
-# (CONTRACTS.md), so the adapters read JSON with the same Python the package was installed on.
+# The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
 python=${HX_PYTHON:-}
-if [ -z "$python" ] && [ -f "$root/config/hx.json" ]; then
-  python=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("python_bin") or "")' \
-    "$root/config/hx.json" 2>/dev/null || true)
-fi
-[ -n "$python" ] || python=python3
+[ -n "$python" ] || die "HX_PYTHON is unset; hx runs this adapter with the interpreter it runs on"
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
 
 token_file=$root/seed/token
@@ -48,15 +42,8 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
   "refuse: $token_file is readable by group or other; it holds a year-long credential and must
   be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
-# Hook and hx binary paths: config/hx.json when hx install recorded it, else bin/ (spec 17.1).
+# Every hook runs bin/hx-hook, which `hx install` links to the package entry point.
 hook_bin=$root/bin/hx-hook
-hx_bin=$root/bin/hx
-if [ -f "$root/config/hx.json" ]; then
-  hook_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hook_bin") or sys.argv[2])' \
-    "$root/config/hx.json" "$hook_bin")
-  hx_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hx_bin") or sys.argv[2])' \
-    "$root/config/hx.json" "$hx_bin")
-fi
 
 # Skills from the package, loaded on demand; nothing is symlinked (spec 17.5).
 skills_src=${HX_SKILLS_DIR:-}
@@ -90,9 +77,8 @@ if [ "$id" = partner ]; then
 else
   cwd=$("$python" - "$root/config/$id/harness.json" "$root" <<'CWDEOF'
 import json, os, sys
-workdir = (json.load(open(sys.argv[1])).get("workdir") or "").strip()
-print(workdir if os.path.isabs(workdir) else os.path.join(sys.argv[2], workdir) if workdir
-      else sys.argv[2])
+# A relative workdir resolves against HARNESS_ROOT; an absolute one stands.
+print(os.path.join(sys.argv[2], json.load(open(sys.argv[1]))["workdir"]))
 CWDEOF
 )
 fi

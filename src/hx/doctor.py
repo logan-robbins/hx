@@ -546,9 +546,9 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         except json.JSONDecodeError as exc:
             checks.append((FAIL, "hx.json", f"config/hx.json is not valid JSON: {exc}"))
             recorded = {}
-        # Every `run/<id>/home/settings.json` points its hooks at `hook_bin`, and the adapters
-        # read JSON with `python_bin`; a missing one is silently broken hooks (spec 17.1).
-        for key in ("hx_bin", "hook_bin", "python_bin"):
+        # `bin/hx` and `bin/hx-hook` link to these, and every agent's hooks run `bin/hx-hook`;
+        # a missing one is silently broken hooks (spec 17.1).
+        for key in ("hx_bin", "hook_bin"):
             value = recorded.get(key)
             if not value:
                 checks.append((FAIL, "hx.json", f"config/hx.json has no `{key}` (CONTRACTS.md)"))

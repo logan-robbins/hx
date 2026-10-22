@@ -20,12 +20,9 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
+# The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
 python=${HX_PYTHON:-}
-if [ -z "$python" ] && [ -f "$root/config/hx.json" ]; then
-  python=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("python_bin") or "")' \
-    "$root/config/hx.json" 2>/dev/null || true)
-fi
-[ -n "$python" ] || python=python3
+[ -n "$python" ] || die "HX_PYTHON is unset; hx runs this adapter with the interpreter it runs on"
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 # Every worker executable descends from the controller's admitted run supervisor.
@@ -46,9 +43,8 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 
 cwd=$("$python" - "$harness" "$root" <<'CWDEOF'
 import json, os, sys
-workdir = (json.load(open(sys.argv[1])).get("workdir") or "").strip()
-print(workdir if os.path.isabs(workdir) else os.path.join(sys.argv[2], workdir) if workdir
-      else sys.argv[2])
+# A relative workdir resolves against HARNESS_ROOT; an absolute one stands.
+print(os.path.join(sys.argv[2], json.load(open(sys.argv[1]))["workdir"]))
 CWDEOF
 )
 [ -d "$cwd" ] || die "refuse: no workdir $cwd; it is \`workdir\` in $harness and must exist"

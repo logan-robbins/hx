@@ -79,7 +79,7 @@ def _capsule(root, worker, capsule, configuration, system):
             f"from {module} import main\nraise SystemExit(main())\n")
         wrapper.chmod(0o700)
     files.atomic_write_json(capsule / "config" / "hx.json", {
-        "python_bin": sys.executable, "hx_bin": str(capsule / "bin" / "hx"),
+        "hx_bin": str(capsule / "bin" / "hx"),
         "hook_bin": str(capsule / "bin" / "hx-hook"),
     })
 

@@ -26,12 +26,9 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
+# The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
 python=${HX_PYTHON:-}
-if [ -z "$python" ] && [ -f "$root/config/hx.json" ]; then
-  python=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("python_bin") or "")' \
-    "$root/config/hx.json" 2>/dev/null || true)
-fi
-[ -n "$python" ] || python=python3
+[ -n "$python" ] || die "HX_PYTHON is unset; hx runs this adapter with the interpreter it runs on"
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 token_file=$root/seed/meta-token
@@ -44,11 +41,8 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
 
+# Every hook runs bin/hx-hook, which `hx install` links to the package entry point.
 hook_bin=$root/bin/hx-hook
-if [ -f "$root/config/hx.json" ]; then
-  hook_bin=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("hook_bin") or sys.argv[2])' \
-    "$root/config/hx.json" "$hook_bin" 2>/dev/null || true)
-fi
 
 home=$root/run/$id/home
 mkdir -p "$home/muse/skills" "$home/data"
@@ -88,8 +82,7 @@ if continuity:
 hooks = {}
 for spec in events:
     muse_event, hx_event = spec.split(":")
-    # hook_bin can be a command with arguments (`python -m hx.hooks` in
-    # tests); quote each part, the shell splits them back at fire time.
+    # Quote each part; the shell splits them back at fire time.
     cmd = " ".join(shlex.quote(part) for part in (
         python, adapter, "--id", item_id, "--hook-bin", hook_bin,
         "--root", root, *continuity, hx_event,

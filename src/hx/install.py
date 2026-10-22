@@ -110,7 +110,7 @@ EXPECTED_SKELETON_FILES = (
 
 
 def entry_points() -> dict[str, str]:
-    """Absolute paths of `hx`, `hx-hook` and the interpreter (CONTRACTS.md `config/hx.json`).
+    """Absolute paths of `hx` and `hx-hook` (CONTRACTS.md `config/hx.json`).
 
     The entry-point scripts sit next to the running interpreter — that is where `uv tool
     install` and a venv both put them — so resolve from `sys.executable` first and fall back
@@ -121,7 +121,7 @@ def entry_points() -> dict[str, str]:
     # `sys.executable` unresolved: inside a venv that is the venv's own python, which is the
     # interpreter hx runs on and the one whose bin/ holds the entry-point scripts. Resolving
     # it would jump to the base installation, where they are not.
-    found: dict[str, str] = {"python_bin": str(Path(sys.executable).absolute())}
+    found: dict[str, str] = {}
     bindirs = [Path(sys.executable).absolute().parent, Path(sys.prefix) / "bin"]
     for key, name in (("hx_bin", "hx"), ("hook_bin", "hx-hook")):
         for bindir in bindirs:
