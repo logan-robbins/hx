@@ -325,12 +325,12 @@ def test_new_reviewed_rule_replaces_only_unpaid_preparation(planned, purpose):
     assert prepare_same()['job_id'] == fresh['job_id']
 
 
-def test_legacy_native_source_preview_cannot_support_learning(planned):
+def test_a_source_preview_without_complete_proof_cannot_support_learning(planned):
     store, run, _ = planned
     with store.transaction() as tx:
-        event = tx.append_event(run, 'main', 'legacy-read-preview', 'tool_result',
+        event = tx.append_event(run, 'main', 'read-preview', 'tool_result',
             {'evidence_scope': 'whole_file', 'observation': {'kind': 'tool_result',
-             'data': {'tool_name': 'Read', 'tool_use_id': 'legacy-source-call', 'tool_response': 'Only an old captured prefix.'}}})
+             'data': {'tool_name': 'Read', 'tool_use_id': 'source-call', 'tool_response': 'Only a captured prefix.'}}})
     job = prepare(planned)
     selected = next(item for item in job['payload']['body']['events'] if item['event_id'] == event['event_id'])
     assert selected['requires_read'] and selected['source_file_evidence']
@@ -340,7 +340,7 @@ def test_legacy_native_source_preview_cannot_support_learning(planned):
     assert event['event_id'] not in learner.row(store, job['job_id'])['payload']['reads']
     with pytest.raises(ValidationError, match='unread'):
         protocol.call(store, job['job_id'], 'submit_assessment', {'response': response(job)})
-    ignored = {**response(job), 'ignored_event_reasons': {event['event_id']: 'The historical prefix lacks complete source proof; no lesson uses it.'}}
+    ignored = {**response(job), 'ignored_event_reasons': {event['event_id']: 'The prefix lacks complete source proof; no lesson uses it.'}}
     assert protocol.call(store, job['job_id'], 'submit_assessment', {'response': ignored})['accepted']
 
 

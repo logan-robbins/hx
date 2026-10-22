@@ -1,8 +1,6 @@
 """`hx install` end to end (spec 17.2, all four steps; 17.1, 08).
 
-Install has no mirror, no sparse worktrees, no unit files, no `hx push` and no `hx upgrade`
-(spec 14 D25). Everything runs against a fake `claude` and a HOME under
-`tmp_path`: the user's real `~/.claude` is never read, which `tests/guard` also proves from
+Everything runs against a fake `claude` and a HOME under `tmp_path`: the user's real `~/.claude` is never read, which `tests/guard` also proves from
 the outside and `test_no_install_path_reads_the_users_claude_home` proves from the inside.
 """
 
@@ -116,7 +114,7 @@ def test_step_3_tightens_the_tokens_mode(tmp_path, fake_claude_on_path, tmux_ser
     assert token.stat().st_mode & 0o777 == 0o600
 
 
-# --- step 4: no units, no mirror (spec 14 D25) -------------------------------------------------
+# --- step 4: no units (spec 17.2) --------------------------------------------------------------
 
 
 def test_install_ships_no_unit_files(tmp_path, fake_claude_on_path, tmux_server):
@@ -132,7 +130,7 @@ def test_install_ships_no_unit_files(tmp_path, fake_claude_on_path, tmux_server)
     assert "systemd" not in result.stdout and "launchd" not in result.stdout
 
 
-def test_a_fresh_instance_has_no_mirror_worktrees_or_orders_dir(
+def test_a_fresh_instance_has_the_partner_persona_and_no_assignment(
     tmp_path, fake_claude_on_path, tmux_server
 ):
     """17.2 step 2 and CONTRACTS.md "Fresh instance contents"."""
@@ -142,10 +140,7 @@ def test_a_fresh_instance_has_no_mirror_worktrees_or_orders_dir(
     assert run_install(
         tmp_path, root, fake_claude_on_path, tmux=tmux_server
     ).returncode == 0
-    for gone in ("repos", "wt", "goals", "config/repo.json"):
-        assert not (root / gone).exists(), gone
     assert (root / "personas" / "partner.md").is_file()
-    assert not (root / "personas" / "partner").exists(), "one file per role, no directory of AGENTS.md"
 
     from hx.board import collect
 

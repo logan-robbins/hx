@@ -17,7 +17,6 @@
     "max_proposals": 4
   },
   "companion": {
-    "provider": "anthropic",
     "model": "claude-haiku-5-5",
     "effort": "low",
     "batch_records": 20,

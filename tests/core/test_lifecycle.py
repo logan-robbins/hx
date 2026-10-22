@@ -131,18 +131,6 @@ def test_wake_partner_sends_the_auth_line_then_the_message(instance):
     ]
 
 
-def test_wake_reads_the_hook_variable_names_too(instance):
-    """The `context` hook writes what Claude Code exported to it (spec 09)."""
-    from hx.wake import read_socket
-
-    socket_file = instance / "run" / "partner" / "socket.json"
-    socket_file.parent.mkdir(parents=True, exist_ok=True)
-    socket_file.write_text(
-        json.dumps({"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock", "CLAUDE_CODE_MESSAGING_TOKEN": "t"})
-    )
-    assert read_socket(instance) == ("/tmp/s.sock", "t")
-
-
 def test_wake_refuses_a_target_that_is_not_the_partner(instance, hx):
     result = hx("wake", "eng-001", "hello")
     assert result.returncode == 1

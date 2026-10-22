@@ -44,9 +44,6 @@ def test_the_script_seeds_a_token_and_never_reads_a_user_claude_home():
     proof writes its own token, and the `~/.claude` it creates exists only to prove that
     nothing in it is ever read."""
     text = SCRIPT.read_text()
-    assert "--from-user-config" not in text, (
-        "the flag was removed (CONTRACTS.md); the script must not still use it"
-    )
     assert "seed/token" in text, "the script does not seed a token"
     assert 'FAKE_USER="$HOME/.claude"' in text, (
         "the planted home must be inside the *fresh* HOME, never the real one"

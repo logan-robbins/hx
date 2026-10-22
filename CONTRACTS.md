@@ -193,9 +193,8 @@ default 8) bounds the notifications one tick delivers. `partition.merge` lists a
 `hx plan partition` pairing rules (§ Dependency packet plan). `pools.build` (integer 1–64,
 default 2) and `pools.test` (integer 1–64, default 4) bound `hx build` builds and test shards
 across the box (§ .NET build broker). Any other key or value is refused. Each
-agent's harness `companion` has `provider` (`anthropic`, the default and the only built
-transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
-`state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
+agent's harness `companion` has `model`, `effort`, `batch_records`, `state_budget_tokens` and
+`disabled`; a Companion's max output tokens are its model's
 `config/models.json` `max_output_tokens`, else derived from the window.
 `config/planning.json` has exactly an independent `reviewer`, `required_checks`, and
 the executing seat `role`; a draft request's `role` overrides it. The `dispatch` section of `config/hx.json` configures

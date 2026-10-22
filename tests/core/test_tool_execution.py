@@ -70,7 +70,7 @@ def test_jev_failure_falls_back_to_head_and_tail_and_never_reruns_the_command(pl
 def test_missing_jev_credentials_reduce_without_a_request(planned, monkeypatch, tmp_path):
     store, run, _ = planned
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no credential, no request'))
-    env = {key: value for key, value in os.environ.items() if key not in {'TYPESAFE_API_KEY', 'JEV_API_KEY'}}
+    env = {key: value for key, value in os.environ.items() if key != 'TYPESAFE_API_KEY'}
     env['TYPESAFE_API_KEY_FILE'] = str(tmp_path / 'absent')
     result = tool_execution.execute(store, run, 'no-key', lines_script('ordinary output\n' * 600), env=env)
     assert result['fallback'] == 'missing_credentials'

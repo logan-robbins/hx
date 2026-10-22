@@ -103,14 +103,14 @@ def test_cli_creates_a_scratch_root(run_hx, tmp_path):
 
 
 def test_config_hx_json_records_the_entry_points(tmp_path):
-    """CONTRACTS.md `config/hx.json`: absolute `hx_bin`, `hook_bin`, `python_bin`."""
+    """CONTRACTS.md `config/hx.json`: absolute `hx_bin` and `hook_bin`."""
     import json as _json
     import os
 
     root = tmp_path / "instance"
     install_skeleton(root)
     recorded = _json.loads((root / "config" / "hx.json").read_text())
-    assert set(recorded) == {"hx_bin", "hook_bin", "python_bin"}
+    assert set(recorded) == {"hx_bin", "hook_bin"}
     for key, value in recorded.items():
         assert value, f"{key} is empty"
         assert os.path.isabs(value), f"{key} is not absolute: {value}"

@@ -96,11 +96,6 @@ def test_the_directory_can_live_anywhere_the_instance_points(instance, tmp_path)
     assert (shared / "harness.md").read_text().startswith(learn.category_header("harness"))
 
 
-def test_the_single_file_layout_is_refused_with_the_migration_pointer(instance):
-    with pytest.raises(ValidationError, match="directory"):
-        learn.learnings_path(instance, {"HX_LEARNINGS": "/fleet/shared/LEARNINGS.md"})
-
-
 # --- propose ------------------------------------------------------------------------------------
 
 

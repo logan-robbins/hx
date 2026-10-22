@@ -40,10 +40,6 @@ TRANSPORT = None
 def runtime(root, config, *, purpose):
     """Freeze the model, its effort and the output reserve for one Companion kind."""
     options = config.learning if purpose == "learning" else config.companion
-    if purpose != "learning":
-        provider = options.get("provider", "anthropic")
-        if provider != "anthropic":
-            raise ValidationError(f"Companion provider {provider} has no transport; only anthropic is built")
     selected = options.get("model") or config.model
     models_path = Path(root) / "config/models.json"
     model = load_models(models_path).get(selected)

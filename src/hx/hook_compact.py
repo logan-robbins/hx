@@ -55,11 +55,11 @@ def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]
 
 
 def post(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """Record what Claude Code kept, so the Companion can see the fallback path's summary."""
+    """Record what native compaction kept, so the Companion can see its summary."""
     from .companion import require_partner
     require_partner(item_id)
     stream, _ = stream_for(payload, item_id, root)
-    summary = payload.get("compact_summary") or payload.get("summary")
+    summary = payload.get("compact_summary")
     seq = streams.append_record(root, item_id, stream, {
         "event": COMPACT,
         "trigger": payload.get("trigger"),

@@ -54,7 +54,7 @@ command -v claude             # Claude Code on PATH
 hx records the path of the `claude` it finds (`--claude <path>` names another) and launches
 every Claude agent with it.
 The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
-missing credentials fall back to that file: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
+missing credentials fall back to that file: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY`. Existing
 credentials under `seed/` take precedence.
 
 Optional, for the code graph: `universal-ctags` (the `ctags` that ships with macOS is BSD

@@ -39,14 +39,10 @@ def packet_root(tmp_path):
     return tmp_path
 
 
-def test_empty_view_does_not_create_database_or_read_old_state(tmp_path):
-    (tmp_path/'tasks.json').write_text('{broken old state')
-    (tmp_path/'pods').mkdir()
-    (tmp_path/'pods'/'be-999-working.md').write_text('old worker')
+def test_empty_view_does_not_create_the_database(tmp_path):
     result=board.collect(tmp_path)
     assert result['tasks']==[] and result['runs']==[]
     assert not (tmp_path/'state').exists()
-    assert 'items' not in result and 'memory' not in result
 
 
 def test_packet_run_ownership_and_proof_are_projected(packet_root):

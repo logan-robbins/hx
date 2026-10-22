@@ -207,7 +207,7 @@ def test_retry_reads_one_large_record_then_yields(ledger, monkeypatch):
 
 
 @pytest.mark.parametrize("adapter", ["claude", "codex", "grok", "meta", "pi"])
-def test_installed_entrypoint_routes_planned_hooks_without_legacy_memory(instance, monkeypatch, adapter):
+def test_installed_entrypoint_routes_planned_hooks_to_the_ledger(instance, monkeypatch, adapter):
     config = instance / "config" / "eng-001" / "harness.json"
     data = json.loads(config.read_text())
     data["flavor"] = adapter
@@ -219,8 +219,8 @@ def test_installed_entrypoint_routes_planned_hooks_without_legacy_memory(instanc
         env = {"HARNESS_ROOT": str(instance), "HARNESS_ID": "eng-001", "HX_CONTINUITY_RUN": run,
                "HX_CONTINUITY_LAUNCH": "L1", "HX_CONTINUITY_ADAPTER": adapter}
         hook_contract.installation_args(instance, "eng-001", adapter, env)
-        monkeypatch.setitem(hooks._HANDLERS, "log", lambda *a, **k: pytest.fail("legacy log handler"))
-        monkeypatch.setitem(hooks._HANDLERS, "context", lambda *a, **k: pytest.fail("legacy memory composer"))
+        monkeypatch.setitem(hooks._HANDLERS, "log", lambda *a, **k: pytest.fail("Partner log handler"))
+        monkeypatch.setitem(hooks._HANDLERS, "context", lambda *a, **k: pytest.fail("Partner context composer"))
         for event, payload in [("context", {"source": "startup"}), ("log", tool()),
                                ("request", {"prompt": "Do not change the release target."}),
                                ("log-failure", {"error": "timeout", "tool_use_id": "failed"}),

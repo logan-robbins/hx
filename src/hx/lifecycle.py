@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
+import sys
 from pathlib import Path
 
 from . import timestamps, tmux
@@ -38,14 +38,8 @@ def run_adapter(
     child = dict(os.environ if env is None else env)
     child["HARNESS_ROOT"] = str(root)
     child.setdefault("HX_SKILLS_DIR", str(package_skills_dir()))
-    hx_json = root / "config" / "hx.json"
-    if hx_json.is_file():
-        try:
-            recorded = json.loads(hx_json.read_text()).get("python_bin")
-        except json.JSONDecodeError:
-            recorded = None
-        if recorded:
-            child.setdefault("HX_PYTHON", recorded)
+    # The adapters read JSON and run hx modules with the interpreter hx runs on.
+    child.setdefault("HX_PYTHON", sys.executable)
     return subprocess.run(
         ["bash", str(adapter(root, name, item_id)), *(extra or []), item_id],
         env=child,
@@ -83,13 +77,7 @@ def start_ui(root: Path, *, env=None) -> bool:
         return False
     hx_bin = root / "bin" / "hx"
     if not hx_bin.exists():
-        hx_json = root / "config" / "hx.json"
-        recorded = json.loads(hx_json.read_text()).get("hx_bin") if hx_json.is_file() else None
-        if not recorded:
-            raise NotFound(
-                f"{root}: no bin/hx and no `hx_bin` in config/hx.json; `hx install` records both"
-            )
-        hx_bin = Path(recorded)
+        raise NotFound(f"{root}: no bin/hx; `hx install` links it (spec 03)")
 
     # The session env, as `start.sh` builds it: HARNESS_ROOT plus every HX_* the caller has,
     # so a scratch instance's UI talks to the scratch tmux server and nothing else.

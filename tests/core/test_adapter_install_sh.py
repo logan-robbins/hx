@@ -98,35 +98,15 @@ def test_every_spec_09_event_is_wired_with_the_right_id(installed):
         assert "--id eng-001" in command, command
 
 
-def test_the_hook_binary_defaults_to_bin_hx_hook(instance):
-    """Spec 09: every hook command is `<root>/bin/hx-hook --id <id> <event>`.
-
-    The fallback, used when `hx install` has not recorded `config/hx.json` (CONTRACTS.md).
-    """
-    (instance / "config" / "hx.json").unlink()
-    assert run_install(instance, "eng-001").returncode == 0
-    for command in hook_commands(settings_for(instance, "eng-001")):
-        assert command.startswith(str(instance / "bin" / "hx-hook"))
-
-
-def test_the_hook_binary_comes_from_config_hx_json_when_recorded(installed):
-    """`hx install --skeleton-only` records it, so a real instance uses the real path."""
-    import json as _json
-
-    recorded = _json.loads((installed / "config" / "hx.json").read_text())["hook_bin"]
-    assert recorded
-    for command in hook_commands(settings_for(installed, "eng-001")):
-        assert command.startswith(recorded)
-
-
-def test_config_hx_json_overrides_the_hook_binary(instance):
-    """CONTRACTS.md `config/hx.json`: `{"hx_bin", "hook_bin"}`."""
+def test_every_hook_runs_bin_hx_hook(instance):
+    """Spec 09: every hook command is `<root>/bin/hx-hook --id <id> <event>`, whatever
+    `config/hx.json` records; `hx install` links `bin/hx-hook` to the entry point."""
     (instance / "config" / "hx.json").write_text(
         json.dumps({"hx_bin": "/opt/hx/bin/hx", "hook_bin": "/opt/hx/bin/hx-hook"})
     )
     assert run_install(instance, "eng-001").returncode == 0
     for command in hook_commands(settings_for(instance, "eng-001")):
-        assert command.startswith("/opt/hx/bin/hx-hook ")
+        assert command.startswith(str(instance / "bin" / "hx-hook") + " ")
 
 
 def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
@@ -369,21 +349,15 @@ def test_a_missing_manifest_stops_the_install(instance, tmp_path):
     assert result.returncode != 0 and "manifest" in result.stderr
 
 
-def test_python_bin_from_config_hx_json_is_preferred(instance):
-    """CONTRACTS.md `config/hx.json` third key; the adapters read JSON with hx's own Python."""
-    import sys
-
-    (instance / "config" / "hx.json").write_text(
-        json.dumps({"hx_bin": "/opt/hx/bin/hx", "hook_bin": "/opt/hx/bin/hx-hook",
-                    "python_bin": sys.executable})
-    )
-    assert run_install(instance, "eng-001").returncode == 0
-    assert settings_for(instance, "eng-001")["skipDangerousModePermissionPrompt"] is True
+def test_the_adapter_refuses_without_hx_python(instance):
+    """hx runs every adapter with HX_PYTHON, the interpreter hx itself runs on."""
+    result = run_install(instance, "eng-001", HX_PYTHON="")
+    assert result.returncode != 0
+    assert "HX_PYTHON is unset" in result.stderr
 
 
-def test_a_broken_python_bin_is_refused(instance):
-    (instance / "config" / "hx.json").write_text(json.dumps({"python_bin": "/nope/python"}))
-    result = run_install(instance, "eng-001")
+def test_a_broken_hx_python_is_refused(instance):
+    result = run_install(instance, "eng-001", HX_PYTHON="/nope/python")
     assert result.returncode != 0
     assert "/nope/python not found" in result.stderr
 

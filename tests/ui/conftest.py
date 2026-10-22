@@ -110,7 +110,7 @@ class Client:
         """Open an SSE connection and hand back the response to read frames from.
 
         `as_cookie` by default because that is what a browser's `EventSource`
-        does: it cannot set a header, and the token is no longer in the URL.
+        does: it cannot set a header, and the token never rides in the URL.
         """
         headers = {}
         if token:

@@ -24,19 +24,15 @@ case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
   *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
-# The Partner may run on Codex (spec 12). Its harness has no workdir, so the
-# workdir lookup below falls back to HARNESS_ROOT, where the Partner runs.
+# The Partner may run on Codex (spec 12); it runs in HARNESS_ROOT.
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=${HARNESS_ROOT:-$(cd "$here/../.." && pwd)}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
+# The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
 python=${HX_PYTHON:-}
-if [ -z "$python" ] && [ -f "$root/config/hx.json" ]; then
-  python=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("python_bin") or "")' \
-    "$root/config/hx.json" 2>/dev/null || true)
-fi
-[ -n "$python" ] || python=python3
+[ -n "$python" ] || die "HX_PYTHON is unset; hx runs this adapter with the interpreter it runs on"
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 # Every worker executable descends from the controller's admitted run supervisor.
@@ -60,14 +56,17 @@ if [ -f "$token_file" ]; then
   [ "$token_mode" = 0 ] || die "refuse: $token_file must be mode 0600"
 fi
 
-cwd=$("$python" - "$harness" "$root" <<'CWDEOF'
+if [ "$id" = partner ]; then
+  cwd=$root
+else
+  cwd=$("$python" - "$harness" "$root" <<'CWDEOF'
 import json, os, sys
-workdir = (json.load(open(sys.argv[1])).get("workdir") or "").strip()
-print(workdir if os.path.isabs(workdir) else os.path.join(sys.argv[2], workdir) if workdir
-      else sys.argv[2])
+# A relative workdir resolves against HARNESS_ROOT; an absolute one stands.
+print(os.path.join(sys.argv[2], json.load(open(sys.argv[1]))["workdir"]))
 CWDEOF
 )
-[ -d "$cwd" ] || die "refuse: no workdir $cwd; it is \`workdir\` in $harness and must exist"
+  [ -d "$cwd" ] || die "refuse: no workdir $cwd; it is \`workdir\` in $harness and must exist"
+fi
 
 bin=${HX_CODEX_BIN:-}
 if [ -z "$bin" ] && [ -f "$root/config/codex.json" ]; then
@@ -117,9 +116,9 @@ if [ "$mode" = exec ]; then
 
   # No prompt argument. -m takes the harness model id; the reasoning effort
   # rides a -c override because the CLI exposes no --effort flag.
-  # --dangerously-bypass-approvals-and-sandbox is the whole unattended posture:
-  # approvals are gone, so no -a/--ask-for-approval is passed (the current CLI
-  # rejects that combination outright). -s stays explicit so the sandbox mode
+  # --dangerously-bypass-approvals-and-sandbox is the whole unattended posture,
+  # so no -a/--ask-for-approval is passed (the CLI rejects that combination
+  # outright). -s stays explicit so the sandbox mode
   # is on the record. --dangerously-bypass-hook-trust runs install-time hooks.
   exec "$bin" --dangerously-bypass-approvals-and-sandbox \
     --dangerously-bypass-hook-trust \

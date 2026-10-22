@@ -11,7 +11,7 @@ def test_env_file_seeds_missing_provider_keys_and_keeps_local_oauth(tmp_path):
     env.write_text(
         "ANTHROPIC_API_KEY=sk-ant-api-example\n"
         "OPENAI_API_KEY=openai-example\n"
-        "GROK_API_KEY=grok-example\n"
+        "XAI_API_KEY=grok-example\n"
         "ZERNIO_API_KEY=zernio-example\n"
     )
     seed = tmp_path / "seed"
@@ -37,11 +37,11 @@ def test_env_file_falls_back_to_anthropic_api_key(tmp_path):
     assert (tmp_path / "seed/token").read_text() == "sk-ant-api-example\n"
 
 
-def test_only_the_documented_anthropic_key_seeds_auth(tmp_path):
+def test_an_env_file_without_anthropic_api_key_seeds_no_token(tmp_path):
     import pytest
     from hx.errors import HxError
     file=tmp_path/'keys.env'
-    file.write_text('ANTRHOPIC_API_KEY=unsupported-misspelling\n')
+    file.write_text('OPENAI_API_KEY=openai-example\n')
     configure(tmp_path,str(file))
     with pytest.raises(HxError,match='needs ANTHROPIC_API_KEY'):
         sync_seed(tmp_path)

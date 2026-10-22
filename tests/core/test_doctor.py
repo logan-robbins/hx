@@ -96,12 +96,6 @@ def test_a_home_without_settings_fails(instance):
 
 
 
-def test_there_is_no_repo_check(instance):
-    """`hx repo add`, the mirror and `config/repo.json` are gone (spec 14 D25)."""
-    (instance / "config" / "repo.json").write_text('{"name": "product"}')
-    assert [c for c in run_checks(instance) if c[1] == "repo"] == []
-
-
 def test_a_token_readable_by_anyone_else_fails(instance):
     """CONTRACTS.md `seed/token`: mode 0600."""
     (instance / "seed" / "token").chmod(0o644)
@@ -301,8 +295,6 @@ def test_reports_the_learnings_directory(instance):
     checks = run_checks(instance)
     assert ("learnings", OK) in statuses(checks), detail_for(checks, "learnings")
     assert "0 rule(s) (none), 0 pending" in detail_for(checks, "learnings")[0]
-    assert "learnings-legacy" not in {check for _, check, _ in checks}
-    assert "learnings-size" not in {check for _, check, _ in checks}
 
 
 def test_an_instance_on_a_shared_directory_is_not_asked_for_its_own_skeleton_files(instance, tmp_path):

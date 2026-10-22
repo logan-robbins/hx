@@ -97,7 +97,6 @@ def test_seam_fires_without_a_jev_credential_or_a_companion_pass(configured, mon
     with store.transaction() as tx:
         tx.append_event(run, 'main', 'pending', 'tool_result', {'text': 'Current result.'})
     monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
-    monkeypatch.delenv('JEV_API_KEY', raising=False)
     env = {'TYPESAFE_API_KEY_FILE': str(tmp_path / 'absent')}
     monkeypatch.setattr(jev, 'evaluate', lambda *a, **kw: pytest.fail('no credential, no request'))
     monkeypatch.setattr(native_companion, 'execute', lambda *a, **kw: pytest.fail('a seam never waits on a model'))

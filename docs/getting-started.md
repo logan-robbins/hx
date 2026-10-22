@@ -13,7 +13,7 @@ procedure, and it leaves the token step (§2) to you.
 
 Alternatively, supply an Anthropic API key in a dotenv file. `hx` uses an existing
 `seed/token` OAuth credential first and falls back to the file when that token is absent.
-`OPENAI_API_KEY` and `GROK_API_KEY` (or `XAI_API_KEY`) in the same file can seed Codex and
+`OPENAI_API_KEY` and `XAI_API_KEY` in the same file can seed Codex and
 Grok workers. Other variables in the file are available to agents at startup.
 
 ## 1. Install hx

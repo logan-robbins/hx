@@ -16,7 +16,7 @@ def _codex_partner(instance):
 
 
 def test_claude_partner_without_socket_is_no_socket(instance):
-    """The unchanged default: no socket file, no wake."""
+    """No socket file, no wake."""
     assert wake_partner_status(instance, "hi") == NO_SOCKET
 
 
@@ -53,8 +53,8 @@ def test_codex_partner_paste_is_accepted(instance, monkeypatch):
     assert seen == {"name": "partner", "text": "eng-001 done"}
 
 
-def test_codex_partner_stale_socket_falls_back_to_paste(instance, monkeypatch):
-    """A dead session's socket file must not strand the wake: the pane still takes it."""
+def test_codex_partner_is_pasted_whatever_socket_file_exists(instance, monkeypatch):
+    """A Codex Partner is never reached by socket: a socket file is not consulted."""
     from hx import goal as goal_mod
 
     _codex_partner(instance)
@@ -67,7 +67,7 @@ def test_codex_partner_stale_socket_falls_back_to_paste(instance, monkeypatch):
 
 
 def test_claude_partner_stale_socket_stays_refused(instance, monkeypatch):
-    """Claude behavior is unchanged: a stale socket is refused, never pasted."""
+    """A Claude Partner's stale socket is refused, never pasted."""
     from hx import goal as goal_mod
 
     socket_file = instance / "run" / "partner" / "socket.json"
