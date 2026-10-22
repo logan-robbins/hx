@@ -220,8 +220,6 @@ AUDIENCES: dict[str, set[str]] = {
         "content search", "content fetch", "exec",  "evidence", "file-read",
         "repo diff", "repo history", "repo file",
     },
-    # The Companion is a Read + Write session: no `hx` command at all.
-    "companion": set(),
     "runtime": {
         "capture", "observe", "flush", "seam", "compose", "check", "companion", "loop", "wake",
         "code index", "tools acknowledge",
@@ -235,7 +233,7 @@ OWN_ASSIGNMENT = {"plan audit", "plan finish", "plan materialize"}
 
 #: The audiences a worker caller may run, and the audiences `hx help` can print.
 WORKER_MAY_RUN = ("worker", "subagent", "runtime")
-HELP_AUDIENCES = ("operator", "partner", "worker", "subagent", "companion")
+HELP_AUDIENCES = ("operator", "partner", "worker", "subagent")
 
 
 def _entries(audiences: dict[str, set[str]] | None = None) -> set[str]:
@@ -283,7 +281,7 @@ def worker_may_run(command: str, capability: str | None,
 
 
 def help_audience(env) -> str:
-    """`operator` with no HARNESS_ID, `partner`, `companion` (HX_ROLE), else `worker`."""
+    """`operator` with no HARNESS_ID, `partner`, else `worker`."""
     from .caller import caller
     from .ids import PARTNER
 
@@ -292,8 +290,6 @@ def help_audience(env) -> str:
         return "operator"
     if who == PARTNER:
         return "partner"
-    if env.get("HX_ROLE") == "companion":
-        return "companion"
     return "worker"
 
 
@@ -370,7 +366,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "help":
         # The caller's column of the inventory (TOOL_SKILL_PLAN step 1); `--all` for every one.
         return main_help(argv[1:], env)
-    if argv and argv[0] in ("-h", "--help") and help_audience(env) in ("worker", "companion"):
+    if argv and argv[0] in ("-h", "--help") and help_audience(env) == "worker":
         # A worker is shown its own column, never the whole list.
         return main_help([], env)
     if not argv or argv[0] in ("-h", "--help"):

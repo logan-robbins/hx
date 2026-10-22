@@ -111,9 +111,10 @@ native calls use the marker and complete broker transport. A partial range reque
 unsupported complete response is refused.
 Operator `hx evidence EVENT` also returns complete verified source/instruction evidence;
 managed native shell callers must use the complete-file broker for source. Offset and
-limit options apply only to non-file observations. Companion MCP source responses declare
-the host's complete-result envelope and refuse anything exceeding their frozen context or
-transport allowance before returning content. `hx exec` and `tool-exec` refuse
+limit options apply only to non-file observations. A Companion `read_evidence` result is one
+complete evidence object in one tool result of at most 500,000 characters; anything exceeding
+that ceiling or the pass's frozen context allowance is refused before content is returned.
+`hx exec` and `tool-exec` refuse
 recognized source-dump commands before execution instead of reducing their output.
 Search candidates and reduced non-file command output retain their separate bounded contracts.
 Complete transport is evidence of emitted content, not proof of model attention or obedience.
@@ -132,13 +133,9 @@ The Partner's current persona, reviewed rules and orchestration context are supp
 completely at its native context boundary. Where a host caps one hook string, deterministic
 synchronous transport segments preserve the exact complete boundary without model reads.
 
-Its file-backed observation pass is requested with:
-
-```text
-Companion pass: read <path> and do what it says.
-```
-
-This observes Partner scheduling state; it does not assign, launch, or complete a worker.
+Its Companion pass is one Messages API exchange (see Companions) that installs the
+Partner's step state. It observes Partner scheduling state; it does not assign, launch, or
+complete a worker.
 Worker observations use the frozen ledger pass and bounded evidence/structured-patch tools.
 Source and instruction evidence is a complete verified object or an explicit refusal;
 the bounded evidence contract applies to non-file observations.
@@ -177,8 +174,14 @@ model/effort, independent `companion` and `learning` settings, and optional expl
 configured credentials; instance setup does not authorize changing personal harness state.
 `config/hx.json` carries runtime, repository service, and optional capability settings.
 `loop.workers` (integer 1–64, default 4) bounds the application loop's job threads.
-`companion.max_concurrent` (integer 1–64, default 1) bounds running Companion jobs of both
-kinds together. Any other value is refused.
+`companion.max_concurrent` (integer 1–64, default 1) bounds running Companion passes of every
+kind together. `seam` is the cache-aware seam profile: `soft_fraction` (number in (0, 1],
+default 0.6), `cache_ttl_s` (integer 0–86400, default 300; 3600 for a 1-hour cache) and
+`min_benefit_bytes` (integer 0–2^30, default 65536). Any other key or value is refused. Each
+agent's harness `companion` has `provider` (`anthropic`, the default and the only built
+transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
+`state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
+`config/models.json` `max_output_tokens`, else derived from the window.
 `config/planning.json` has `schema_version: 1`, independent `reviewer`, and `required_checks`;
 this policy document version is separate from the schema-2 packet plan.
 
@@ -497,15 +500,49 @@ required recipe hashes, captured receipts, tested build/manifest and remaining o
 identities/readiness to match. Historical evidence retains its original scope. Missing,
 pending, failed or skipped validation cannot become deployment approval.
 
-## Independent context and learning Companions
+## Companions
+
+Every Companion pass is one bounded Messages API exchange: `POST /v1/messages` with
+`anthropic-version: 2023-06-01`, a byte-stable system block marked
+`cache_control: {type: ephemeral}`, the frozen slice in the user turn, the pass protocol's
+tools with `tool_choice: auto`, and `output_config.effort` from the harness. The model answers
+by tool use; hx validates the tool input exactly as before (`passes.commit`, the learning
+assessment checks, `stepstate.validate`). `read_evidence` calls and one rejected submission
+continue the same exchange, for at most three requests; the third carries a last-round notice.
+There is no Companion session, pane, temporary home or subprocess. Each response's usage
+(`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) is
+recorded on the job, or for the Partner in `run/partner/companion-usage.jsonl`. The credential is
+an `sk-ant-api` key in `seed/token`, else `ANTHROPIC_API_KEY` in the instance env file; OAuth
+tokens are refused, and the key travels only in the `x-api-key` header. A running job is owned
+by the process that sent it; a pass that faults settles its job instead of holding the slot.
+
+The Partner's pass is the same script: `companion/BASE.md`, its role file and the agent's facts
+form the system block; the stream's prior step state and its new whole records form the user
+turn; `submit_state` carries the new state (and, for a closed subagent stream, its required
+digest). hx stamps `seq`, `prompt_version` and `ts`, evicts deterministically under
+`state_budget_tokens`, and keeps the prior state when both submissions are invalid. The loop
+runs due Partner streams in the shared Companion slots; `hx flush partner` runs them inline.
+
+After every context pass the next forced packet is measured (`packet:<run>` in the ledger), so
+a seam is the reset command and one packet, never a wait on a model. The seam policy reads
+each main conversation's last usage: a hard seam at the threshold (tool calls are refused until
+it lands); an opportunistic seam when context is at least `seam.soft_fraction` of the
+threshold, the cache is cold (the last response wrote more prefix than it read, or the last
+response is older than `seam.cache_ttl_s`) and the packet is smaller than the context grown
+since the last reset by at least `seam.min_benefit_bytes`; otherwise hold. The Partner's packet
+is `PARTNER.md`. Its usage comes from main-stream records: each `post_tool` record, and the
+`turn_end` record Stop appends from the turn's final response (`context_tokens`, `cache_read`,
+`cache_creation`). Its cold-miss seam is decided at Stop; its idle-cold seam is taken by the
+loop only while its pane shows an empty prompt. Each `seam` record names its `reason`
+(`hard`, `cold_miss`, `cold_idle` or `manual`).
 
 Each agent has a Context Companion and a separate Learning Companion. Context jobs own their
 frozen task/map patches and context event cursor. Learning jobs have separate `learning_jobs`
 and `learning_cursors`, frozen captured evidence, model/effort, request and proposal budgets.
-Neither sidecar can acknowledge the other's cursor. Context failure does not disable learning;
+Neither Companion can acknowledge the other's cursor. Context failure does not disable learning;
 learning lag does not block packet completion or release. Both respect shared host capacity:
-running context and learning jobs together never exceed `companion.max_concurrent`, and a pass
-with no free slot stays prepared for a later turn. The application loop runs checks and
+running context, learning and Partner passes together never exceed `companion.max_concurrent`,
+and a pass with no free slot stays prepared for a later turn. The application loop runs checks and
 Companion passes as jobs and reaps their outcomes on later ticks. No run's completion,
 restart, reset or Companion turn waits behind another run's job. Restart, reset and each
 Companion kind take turns across runs on their own cursors.

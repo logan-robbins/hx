@@ -1,6 +1,5 @@
 """Packaged instructions and templates describe the single packet product."""
 import json
-from pathlib import Path
 import pytest
 from hx import skill_manifest
 from hx.config_harness import validate_harness
@@ -13,6 +12,7 @@ def test_all_required_package_inputs_exist():
     for old in ('templates/work-item.md','templates/goal.md','templates/addendum.md'):
         assert not (skeleton_dir()/old).exists()
     assert not (SKILLS/'hx-memory').exists()
+    assert not (SKILLS/'hx-companion').exists()
 
 
 def test_portable_skill_manifest_and_worker_command_inventory():
@@ -90,10 +90,3 @@ def test_worker_mechanics_require_exact_independent_binding_and_typed_blockers()
     assert 'Blockers retain ownership' in text and 'there is no blocked completion' in text
     assert 'request is not completion' in ' '.join((SKILLS/'hx-signoff/SKILL.md').read_text().split())
 
-
-def test_partner_observation_transport_quotes_current_pointer_without_assigning_a_worker():
-    from hx.companion import POINTER
-    companion=(SKILLS/'hx-companion/SKILL.md').read_text()
-    contracts=(Path(__file__).resolve().parents[2]/'CONTRACTS.md').read_text()
-    assert POINTER.format(path='<path>') in companion and POINTER.format(path='<path>') in contracts
-    assert 'cannot' in companion and 'create a worker assignment' in companion

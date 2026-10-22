@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": {
+    "id": "msg_01Hx7EndTurnNoTool",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-5-5",
+    "content": [
+      {"type": "text", "text": "I cannot classify these events without more context."}
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {"input_tokens": 1843, "cache_creation_input_tokens": 5120, "cache_read_input_tokens": 0,
+              "output_tokens": 14, "service_tier": "standard"}
+  }
+}

@@ -102,7 +102,7 @@ The Partner's `PARTNER.md` retains current human decisions, constraints, unresol
 and next scheduling consequences. It does not duplicate the authoritative fleet view or carry
 intermediate agent dialogue. Board/detail and readiness commands supply bounded current state.
 
-The Learning Companion has an independent cursor, native assessment process, model/effort,
+The Learning Companion has an independent cursor, one Messages API exchange per assessment, model/effort,
 request budget and proposal limit. It reads frozen captured evidence and can only submit
 assessments; it cannot patch task state, complete work or approve lessons. Pending proposals
 are projected idempotently through the durable outbox. Another authorized session uses

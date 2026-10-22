@@ -1,8 +1,9 @@
 """Reset the Partner conversation at a quiet, checkpointed boundary.
 
-The Partner's companion catches up, PARTNER.md receives its current Status,
-and the pane receives the adapter's reset command. Automatic native boundary
-handlers deliver the complete persona and notes before tool use resumes.
+PARTNER.md receives its current Status from the step state the Companion last
+installed, and the pane receives the adapter's reset command: no wait on a
+model. Automatic native boundary handlers deliver the complete persona and
+notes before tool use resumes.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from . import compose as compose_mod, flush as flush_mod, goal as goal_mod, streams, tmux
+from . import compose as compose_mod, goal as goal_mod, streams, tmux
 from .config_harness import flavor_of
 from .errors import Refused
 from .hook_log import seam_marker
@@ -26,9 +27,9 @@ SEAM_SOURCE = "clear"
 #: Returned by `seam()` when the turn left background work running (spec 09.2 step 2).
 DEFERRED = "deferred"
 TAKEN = "taken"
-#: Returned by `seam()` when the take is not ready yet: the Companion is behind, or a menu
-#: awaits the human. The marker stays and the next `stop` retries; each deferral appends a
-#: watcher record so the wait is visible instead of a silent hung turn. Nothing here blocks.
+#: Returned by `seam()` when the take is not ready yet: a menu awaits the human. The marker
+#: stays and the next `stop` retries; each deferral appends a watcher record so the wait is
+#: visible instead of a silent hung turn. Nothing here blocks.
 WAITING = "waiting"
 
 #: Footer chrome of a TUI menu (AskUserQuestion or autocomplete) awaiting the human. A
@@ -60,17 +61,6 @@ def pane_ready(root: Path, item_id: str, *, env=None) -> bool:
     return pane is not None and MENU_FOOTER not in pane
 
 
-def waiting_streams(root: Path, item_id: str) -> dict:
-    """Per-stream `[state_seq, log_head]` pairs: what the take is waiting on."""
-    from . import companion as companion_mod
-
-    return {
-        stream: [companion_mod.cursor(root, item_id, stream),
-                 companion_mod.head_seq(root, item_id, stream)]
-        for stream in companion_mod.open_streams(root, item_id)
-    }
-
-
 def background_tasks(root: Path, item_id: str) -> list:
     """What the last `stop` hook recorded in `run/<id>/turn` (spec 09.1)."""
     from .hook_stop import turn_marker
@@ -93,7 +83,8 @@ def step_state(root: Path, item_id: str) -> dict:
     return load_state(state_path(root, item_id, f"{item_id}-main")) or {}
 
 
-def seam_record(root: Path, item_id: str, context_file: Path | None, *, source: str = SEAM_SOURCE) -> dict:
+def seam_record(root: Path, item_id: str, context_file: Path | None, *, source: str = SEAM_SOURCE,
+                reason: str = "manual") -> dict:
     """The `seam` record of spec 07.4, which `hx metrics` reads (CONTRACTS.md).
     `context_file_bytes` is the size of the file the boundary reads: `PARTNER.md`,
     with the `## Status` hx just wrote."""
@@ -103,6 +94,7 @@ def seam_record(root: Path, item_id: str, context_file: Path | None, *, source: 
     return {
         "event": "seam",
         "source": source,
+        "reason": reason,
         "prompt_version": state.get("prompt_version"),
         "context_tokens_before": streams.last_context_tokens(root, item_id),
         "context_file_bytes": context_file.stat().st_size if context_file and context_file.is_file() else 0,
@@ -132,32 +124,14 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
         return {"id": item_id, "outcome": DEFERRED, "seq": None, "background_tasks": pending}
 
 
-    # Readiness gate (spec 09.2): take only when the pane can receive `/clear` and the
-    # Companion is caught up. Otherwise signal once, append a watcher record, and leave
-    # the marker for the next boundary. Nothing here blocks — a hung turn is a worse
-    # failure than a late seam, and records the head gains meanwhile land in the next
-    # pass and the next seam's file.
+    # Readiness gate (spec 09.2): take only when the pane can receive `/clear`. Otherwise
+    # append a watcher record and leave the marker for the next boundary. It never waits
+    # on the Companion: records newer than its last pass stay in the stream for the next
+    # pass, and the step state it already installed is the checkpoint.
     stream = f"{item_id}-main"
     if not pane_ready(root, item_id, env=env):
         seq = streams.append_record(root, item_id, stream,
                                     {"event": "seam_waiting", "ready": "menu"})
-        return {"id": item_id, "outcome": WAITING, "seq": seq, "background_tasks": []}
-    flush_mod.signal(root, item_id, env=env)
-    from . import companion as companion_mod
-
-    # The Partner's own PARTNER.md is its checkpoint. An unlaunched Companion must
-    # not strand the Partner until the native compactor runs.
-    partner_file = root / "PARTNER.md"
-    partner_checkpoint = item_id == PARTNER and partner_file.is_file() and bool(
-        partner_file.read_text().strip()
-    )
-    partner_without_companion = (
-        item_id == PARTNER and partner_checkpoint and not companion_mod.is_running(item_id, env)
-    )
-    if not partner_without_companion and not companion_mod.is_caught_up(root, item_id):
-        seq = streams.append_record(root, item_id, stream,
-                                    {"event": "seam_waiting", "ready": "behind",
-                                     "streams": waiting_streams(root, item_id)})
         return {"id": item_id, "outcome": WAITING, "seq": seq, "background_tasks": []}
 
     # Sequence is spec 08's: `## Status` is written from what the Companion recorded, then
@@ -168,8 +142,10 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     lifecycle.prepare_persona(root, item_id, env=env)
     partner_context.invalidate(root)
 
+    # The marker names the regime that asked for this seam; no marker is a manual `hx seam`.
+    reason = (marker.read_text().strip() or "hard") if marker.is_file() else "manual"
     goal_mod.paste(pane_target(item_id, env), seam_slash(root, item_id), env)
-    seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file))
+    seq = streams.append_record(root, item_id, f"{item_id}-main", seam_record(root, item_id, context_file, reason=reason))
 
     marker.unlink(missing_ok=True)
     return {"id": item_id, "outcome": TAKEN, "seq": seq, "background_tasks": []}

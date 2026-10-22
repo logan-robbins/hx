@@ -1,65 +1,31 @@
-"""Signal or wait for the Partner's orchestration companion.
+"""Run the Partner's owed Companion passes now.
 
-Workers drain durable observations through their native run controller.
+The application loop runs them in its Companion slots; `hx flush partner` runs
+every stream with new records inline, one Messages API exchange each. Workers
+drain durable observations through their native run controller.
 """
 
 from __future__ import annotations
 
 import argparse
-import time
 from pathlib import Path
 
-from . import timestamps
 
-POLL_SECONDS = 0.1
-
-
-def signal(root: Path, item_id: str, *, env=None) -> list[str]:
-    """Wake the Companion for every stream that still has new records (spec 10)."""
+def flush(root: Path, item_id: str, *, env=None) -> bool:
+    """True once every stream is caught up (spec 08). A failed pass leaves its stream behind."""
     from . import companion as companion_mod
     companion_mod.require_partner(item_id)
-    return companion_mod.wake_due(root, item_id, force=True, env=env)
-
-
-def flush(root: Path, item_id: str, *, env=None, wait: bool = True) -> bool:
-    """True once every stream is caught up. Blocks until it is (spec 08).
-
-    With no Companion running there is nothing to wait for: `wait_for` gives up on a running
-    loop only when there is none, which is the case in every test that does not start one and
-    in an instance whose Companion has not been launched yet.
-    """
-    from .companion import is_caught_up, require_partner
-    require_partner(item_id)
-
-    signal(root, item_id, env=env)
-    if not wait or is_caught_up(root, item_id):
-        return True
-    if not _companion_running(root, item_id, env):
-        # Nothing will ever move the cursor, so blocking would block forever.
-        return False
-    while not is_caught_up(root, item_id):
-        time.sleep(POLL_SECONDS)
-        # Re-signal each poll. A wake whose pane was mid-turn leaves the pass file on disk;
-        # this is the next wake that delivers it. Same mechanism, no queue.
-        signal(root, item_id, env=env)
-    return True
-
-
-def _companion_running(root: Path, item_id: str, env=None) -> bool:
-    """Is there a `<id>:companion` window to wake? `hx launch` starts one (spec 08, 10)."""
-    from .companion import is_running
-
-    return is_running(item_id, env)
+    companion_mod.run_due(root, item_id, force=True, env=env)
+    return companion_mod.is_caught_up(root, item_id)
 
 
 def main(argv: list[str], root: Path, *, env=None) -> int:
     parser = argparse.ArgumentParser(prog="hx flush", add_help=True)
     parser.add_argument("id")
-    parser.add_argument("--no-wait", action="store_true", help="signal without blocking")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.id != "partner":
         parser.error("worker capture drains through its native run")
-    caught_up = flush(root, args.id, env=env, wait=not args.no_wait)
-    print(f"HX-FLUSH {args.id} {'ok' if caught_up else 'no-companion'}")
+    caught_up = flush(root, args.id, env=env)
+    print(f"HX-FLUSH {args.id} {'ok' if caught_up else 'behind'}")
     return 0

@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": {
+    "id": "msg_01Hx7SubmitState",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-5-5",
+    "content": [
+      {"type": "tool_use", "id": "toolu_01SubmitState", "name": "submit_state", "input": "$state"}
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {"input_tokens": 2970, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 9216,
+              "output_tokens": 640, "service_tier": "standard"}
+  }
+}

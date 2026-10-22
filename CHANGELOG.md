@@ -113,6 +113,46 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   adapters and change at their next launch. A Partner on Codex runs the instance's own
   `adapters/codex/install.sh`: delete it and rerun `hx install --skeleton-only` (which never
   overwrites, and adds `search_guard.py` and `toolbox_headers.py`) before its next launch.
+- Companions are scripts on the Messages API (docs/fleet-throughput-plan.md P0.7). Each
+  context, learning and Partner pass is one bounded `httpx` exchange: a byte-stable cached
+  system block, the frozen slice in the user turn, the pass's tools (`tool_choice: auto`),
+  `output_config.effort` from the harness. Evidence reads and one rejected submission
+  continue the same exchange, at most three requests. Each response's usage, cache counts
+  included, is recorded on the job (Partner: `run/partner/companion-usage.jsonl`). The Jev
+  routes moved from the system block to the user turn, so the system block caches across
+  passes. **Existing instances:** a Companion now needs an `sk-ant-api` key in `seed/token` or
+  `ANTHROPIC_API_KEY` in the instance env file (an OAuth token is refused); `companion.provider`
+  `claude-cli` is gone (`anthropic` is the default; `openai-api` validates and is refused at a
+  pass); delete `companion.cache_ttl`, `seam_min_context_tokens` and `seam_min_interval_s`
+  from every harness.json, which now refuses them.
+- The Partner's Companion is the same script, run by the application loop in the shared
+  Companion slots (`hx flush partner` runs it inline). Removed: the tmux `companion` window,
+  `start.sh --companion`, the companion home and its `companion-stop` hook, the `/clear`-plus-
+  pointer pass files, `hx companion partner` launch/`--wake`/`--ingest`, `hx flush --no-wait`,
+  the `companion` CLI audience, the `hx-companion` skill, `HX_ROLE`, meta `install.sh
+  --no-companion`, and `src/hx/sidecar_process.py` with its temporary-HOME `claude -p` path.
+  A closed subagent stream's pass must submit its digest. `stepstate.evict` stays the only
+  budget enforcement. `hx companion partner --pass STREAM` runs one stream now.
+- Seams are cache-aware (fleet-throughput §4.4). A hard seam fires at the threshold as before;
+  an opportunistic seam fires when context is at least `seam.soft_fraction` of the threshold,
+  the cache is cold (the last response wrote more prefix than it read, or is older than
+  `seam.cache_ttl_s`) and the next packet is smaller than the context grown since the last
+  reset by `seam.min_benefit_bytes`; otherwise the conversation holds. The profile lives in
+  `config/hx.json` `seam` (defaults 0.6, 300 s, 64 KiB; set `cache_ttl_s` 3600 for a 1-hour
+  cache), and the prompt-cache report reads its TTL from there. After every context pass the
+  next forced packet is measured into the ledger, so a seam is the reset command and one
+  packet and never waits on a model: the worker reset no longer waits for classification
+  (pending observations ride the forced packet) and the Partner seam no longer waits for its
+  Companion to catch up. Only the hard seam refuses tool calls. The Partner's cold-miss seam is
+  decided at Stop from the turn's last usage; its idle-cold seam is taken by the loop only
+  while its pane shows an empty prompt. `seam` records carry `reason`
+  (`hard`/`cold_miss`/`cold_idle`/`manual`); Partner `log` records carry `cache_read` and
+  `cache_creation`, and Stop appends a `turn_end` record with the turn's last usage (the `log`
+  hook fires per tool call and never sees a turn's final response). The fixed 60k context and
+  15-minute interval conditions are gone. A live check with the real Claude Code 2.1.304
+  against a scripted local Messages API: a warm turn held; a cold-miss turn seamed at Stop and
+  an idle-cold empty prompt seamed from `partner_reset`, each followed by `SessionStart(clear)`;
+  a draft in the input box or a turn inside the TTL held.
 
 - Claude's native Read is the whole-file delivery (docs/fleet-throughput-plan.md P0.5, D5). A
   live check with the real Claude Code 2.1.299 binary against a recording Messages API showed

@@ -192,7 +192,7 @@ def test_wake_cli_accepts_and_exits_0(instance, hx):
 #
 # These strings are the live pane chrome of Claude Code 2.1.278, captured on 2026-09-20 from
 # a logged-in session (goal build-3 item 8, and `REAL_IDLE_PLACEHOLDER` from build-7's
-# Companion live check). They are the record of what the real TUI draws; `hx.goal.pane_is_idle`
+# live check). They are the record of what the real TUI draws; `hx.goal.pane_is_idle`
 # is judged against them.
 
 REAL_IDLE = "\n".join([
@@ -232,7 +232,7 @@ def test_the_real_tui_idle_pane_reads_as_idle():
 
 
 def test_a_prompt_with_the_empty_input_placeholder_reads_as_idle():
-    """Live, build-7: a fresh Companion pane draws `❯ Try "…"`, and it is idle."""
+    """Live, build-7: a fresh pane draws `❯ Try "…"`, and it is idle."""
     from hx.goal import pane_is_idle
 
     assert pane_is_idle(REAL_IDLE_PLACEHOLDER) is True
@@ -317,13 +317,14 @@ def test_a_codex_busy_pane_reads_as_busy():
 # --- build-8 item 10: the input box, and what is still sitting in it ----------------------------
 #
 # The live chrome of a pane holding an unsubmitted paste (2.1.278, 2026-09-20 04:10 and 21:17).
-# The Enter that followed `paste-buffer` was swallowed and the text stayed put.
+# The Enter that followed `paste-buffer` was swallowed and the text stayed put. The pasted
+# pointer is a stand-in; the box, the wrap and the transcript echo are as captured.
 
 REAL_UNSUBMITTED = "\n".join([
     "❯ /clear",
     "",
     "─" * 80,
-    "❯ Companion pass: read /abs/run/eng-001/companion/eng-001-main.pass.md and do",
+    "❯ The goal for eng-001 is in /abs/run/eng-001/goal/eng-001-main.md; read it and do",
     "  what it says.",
     "",
     "─" * 80,
@@ -331,10 +332,10 @@ REAL_UNSUBMITTED = "\n".join([
     "",
 ])
 REAL_SUBMITTED = "\n".join([
-    "❯ Companion pass: read /abs/run/eng-001/companion/eng-001-main.pass.md and do",
+    "❯ The goal for eng-001 is in /abs/run/eng-001/goal/eng-001-main.md; read it and do",
     "  what it says.",
     "",
-    "  Reading /abs/run/eng-001/companion/eng-001-main.pass.md",
+    "  Reading /abs/run/eng-001/goal/eng-001-main.md",
     "",
     "─" * 80,
     '❯ Try "create a util logging.py that..."',
@@ -354,14 +355,14 @@ def holds(pane, text):
 
 
 def test_an_unsubmitted_paste_is_still_in_the_input_box():
-    assert holds(REAL_UNSUBMITTED, "Companion pass: read /abs/run/eng-001/companion/"
-                                   "eng-001-main.pass.md and do what it says.")
+    assert holds(REAL_UNSUBMITTED, "The goal for eng-001 is in /abs/run/eng-001/goal/"
+                                   "eng-001-main.md; read it and do what it says.")
 
 
 def test_a_submitted_paste_is_above_the_prompt_not_in_the_box():
     """The transcript is drawn above the prompt, so the echo there must not read as pending."""
-    assert not holds(REAL_SUBMITTED, "Companion pass: read /abs/run/eng-001/companion/"
-                                     "eng-001-main.pass.md and do what it says.")
+    assert not holds(REAL_SUBMITTED, "The goal for eng-001 is in /abs/run/eng-001/goal/"
+                                     "eng-001-main.md; read it and do what it says.")
 
 
 def test_the_placeholder_is_not_mistaken_for_pending_text():

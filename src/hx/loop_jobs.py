@@ -8,7 +8,7 @@ caller's ledger; tests and `hx loop --once` use it. The service uses threads,
 each opening its own ledger connection.
 
 Profile settings live in config/hx.json: `loop.workers` bounds the threads and
-`companion.max_concurrent` sizes the Companion slots both kinds share.
+`companion.max_concurrent` sizes the Companion slots every kind shares.
 """
 
 from __future__ import annotations
@@ -24,15 +24,20 @@ WORKERS = 4
 COMPANIONS = 1
 
 
-def setting(root, section, key, default, *, low, high):
-    """An integer profile setting from config/hx.json, or its default when unset."""
+def profile(root):
+    """The instance profile, config/hx.json; empty when there is none."""
     try:
         config = json.loads((Path(root) / "config" / "hx.json").read_text())
     except FileNotFoundError:
-        return default
+        return {}
     except (OSError, ValueError) as exc:
         raise ValidationError("config/hx.json is unreadable: " + str(exc)) from exc
-    value = (config.get(section) or {}).get(key, default) if isinstance(config, dict) else default
+    return config if isinstance(config, dict) else {}
+
+
+def setting(root, section, key, default, *, low, high):
+    """An integer profile setting from config/hx.json, or its default when unset."""
+    value = (profile(root).get(section) or {}).get(key, default)
     if type(value) is not int or not low <= value <= high:
         raise ValidationError(f"config/hx.json {section}.{key} must be an integer from {low} to {high}")
     return value

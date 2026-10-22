@@ -8,6 +8,7 @@ import pytest
 from hx import learning_companion as learner, learning_protocol as protocol, native_companion, passes
 from hx.continuity_store import Conflict
 from hx.errors import ValidationError
+from .companion_http import api_key, replay, silent
 from .test_native_companion import planned
 from .test_passes import answer
 
@@ -99,36 +100,36 @@ def test_late_events_and_changed_evidence_do_not_cross_frozen_window(planned):
     assert store.db.execute('SELECT assessed_seq FROM learning_cursors').fetchone()[0] == 0
 
 
-def test_failed_learning_model_does_not_advance_or_repeat_assessment(planned, monkeypatch):
+def test_failed_learning_model_does_not_advance_or_repeat_assessment(planned):
     store, _, _ = planned
     job = prepare(planned)
-    calls = []
-    def fail(*args, **kwargs):
-        calls.append(1)
-        return {'exit_code': 1, 'reason': 'timeout', 'output_bytes': 0}
-    monkeypatch.setattr(learner.sidecar_process, 'execute', fail)
-    assert learner.execute(store, job['job_id'])['status'] == 'unresolved'
+    with replay('overloaded') as sent:
+        result = learner.execute(store, job['job_id'])
+    assert result['status'] == 'unresolved' and result['execution']['outcome'] == 'http_error'
+    assert 'overloaded_error' in result['execution']['error']
     assert store.db.execute('SELECT assessed_seq FROM learning_cursors').fetchone()[0] == 0
-    assert learner.execute(store, job['job_id'])['status'] == 'unresolved' and len(calls) == 1
+    with silent():
+        assert learner.execute(store, job['job_id'])['status'] == 'unresolved'
+    assert len(sent) == 1
     assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 0
 
 
-def test_native_learner_has_only_assessment_tools_and_private_home(planned, monkeypatch):
+def test_learner_exchange_has_only_assessment_tools_and_cached_system(planned):
     store, _, event = planned
     job = prepare(planned)
-    calls = []
-    def run(argv, cwd, env, output, timeout, max_bytes, **kwargs):
-        calls.append(1)
-        assert env['HOME'] == str(cwd) and cwd != store.root
-        assert argv[argv.index('--allowedTools') + 1] == 'mcp__continuity__read_evidence,mcp__continuity__submit_assessment'
-        assert argv[argv.index('--tools') + 1] == '' and 'PRIVATE' not in repr(env)
-        frozen = json.loads(kwargs['stdin'].read())
-        assert frozen['events'][0]['event_id'] == event['event_id']
-        assert protocol.call(store, job['job_id'], 'submit_assessment', {'response': response(job, proposals=[proposal(event['event_id'])])})['accepted']
-        return {'exit_code': 0, 'reason': None, 'output_bytes': 0}
-    monkeypatch.setattr(learner.sidecar_process.checks, 'execute', run)
-    assert learner.execute(store, job['job_id'], env={'PATH': '/bin', 'PRIVATE': 'secret'})['status'] == 'committed'
-    assert learner.execute(store, job['job_id'])['status'] == 'committed' and len(calls) == 1
+    assessment = response(job, proposals=[proposal(event['event_id'])])
+    with replay('submit-assessment', assessment=assessment) as sent:
+        result = learner.execute(store, job['job_id'], env={'PATH': '/bin', 'PRIVATE': 'secret'})
+    assert result['status'] == 'committed'
+    (request,) = sent
+    payload = learner.row(store, job['job_id'])['payload']
+    assert [tool['name'] for tool in request['body']['tools']] == ['read_evidence', 'submit_assessment']
+    assert request['body']['system'] == [{'type': 'text', 'text': payload['system'], 'cache_control': {'type': 'ephemeral'}}]
+    assert request['body']['messages'][0]['content'][0]['text'] == learner.user_turn(job['payload']['body'])
+    assert event['event_id'] in request['body']['messages'][0]['content'][0]['text']
+    assert result['usage'][0]['cache_creation_input_tokens'] == 3968
+    with silent():
+        assert learner.execute(store, job['job_id'])['status'] == 'committed'
 
 
 def test_learner_cannot_use_context_patch_or_filesystem_tools(planned):
@@ -144,7 +145,7 @@ def test_partner_gets_independent_learning_assessment(instance):
     from hx import streams
     from .test_prompt_compiler import configure
     configure(instance, item_id='partner', role='partner', flavor='claude')
-    (instance / 'config/claude.json').write_text(json.dumps({'bin': __import__('sys').executable}))
+    api_key(instance)
     streams.append_record(instance, 'partner', 'partner-main', {'event': 'correction', 'text': 'Always check provider interfaces before dispatch.'})
     from hx.continuity_store import ContinuityStore
     with ContinuityStore(instance) as store:

@@ -53,6 +53,16 @@ def replacement_prompt(pane: str) -> str | None:
     return match.group(1) if match else None
 
 
+def input_is_empty(pane_text: str) -> bool:
+    """Idle with an empty input box: a reset pasted now cannot land on a human's draft.
+
+    A placeholder line is not proof of an empty box (typed text looks the same in a
+    capture), so only the bare prompt counts.
+    """
+    return pane_is_idle(pane_text) and any(
+        prompt.match(line) for line in pane_text.split("\n") for prompt in IDLE_PROMPTS)
+
+
 def pane_is_idle(pane_text: str) -> bool:
     """True when the pane is waiting for input. One function, by design.
 

@@ -1,27 +1,28 @@
-"""The Companion as a tmux session — milestone M5 (spec 10, 07.2, 07.4, 13 M5).
+"""The Partner's Companion as one Messages API exchange per pass (spec 10, 07.2, 07.4, 13 M5).
 
-There is no headless path: the Companion is a Claude Code session in window `<id>:companion`,
-woken by pasting `/clear` and a fixed pointer to a pass file. Here the fake `claude` plays it —
-it reads the pass it is pointed at, writes a scripted `out.json`, and fires its own `stop`
-hook, which is what the real one does.
+There is no Companion session and no pane: a pass sends the cached system block, the stream's
+prior state and its new records, and installs the state the model submits through
+`submit_state`. The responses here are recorded Messages API bodies replayed in-process.
 """
 
 from __future__ import annotations
 
 import json
-import subprocess
+import os
+import time
 
 import pytest
 
-from .conftest import wait_for
+from .companion_http import api_key, replay, silent
 from .test_compose import run_hook
 from .test_streams import post_tool, transcript_with
 
 
 @pytest.fixture(autouse=True)
-def private_companion_transport(monkeypatch, tmux_server):
+def private_companion_transport(monkeypatch, tmux_server, instance):
     """Even state-only cases must never probe an operator's default Partner."""
     monkeypatch.setenv('HX_TMUX', ' '.join(tmux_server))
+    api_key(instance)
 
 
 def state_of(instance, item_id, stream):
@@ -32,61 +33,30 @@ def state_of(instance, item_id, stream):
 
 
 def append(instance, item_id, stream, count, **extra):
-    """Append records and wake the Companion, which is what the `log` hook does (spec 10)."""
-    from hx.companion import wake_due
+    """Append records, which is what the `log` hook does (spec 10)."""
     from hx.streams import append_record
 
     for _ in range(count):
         append_record(instance, item_id, stream, {"event": "post_tool", "tool": "Bash", **extra})
-    # `force` is the deliberate-act trigger: `hx flush`, `hx seam`'s readiness signal, and
-    # the Companion's own `stop` hook wake regardless of `batch_records`, which is the
-    # threshold the `log` hook and the turn-end `stop` hook use.
-    wake_due(instance, item_id, force=True)
 
 
-def wake_until(instance, item_id, predicate, *, what):
-    """Keep waking until `predicate` holds.
-
-    A pass whose wake found the pane mid-turn stays on disk, and the next wake — any trigger,
-    or `hx flush` — delivers it (spec 10). There is no queue and no second mechanism, so a test
-    that needs a second pass with no new records plays the part of that next trigger.
-    """
-    from hx.flush import signal
-
-    def step():
-        if predicate():
-            return True
-        signal(instance, item_id)
-        return False
-
-    return wait_for(step, what=what)
+def full(**fields):
+    """A complete submitted state: every key the tool's schema requires."""
+    return {"goal": "", "constraints": [], "decisions": [], "open_steps": [], "closed_steps": [],
+            "dead_ends": [], "working_set": {}, "blockers": [], "subagents_open": [], **fields}
 
 
-def wait_for_state(instance, item_id, stream, seq):
-    wait_for(lambda: (state_of(instance, item_id, stream) or {}).get("seq") == seq,
-             what=f"{stream} state at seq {seq}")
-    return state_of(instance, item_id, stream)
+def run(instance, *steps, stream="partner-main", **inputs):
+    from hx.companion import run_pass
+
+    with replay(*steps, **inputs) as sent:
+        result = run_pass(instance, "partner", stream)
+    return result, sent
 
 
-@pytest.fixture
-def companion(instance, hx, companion_script, tmux_server, monkeypatch):
-    """The Partner's explicit orchestration companion on a private tmux server."""
-    monkeypatch.setenv("HX_TMUX", " ".join(tmux_server))
-    assert hx("launch", "partner").returncode == 0
-    wait_for((instance / "run/partner/fake-ready").is_file, what="Partner prompt")
-    assert hx("companion", "partner").returncode == 0
-    original_responses = companion_script.responses
-    original_passes = companion_script.passes
-    companion_script.responses = lambda *items, item_id="partner": original_responses(*items, item_id=item_id)
-    companion_script.passes = lambda item_id="partner": original_passes(item_id=item_id)
-    return instance
-
-
-# --- the session ------------------------------------------------------------------------------
-
-
-
-
+def errors(instance):
+    path = instance / "logs" / "partner" / "hook-errors.log"
+    return path.read_text() if path.is_file() else ""
 
 
 def _disable_companion(instance, item_id="partner"):
@@ -96,188 +66,147 @@ def _disable_companion(instance, item_id="partner"):
     harness.write_text(json.dumps(body))
 
 
+def _companion(instance, **fields):
+    harness = instance / "config" / "partner" / "harness.json"
+    config = json.loads(harness.read_text())
+    config["companion"] = {**config.get("companion", {}), **fields}
+    harness.write_text(json.dumps(config))
+
+
+# --- the exchange -------------------------------------------------------------------------------
+
+
 def test_disabled_companion_takes_no_pass_and_stays_caught_up(instance):
-    """`companion.disabled`: hooks wake nothing, no pass file lands, seams stay takeable."""
-    from hx.companion import is_caught_up, is_disabled, wake_due
-    from hx.streams import append_record
+    """`companion.disabled`: no stream is due, no request is sent, seams stay takeable."""
+    from hx.companion import is_caught_up, is_disabled, run_due
 
     _disable_companion(instance)
     assert is_disabled(instance, "partner") is True
-    append_record(instance, "partner", "partner-main", {"event": "post_tool", "tool": "Bash"})
-    assert wake_due(instance, "partner", force=True) == []
-    assert list((instance / "run" / "partner" / "companion").glob("*.pass.md")) == []
+    append(instance, "partner", "partner-main", 1)
+    with silent():
+        assert run_due(instance, "partner", force=True) == []
     assert is_caught_up(instance, "partner") is True
 
 
+def test_the_system_block_is_composed_and_byte_stable(instance):
+    """spec 10: BASE.md, the role file and the harness facts — the cached prefix, and only it."""
+    from hx.companion import system_prompt, config_for
 
-
-def test_the_system_prompt_is_composed_before_launch(instance, hx):
-    """spec 10: BASE.md, the role file, and the harness facts — the cached prefix."""
-    assert hx("launch", "partner").returncode == 0
-    assert hx("companion", "partner").returncode == 0
-    text = (instance / "run" / "partner" / "companion-system.md").read_text()
+    append(instance, "partner", "partner-main", 3)
+    result, sent = run(instance, "submit-state", state={"state": full(goal="first")})
+    assert result["status"] == "committed"
+    append(instance, "partner", "partner-main", 2)
+    _, again = run(instance, "submit-state", state={"state": full(goal="second")})
+    text = system_prompt(instance, config_for(instance, "partner"))
     assert "# Companion" in text, "BASE.md"
-    assert "- id: `partner`" in text and "- role: `partner`" in text
-    assert "state budget:" in text and "seam policy:" in text
+    assert "- id: `partner`" in text and "- role: `partner`" in text and "state budget:" in text
+    assert "seam policy" not in text
+    for request in (*sent, *again):
+        assert request["body"]["system"] == [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
+        assert [tool["name"] for tool in request["body"]["tools"]] == ["submit_state"]
 
 
-def test_the_companion_home_has_only_its_own_stop_hook(instance, hx):
-    """spec 10, spec 14 D25: its own stop and nothing else. No guard, no CLAUDE.md."""
-    assert hx("launch", "partner").returncode == 0
-    assert hx("companion", "partner").returncode == 0
-    home = instance / "run" / "partner" / "companion-home"
-    settings = json.loads((home / "settings.json").read_text())
-    assert sorted(settings["hooks"]) == ["Stop"]
-    commands = [h["command"] for entries in settings["hooks"].values()
-                for entry in entries for h in entry["hooks"]]
-    assert commands == [c for c in commands if c.endswith("companion-stop")]
-    assert not (home / "CLAUDE.md").exists()
-    # The one skill it gets (handoff/orchestrator-to-build.md, 2026-09-20).
-    assert [p.name for p in (home / "skills").iterdir()] == ["hx-companion"]
-
-
-def test_there_is_no_headless_runner_left(instance):
-    """spec 02 "Model calls"; `tests/guard/test_no_headless.py` is the enforcing test."""
+def test_there_is_no_companion_session_left(instance):
+    """No pane, no pass file, no wake: a pass is a request."""
     from hx import companion as companion_mod
 
-    source = (instance.parent, )
-    del source
-    assert not hasattr(companion_mod, "call_model")
-    assert not hasattr(companion_mod, "DENIED_TOOLS")
+    for name in ("launch", "window", "write_pass", "wake", "ingest", "wake_due", "POINTER", "companion_home"):
+        assert not hasattr(companion_mod, name), name
+    append(instance, "partner", "partner-main", 1)
+    run(instance, "submit-state", state={"state": full()})
+    assert not (instance / "run" / "partner" / "companion").exists()
+    assert not (instance / "run" / "partner" / "companion-home").exists()
 
 
-# --- the pass protocol -------------------------------------------------------------------------
-
-
-def test_the_pass_file_carries_every_key(companion, companion_script):
-    """CONTRACTS.md plus handoff/gtm-to-build.md gtm-8: nine keys, none omitted."""
-    from hx.companion import pass_path, write_pass
-
-    path = write_pass(companion, "partner", "partner-main")
-    keys = [line.split(":", 1)[0] for line in path.read_text().splitlines() if ":" in line]
-    assert keys == ["stream", "state", "log", "from_seq", "write", "retry_reason",
-                    "context_tokens", "last_seam_ts", "open_subagents"]
-    body = path.read_text()
-    assert "stream: partner-main" in body and "from_seq: 0" in body
-    # Empty values are written, never omitted: the Companion must not have to guess.
-    assert "retry_reason: \n" in body or body.rstrip().endswith("open_subagents:")
-    assert "last_seam_ts: \n" in body, "no seam yet, which satisfies the interval condition"
-
-
-def test_the_pass_reports_the_seam_inputs(companion, tmp_path):
-    from hx.companion import write_pass
-
-    run_hook(companion, "partner", "log",
-             post_tool(transcript=transcript_with(tmp_path, input_tokens=4200)))
-    run_hook(companion, "partner", "subagent-start",
+def test_the_user_turn_names_the_cursor_and_carries_whole_records(instance, tmp_path):
+    run_hook(instance, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "Explore"})
+    append(instance, "partner", "partner-main", 3, input="first")
+    _, sent = run(instance, "submit-state", state={"state": full(goal="g")})
+    user = sent[0]["body"]["messages"][0]["content"][0]["text"]
+    assert "stream: partner-main (main)" in user and "from_seq: 0" in user
+    assert "open_subagents: s001" in user
+    assert "none: this is the first pass for this stream" in user
+    head = state_of(instance, "partner", "partner-main")["seq"]
+    assert f"through_seq: {head}" in user and user.count('"input":"first"') == 3
 
-    body = write_pass(companion, "partner", "partner-main").read_text()
-    assert "context_tokens: 4200" in body
-    assert "open_subagents: s001" in body
+    append(instance, "partner", "partner-main", 2, input="second")
+    _, sent = run(instance, "submit-state", state={"state": full(goal="g")})
+    user = sent[0]["body"]["messages"][0]["content"][0]["text"]
+    assert f"from_seq: {head}" in user and '"input":"first"' not in user and user.count('"input":"second"') == 2
+    assert '"goal":"g"' in user and '"seq"' not in user.split("## New records")[0]
 
 
-def test_a_subagent_pass_leaves_the_seam_keys_empty(companion):
-    """The seam policy is evaluated on the main stream only (gtm-8)."""
-    from hx.companion import write_pass
-
-    run_hook(companion, "partner", "subagent-start",
-             {"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "Explore"})
-    body = write_pass(companion, "partner", "partner-s001").read_text()
-    assert "context_tokens: \n" in body and "open_subagents: \n" in body
-
-
-def test_the_companion_writes_state_and_its_stop_hook_installs_it(companion, companion_script):
-    companion_script.responses({"state": {
-        "seq": 3, "goal": "stream the importer",
-        "closed_steps": [{"id": "st1", "outcome": "read it", "verified": True}],
-    }})
-    append(companion, "partner", "partner-main", 3)
-
-    state = wait_for_state(companion, "partner", "partner-main", 3)
-    assert state["goal"] == "stream the importer"
-    assert set(state["prompt_version"]) == {"base", "role"}
-    assert all(state["prompt_version"].values())
+def test_the_submitted_state_is_installed_and_stamped(instance):
+    append(instance, "partner", "partner-main", 3)
+    result, sent = run(instance, "submit-state", state={"state": full(
+        goal="stream the importer",
+        closed_steps=[{"id": "st1", "outcome": "read it", "verified": True, "commit": "", "ev": [1]}])})
+    assert result["status"] == "committed" and len(sent) == 1
+    state = state_of(instance, "partner", "partner-main")
+    assert state["seq"] == 3 and state["goal"] == "stream the importer"
+    assert set(state["prompt_version"]) == {"base", "role"} and all(state["prompt_version"].values())
     assert state["ts"].endswith("Z")
-
-    from hx.companion import out_path, pass_path
-
-    assert not out_path(companion, "partner", "partner-main").exists(), "consumed"
-    assert not pass_path(companion, "partner", "partner-main").exists(), "and cleared"
-
-
-def test_the_pass_names_the_cursor_so_only_new_records_are_read(companion, companion_script):
-    companion_script.responses({"state": {"seq": 3}}, {"state": {"seq": 6}})
-    append(companion, "partner", "partner-main", 3)
-    wait_for_state(companion, "partner", "partner-main", 3)
-    append(companion, "partner", "partner-main", 3)
-    wait_for_state(companion, "partner", "partner-main", 6)
-
-    assert [p["from_seq"] for p in companion_script.passes()][:2] == ["0", "3"]
+    (line,) = (instance / "run" / "partner" / "companion-usage.jsonl").read_text().splitlines()
+    usage = json.loads(line)
+    assert (usage["from_seq"], usage["through_seq"], usage["outcome"]) == (0, 3, "submitted")
+    assert usage["usage"][0]["cache_read_input_tokens"] == 9216
 
 
-def test_nothing_is_pasted_but_clear_and_the_pointer(companion, companion_script):
-    """spec 10: "Nothing is passed as prompt text but the pointer"."""
-    companion_script.responses({"state": {"seq": 3}})
-    append(companion, "partner", "partner-main", 3)
-    wait_for_state(companion, "partner", "partner-main", 3)
+def test_hx_owns_the_cursor_even_when_the_model_names_one(instance):
+    append(instance, "partner", "partner-main", 5)
+    run(instance, "submit-state", state={"state": full(goal="g")})
+    assert state_of(instance, "partner", "partner-main")["seq"] == 5
 
-    log = companion / "run" / "partner" / "companion" / "fake-input.log"
-    if not log.is_file():
-        log = companion / "run" / "partner" / "fake-input.log"
-    for line in [l for l in log.read_text().splitlines() if l.strip()]:
-        assert line == "/clear" or line.startswith("Companion pass: read ")
+
+def test_a_closed_subagent_stream_submits_its_digest(instance):
+    from hx.companion import digest_path
+
+    run_hook(instance, "partner", "subagent-start",
+             {"hook_event_name": "SubagentStart", "agent_id": "a1", "agent_type": "Explore"})
+    run_hook(instance, "partner", "subagent-stop",
+             {"hook_event_name": "SubagentStop", "agent_id": "a1", "agent_type": "Explore"})
+    from hx.companion import due_streams
+    (stream,) = [s for s in due_streams(instance, "partner") if s != "partner-main"]
+    result, sent = run(instance, "submit-state", stream=stream,
+                       state={"state": full(goal="explore"), "digest": "Read the parser; committed nothing; left the importer unproven."})
+    assert result["status"] == "committed"
+    assert "subagent, closed: also submit its digest" in sent[0]["body"]["messages"][0]["content"][0]["text"]
+    assert "importer unproven" in digest_path(instance, "partner", stream).read_text()
 
 
 # --- the validator -------------------------------------------------------------------------------
 
 
-def test_invalid_output_is_retried_once_then_the_prior_state_stands(companion, companion_script):
+def test_invalid_state_is_retried_once_then_the_prior_state_stands(instance):
     """spec 10, 13 M5: "invalid output keeps prior state"."""
-    companion_script.responses({"state": {"seq": 3, "goal": "the good one"}})
-    append(companion, "partner", "partner-main", 3)
-    good = wait_for_state(companion, "partner", "partner-main", 3)
+    append(instance, "partner", "partner-main", 3)
+    run(instance, "submit-state", state={"state": full(goal="the good one")})
+    good = state_of(instance, "partner", "partner-main")
 
-    companion_script.responses({"text": "```json\n{\"seq\": 6}\n```"}, {"text": "still not json"})
-    append(companion, "partner", "partner-main", 3)
-
-    errors = companion / "logs" / "partner" / "hook-errors.log"
-    wake_until(companion, "partner",
-               lambda: errors.is_file() and "keeping the prior state" in errors.read_text(),
-               what="the second failure")
-    assert state_of(companion, "partner", "partner-main") == good
-    assert "pass rewritten with the reason" in errors.read_text()
+    append(instance, "partner", "partner-main", 3)
+    result, sent = run(instance, "submit-state", "resubmit-state",
+                       state={"state": {"goal": "x", "zz": 1}}, retry={"state": {"decisions": [{"d": 1}]}})
+    assert result["status"] == "unresolved" and len(sent) == 2
+    assert state_of(instance, "partner", "partner-main") == good
+    assert "not installed" in errors(instance) and "the prior state stands" in errors(instance)
 
 
-def test_a_fenced_answer_is_rejected_not_stripped(companion, companion_script):
-    """No fence-tolerant parser (spec 10, the orchestrator's answer to gtm-7)."""
-    companion_script.responses({"text": "```json\n{\"seq\": 3}\n```"},
-                               {"text": "```json\n{\"seq\": 3}\n```"})
-    append(companion, "partner", "partner-main", 3)
-    errors = companion / "logs" / "partner" / "hook-errors.log"
-    wake_until(companion, "partner",
-               lambda: errors.is_file() and "keeping the prior state" in errors.read_text(),
-               what="the fenced answer to be rejected twice")
-    assert state_of(companion, "partner", "partner-main") is None
+def test_the_retry_carries_the_reason_in_the_same_exchange(instance):
+    append(instance, "partner", "partner-main", 3)
+    result, sent = run(instance, "submit-state", "resubmit-state",
+                       state={"state": {"decisions": [{"d": 1}]}}, retry={"state": full(goal="fixed")})
+    assert result["status"] == "committed" and state_of(instance, "partner", "partner-main")["goal"] == "fixed"
+    (rejection,) = sent[1]["body"]["messages"][2]["content"]
+    assert rejection["is_error"] and rejection["tool_use_id"] == "toolu_01SubmitState"
+    assert rejection["content"]
 
 
-def test_the_retry_pass_carries_the_reason(companion, companion_script):
-    companion_script.responses({"text": "not json at all"}, {"state": {"seq": 3}})
-    append(companion, "partner", "partner-main", 3)
-    wake_until(companion, "partner",
-               lambda: (state_of(companion, "partner", "partner-main") or {}).get("seq") == 3,
-               what="the retry to land")
-
-    passes = companion_script.passes()
-    assert len(passes) >= 2
-    assert passes[0]["retry_reason"] == ""
-    assert "not valid JSON" in passes[1]["retry_reason"], passes[1]
-
-
-def test_hx_owns_the_cursor_even_when_the_model_lags(companion, companion_script):
-    companion_script.responses({"state": {"seq": 2}})
-    append(companion, "partner", "partner-main", 5)
-    assert wait_for_state(companion, "partner", "partner-main", 5)["seq"] == 5
+def test_a_failed_request_keeps_the_prior_state(instance):
+    append(instance, "partner", "partner-main", 3)
+    result, _ = run(instance, "overloaded")
+    assert result["status"] == "unresolved" and "529" in result["error"]
+    assert state_of(instance, "partner", "partner-main") is None
 
 
 def test_the_validator_rejects_what_the_schema_forbids(instance):
@@ -295,26 +224,19 @@ def test_the_validator_rejects_what_the_schema_forbids(instance):
 # --- the budget -------------------------------------------------------------------------------------
 
 
-def test_the_budget_is_enforced_deterministically(companion, companion_script):
+def test_the_budget_is_enforced_deterministically(instance):
     from hx.stepstate import estimate_tokens
 
-    harness = companion / "config" / "partner" / "harness.json"
-    config = json.loads(harness.read_text())
-    config["companion"] = {"state_budget_tokens": 200}
-    harness.write_text(json.dumps(config))
-
-    companion_script.responses({"state": {
-        "seq": 3, "goal": "g",
-        "dead_ends": ["d" * 600, "e" * 600],
-        "closed_steps": [{"id": "st1", "outcome": "x", "chatter": "y" * 600}],
-        "working_set": {"dirty": ["z" * 600], "files": [{"path": "a.py", "note": "n" * 600}]},
-    }})
-    append(companion, "partner", "partner-main", 3)
-    state = wait_for_state(companion, "partner", "partner-main", 3)
-
+    _companion(instance, state_budget_tokens=200)
+    append(instance, "partner", "partner-main", 3)
+    run(instance, "submit-state", state={"state": full(
+        goal="g",
+        dead_ends=["d" * 600, "e" * 600],
+        closed_steps=[{"id": "st1", "outcome": "x" * 600, "verified": False, "commit": "", "ev": []}],
+        working_set={"dirty": ["z" * 600], "files": [{"path": "a.py", "note": "n" * 600}]})})
+    state = state_of(instance, "partner", "partner-main")
     assert estimate_tokens(state) <= 250, estimate_tokens(state)
-    assert "chatter" not in json.dumps(state), "closed steps collapse first (spec 10)"
-    assert "over budget, evicted" in (companion / "logs" / "partner" / "hook-errors.log").read_text()
+    assert "over budget, evicted" in errors(instance)
 
 
 def test_eviction_order_is_spec_10s(instance):
@@ -329,6 +251,27 @@ def test_eviction_order_is_spec_10s(instance):
     _, applied = evict(state, 5)
     assert applied[:2] == ["collapse_closed_steps", "oldest_dead_ends"]
     assert applied.index("closed_step_working_set") < applied.index("untouched_file_notes")
+
+
+def test_a_500_record_replay_stays_within_budget(instance):
+    """spec 13 M5. The log is synthesised: the build-5 live run recorded only a few records."""
+    from hx.companion import due_streams
+    from hx.stepstate import estimate_tokens
+
+    _companion(instance, batch_records=20, state_budget_tokens=2000)
+    sizes = []
+    for batch in range(1, 26):
+        append(instance, "partner", "partner-main", 20)
+        assert due_streams(instance, "partner") == ["partner-main"]
+        run(instance, "submit-state", state={"state": full(
+            goal="stream the importer",
+            closed_steps=[{"id": f"st{n}", "outcome": f"did thing {n}" * 6, "verified": True, "commit": "", "ev": []}
+                          for n in range(1, batch + 1)],
+            dead_ends=[f"dead end {n}" * 8 for n in range(1, batch + 1)],
+            working_set={"files": [{"path": f"f{n}.py", "note": "note" * 20} for n in range(1, batch + 1)]})})
+        sizes.append(estimate_tokens(state_of(instance, "partner", "partner-main")))
+    assert state_of(instance, "partner", "partner-main")["seq"] == 500
+    assert max(sizes) <= 2050, f"peak {max(sizes)} tokens"
 
 
 # --- FIFO retention ------------------------------------------------------------------------------------
@@ -363,114 +306,174 @@ def test_truncation_keeps_everything_when_the_cursor_is_behind(instance):
     assert len(list(iter_records(path))) == 200
 
 
-# --- the 500-record replay -------------------------------------------------------------------------------
+# --- flush and the loop -------------------------------------------------------------------------------
 
 
-def test_a_500_record_replay_stays_within_budget(companion, companion_script):
-    """spec 13 M5. The log is synthesised: the build-5 live run recorded only a few records."""
-    from hx.stepstate import estimate_tokens
-
-    harness = companion / "config" / "partner" / "harness.json"
-    config = json.loads(harness.read_text())
-    config["companion"] = {"batch_records": 20, "state_budget_tokens": 2000}
-    harness.write_text(json.dumps(config))
-
-    companion_script.responses(*[
-        {"state": {
-            "seq": batch * 20,
-            "goal": "stream the importer",
-            "closed_steps": [{"id": f"st{n}", "outcome": f"did thing {n}" * 6, "verified": True}
-                             for n in range(1, batch + 1)],
-            "dead_ends": [f"dead end {n}" * 8 for n in range(1, batch + 1)],
-            "working_set": {"files": [{"path": f"f{n}.py", "note": "note" * 20}
-                                      for n in range(1, batch + 1)]},
-        }} for batch in range(1, 26)
-    ])
-
-    sizes = []
-    for batch in range(1, 26):
-        append(companion, "partner", "partner-main", 20)
-        sizes.append(estimate_tokens(wait_for_state(companion, "partner", "partner-main", batch * 20)))
-
-    assert state_of(companion, "partner", "partner-main")["seq"] == 500
-    assert max(sizes) <= 2050, f"peak {max(sizes)} tokens"
-
-
-# --- the seam policy --------------------------------------------------------------------------------------
-
-
-def test_the_seam_marker_needs_all_four_conditions(companion, companion_script, tmp_path):
-    """spec 10: a closed step, enough context, enough time, and no open subagents."""
-    from hx.hook_log import seam_marker
-
-    harness = companion / "config" / "partner" / "harness.json"
-    config = json.loads(harness.read_text())
-    config["companion"] = {"seam_min_context_tokens": 1000, "seam_min_interval_s": 600}
-    harness.write_text(json.dumps(config))
-
-    run_hook(companion, "partner", "log",
-             post_tool(transcript=transcript_with(tmp_path, input_tokens=5000)))
-    companion_script.responses({"state": {"seq": 3, "open_steps": [{"id": "st1", "intent": "x"}]}})
-    append(companion, "partner", "partner-main", 2)
-    wait_for_state(companion, "partner", "partner-main", 3)
-    assert not seam_marker(companion, "partner").exists(), "no closed step, no seam"
-
-    companion_script.responses({"state": {"seq": 5,
-                                          "closed_steps": [{"id": "st1", "outcome": "done"}]}})
-    append(companion, "partner", "partner-main", 2)
-    wait_for_state(companion, "partner", "partner-main", 5)
-    wait_for(seam_marker(companion, "partner").is_file, what="the seam marker")
-
-
-def test_an_open_subagent_holds_the_seam_off(companion, companion_script, tmp_path):
-    from hx.hook_log import seam_marker
-
-    harness = companion / "config" / "partner" / "harness.json"
-    config = json.loads(harness.read_text())
-    config["companion"] = {"seam_min_context_tokens": 1000, "seam_min_interval_s": 0}
-    harness.write_text(json.dumps(config))
-
-    run_hook(companion, "partner", "log",
-             post_tool(transcript=transcript_with(tmp_path, input_tokens=5000)))
-    companion_script.responses({"state": {"seq": 99,
-                                          "closed_steps": [{"id": "st1", "outcome": "d"}],
-                                          "subagents_open": ["s001"]}})
-    append(companion, "partner", "partner-main", 2)
-    wait_for_state(companion, "partner", "partner-main", 99)
-    assert not seam_marker(companion, "partner").exists()
-
-
-# --- flush, resume, and the final pass -----------------------------------------------------------------------
-
-
-def test_flush_waits_for_the_head(companion, companion_script):
+def test_flush_runs_the_owed_passes_inline(instance):
     from hx.companion import is_caught_up
     from hx.flush import flush
 
-    companion_script.responses({"state": {"seq": 3}})
-    append(companion, "partner", "partner-main", 3)
-    assert flush(companion, "partner") is True
-    assert is_caught_up(companion, "partner") is True
-    assert state_of(companion, "partner", "partner-main")["seq"] == 3
+    append(instance, "partner", "partner-main", 3)
+    with replay("submit-state", state={"state": full(goal="g")}):
+        assert flush(instance, "partner") is True
+    assert is_caught_up(instance, "partner") is True
+    assert state_of(instance, "partner", "partner-main")["seq"] == 3
 
 
+def test_the_loop_selects_a_due_stream_and_a_failed_window_waits(instance):
+    from hx import companion as companion_mod
+    from hx.continuity_store import ContinuityStore
+
+    _companion(instance, batch_records=2)
+    append(instance, "partner", "partner-main", 2)
+    with ContinuityStore(instance) as ledger:
+        candidate = companion_mod.select(ledger)
+        assert candidate["stream_id"] == "partner-main"
+        with replay("overloaded"):
+            assert companion_mod.assess(ledger, candidate)["status"] == "unresolved"
+        assert companion_mod.select(ledger) is None, "the same window is not retried"
+        append(instance, "partner", "partner-main", 1)
+        retried = companion_mod.select(ledger)
+        assert retried["stream_id"] == "partner-main"
+        with replay("submit-state", state={"state": full()}):
+            assert companion_mod.assess(ledger, retried)["status"] == "committed"
 
 
+# --- the seam policy (spec 10, fleet-throughput §4.4) ---------------------------------------------------
 
 
+def _seam_profile(instance, **values):
+    path = instance / "config" / "hx.json"
+    data = json.loads(path.read_text()) if path.is_file() else {}
+    data["seam"] = {"soft_fraction": 0.5, "cache_ttl_s": 300, "min_benefit_bytes": 0, **values}
+    path.write_text(json.dumps(data))
 
 
-# --- the sandbox directive (spec 11) -----------------------------------------------------------------------------
+def _stop(instance, monkeypatch, tmp_path, **usage):
+    from hx import hook_stop, seam
+
+    taken = []
+    monkeypatch.setattr(seam, "pane_ready", lambda *a, **kw: True)
+    monkeypatch.setattr(seam.goal_mod, "paste", lambda *a, **kw: taken.append(a))
+    transcript = transcript_with(tmp_path, **usage)
+    assert hook_stop.handle({"session_id": "s", "transcript_path": str(transcript)}, "partner", instance) == (0, "")
+    return taken
 
 
-def test_the_companion_session_is_sandboxed(instance, hx, tmux_server):
-    """spec 11, not negotiable: every claude process hx starts, the Companion included."""
-    assert hx("launch", "partner").returncode == 0
-    assert hx("companion", "partner").returncode == 0
-    shown = subprocess.run(
-        [*tmux_server, "show-environment", "-t", "=partner"], capture_output=True, text=True, check=True
-    ).stdout
-    assert "IS_SANDBOX=1" in shown
+def _seams(instance):
+    from hx.streams import iter_records, main_stream
+
+    return [r for r in iter_records(main_stream(instance, "partner")) if r.get("event") == "seam"]
+
+
+def test_a_warm_partner_turn_holds_the_seam(instance, monkeypatch, tmp_path):
+    _seam_profile(instance)
+    run_hook(instance, "partner", "log", post_tool(transcript=transcript_with(tmp_path, input_tokens=1000)))
+    taken = _stop(instance, monkeypatch, tmp_path, input_tokens=200, cache_read=119800, cache_creation=500)
+    assert not taken and not _seams(instance)
+    from hx.streams import iter_records, main_stream
+
+    # Stop records the turn's last response: the log hook fires per tool call and never sees it.
+    last = list(iter_records(main_stream(instance, "partner")))[-1]
+    assert {key: last[key] for key in ("event", "context_tokens", "cache_read", "cache_creation")} == {
+        "event": "turn_end", "context_tokens": 120500, "cache_read": 119800, "cache_creation": 500}
+
+
+def test_a_cold_miss_partner_turn_takes_the_opportunistic_seam(instance, monkeypatch, tmp_path):
+    _seam_profile(instance)
+    run_hook(instance, "partner", "log", post_tool(transcript=transcript_with(tmp_path, input_tokens=1000)))
+    taken = _stop(instance, monkeypatch, tmp_path, input_tokens=200, cache_read=0, cache_creation=120000)
+    assert taken and taken[0][1] == "/clear"
+    (record,) = _seams(instance)
+    assert record["reason"] == "cold_miss"
+
+
+def test_a_cold_miss_below_the_soft_fraction_holds(instance, monkeypatch, tmp_path):
+    _seam_profile(instance)
+    run_hook(instance, "partner", "log", post_tool(transcript=transcript_with(tmp_path, input_tokens=1000)))
+    taken = _stop(instance, monkeypatch, tmp_path, input_tokens=200, cache_read=0, cache_creation=50000)
+    assert not taken and not _seams(instance)
+
+
+def test_the_hard_threshold_seams_whatever_the_cache(instance, monkeypatch, tmp_path):
+    from hx.hook_log import seam_marker
+
+    _seam_profile(instance)
+    run_hook(instance, "partner", "log", post_tool(transcript=transcript_with(tmp_path, cache_read=210000)))
+    assert seam_marker(instance, "partner").exists()
+    taken = _stop(instance, monkeypatch, tmp_path, cache_read=210000)
+    assert taken and _seams(instance)[0]["reason"] == "hard"
+
+
+def test_an_idle_cold_partner_seams_only_on_an_empty_prompt(instance, monkeypatch, tmp_path):
+    from hx import goal, seam, streams, token_controls
+
+    _seam_profile(instance, cache_ttl_s=60)
+    run_hook(instance, "partner", "log", post_tool(transcript=transcript_with(tmp_path, input_tokens=1000)))
+    run_hook(instance, "partner", "log", post_tool(transcript=transcript_with(tmp_path, cache_read=150000)))
+    path = streams.main_stream(instance, "partner")
+    pasted = []
+    monkeypatch.setattr(seam, "pane_ready", lambda *a, **kw: True)
+    monkeypatch.setattr(seam.goal_mod, "paste", lambda *a, **kw: pasted.append(a))
+    screens = {"typing": "❯ half a sentence\n", "empty": "❯ \n"}
+    monkeypatch.setattr(goal, "capture_pane", lambda *a, **kw: screens[shown[0]])
+
+    shown = ["empty"]
+    assert token_controls.partner_reset(instance) is None, "within the cache lifetime: warm"
+    stale = time.time() - 120
+    os.utime(path, (stale, stale))
+    record = json.loads(path.read_text().splitlines()[-1])
+    record["ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(stale))
+    path.write_text("\n".join([*path.read_text().splitlines()[:-1], json.dumps(record)]) + "\n")
+    os.utime(path, (stale, stale))
+
+    shown = ["typing"]
+    assert token_controls.partner_reset(instance) is None, "the human is typing"
+    shown[0] = "empty"
+    result = token_controls.partner_reset(instance)
+    assert result["status"] == "partner_seam" and result["seam"] == token_controls.COLD_IDLE
+    assert pasted and _seams(instance)[0]["reason"] == "cold_idle"
+
+
+def test_a_pending_seam_never_waits_on_the_companion(instance, monkeypatch):
+    """spec 14 D14, fleet-throughput §4.4: the Partner seams like any agent — `/clear` plus its
+    context file — and a Companion behind its stream head does not hold it."""
+    from hx import hook_stop, streams, seam
+    from hx.companion import is_caught_up
+    from hx.hook_log import seam_marker
+
+    monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: True)
+    pasted: list[tuple] = []
+    monkeypatch.setattr(seam.goal_mod, 'paste', lambda *a, **kw: pasted.append(a))
+    streams.append_record(instance, "partner", "partner-main",
+                          {"event": "post_tool", "tool": "Bash", "input": "ls", "output": "a", "context_tokens": 1000})
+    assert not is_caught_up(instance, "partner")
+    marker = seam_marker(instance, "partner")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    with silent():
+        assert hook_stop.handle({"session_id": "s"}, "partner", instance, env=None) == (0, "")
+    assert not marker.exists(), "the seam was taken"
+    assert pasted and pasted[0][1] == "/clear"
+    assert _seams(instance)[-1]["reason"] == "hard"
+
+
+def test_a_menu_still_defers_the_seam(instance, monkeypatch):
+    from hx import hook_stop, streams, seam
+    from hx.hook_log import seam_marker
+    from hx.streams import iter_records, stream_path
+
+    monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: False)
+    marker = seam_marker(instance, "partner")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    assert hook_stop.handle({"session_id": "s"}, "partner", instance, env=None) == (0, "")
+    assert marker.exists(), "not ready: the marker stays for the next boundary"
+    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
+    assert records[-1]["event"] == "seam_waiting" and records[-1]["ready"] == "menu"
+
+
+# --- the sandbox and doctor ------------------------------------------------------------------------------
 
 
 def test_doctor_warns_rather_than_failing_while_start_sh_has_not_execd(instance):
@@ -489,93 +492,31 @@ def test_doctor_warns_rather_than_failing_while_start_sh_has_not_execd(instance)
         doctor_mod.pane_command = original
 
 
-def test_a_pending_partner_seam_is_acted_on(instance, monkeypatch):
-    """spec 14 D14: the Partner takes seams like any agent — `/clear` plus rehydrate from
-    its context file, with no goal pointer. The old "no work item" refusal is gone: a
-    pending marker runs the readiness checks, and while the Companion is behind the
-    marker stays for the next boundary with a watcher record.
-    """
-    from hx import hook_stop, streams, seam
-    from hx.hook_log import seam_marker
-    from hx.streams import iter_records, stream_path
-
-    # This case exercises the companion-behind gate after pane readiness.
-    # No external tmux session is part of this test's fixture.
-    monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: True)
-    monkeypatch.setattr(seam.flush_mod, 'signal', lambda *a, **kw: [])
-    # A Partner whose PARTNER.md holds a checkpoint is not stranded by an unlaunched
-    # Companion (its seam is taken; see the next test). The behind gate applies when there
-    # is no checkpoint yet, which is this case.
-    (instance / "PARTNER.md").write_text("")
-
-    streams.append_record(
-        instance, "partner", "partner-main",
-        {"event": "post_tool", "tool": "Bash", "input": "ls", "output": "a",
-         "context_tokens": 1000},
-    )
-    marker = seam_marker(instance, "partner")
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
-    code, line = hook_stop.handle({"session_id": "s"}, "partner", instance, env=None)
-    assert (code, line) == (0, "")
-    assert marker.exists(), "not ready: the marker stays for the next boundary"
-    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
-    assert records[-1]["event"] == "seam_waiting"
-    assert records[-1]["ready"] == "behind"
-
-
-def test_a_partner_with_a_checkpoint_seams_without_a_companion(instance, monkeypatch):
-    """The Partner's own PARTNER.md is its checkpoint: an unlaunched Companion must not
-    strand it until Claude's native compactor runs. With a non-empty PARTNER.md and no
-    Companion, the seam is taken — composed, `/clear` pasted, record written, marker gone."""
-    from hx import hook_stop, streams, seam
-    from hx.hook_log import seam_marker
-    from hx.streams import iter_records, stream_path
-
-    monkeypatch.setattr(seam, 'pane_ready', lambda *a, **kw: True)
-    monkeypatch.setattr(seam.flush_mod, 'signal', lambda *a, **kw: [])
-    pasted: list[tuple] = []
-    monkeypatch.setattr(seam.goal_mod, 'paste', lambda *a, **kw: pasted.append(a))
-    assert (instance / "PARTNER.md").read_text().strip(), "the skeleton PARTNER.md is the checkpoint"
-
-    streams.append_record(
-        instance, "partner", "partner-main",
-        {"event": "post_tool", "tool": "Bash", "input": "ls", "output": "a",
-         "context_tokens": 1000},
-    )
-    marker = seam_marker(instance, "partner")
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.touch()
-    code, line = hook_stop.handle({"session_id": "s"}, "partner", instance, env=None)
-    assert (code, line) == (0, "")
-    assert not marker.exists(), "the seam was taken"
-    assert pasted and pasted[0][1] == "/clear"
-    records = list(iter_records(stream_path(instance, "partner", "partner-main")))
-    assert records[-1]["event"] == "seam"
-
-
-@pytest.mark.parametrize('operation', ['launch', 'write_pass', 'wake', 'ingest', 'wake_due'])
+@pytest.mark.parametrize('operation', ['run_pass', 'due_streams', 'run_due'])
 def test_worker_file_companion_execution_is_refused_before_mutation(tmp_path, operation):
     from hx import companion
     from hx.errors import Refused
-    args = (tmp_path, 'eng-001')
-    if operation in {'write_pass', 'wake', 'ingest'}:
+    root = tmp_path / 'worker-root'
+    root.mkdir()
+    args = (root, 'eng-001')
+    if operation == 'run_pass':
         args += ('eng-001-main',)
     with pytest.raises(Refused, match='ledger run'):
         getattr(companion, operation)(*args)
-    assert list(tmp_path.iterdir()) == []
+    assert list(root.iterdir()) == []
 
 
 @pytest.mark.parametrize('module,operation', [
-    ('flush', 'flush'), ('flush', 'signal'), ('seam', 'seam'),
-    ('hook_stop', 'handle'), ('hook_stop', 'companion_handle'),
+    ('flush', 'flush'), ('seam', 'seam'), ('hook_stop', 'handle'),
     ('hook_compact', 'pre'), ('hook_compact', 'post'), ('hook_context', 'handle'),
 ])
 def test_worker_cannot_enter_partner_orchestration_handlers(tmp_path, module, operation):
     import importlib
     from hx.errors import Refused
     handler = getattr(importlib.import_module('hx.' + module), operation)
-    args = ({'background_tasks': ['still-running']}, 'eng-001', tmp_path) if module.startswith('hook_') else (tmp_path, 'eng-001')
+    root = tmp_path / 'worker-root'
+    root.mkdir()
+    args = ({'background_tasks': ['still-running']}, 'eng-001', root) if module.startswith('hook_') else (root, 'eng-001')
     with pytest.raises(Refused):
         handler(*args, env={})
-    assert list(tmp_path.iterdir()) == []
+    assert list(root.iterdir()) == []

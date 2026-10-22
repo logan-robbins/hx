@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": {
+    "id": "msg_01Hx7SubmitPatchRound2",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-5-5",
+    "content": [
+      {"type": "tool_use", "id": "toolu_01SubmitPatch", "name": "submit_patch", "input": "$patch"}
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {"input_tokens": 2310, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 5120,
+              "output_tokens": 412, "service_tier": "standard"}
+  }
+}
