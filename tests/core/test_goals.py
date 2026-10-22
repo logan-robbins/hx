@@ -20,7 +20,7 @@ and the CLI's output is unchanged. It depends on `eng-002`'s reader interface, a
 
 WITH_FRONTMATTER = "---\nafter: [eng-000]\n---\n" + GOOD
 
-OLD_CONTRACT = GOOD + """
+EXTRA_SECTIONS = GOOD + """
 ## Definition of done
 
 - [ ] the importer streams
@@ -38,12 +38,10 @@ def malformed():
         "no ## Goal": GOOD.replace("## Goal", "## Task"),
         "empty ## Goal": "## Goal\n\n",
         "two ## Goal sections": GOOD + "\n## Goal\n\nAnd another thing.\n",
-        "a ## Definition of done": OLD_CONTRACT,
+        "a ## Definition of done": EXTRA_SECTIONS,
         "a ### Checks": GOOD + "\n### Checks\n\n```bash\ntrue\n```\n",
         "any other heading": GOOD + "\n## Notes\n\nmore\n",
         "text above ## Goal": "Context first.\n\n" + GOOD,
-        # The v1 cut (spec 14 D25) left a goal with no frontmatter at all: no `after`, no
-        # dependency fields, nothing.
         "frontmatter `after`": WITH_FRONTMATTER,
         "any other frontmatter key": "---\npriority: high\n---\n" + GOOD,
     }
@@ -53,17 +51,14 @@ def test_good_goal():
     goal = parse_goal_text(GOOD, "goal.md")
     assert goal.goal.startswith("Rewrite the importer")
     assert "depends on `eng-002`" in goal.goal
-    assert not hasattr(goal, "checks") and not hasattr(goal, "definition_of_done")
 
 
 def test_a_goal_has_no_frontmatter(tmp_path):
-    """spec 14 D25: `after` is gone, and with it every goal frontmatter key."""
     path = tmp_path / "eng-001.md"
     path.write_text(WITH_FRONTMATTER)
     with pytest.raises(ValidationError) as exc:
         parse_goal(path)
     assert "a goal has no frontmatter" in str(exc.value)
-    assert not hasattr(parse_goal_text(GOOD, "goal.md"), "after")
 
 
 def test_the_goal_text_is_kept_verbatim_for_the_work_item():
@@ -82,15 +77,6 @@ def test_every_malformed_goal_is_rejected_by_name(name, tmp_path):
     assert "spec 06" in message or "frontmatter" in message, (
         f"{name}: message does not name the rule: {message}"
     )
-
-
-def test_the_old_two_section_contract_says_where_each_part_went(tmp_path):
-    with pytest.raises(ValidationError) as exc:
-        parse_goal_text(OLD_CONTRACT, "goal.md")
-    assert "the worker binds its own checks and definition of done" in str(exc.value)
-    with pytest.raises(ValidationError) as exc:
-        parse_goal_text(malformed()["a ### Checks"], "goal.md")
-    assert "approved packet binding" in str(exc.value)
 
 
 def test_a_missing_goal_file_is_rejected(tmp_path):

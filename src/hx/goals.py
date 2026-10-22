@@ -13,13 +13,6 @@ GOAL_HEADING = "## Goal"
 _HEADING_RE = re.compile(r"^(#{1,6})(?!#)\s*(.+?)\s*$")
 _FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)\s*$")
 
-#: Where a refused heading belongs now, for the two the old two-section contract carried.
-_MOVED = {
-    "Definition of done": "the worker binds its own checks and definition of done, "
-                          "against the packet acceptance obligations",
-    "Checks": "checks belong in the approved packet binding",
-}
-
 
 @dataclass(frozen=True)
 class Goal:
@@ -63,8 +56,7 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
     if data:
         raise ValidationError(
             f"{path_str}: frontmatter key(s) {', '.join(sorted(data))}; a goal has no "
-            f"frontmatter, only one `{GOAL_HEADING}` paragraph (spec 06, CONTRACTS.md). "
-            f"There are no dependency fields: say what it depends on in a sentence"
+            f"frontmatter, only one `{GOAL_HEADING}` paragraph (spec 06, CONTRACTS.md)"
         )
 
     headings = _headings(body)
@@ -82,10 +74,9 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
     others = [h for h in headings if h is not goals[0]]
     if others:
         _, level, heading = others[0]
-        moved = _MOVED.get(heading)
         raise ValidationError(
             f"{path_str}: `{'#' * level} {heading}`; a goal is one `{GOAL_HEADING}` paragraph and "
-            f"no other heading (spec 06)" + (f": {moved}" if moved else "")
+            f"no other heading (spec 06)"
         )
 
     lines = body.split("\n")
