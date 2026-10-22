@@ -2,7 +2,9 @@
 
 Configuration values never enter persisted metadata. Tracked-state identity is
 restricted to the evaluated source readset; raw index observations still detect
-write-and-restore operations during execution.
+write-and-restore operations during execution. Identity is portable: the checkout
+enters as `{repository}` and configuration by its relocated values, not the files
+that hold them, so linked worktrees of one clone at one commit share it.
 """
 from __future__ import annotations
 
@@ -32,8 +34,9 @@ def _observations(paths):
     return digest(values), complete
 
 
-def identity(cwd, inputs, env):
+def identity(cwd, inputs, env, anchors=None):
     cwd = Path(cwd)
+    anchors = fingerprints.anchors_for(cwd) if anchors is None else anchors
     observed, text = _run(cwd, env, 'rev-parse', '--absolute-git-dir', max_bytes=8192)
     markers = any((folder / '.git').exists() for folder in (cwd, *cwd.parents))
     if observed['exit_code'] or observed['reason']:
@@ -79,12 +82,14 @@ def identity(cwd, inputs, env):
     # output still prevents reuse through the bounded process observations.
     if head_result['reason'] or head_result['exit_code'] not in (0, 128):
         complete = False
-    return {'hash': digest({'repository': str(repository), 'head': head.strip() if head_result['exit_code'] == 0 else None,
-                            'configuration': digest(configuration), 'tracked_inputs': sorted(relevant)}),
+    return {'hash': digest({'repository': fingerprints.relocate(str(repository), anchors),
+                            'head': head.strip() if head_result['exit_code'] == 0 else None,
+                            'configuration': digest(fingerprints.relocate(fields[1::2], anchors)),
+                            'tracked_inputs': sorted(relevant)}),
             'observation_hash': observation_hash, 'complete': complete, 'repository': str(repository)}
 
 
-def bind(environment, workdirs, inputs, env):
+def bind(environment, workdirs, inputs, env, anchors=None):
     values = []
     repositories = set()
     # With Git overrides, cwd can affect resolution; evaluate each context.
@@ -96,7 +101,7 @@ def bind(environment, workdirs, inputs, env):
         if not overrides and key in repositories:
             continue
         repositories.add(key)
-        values.append(identity(folder, inputs, env))
+        values.append(identity(folder, inputs, env, anchors))
     result = dict(environment)
     result['hash'] = digest({'environment': environment['hash'], 'git': [value['hash'] for value in values]})
     result['observation_hash'] = digest({'environment': environment['observation_hash'],

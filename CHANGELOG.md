@@ -11,6 +11,18 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Changed
+- Equal-input .NET builds, test shards and checks run once per box
+  (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker, § Scoped check
+  execution artifacts). Check, build and test identities hash checkout paths relative to the
+  checkout beside its repository namespace and commit, and .NET identities replace the root and
+  the job's artifact place with anchors, so equal inputs in any worktree or root have one
+  identity. A per-user, per-boot host ledger (`hx-jobs-UID` in the temp directory) replaces the
+  per-root `dotnet_claims` and `check_artifact_claims` tables: a request equal to an execution
+  running anywhere on the box joins it and records its own receipt with `joined` naming the
+  original. A joined build is adopted into the joiner's checkout place
+  (`state/dotnet/jobs/<seed>/<checkout>/artifacts`) and evaluated there; `fresh` no longer
+  refuses a live equal build but joins it. The restore and build caches are keyed by that place.
+  The ledger schema is 23; recreate prerelease instances.
 - `hx build` slot limits come from config, not from the last `--jobs` any root passed
   (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker). `--jobs` is gone from
   `hx build build` and `hx build test`; set `pools.build` (1–64, default 2) and `pools.test`

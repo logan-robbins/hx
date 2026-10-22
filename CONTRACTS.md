@@ -489,9 +489,18 @@ uses scoped source identity; omitted/false closure retains repository-wide hashi
 `inputs` remain included. Unknown external/environment dependencies disallow reusable proof.
 Graph candidates cannot assert completeness. Execution artifacts are keyed by complete
 recipe/source/environment identities, including tools, platform, cwd and external versions.
-Equal in-flight requests share an execution. Reuse creates a new requesting-run receipt.
-Corruption rejects reuse. Interrupted claims remain held until owned process/group death
-is proven; absent spawn identity remains unresolved.
+Identities are portable: a path under the checkout is hashed relative to it beside the
+repository namespace and commit, so equal content at one commit in any worktree or root has
+one identity. A complete identity claims a per-user, per-boot host ledger (`hx-jobs-UID` in
+the temp directory) before it executes; a request whose identity is held by a live execution
+in any root joins it, waits, copies its output into its own root when the roots differ, and
+records its own execution and receipt with `joined: {root, execution_id}` naming the original.
+A sound outcome (no `incomplete_source_identity` or changed-during-check reason) is shared;
+otherwise the joiner runs. Reuse within a root takes the newest finished execution and
+creates a new requesting-run receipt. Corruption rejects reuse. An execution interrupted
+while its owner lives stays held until owned process/group death is proven; absent spawn
+identity remains unresolved. A held identity whose owner, spawn and children are gone is
+reclaimed by the next equal request.
 
 A recipe may declare `report`, the runner's machine-readable format: `junit-xml` (pytest
 `--junit-xml`), `trx` (`dotnet test --logger trx`), `go-json` (`go test -json`), `cargo-json`
@@ -522,15 +531,26 @@ chunk. A summary is a parse of the runner's report, not an execution receipt.
 `graph` and `build` name a project/solution plus cwd, configuration, optional framework,
 runtime and source-contract JSON. MSBuild evaluated properties/items/imports, SDK, packages
 and source dependencies determine completeness and build identity. Unknown custom build
-closures do not qualify for cache reuse. `build` accepts run/request identity; equal requests
-deduplicate across processes. Per-user, per-boot host slots shared by every root on the box limit
+closures do not qualify for cache reuse. `build` accepts run/request identity. Build and test
+identities are portable: paths under the checkout, the root and the job's artifact place are
+replaced by anchors before hashing, and the source identity adds repository namespace and
+commit. An equal build or test shard already running in any root on the box is joined through
+the per-user, per-boot host job ledger (`hx-jobs-UID` in the temp directory), also by `fresh`
+requests: the joiner starts no process. A test shard and a product failure (restore, build or
+test failure, timeout, output limit, background processes, spawn failure) are shared as they
+are. A successful build is adopted: the joiner copies its artifact blob, materializes it into
+its own checkout's place (`state/dotnet/jobs/<seed>/<checkout>/artifacts`), evaluates it there
+and records an adopted build whose `joined: {root, job_id}` names the original; a mismatched
+evaluation makes the joiner build. Each request records its own job, artifact row and
+receipt. Per-user, per-boot host slots shared by every root on the box limit
 simultaneous builds and test shards: a root acquires a `build` (or `test`) slot only while the
 box holds fewer of that kind than its own `pools.build` (`pools.test`), else the request stays
 queued and is refused for a later retry. Roots configured differently therefore never together
 exceed the largest limit, and a smaller-limit root can starve under contention; configure every
 root on a box alike. A slot belongs to its acquiring process by kernel process identity; one
 whose owner and every recorded child process are gone is reclaimed at the next acquisition.
-Immutable restore/build artifacts coexist with private writable intermediate/test state.
+Immutable restore/build artifacts coexist with private writable intermediate/test state; the
+restore and build caches are per checkout place, so sequential reuse stays within a checkout.
 Optional `--platform` participates in evaluated identity. Ordinary SDK `.sln`/`.slnx`
 solutions obtain exact mapped project/global/reference contexts from the installed
 MSBuild ProjectGraph API. The offline reader bootstrap uses the same managed broker

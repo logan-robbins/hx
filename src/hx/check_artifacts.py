@@ -1,7 +1,9 @@
 """Immutable check execution evidence, independent of run-bound receipts.
 
-The claim table serializes equal in-flight identities. An interrupted claim is
-unresolved until explicit reconciliation proves its owner and group have exited.
+The newest finished execution of an identity is its reuse candidate. Equal in-flight
+identities are serialized across every root on the box by `host_jobs`: an execution
+interrupted while its owner lives stays unresolved until explicit reconciliation proves
+its owner and group have exited. A joined execution records the original as its source.
 """
 
 from __future__ import annotations
@@ -21,9 +23,7 @@ def initialize(tx):
         status TEXT NOT NULL CHECK(status IN ('running','finished')),
         artifact_hash TEXT REFERENCES artifacts(hash), payload TEXT NOT NULL,
         payload_hash TEXT NOT NULL)""")
-    db.execute("""CREATE TABLE IF NOT EXISTS check_artifact_claims (
-        identity_hash TEXT PRIMARY KEY,
-        execution_id TEXT NOT NULL REFERENCES check_artifacts(execution_id))""")
+    db.execute("CREATE INDEX IF NOT EXISTS check_artifacts_identity ON check_artifacts(identity_hash,status)")
 
 
 def identity(version, source, environment):
@@ -32,14 +32,12 @@ def identity(version, source, environment):
 
 
 def lookup(store, identity_hash, *, allow_reuse=True):
-    row = store.db.execute("""SELECT a.* FROM check_artifact_claims c
-        JOIN check_artifacts a ON a.execution_id=c.execution_id WHERE c.identity_hash=?""",
-        (identity_hash,)).fetchone()
-    if row is None:
-        return None
-    if row["status"] == "running":
-        raise Conflict("identical check has an unresolved execution; reconcile its process ownership before retrying")
+    """The newest finished execution of `identity_hash`, when it is reusable."""
     if not allow_reuse:
+        return None
+    row = store.db.execute("""SELECT * FROM check_artifacts WHERE identity_hash=? AND status='finished'
+        ORDER BY rowid DESC LIMIT 1""", (identity_hash,)).fetchone()
+    if row is None:
         return None
     try:
         payload = json.loads(row["payload"])
@@ -58,7 +56,7 @@ def lookup(store, identity_hash, *, allow_reuse=True):
             "payload": payload}
 
 
-def reserve(tx, execution_id, identity_hash, *, claim=True):
+def reserve(tx, execution_id, identity_hash):
     from . import native_processes
     owner = native_processes.probe(os.getpid())
     if owner is None:
@@ -67,10 +65,6 @@ def reserve(tx, execution_id, identity_hash, *, claim=True):
                 "owner": owner["identity"], "child": None}
     tx.db.execute("INSERT INTO check_artifacts VALUES(?,?,'running',NULL,?,?)",
                   (execution_id, identity_hash, canonical(metadata), digest(metadata)))
-    if claim:
-        tx.db.execute("""INSERT INTO check_artifact_claims VALUES(?,?)
-            ON CONFLICT(identity_hash) DO UPDATE SET execution_id=excluded.execution_id""",
-            (identity_hash, execution_id))
 
 
 def group_present(group):
@@ -125,7 +119,9 @@ def owned_child(process):
 
 
 def spawned(store, execution_id, process):
+    from . import host_jobs
     observed=owned_child(process)
+    host_jobs.child(execution_id, observed)
     with store.transaction() as tx:
         row = tx.db.execute("SELECT payload FROM check_artifacts WHERE execution_id=? AND status='running'",
                              (execution_id,)).fetchone()
@@ -141,7 +137,7 @@ def spawned(store, execution_id, process):
 
 def reconcile(store, execution_id):
     """Release a dead execution claim only after proving local process quiescence."""
-    from . import native_processes
+    from . import host_jobs, native_processes
     with store.transaction() as tx:
         row = tx.db.execute("SELECT * FROM check_artifacts WHERE execution_id=?", (execution_id,)).fetchone()
         if row is None or row["status"] != "running":
@@ -161,10 +157,10 @@ def reconcile(store, execution_id):
                 raise Conflict("check process group is still present")
         payload.update(reconciled=True, reusable=False)
         tx._change()
-        tx.db.execute("DELETE FROM check_artifact_claims WHERE execution_id=?", (execution_id,))
         tx.db.execute("UPDATE check_artifacts SET status='finished',payload=?,payload_hash=? WHERE execution_id=?",
                       (canonical(payload), digest(payload), execution_id))
-        return {"execution_id": execution_id, "reconciled": True}
+    host_jobs.release(execution_id)
+    return {"execution_id": execution_id, "reconciled": True}
 
 
 def finish(tx, execution_id, artifact, payload):

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from hx import dotnet_artifacts, dotnet_build as broker, dotnet_graph, dotnet_slots, native_processes
+from hx import dotnet_artifacts, dotnet_build as broker, dotnet_graph, dotnet_slots, host_jobs, native_processes
 from hx.continuity_store import Conflict, ContinuityStore, canonical, digest
 from hx.errors import ValidationError
 
@@ -250,27 +250,34 @@ def test_planned_run_builds_emit_new_run_receipts_and_reject_other_owners(sdk):
         build(sdk,run_id=run,worker_id='eng-002',request_id='one')
 
 
-def test_equal_live_jobs_are_not_started_twice_and_fresh_cannot_override(sdk,tmp_path):
+def test_equal_live_jobs_are_joined_even_by_fresh_requests(sdk,tmp_path):
     store,repo,env,dotnet,log=sdk
     ready=tmp_path/'ready'; release=tmp_path/'release'
     env.update(FAKE_READY=str(ready),FAKE_RELEASE=str(release))
-    def first():
+    def requested(request_id,**options):
         with ContinuityStore(store.root) as other:
-            return broker.build(other,'Test.csproj',cwd=repo,env=env,dotnet=dotnet,request_id='first')
-    with ThreadPoolExecutor(1) as pool:
-        future=pool.submit(first)
+            return broker.build(other,'Test.csproj',cwd=repo,env=env,dotnet=dotnet,request_id=request_id,**options)
+    with ThreadPoolExecutor(3) as pool:
+        first=pool.submit(requested,'first')
         import time
         end=time.monotonic()+10
         while not ready.exists() and time.monotonic()<end: time.sleep(.02)
         assert ready.exists()
         try:
-            with pytest.raises(Conflict,match='unresolved job'):
-                build(sdk,request_id='second')
-            with pytest.raises(Conflict,match='unresolved job'):
-                build(sdk,request_id='fresh',fresh=True)
+            second=pool.submit(requested,'second')
+            fresh=pool.submit(requested,'fresh',fresh=True)
+            def joining():
+                rows=store.db.execute("SELECT payload FROM dotnet_jobs WHERE request_id IN ('second','fresh')").fetchall()
+                return len(rows)==2 and all(json.loads(row[0]).get('joining') for row in rows)
+            while not joining() and time.monotonic()<end+20: time.sleep(.02)
+            assert joining() and not second.done() and not fresh.done()
         finally:
             release.write_text('done')
-        assert future.result(timeout=10)['valid']
+        first,second,fresh=(future.result(timeout=20) for future in (first,second,fresh))
+    assert first['valid'] and 'joined' not in first,first
+    for joined in (second,fresh):
+        assert joined['valid'] and not joined['reused'],joined
+        assert joined['joined']=={'root':str(store.root.resolve()),'job_id':first['job_id']} and joined['build_id']==first['build_id']
     assert len(calls(log,'-target:Build'))==1
 
 
@@ -442,41 +449,98 @@ def test_real_process_equal_jobs_and_host_concurrency_share_durable_admission(sd
     ready=tmp_path/'process-ready'; release=tmp_path/'process-release'
     env.update(FAKE_READY=str(ready),FAKE_RELEASE=str(release))
     body=tmp_path/'child-options.json'
-    body.write_text(json.dumps({'repo':str(repo),'env':env,'dotnet':dotnet,'root':str(store.root),'host':str(dotnet_slots.directory())}))
+    body.write_text(json.dumps({'repo':str(repo),'env':env,'dotnet':dotnet,'root':str(store.root),'host':str(dotnet_slots.directory()),
+                                'jobs':str(host_jobs.directory())}))
     script=r'''
 import json,sys
 from pathlib import Path
-from hx import dotnet_build as broker,dotnet_slots
+from hx import dotnet_build as broker,dotnet_slots,host_jobs
 from hx.continuity_store import ContinuityStore,canonical
 args=json.loads(Path(sys.argv[1]).read_text())
 dotnet_slots.directory=lambda:Path(args['host'])
+host_jobs.directory=lambda:Path(args['jobs'])
 with ContinuityStore(Path(args['root'])) as store:
  result=broker.build(store,'Test.csproj',cwd=Path(args['repo']),env=args['env'],dotnet=args['dotnet'],request_id='child-process')
  print(canonical(result))
 '''
     process=subprocess.Popen([sys.executable,'-c',script,str(body)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
     import time
-    try:
-        end=time.monotonic()+15
-        while not ready.exists() and process.poll() is None and time.monotonic()<end: time.sleep(.02)
-        assert ready.exists(),process.communicate(timeout=1)
-        with pytest.raises(Conflict,match='unresolved job'):
-            build(sdk,request_id='duplicate-process')
-        with ContinuityStore(tmp_path/'other-ledger') as other:
-            (other.root/'config').mkdir(exist_ok=True)
-            (other.root/'config'/'hx.json').write_text(json.dumps({'pools':{'build':1}}))
-            with pytest.raises(Conflict,match='concurrency limit'):
-                broker.build(other,'Test.csproj',cwd=repo,env=env,dotnet=dotnet,request_id='other-process')
-        active=store.db.execute("SELECT job_id FROM dotnet_jobs WHERE request_id='child-process'").fetchone()[0]
-        observed=broker.status(store,active)
-        assert observed['status']=='running' and observed['owner']['pid']==process.pid
-        assert observed['children']
-    finally:
-        release.write_text('done')
-        stdout,stderr=process.communicate(timeout=15)
+    def duplicate():
+        with ContinuityStore(store.root) as ledger:
+            return broker.build(ledger,'Test.csproj',cwd=repo,env=env,dotnet=dotnet,request_id='duplicate-process')
+    with ThreadPoolExecutor(1) as pool:
+        try:
+            end=time.monotonic()+15
+            while not ready.exists() and process.poll() is None and time.monotonic()<end: time.sleep(.02)
+            assert ready.exists(),process.communicate(timeout=1)
+            joiner=pool.submit(duplicate)
+            with ContinuityStore(tmp_path/'other-ledger') as other:
+                (other.root/'config').mkdir(exist_ok=True)
+                (other.root/'config'/'hx.json').write_text(json.dumps({'pools':{'build':1}}))
+                # A different build needs its own slot; the box holds the only one.
+                with pytest.raises(Conflict,match='concurrency limit'):
+                    broker.build(other,'Test.csproj',cwd=repo,env=env,dotnet=dotnet,configuration='Release',request_id='other-process')
+            active=store.db.execute("SELECT job_id FROM dotnet_jobs WHERE request_id='child-process'").fetchone()[0]
+            observed=broker.status(store,active)
+            assert observed['status']=='running' and observed['owner']['pid']==process.pid
+            assert observed['children'] and not joiner.done()
+        finally:
+            release.write_text('done')
+            stdout,stderr=process.communicate(timeout=15)
+        joined=joiner.result(timeout=15)
     assert process.returncode==0,stderr
     assert json.loads(stdout)['valid']
+    assert joined['valid'] and joined['joined']['job_id']==active,joined
     assert len(calls(log,'-target:Build'))==1
+
+
+def test_two_roots_requesting_the_same_build_get_one_process_and_two_receipts(sdk,tmp_path):
+    """Root A builds its checkout; root B asks for the same build from a second worktree at the same commit."""
+    import time
+    store,repo,env,dotnet,log=sdk
+    commit_sources(repo)
+    worktree=tmp_path/'second-worktree'
+    git(repo,'worktree','add','-q','--detach',str(worktree))
+    ready=tmp_path/'ready'; release=tmp_path/'release'
+    env.update(FAKE_READY=str(ready),FAKE_RELEASE=str(release))
+    def requested(root,checkout,worker):
+        with ContinuityStore(root) as ledger:
+            with ledger.transaction() as tx:
+                tx.put_task('T',{'goal':'Build','workdir':str(checkout)},expected_revision=0)
+                run=tx.start_run('T',1,worker)
+            started=time.perf_counter()
+            result=broker.build(ledger,'Test.csproj',cwd=checkout,env=env,dotnet=dotnet,run_id=run,worker_id=worker)
+            return run,result,time.perf_counter()-started
+    with ThreadPoolExecutor(2) as pool:
+        first=pool.submit(requested,store.root,repo,'eng-001')
+        end=time.monotonic()+10
+        while not ready.exists() and time.monotonic()<end: time.sleep(.02)
+        try:
+            assert ready.exists()
+            second=pool.submit(requested,tmp_path/'other-root',worktree,'eng-002')
+            time.sleep(.5)
+            assert not second.done()
+        finally:
+            release.write_text('done')
+        (_,owner,owned),(run,joiner,waited)=first.result(timeout=30),second.result(timeout=30)
+    assert owner['valid'] and 'joined' not in owner,owner
+    assert joiner['valid'] and not joiner['reused'] and joiner['joined']=={'root':str(store.root.resolve()),'job_id':owner['job_id']},joiner
+    assert joiner['artifact_hash']==owner['artifact_hash'] and joiner['build_id']!=owner['build_id']
+    assert joiner['receipt_id']!=owner['receipt_id'] and joiner['graph_hash']==owner['graph_hash']
+    assert len(calls(log,'-target:Restore'))==1 and len(calls(log,'-target:Build'))==1
+    assert store.db.execute('SELECT count(*) FROM dotnet_receipts').fetchone()[0]==1
+    with ContinuityStore(tmp_path/'other-root') as other:
+        assert other.db.execute('SELECT count(*) FROM dotnet_receipts').fetchone()[0]==1
+        adopted=broker.artifact_metadata(other,joiner['build_id'])
+        assert adopted['origin']=={'root':str(store.root.resolve()),'build_id':owner['build_id']}
+        assert Path(adopted['tree']).is_relative_to(other.root) and adopted['recipe']['cwd']==str(worktree.resolve())
+        assert broker.current(other,run,joiner['receipt_id'],env=env,worker_id='eng-002')['current']
+        assert broker.test(other,joiner['build_id'],env=env)['valid']
+        (worktree/'Code.cs').write_text('class Diverged {}')
+        stale=broker.current(other,run,joiner['receipt_id'],env=env,worker_id='eng-002')
+        assert not stale['current'] and 'build_inputs_changed_or_unknown' in stale['reasons']
+    print(f'\njoined build: owner {owned:.2f}s, joiner {waited:.2f}s from another root and worktree; '
+          f"restore={len(calls(log,'-target:Restore'))} build={len(calls(log,'-target:Build'))} processes, 2 receipts")
 
 
 def test_run_bound_receipt_revalidation_tracks_source_and_archive_integrity(sdk):
@@ -546,7 +610,7 @@ def test_cancelled_queued_request_cannot_be_revived_by_admission_or_completion(s
     job,_,_=broker._request(store,'build',None,'cancelled',{'project':str(repo/'Test.csproj')},repo,None)
     broker.reconcile(store,job)
     with pytest.raises(Conflict,match='cannot revive'):
-        broker._admit(store,job,'seed','build',None,None,repo)
+        broker._admit(store,job,'build',None,None,repo)
     with pytest.raises(Conflict,match='cannot revive'):
         broker._finish(store,job,{'valid':False,'reasons':[]},None,None,repo)
     assert broker.status(store,job)['status']=='abandoned'
@@ -562,7 +626,7 @@ def test_expected_capture_failure_settles_native_job_without_reuse(sdk,monkeypat
     result=build(sdk)
     assert not result['valid'] and 'restore_artifact_capture_failed' in result['reasons']
     assert broker.status(store,result['job_id'])['status']=='finished'
-    assert store.db.execute('SELECT count(*) FROM dotnet_claims').fetchone()[0]==0
+    assert host_jobs.get(result['job_id'])['status']=='finished' and not host_jobs.get(result['job_id'])['result']['shareable']
     with closing(dotnet_slots.connect()) as db:
         assert db.execute('SELECT count(*) FROM slots').fetchone()[0]==0
 
