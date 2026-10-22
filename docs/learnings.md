@@ -42,7 +42,7 @@ QA and release use their own admitted run streams, regardless of native harness 
 
 `config/ID/harness.json` has an independent `learning` object with `model`, `effort`,
 `batch_records`, `request_bytes`, `max_proposals`, and optional `disabled`. Context management
-continues to use `companion`. `hx companion ID --learning --request REQUEST --run RUN`
+uses `companion`. `hx companion ID --learning --request REQUEST --run RUN`
 prepares and executes an assessment; `--prepare-only` and `--job JOB` inspect the exact job.
 The Partner assessor uses its Partner stream and has no worker run. Root scheduling is fair
 between the two independent jobs within host capacity; stable unresolved inputs do not cause

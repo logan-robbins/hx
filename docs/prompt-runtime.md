@@ -26,7 +26,7 @@ attention, comprehension or instruction following.
 
 Chat is a machine channel. The rule lives once in `continuity/prompts/common.md`, so the
 compiled worker, subagent, partner, Context Companion and Learning Companion bundles each carry
-it exactly once; it grew `common.md` by 510 bytes, from 3756 to 4266. Packet workers receive the
+it exactly once. Packet workers receive the
 worker bundle as their system or context channel and both Companions receive theirs; no runtime
 path delivers the compiled subagent or partner bundle. The live Partner boundary is
 `config/CLAUDE.md`, `personas/partner.md`, identity, reviewed rules and `PARTNER.md`, without

@@ -2,8 +2,8 @@
 
 One hx instance is one Partner, one `HARNESS_ROOT`, one tmux server. A large programme is split by
 ownership (one instance per product area, plus one for shared code), and a human session arbitrates
-between them. Everything below was learned running thirteen instances on one 96-vCPU host on
-2026-10-09; it is the procedure, not a proposal.
+between them. Everything below was learned running thirteen instances on one 96-vCPU host; it is
+the procedure, not a proposal.
 
 ## 1. One instance per area, each on its own tmux server
 

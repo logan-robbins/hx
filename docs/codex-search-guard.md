@@ -1,14 +1,12 @@
 # Codex search guard: inspected web search for Codex agents
 
-**Date:** 2026-10-21 · **Baseline:** `main` @ `a5ec2d4` · **Scope:** the Codex adapter only
-(`src/hx/skeleton/adapters/codex/`), per the Claude-default rule: nothing here touches the core
-path. Facts below were checked against the Codex source at tag `rust-v0.156.1` (the installed
-CLI), the Codex docs (hooks reference, config reference, agent approvals and security, web
-search), Microsoft Learn (Azure OpenAI web search in the Responses API, Foundry toolboxes,
-Prompt Shields, guardrail intervention points), and a local end-to-end run on 2026-10-20 that
-drove the real `codex exec` through a stub Responses model, a stub stdio MCP search server, a
-stub Prompt Shields endpoint and the real hooks. This document is the implementation guide:
-the implementing agent reads it and the tested draft in §4.7, nothing else.
+**Scope:** the Codex adapter only (`src/hx/skeleton/adapters/codex/`), per the Claude-default
+rule: nothing here touches the core path. Facts below were checked against the Codex source at
+tag `rust-v0.156.1` (the installed CLI), the Codex docs (hooks reference, config reference,
+agent approvals and security, web search), Microsoft Learn (Azure OpenAI web search in the
+Responses API, Foundry toolboxes, Prompt Shields, guardrail intervention points), and a local
+end-to-end run that drove the real `codex exec` through a stub Responses model, a stub stdio
+MCP search server, a stub Prompt Shields endpoint and the real hooks.
 
 ## 0. Verdict
 
@@ -16,8 +14,7 @@ Codex has no native hook on its hosted `web_search` tool, on OpenAI or on Azure.
 executes inside the Responses API; the CLI receives only the `web_search_call` item (the
 query, an opened URL, a find pattern, a status) and never the fetched content. The hooks
 reference states that hosted tools such as WebSearch fire neither `PreToolUse` nor
-`PostToolUse`. The `PreModelRequest`/`PostModelRequest` hooks that landed on 2026-10-18 (0.164.0
-alphas only) are observation-only and carry session, turn, model, status and token usage,
+`PostToolUse`. The `PreModelRequest`/`PostModelRequest` hooks (0.164.0 alphas only) are observation-only and carry session, turn, model, status and token usage,
 not request or response content. The sandbox network proxy and its MITM rules cover sandboxed
 commands only, not web search, MCP connections or the model request.
 
@@ -31,32 +28,32 @@ endpoint.
 
 ## 1. Verified facts
 
-| # | Fact | Source | Checked |
-|---|---|---|---|
-| F1 | Hosted tools (WebSearch) fire no PreToolUse/PostToolUse | Codex hooks reference, tool coverage table | 2026-10-20 |
-| F2 | `web_search = disabled\|cached\|indexed\|live`; default cached; a full-access sandbox (which hx uses: `--dangerously-bypass-approvals-and-sandbox`) defaults to live | Codex config reference; agent approvals page | 2026-10-20 |
-| F3 | Wire: cached → `external_web_access:false`; indexed → `true` + `indexed_web_access:true`; live → `true` | `codex-rs/core/src/tools/hosted_spec.rs` @ rust-v0.156.1 | 2026-10-20 |
-| F4 | Azure OpenAI Responses `web_search` is Grounding with Bing; `external_web_access` always treated as false; domain allow list ≤100; data leaves the compliance boundary, DPA does not apply; subscription kill switch `OpenAI.BlockedTools.web_search` | learn.microsoft.com/azure/foundry/openai/how-to/web-search | 2026-10-20 |
-| F5 | Foundry guardrail tool-call/tool-response intervention points apply to Foundry Agent Service agents only; model-level guardrails scan user input and output | learn.microsoft.com/azure/foundry/guardrails/intervention-points | 2026-10-20 |
-| F6 | Foundry Toolbox MCP endpoint: `{project_endpoint}/toolboxes/{name}/mcp?api-version=v1`, bearer token scope `https://ai.azure.com/.default`; tool named `web_search`, call `{"search_query": "..."}`; result citations in `content[].resource._meta.annotations[]`; a toolbox version may carry `policies.rai_config.rai_policy_name` | learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox | 2026-10-20 |
-| F7 | Prompt Shields: `POST {endpoint}/contentsafety/text:shieldPrompt?api-version=2024-09-01`, body `{userPrompt, documents[]}`, reply `documentsAnalysis[].attackDetected`; limits 10K characters per prompt, up to five documents totalling 10K; key header `Ocp-Apim-Subscription-Key` or Entra bearer | Content Safety quickstart and service limits | 2026-10-20 |
-| F8 | Hook stdin: `session_id, turn_id, cwd, transcript_path, model, permission_mode, hook_event_name, tool_name, tool_use_id, tool_input` (+ `tool_response` on post). MCP `tool_response` is the raw CallToolResult `{"content": [...], "structuredContent"?: ...}` | `codex-rs/hooks/src/events/{pre,post}_tool_use.rs`, `core/src/tools/handlers/mcp.rs` tests | 2026-10-20 |
-| F9 | Pre deny: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}` (reason required). Post block: `{"decision":"block","reason":"…"}` replaces the result; `hookSpecificOutput.additionalContext` adds context. Exit 2 blocks with stderr as the reason | `codex-rs/hooks/src/engine/output_parser.rs` | 2026-10-20 |
-| F10 | Hook `tool_name` for an MCP tool is `mcp__<server>__<tool>` | `core/src/tools/handlers/mcp.rs` (`mcp_post_tool_use_payload_uses_prefixed_tool_name_args_and_result`) and the e2e run | 2026-10-20 |
-| F11 | 0.156.1 defers MCP tools behind the `tool_search` tool: the model calls `tool_search`, receives a `namespace` tool `mcp__<server>` holding the tool, then calls it with `name` + `namespace`. `features.tool_search*` flags do not change this | e2e run; `codex features list` | 2026-10-20 |
-| F12 | `mcp_servers.<id>.default_tools_approval_mode`: `auto` (default) approves only tools annotated `readOnlyHint`; otherwise under `approval_policy = "never"` the call fails with "MCP tool call requires approval, but approval policy is never". `approve` pre-approves | `codex-rs/config/src/mcp_types.rs`; e2e run | 2026-10-20 |
-| F13 | PostToolUse runs only for tool calls that succeeded (`if success` in `core/src/tools/registry.rs`); an `isError` MCP result bypasses the post hook | registry.rs @ rust-v0.156.1 | 2026-10-20 |
-| F14 | Codex's loader accepts an unknown key inside `[mcp_servers.x]` and a misspelled hook handler field silently | `codex mcp list` / `codex features list` with a temp `CODEX_HOME` | 2026-10-20 |
-| F15 | `http_headers_helper`: a command printing a JSON object of header names and values; 10 s timeout; headers cached and the helper re-run when the endpoint rejects them; local environment only | `codex-rs/rmcp-client/src/http_headers.rs`, `codex-mcp/src/runtime.rs` | 2026-10-20 |
-| F16 | Hook handler TOML fields: `type="command"`, `command`, `timeout` (seconds), `async`, `statusMessage`, `additionalContextLimit`; matcher is a regex string on the tool name | `codex-rs/core/config.schema.json` @ rust-v0.156.1 | 2026-10-20 |
-| F17 | Codex hands the model an MCP `resource` content item as the JSON of the whole item, `_meta.annotations[]` (citation `url` and `title`) included; a post hook's `additionalContext` reaches the next model request; hooks inherit the Codex process environment (`CONTENT_SAFETY_KEY`) | local `codex exec` 0.156.1 run (`test_scenario_*` in `tests/core/test_adapter_codex_search_route.py`) | 2026-10-21 |
+| # | Fact | Source |
+|---|---|---|
+| F1 | Hosted tools (WebSearch) fire no PreToolUse/PostToolUse | Codex hooks reference, tool coverage table |
+| F2 | `web_search = disabled\|cached\|indexed\|live`; default cached; a full-access sandbox (which hx uses: `--dangerously-bypass-approvals-and-sandbox`) defaults to live | Codex config reference; agent approvals page |
+| F3 | Wire: cached → `external_web_access:false`; indexed → `true` + `indexed_web_access:true`; live → `true` | `codex-rs/core/src/tools/hosted_spec.rs` @ rust-v0.156.1 |
+| F4 | Azure OpenAI Responses `web_search` is Grounding with Bing; `external_web_access` always treated as false; domain allow list ≤100; data leaves the compliance boundary, DPA does not apply; subscription kill switch `OpenAI.BlockedTools.web_search` | learn.microsoft.com/azure/foundry/openai/how-to/web-search |
+| F5 | Foundry guardrail tool-call/tool-response intervention points apply to Foundry Agent Service agents only; model-level guardrails scan user input and output | learn.microsoft.com/azure/foundry/guardrails/intervention-points |
+| F6 | Foundry Toolbox MCP endpoint: `{project_endpoint}/toolboxes/{name}/mcp?api-version=v1`, bearer token scope `https://ai.azure.com/.default`; tool named `web_search`, call `{"search_query": "..."}`; result citations in `content[].resource._meta.annotations[]`; a toolbox version may carry `policies.rai_config.rai_policy_name` | learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox |
+| F7 | Prompt Shields: `POST {endpoint}/contentsafety/text:shieldPrompt?api-version=2024-09-01`, body `{userPrompt, documents[]}`, reply `documentsAnalysis[].attackDetected`; limits 10K characters per prompt, up to five documents totalling 10K; key header `Ocp-Apim-Subscription-Key` or Entra bearer | Content Safety quickstart and service limits |
+| F8 | Hook stdin: `session_id, turn_id, cwd, transcript_path, model, permission_mode, hook_event_name, tool_name, tool_use_id, tool_input` (+ `tool_response` on post). MCP `tool_response` is the raw CallToolResult `{"content": [...], "structuredContent"?: ...}` | `codex-rs/hooks/src/events/{pre,post}_tool_use.rs`, `core/src/tools/handlers/mcp.rs` tests |
+| F9 | Pre deny: `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}` (reason required). Post block: `{"decision":"block","reason":"…"}` replaces the result; `hookSpecificOutput.additionalContext` adds context. Exit 2 blocks with stderr as the reason | `codex-rs/hooks/src/engine/output_parser.rs` |
+| F10 | Hook `tool_name` for an MCP tool is `mcp__<server>__<tool>` | `core/src/tools/handlers/mcp.rs` (`mcp_post_tool_use_payload_uses_prefixed_tool_name_args_and_result`) and the e2e run |
+| F11 | 0.156.1 defers MCP tools behind the `tool_search` tool: the model calls `tool_search`, receives a `namespace` tool `mcp__<server>` holding the tool, then calls it with `name` + `namespace`. `features.tool_search*` flags do not change this | e2e run; `codex features list` |
+| F12 | `mcp_servers.<id>.default_tools_approval_mode`: `auto` (default) approves only tools annotated `readOnlyHint`; otherwise under `approval_policy = "never"` the call fails with "MCP tool call requires approval, but approval policy is never". `approve` pre-approves | `codex-rs/config/src/mcp_types.rs`; e2e run |
+| F13 | PostToolUse runs only for tool calls that succeeded (`if success` in `core/src/tools/registry.rs`); an `isError` MCP result bypasses the post hook | registry.rs @ rust-v0.156.1 |
+| F14 | Codex's loader accepts an unknown key inside `[mcp_servers.x]` and a misspelled hook handler field silently | `codex mcp list` / `codex features list` with a temp `CODEX_HOME` |
+| F15 | `http_headers_helper`: a command printing a JSON object of header names and values; 10 s timeout; headers cached and the helper re-run when the endpoint rejects them; local environment only | `codex-rs/rmcp-client/src/http_headers.rs`, `codex-mcp/src/runtime.rs` |
+| F16 | Hook handler TOML fields: `type="command"`, `command`, `timeout` (seconds), `async`, `statusMessage`, `additionalContextLimit`; matcher is a regex string on the tool name | `codex-rs/core/config.schema.json` @ rust-v0.156.1 |
+| F17 | Codex hands the model an MCP `resource` content item as the JSON of the whole item, `_meta.annotations[]` (citation `url` and `title`) included; a post hook's `additionalContext` reaches the next model request; hooks inherit the Codex process environment (`CONTENT_SAFETY_KEY`) | local `codex exec` 0.156.1 run (`test_scenario_*` in `tests/core/test_adapter_codex_search_route.py`) |
 
 ## 2. Key decisions
 
 1. **Adapter, not core.** The guard, the header helper and the installer wiring live in
    `src/hx/skeleton/adapters/codex/`; nothing in `src/hx/*.py` learns about web search except
    two doctor rows.
-2. **Off until configured.** `config/codex.json` gains an optional `search_guard` object (§4.1).
+2. **Off until configured.** `config/codex.json` has an optional `search_guard` object (§4.1).
    Absent: the Codex home gets `web_search = "cached"` and nothing else changes. hx launches
    with a full-access sandbox, which would otherwise flip the hosted tool to live (F2); cached is
    OpenAI's own default and the documented lower-exposure mode. Present: `web_search =
@@ -77,25 +74,24 @@ endpoint.
    `HX_CODEX_TEST_BIN` exactly like `test_installed_codex_rollout_and_hook_contract`), live
    (one Prompt Shields call, skipped unless `HX_SEARCH_GUARD_LIVE_ENDPOINT` and
    `CONTENT_SAFETY_KEY` are set; reported as skipped, never as passed).
-8. **Breaking change.** Instances are rebuilt with `hx install`; no migration or fallback code.
 
 ## 3. Inventory
 
-| File | Change |
+| File | Role |
 |---|---|
-| `src/hx/skeleton/adapters/codex/search_guard.py` | new: the hook, `pre`/`post` |
-| `src/hx/skeleton/adapters/codex/toolbox_headers.py` | new: `http_headers_helper` |
+| `src/hx/skeleton/adapters/codex/search_guard.py` | the hook, `pre`/`post` |
+| `src/hx/skeleton/adapters/codex/toolbox_headers.py` | `http_headers_helper` |
 | `src/hx/skeleton/adapters/codex/install.sh` | read `search_guard` from `config/codex.json`; emit §4.2 |
 | `src/hx/doctor_homes.py` | `_codex_home`: web-search posture rows (§4.6) |
-| `tests/core/test_adapter_codex_search_guard.py` | new: hook unit tests, live |
-| `tests/core/test_adapter_codex_search_route.py` | new: header helper, installer both ways, scenario (split from the file above to stay under the module size bound) |
-| `tests/core/search_guard_fixture.py` | new: stub Prompt Shields, stub Responses model, the `codex exec` driver |
-| `tests/core/stub_mcp_search.py` | new: stub stdio MCP server for the scenario test |
-| `tests/core/test_doctor.py` | the two new rows |
+| `tests/core/test_adapter_codex_search_guard.py` | hook unit tests, live |
+| `tests/core/test_adapter_codex_search_route.py` | header helper, installer both ways, scenario (separate from the file above to stay under the module size bound) |
+| `tests/core/search_guard_fixture.py` | stub Prompt Shields, stub Responses model, the `codex exec` driver |
+| `tests/core/stub_mcp_search.py` | stub stdio MCP server for the scenario test |
+| `tests/core/test_doctor.py` | the two rows of §4.6 |
 | `README.md` | docs list entry for this document |
 
 `install.py` copies the package skeleton into an instance and `native_launch.py` copies
-`skeleton/adapters` into a launch capsule, so the two new scripts need no packaging change
+`skeleton/adapters` into a launch capsule, so the two scripts need no separate packaging
 (`pyproject.toml` ships `skeleton/**/*`).
 
 ## 4. Specification
@@ -117,7 +113,7 @@ Both keys are required when the object is present; a partial object is an instal
 
 ### 4.2 Generated `config.toml`
 
-Without `search_guard`, one new line after the posture:
+Without `search_guard`, one line after the posture:
 
 ```toml
 web_search = "cached"
@@ -155,7 +151,7 @@ matcher = "mcp__foundry__web_search"
   statusMessage = "Scanning search results with Prompt Shields"
 ```
 
-Commands are built with `shlex.join`, as the existing hook blocks are, and written as TOML basic
+Commands are built with `shlex.join`, as the other hook blocks are, and written as TOML basic
 strings (`json.dumps`), as are `url` and `http_headers_helper`: a TOML literal string cannot hold
 the `'` that `shlex.quote` emits for a part outside its safe set. `output_token_limit`
 truncates the tool output before both the model and the hook see it, so the scan covers exactly
@@ -213,43 +209,7 @@ Read `config/codex.json` once. With `search_guard`: FAIL unless the home's `web_
 "cached"`, message `web search cached (hosted search, unguarded)`. A `search_guard` object
 missing either key: FAIL on the `codex` row (`_codex_instance`), message names the key.
 
-### 4.7 The tested draft to adapt
-
-`/Users/loganrobbins/workspace/hx/scratch/codex-search-guard/` (untracked, git-ignored) holds
-`search_guard.py`, `toolbox_headers.py`, `stub_mcp_search.py`, `test_search_guard.py` (16 unit
-tests against a stub Prompt Shields) and `test_e2e_codex.py` (4 scenario tests through the real
-`codex exec`), all passing on 2026-10-20 with Codex 0.156.1. Adapt, do not copy verbatim:
-
-- endpoint and log path become `--endpoint`/`--log` arguments (no `CONTENT_SAFETY_ENDPOINT`,
-  `SEARCH_GUARD_LOG`, `CODEX_HOME` reads);
-- delete the environment switches `SEARCH_GUARD_FAIL_OPEN`, `SEARCH_GUARD_MAX_QUERY`,
-  `SEARCH_GUARD_MAX_SCAN`, `SEARCH_GUARD_DENY_TERMS`, `SEARCH_GUARD_CONTEXT_NOTE` and
-  `CONTENT_SAFETY_TOKEN`; the constants stay, the note is always printed, fail is always closed;
-- the stub MCP server moves to `tests/core/stub_mcp_search.py`; its `STUB_MCP_READONLY` switch
-  is not needed;
-- the scenario test writes the Codex home itself (temp `CODEX_HOME`, stub model provider as in
-  `tests/core/codex_native_fixture.py`), gated with the existing
-  `HX_CODEX_TEST_BIN` skip marker, and asserts: discovery lists namespace `mcp__local`; the
-  audit `tool_name` is `mcp__local__web_search`; a clean result reaches the model after one
-  Prompt Shields call; an injected result reaches the model as the block reason with the
-  injected text absent; a credential-shaped query never reaches the MCP server;
-- the installer test drives `adapters/codex/install.sh` exactly like
-  `test_codex_install_writes_home_and_provisions_auth` and asserts §4.2 both ways, plus the
-  `die` on a partial `search_guard`.
-
-## 5. Steps
-
-1. `search_guard.py` + its unit tests (red-green per behaviour: query policy, result text
-   extraction, chunking, block, fail-closed, oversized, bad stdin).
-2. `toolbox_headers.py` + a test with a fake `az` on `PATH` and one with the env token.
-3. `install.sh` wiring + installer tests (absent → cached; present → §4.2; partial → die).
-4. Doctor rows + tests.
-5. `stub_mcp_search.py` + the scenario test; run it once with
-   `HX_CODEX_TEST_BIN=/opt/homebrew/bin/codex`.
-6. Live test (skips without its env).
-7. README docs line.
-
-## 6. Validation
+## 5. Validation
 
 From the worktree, with the main checkout's interpreter (worktrees carry no `.venv`):
 
@@ -258,9 +218,7 @@ PYTHONPATH=src /Users/loganrobbins/workspace/hx/.venv/bin/python -m pytest tests
 HX_CODEX_TEST_BIN=/opt/homebrew/bin/codex PYTHONPATH=src /Users/loganrobbins/workspace/hx/.venv/bin/python -m pytest tests/core/test_adapter_codex_search_route.py -q -p no:cacheprovider -k scenario
 ```
 
-The core lane runs once at the end from the author's session, never two lanes at once.
-
-## 7. Risks and open items
+## 6. Risks and open items
 
 - Nothing has touched Azure: the toolbox endpoint, the real Prompt Shields resource and the
   Entra token flow are untested until a Foundry deployment exists. The tool name `web_search`
