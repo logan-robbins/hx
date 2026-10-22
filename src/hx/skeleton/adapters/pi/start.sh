@@ -104,6 +104,6 @@ export PI_OFFLINE=1
 export PATH="$root/bin:$PATH"
 
 # No prompt argument. --append-system-prompt reads the persona file when the path exists
-# (Pi 0.84 resolvePromptInput). The invariants, the identity line and the learnings arrive
+# (Pi's resolvePromptInput). The invariants, the identity line and the learnings arrive
 # through the extension's `context` hook at every boundary.
 exec "$bin" "${pi_args[@]}" ${system_args[@]+"${system_args[@]}"}

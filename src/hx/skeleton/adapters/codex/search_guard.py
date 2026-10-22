@@ -6,7 +6,7 @@ Usage: search_guard.py pre|post --endpoint <content-safety-endpoint> --log <audi
 
 Codex's hosted `web_search` fires no hook, so a home with `search_guard` disables
 it and serves search as the Foundry toolbox's MCP `web_search` tool; this script
-is that tool's PreToolUse (`pre`) and PostToolUse (`post`) hook (Codex 0.156.1):
+is that tool's PreToolUse (`pre`) and PostToolUse (`post`) hook:
 
 - pre denies a query that is empty, longer than 400 characters, carries a control
   character, or carries an unbroken 40+ character token that is not a URL (a
@@ -87,7 +87,7 @@ def query_problem(query: str) -> str | None:
 def result_text(tool_response) -> tuple[str, list[str]]:
     """Every text the model will read in an MCP CallToolResult, and its citation URLs.
 
-    Codex 0.156.1 hands the model a resource item whole, `_meta` with its page-chosen citation
+    Codex hands the model a resource item whole, `_meta` with its page-chosen citation
     titles included, so that is scanned too; any other non-text item is scanned as its JSON.
     """
     if isinstance(tool_response, str):

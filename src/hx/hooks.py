@@ -27,26 +27,26 @@ from .ids import is_id
 from .root import resolve_root
 
 #: The hx event vocabulary.
-EVENTS = {
-    "context": 3,
-    "log": 5,
-    "subagent-start": 5,
-    "subagent-stop": 5,
-    "subagent-result": 5,
-    "precompact": 5,
-    "postcompact": 5,
-    "stop": 5,
+EVENTS = (
+    "context",
+    "log",
+    "subagent-start",
+    "subagent-stop",
+    "subagent-result",
+    "precompact",
+    "postcompact",
+    "stop",
     # The Partner's `PreToolUse` guard over `config/partner/guard.json`.
-    "guard": 9,
-    "request": 9,
-    "log-failure": 9,
-    "tool-start": 9,
-    "message": 9,
-    "stop-failure": 9,
-    "stop-cancelled": 9,
-    "session-end": 9,
-    "model-response": 9,
-}
+    "guard",
+    "request",
+    "log-failure",
+    "tool-start",
+    "message",
+    "stop-failure",
+    "stop-cancelled",
+    "session-end",
+    "model-response",
+)
 
 IMPLEMENTED = (
     "context", "log", "subagent-start", "subagent-stop", "subagent-result", "stop",

@@ -601,8 +601,8 @@ def propose(root: Path, *, signal: str, check: str, evidence: str, category: str
 
 def propose_text(root: Path, *, text: str, author: str, source: str, category: str = "orientation",
                  role: str | None = None, env: dict[str, str] | None = None) -> dict:
-    """A proposal that is prose, not yet a rule: what an agent wrote down before the learnings
-    need review as explicit invariant rules before being accepted.
+    """A proposal that is prose, not yet a rule: what an agent wrote down. It is reviewed
+    into explicit invariant rules before anything is accepted.
 
     hx does not guess a Signal and a Check out of prose. The reviewer reads the text in
     `hx learn pending` and turns each lesson it holds into a rule — `hx learn accept ID

@@ -4,8 +4,8 @@
 Usage: hook.py --id <id> --hook-bin <command> --root <root> <event>
 (stdin: the hook JSON).
 
-Muse Code's user hooks are Claude-shaped (verified live against 1.3.0 for
-SessionStart: `hook_event_name`, `session_id`, `source`, `cwd`), so this is
+Muse Code's user hooks are Claude-shaped (SessionStart carries `hook_event_name`,
+`session_id`, `source`, `cwd`), so this is
 mostly a pass-through with a normalizer for the keys hx-hook reads: camelCase
 variants map to snake_case, and `tool_response` is filled from `toolResult`
 when only the latter is present. Unknown keys pass through; hx-hook ignores

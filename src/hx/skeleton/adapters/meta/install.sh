@@ -5,7 +5,7 @@
 # home/muse/settings.json) and XDG_DATA_HOME points at home/data (sessions live
 # in home/data/muse/sessions). settings.json carries the Unrestricted posture,
 # goal-friendly defaults, and the hx hooks with --id/--hook-bin/--root baked
-# in, because hook commands run with a cleared environment. The 1.3.0 CLI has no
+# in, because hook commands run with a cleared environment. The CLI has no
 # verifiable system-prompt flag, so the invariants, the persona, the identity line
 # and the learnings arrive through the SessionStart `context` hook at every boundary. Auth is META_API_KEY from seed/meta-token, exported at
 # launch; the home holds no credentials. Nothing is read from ~/.config/muse.
