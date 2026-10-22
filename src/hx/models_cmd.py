@@ -59,7 +59,7 @@ PROVIDERS: dict[str, dict] = {
     },
     "xai": {
         "url": "https://api.x.ai/v1/language-models",
-        "auth": "bearer", "keys": ("XAI_API_KEY", "GROK_API_KEY"), "seed": "grok-token",
+        "auth": "bearer", "keys": ("XAI_API_KEY",), "seed": "grok-token",
         "heading": "xai", "family": ("grok-",),
     },
     "meta": {

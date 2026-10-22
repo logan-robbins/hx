@@ -56,7 +56,7 @@ fleet runs the latest release; nothing refuses a version. The versions the live 
 passed on are listed in `src/hx/packaging/tested-claude-versions.json` (also inside the
 installed package), and `hx install` and `hx doctor` print `tested` or `untested` against it.
 The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
-missing credentials fall back to that file: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
+missing credentials fall back to that file: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY`. Existing
 credentials under `seed/` take precedence.
 
 Optional, for the code graph: `universal-ctags` (the `ctags` that ships with macOS is BSD

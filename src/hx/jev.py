@@ -29,9 +29,9 @@ class Unavailable(Exception):
 
 def credential(root, env=None):
     env = os.environ if env is None else env
-    value = env.get("TYPESAFE_API_KEY") or env.get("JEV_API_KEY")
+    value = env.get("TYPESAFE_API_KEY")
     if not value:
-        path = Path(env.get("TYPESAFE_API_KEY_FILE") or env.get("JEV_API_KEY_FILE")
+        path = Path(env.get("TYPESAFE_API_KEY_FILE")
                     or Path.home() / "workspace/.env/TYPESAFE_API_KEY").expanduser()
         try:
             # Also accept .env/KEY notation for a named entry in a dotenv file.

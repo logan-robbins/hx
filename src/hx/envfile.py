@@ -13,11 +13,13 @@ from .store import atomic_write_json
 
 AUTH_CONFIG = "config/auth.json"
 _KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+#: The seed file each provider key in a supplied env file fills when that file is empty.
 _SEED_KEYS = {
-    "codex-token": ("OPENAI_API_KEY",),
-    "grok-token": ("XAI_API_KEY", "GROK_API_KEY"),
-    "meta-token": ("META_API_KEY",),
-    "pi-token": ("PI_API_KEY",),
+    "codex-token": "OPENAI_API_KEY",
+    "grok-token": "XAI_API_KEY",
+    "meta-token": "META_API_KEY",
+    "pi-token": "PI_API_KEY",
+    "token": "ANTHROPIC_API_KEY",
 }
 
 
@@ -68,15 +70,13 @@ def sync_seed(root: Path) -> None:
     if not path:
         return
     values = parse(Path(path))
-    mapping = dict(_SEED_KEYS)
-    mapping["token"] = ("ANTHROPIC_API_KEY",)
     seed = root / "seed"
     seed.mkdir(parents=True, exist_ok=True)
-    for filename, names in mapping.items():
+    for filename, name in _SEED_KEYS.items():
         target = seed / filename
         if target.is_file() and target.read_text(encoding="utf-8").strip():
-            continue  # a local credential always wins over the env fallback
-        value = next((values[name] for name in names if values.get(name)), None)
+            continue  # a credential already in seed/ wins over the env file
+        value = values.get(name)
         if not value:
             if filename == "token":
                 raise HxError(f"env file {path} needs ANTHROPIC_API_KEY when no OAuth token is present")
@@ -90,7 +90,6 @@ def sync_seed(root: Path) -> None:
 def main() -> None:
     """Emit NUL-delimited assignments for the private adapter shell loader."""
     values = parse(Path(sys.argv[1]))
-    values.setdefault("XAI_API_KEY", values.get("GROK_API_KEY", ""))
     for key, value in values.items():
         if value:
             sys.stdout.buffer.write(f"{key}={value}".encode() + b"\0")
