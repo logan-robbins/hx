@@ -63,7 +63,13 @@ and inherited `check_policy`: reviewer, required checks, and the `role` of the s
 the packet. A prerequisite on another applied plan names its `plan_id`. Workers own implementation, definition of done, and executable
 checks; the configured independent reviewer judges the exact binding.
 
+For a whole conversion lane, start from the graph: `hx plan partition` names the shared
+providers, the family each callee is built in, the merged pairs and the waves with their width
+and depth, and `--out` drafts the multi-unit plan; split each provider's interface file out of
+its unit before applying it.
+
 ```sh
+hx plan partition --repo WT --scope LANE... --out plan.json
 hx plan draft --file request.json --repo WT --snapshot SNAP --out plan.json
 hx plan validate --file plan.json
 hx plan apply --file plan.json

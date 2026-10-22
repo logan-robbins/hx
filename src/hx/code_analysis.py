@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 from . import code_queries as query, code_store as store
+from .code_snapshot import facts_in_path, graph_for
 
 
 def pagerank(nodes, edges, focus=(), iterations=60):
@@ -143,18 +144,26 @@ def louvain(graph):
 
 
 def _graph(conn, repo):
-    nodes = {
-        (r["repo"], r["path"])
-        for r in conn.execute(
-            "SELECT repo,path FROM files WHERE (? IS NULL OR repo=?) ORDER BY repo,path",
-            (repo, repo),
-        )
-    }
-    rows = query.edges(conn, repo=repo, limit=1_000_000)
+    graph = query.links(conn, repo=repo)
+    nodes = set(graph["files"])
+    rows = list(
+        {
+            (r["repo"], r["from_path"], r["to_path"], r["kind"]): dict(
+                repo=r["repo"],
+                from_path=r["from_path"],
+                to_path=r["to_path"],
+                kind=r["kind"],
+                lane=r["lane"],
+                status="candidate",
+                stale=r["stale"],
+            )
+            for r in graph["links"]
+        }.values()
+    )
     links = {
         ((r["repo"], r["from_path"]), (r["repo"], r["to_path"]))
         for r in rows
-        if r["kind"] in {"imports", "calls", "tests"} and not r["stale"]
+        if not r["stale"]
     }
     return nodes, rows, links
 
@@ -173,10 +182,11 @@ def _map(conn, nodes, links, focus, budget, limit):
         fan_in[b].add(a)
     result = []
     for repo, path in sorted(nodes, key=lambda n: (-rank[n], n)):
-        definitions = conn.execute(
-            "SELECT * FROM symbols WHERE repo=? AND path=? ORDER BY CASE lane WHEN 'resolved' THEN 0 WHEN 'syntax' THEN 1 ELSE 2 END,line LIMIT 8",
-            (repo, path),
-        ).fetchall()
+        facts = list(facts_in_path(conn, "symbols", path, repo=repo))
+        definitions = sorted(
+            facts,
+            key=lambda r: ({"resolved": 0, "syntax": 1}.get(r["lane"], 2), r["line"]),
+        )[:8]
         if not definitions:
             continue
         row = store.decorate(conn, definitions[0])
@@ -255,10 +265,8 @@ def _submaps(conn, nodes, rows, links, focus, limit):
             )
             anchors = []
             for repo, path in group[:64]:
-                row = conn.execute(
-                    "SELECT sha256 FROM files WHERE repo=? AND path=?", (repo, path)
-                ).fetchone()
-                anchors.append(dict(path=path, symbol=None, sha256=row[0]))
+                sha = graph_for(conn, repo, path)["files"][0]["sha256"]
+                anchors.append(dict(path=path, symbol=None, sha256=sha))
             record = dict(
                 schema_version=1,
                 id=identity,

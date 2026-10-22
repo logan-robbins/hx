@@ -8,8 +8,11 @@ from pathlib import Path
 
 from . import code_store as store
 
-LANES = {"resolved": 0, "syntax": 1, "text": 2, "imported": 3}
+LANES = {"resolved": 0, "syntax": 1, "text": 2, "imported": 3, "contract": 4}
 CAP = 100
+LINKS = 250_000
+# A Natural CALLNAT/FETCH/PERFORM names an object, never a prototype or data area.
+NATURAL_TARGETS = {"natural_object", "program", "subprogram", "subroutine", "function", "helproutine"}
 
 
 def symbols(conn, name, *, repo=None, limit=CAP, path=None):
@@ -18,6 +21,7 @@ def symbols(conn, name, *, repo=None, limit=CAP, path=None):
         return [dict(r) for r in conn.symbol_cache[key]]
     if conn.snapshot is not None:
         from .code_snapshot import matching_facts
+        from .code_stubs import declarations
 
         rows = matching_facts(
             conn,
@@ -29,6 +33,10 @@ def symbols(conn, name, *, repo=None, limit=CAP, path=None):
             limit=min(CAP, limit),
         )
         result = [store.decorate(conn, r) for r in rows]
+        # Published contracts answer every checkout until it indexes the real declaration.
+        result += declarations(
+            conn, name, repo=repo, path=path, limit=min(CAP, limit) - len(result)
+        )
         conn.symbol_cache[key] = result
         return [dict(r) for r in result]
     rows = conn.execute(
@@ -253,18 +261,35 @@ def callers(conn, name, *, repo=None, limit=CAP, count=False):
     return result[: min(CAP, limit)]
 
 
+class Paths:
+    """A namespace's indexed paths, keyed for import resolution without scans."""
+
+    def __init__(self, paths):
+        from .code_natural import OBJECT_KINDS
+
+        self.paths = set(paths)
+        self.stems, self.natural = {}, {}
+        for path in sorted(self.paths):
+            stem = Path(path).stem
+            self.stems.setdefault(stem, []).append(path)
+            if Path(path).suffix.lower() in OBJECT_KINDS:
+                self.natural.setdefault(stem.casefold(), []).append(path)
+
+
 def resolve_path(conn, repo, src, dst, indexed=None):
-    paths = (
-        indexed
-        if indexed is not None
-        else {
-            r[0]
-            for r in conn.execute(
-                "SELECT path FROM files WHERE repo=? UNION SELECT path FROM exclusions WHERE repo=?",
-                (repo, repo),
+    if not isinstance(indexed, Paths):
+        indexed = Paths(
+            indexed
+            if indexed is not None
+            else (
+                r[0]
+                for r in conn.execute(
+                    "SELECT path FROM files WHERE repo=? UNION SELECT path FROM exclusions WHERE repo=?",
+                    (repo, repo),
+                )
             )
-        }
-    )
+        )
+    paths = indexed.paths
     if dst in paths:
         return dst
     from .code_natural import OBJECT_KINDS
@@ -272,12 +297,7 @@ def resolve_path(conn, repo, src, dst, indexed=None):
     if Path(src).suffix.lower() in OBJECT_KINDS:
         # Natural library/steplib resolution is a runtime contract. Prefer a
         # unique local-library file, then a unique repository candidate.
-        natural = [
-            p
-            for p in paths
-            if Path(p).suffix.lower() in OBJECT_KINDS
-            and Path(p).stem.casefold() == dst.casefold()
-        ]
+        natural = indexed.natural.get(dst.casefold(), [])
         local = [p for p in natural if Path(p).parent == Path(src).parent]
         if len(local) == 1:
             return local[0]
@@ -297,9 +317,7 @@ def resolve_path(conn, repo, src, dst, indexed=None):
     for candidate in candidates:
         if candidate in paths:
             return candidate
-    candidates = [
-        p for p in paths if Path(p).stem == dst.replace(".", "/").split("/")[-1]
-    ]
+    candidates = indexed.stems.get(dst.replace(".", "/").split("/")[-1], [])
     return candidates[0] if len(candidates) == 1 else None
 
 
@@ -313,13 +331,13 @@ def edges(conn, *, repo=None, path=None, limit=CAP):
     for row in rows:
         identity = row["repo"]
         if identity not in indexed:
-            indexed[identity] = {
+            indexed[identity] = Paths(
                 r[0]
                 for r in conn.execute(
                     "SELECT path FROM files WHERE repo=? UNION SELECT path FROM exclusions WHERE repo=?",
                     (identity, identity),
                 )
-            }
+            )
         dst = resolve_path(
             conn, identity, row["src_path"], row["dst_text"], indexed[identity]
         )
@@ -334,7 +352,7 @@ def edges(conn, *, repo=None, path=None, limit=CAP):
         value = store.decorate(conn, row) | dict(
             from_path=row["src_path"], to_path=dst, status="candidate"
         )
-        if dst in indexed[identity]:
+        if dst in indexed[identity].paths:
             value["stale"] |= store.decorate(conn, dict(repo=identity, path=dst))[
                 "stale"
             ]
@@ -355,14 +373,10 @@ def edges(conn, *, repo=None, path=None, limit=CAP):
                 repo=ref["repo"],
             )
             for target in targets:
-                if ref["extractor"] == "stdlib-natural" and target["kind"] not in {
-                    "natural_object",
-                    "program",
-                    "subprogram",
-                    "subroutine",
-                    "function",
-                    "helproutine",
-                }:
+                if (
+                    ref["extractor"] == "stdlib-natural"
+                    and target["kind"] not in NATURAL_TARGETS
+                ):
                     continue
                 if (
                     ref["path"] == target["path"]
@@ -390,3 +404,138 @@ def edges(conn, *, repo=None, path=None, limit=CAP):
                 if len(result) >= limit:
                     return result
     return result
+
+
+def links(conn, *, repo=None, limit=LINKS):
+    """The selected checkouts' file links (imports, calls, tests) in one bounded pass.
+
+    Joins the postings of each checkout's current artifacts only: no JSON views and
+    no per-reference symbol lookups. A `calls` reference links to every same-named
+    declaration in another file, as `edges` does, and imports resolve through
+    `resolve_path`. Returns `{files: {(repo, path): {size, declarations}}, links,
+    truncated}` with at most `limit` links; a link's `stale` covers both files.
+    """
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS link_paths(repo TEXT NOT NULL,path TEXT NOT NULL,"
+        "artifact TEXT NOT NULL,PRIMARY KEY(artifact,path))"
+    )
+    conn.execute("DELETE FROM temp.link_paths")
+    scopes = conn.snapshot_scopes
+    for identity, snapshot in sorted(conn.snapshot_maps.items()):
+        if repo is None or identity == repo:
+            conn.executemany(
+                "INSERT OR IGNORE INTO temp.link_paths VALUES(?,?,?)",
+                (
+                    (identity, path, artifact)
+                    for path, artifact in conn.path_tree.items(snapshot["map_root"])
+                    if scopes is None
+                    or any(
+                        p == "." or path == p or path.startswith(str(p).rstrip("/") + "/")
+                        for p in scopes
+                    )
+                ),
+            )
+    files = {
+        (r["repo"], r["path"]): {"size": r["size"], "declarations": r["symbols"] or 0}
+        for r in conn.execute(
+            "SELECT a.repo,a.path,p.size,c.symbols FROM temp.link_paths a "
+            "JOIN main.snapshot_path_postings p ON p.artifact=a.artifact AND p.is_text=1 "
+            "LEFT JOIN main.snapshot_object_counts c ON c.artifact=a.artifact "
+            "ORDER BY a.repo,a.path"
+        )
+    }
+    paths = {}
+    for identity, path in conn.execute("SELECT repo,path FROM temp.link_paths"):
+        paths.setdefault(identity, []).append(path)
+    paths = {identity: Paths(values) for identity, values in paths.items()}
+    stale = {}
+
+    def changed(identity, path):
+        if (identity, path) not in stale:
+            row = {"repo": identity, "path": path}
+            stale[identity, path] = store.decorate(conn, row)["stale"]
+        return stale[identity, path]
+
+    result, seen = [], set()
+
+    def add(link):
+        key = tuple(
+            link[k] for k in ("repo", "from_path", "to_path", "kind", "ordinal")
+        )
+        if key in seen or link["from_path"] == link["to_path"]:
+            return True
+        if len(result) >= limit:
+            return False
+        seen.add(key)
+        link["stale"] = changed(link["repo"], link["from_path"]) or changed(
+            link["repo"], link["to_path"]
+        )
+        result.append(link)
+        return True
+
+    calls = " UNION ".join(
+        "SELECT a.repo,a.path AS from_path,r.lane,r.extractor,s.path AS to_path,s.ordinal,s.name,"
+        "s.qualified_folded,s.kind FROM temp.link_paths a "
+        "JOIN main.snapshot_ref_postings r ON r.artifact=a.artifact AND r.kind='calls' "
+        f"JOIN main.snapshot_symbol_postings s ON s.{column}=(CASE WHEN r.lane='resolved' "
+        "THEN r.qualified_folded ELSE r.name_folded END) AND s.repo=a.repo "
+        "JOIN temp.link_paths b ON b.artifact=s.artifact AND b.path=s.path WHERE s.path<>a.path"
+        for column in ("name_folded", "qualified_folded")
+    )
+    complete = True
+    for row in conn.execute(calls + " ORDER BY 1,2,5,6,3"):
+        if row["extractor"] == "stdlib-natural" and row["kind"] not in NATURAL_TARGETS:
+            continue
+        source = row["from_path"].lower()
+        kind = "tests" if "test" in source or "spec" in source else "calls"
+        link = dict(
+            repo=row["repo"],
+            from_path=row["from_path"],
+            to_path=row["to_path"],
+            kind=kind,
+            lane=row["lane"],
+            name=row["name"],
+            qualified=row["qualified_folded"],
+            symbol_kind=row["kind"],
+            ordinal=row["ordinal"],
+        )
+        if not add(link):
+            complete = False
+            break
+    declared = {}
+    edges = conn.execute(
+        "SELECT a.repo,a.path AS from_path,e.kind,e.lane,e.dst_text FROM temp.link_paths a "
+        "JOIN main.snapshot_edge_postings e ON e.artifact=a.artifact "
+        "WHERE e.kind IN ('imports','calls','tests') ORDER BY a.repo,a.path,e.dst_text,e.kind"
+    ) if complete else ()
+    for row in edges:
+        identity, text = row["repo"], row["dst_text"]
+        target = resolve_path(conn, identity, row["from_path"], text, paths[identity])
+        if target is None:
+            # An unresolved import names a declaration when exactly one file declares it.
+            if (identity, text) not in declared:
+                found = conn.execute(
+                    "SELECT DISTINCT s.path FROM main.snapshot_symbol_postings s "
+                    "JOIN temp.link_paths b ON b.artifact=s.artifact AND b.path=s.path "
+                    "WHERE (s.name_folded=? OR s.qualified_folded=?) AND s.repo=? LIMIT 2",
+                    (text.casefold(), text.casefold(), identity),
+                ).fetchall()
+                declared[identity, text] = found[0][0] if len(found) == 1 else None
+            target = declared[identity, text]
+        if target is None:
+            continue
+        link = dict(
+            repo=identity,
+            from_path=row["from_path"],
+            to_path=target,
+            kind=row["kind"],
+            lane=row["lane"],
+            name=None,
+            qualified=None,
+            symbol_kind=None,
+            ordinal=None,
+        )
+        if not add(link):
+            complete = False
+            break
+    return {"files": files, "links": result, "truncated": not complete}

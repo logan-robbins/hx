@@ -147,6 +147,10 @@ def contracts(conn, name=None, *, repo=None, limit=100):
         )
         value["stale"] |= bool(difference)
         result.append(value)
+    if name is not None and len(result) < limit:
+        from .code_stubs import publications
+
+        result += publications(conn, name, repo=repo, limit=limit - len(result))
     return result
 
 
