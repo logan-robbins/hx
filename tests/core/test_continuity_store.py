@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION, canonical
+from hx.continuity_store import Conflict, ContinuityStore, canonical
 from hx.errors import ValidationError
 
 
@@ -47,21 +47,6 @@ def test_durable_schema_and_foreign_keys(ledger):
         with pytest.raises(sqlite3.IntegrityError), reopened.transaction() as tx:
             tx.append_event("not-a-run", "main", "call1", "tool_result", {})
         assert not reopened.db.execute("PRAGMA foreign_key_check").fetchall()
-
-
-def test_newer_schema_refused_without_rewrite(tmp_path):
-    with ContinuityStore(tmp_path) as store:
-        store.db.execute("PRAGMA user_version=999")
-    with pytest.raises(ValidationError, match="unsupported schema"):
-        ContinuityStore(tmp_path)
-    with sqlite3.connect(tmp_path / "state" / "continuity.sqlite") as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 999
-
-
-
-
-
-
 
 
 def test_atomic_rollback_covers_records_cursor_outbox_and_artifacts(ledger):
@@ -321,13 +306,3 @@ def test_transaction_cannot_escape_context_or_nest(ledger):
         tx.put_task("T2", {}, expected_revision=0)
     with pytest.raises(ValidationError, match="invalid JSON"):
         canonical({"probability": float("nan")})
-
-@pytest.mark.parametrize("version", [1, 14, 19])
-def test_older_schema_is_refused_without_migration(ledger, version):
-    store, run = ledger
-    store.db.execute(f"PRAGMA user_version={version}")
-    before = tuple(store.db.execute("SELECT * FROM runs WHERE run_id=?", (run,)).fetchone())
-    with pytest.raises(ValidationError, match="recreate this prerelease instance"):
-        ContinuityStore(store.root)
-    assert store.db.execute("PRAGMA user_version").fetchone()[0] == version
-    assert tuple(store.db.execute("SELECT * FROM runs WHERE run_id=?", (run,)).fetchone()) == before

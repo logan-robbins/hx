@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from hx import checks, fingerprints
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from hx.evidence import read
 
@@ -190,14 +190,13 @@ def test_executable_symlink_and_relative_path_keep_invocation_identity(setup):
     assert argv[0] == str(link) and snapshot["complete"]
 
 
-def test_schema_four_reopen_keeps_receipts_table(setup):
+def test_reopen_keeps_receipts(setup):
     store, run, _, env = setup
     receipt = checks.run_check(store, run, "unit", recipe=definition(), env=env)
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT count(*) FROM check_executions").fetchone()[0] == 1
-        assert upgraded.db.execute("SELECT receipt_id FROM receipts").fetchone()[0] == receipt["receipt_id"]
-        assert read(upgraded, receipt["event_id"])["content"] == "checked\n"
+    with ContinuityStore(store.root) as reopened:
+        assert reopened.db.execute("SELECT count(*) FROM check_executions").fetchone()[0] == 1
+        assert reopened.db.execute("SELECT receipt_id FROM receipts").fetchone()[0] == receipt["receipt_id"]
+        assert read(reopened, receipt["event_id"])["content"] == "checked\n"
 
 
 def test_check_cli_uses_assigned_recipe(setup, run_hx):

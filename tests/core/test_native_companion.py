@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from hx import companion_api, companion_protocol as protocol, native_companion as native, passes
-from hx.continuity_store import ContinuityStore, Conflict, SCHEMA_VERSION, canonical
+from hx.continuity_store import ContinuityStore, Conflict, canonical
 from hx.errors import ValidationError
 from .companion_http import KEY, api_key, replay, silent
 from .test_passes import answer, create
@@ -253,11 +253,10 @@ def test_running_job_owns_single_slot_without_expiring(planned):
             native.execute(store, other['job_id'])
 
 
-def test_schema_fifteen_reopen_preserves_passes(planned):
+def test_reopen_preserves_passes(planned):
     store, _, _ = planned
     job = job_for(planned)
     with ContinuityStore(store.root) as reopened:
-        assert reopened.db.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION
         assert reopened.db.execute('SELECT pass_id FROM passes').fetchone()[0] == job['pass_id']
         assert reopened.db.execute('SELECT count(*) FROM companion_jobs').fetchone()[0] == 1
 

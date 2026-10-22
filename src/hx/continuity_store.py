@@ -1,4 +1,4 @@
-"""Transactional authority for current-task continuity (versioned schema).
+"""Transactional authority for current-task continuity.
 
 All mutations, including artifact installation, use a short BEGIN IMMEDIATE
 transaction. Model calls, tool execution, source hashing and prompt compilation
@@ -6,7 +6,7 @@ belong outside this boundary. The ledger is the sole assignment, run, proof and
 publication authority.
 
 Three openers. `ContinuityStore(root)` is the mutating opener of the loop and CLI
-mutations: it creates or verifies the schema under the writer lock. `attach` joins
+mutations: it creates the schema of an empty ledger under the writer lock. `attach` joins
 an initialized ledger without DDL or any lock at open; reads go through `snapshot`
 (a WAL read that never waits for the writer) and only explicit writes take the
 lock, each waiting at most an optional budget before `LedgerBusy`. `reader` is
@@ -31,7 +31,6 @@ from typing import Iterator
 from .errors import HxError, ValidationError
 from .facts import validate_payload
 
-SCHEMA_VERSION = 24
 ARTIFACT_CHUNK_BYTES = 65536
 DISPOSITIONS = {"reduced", "extracted", "no_change", "dropped", "pending"}
 RECORD_KINDS = {"goal", "constraint", "decision", "finding", "search", "command", "cursor", "dead_end"}
@@ -70,6 +69,8 @@ def _id(value: str) -> str:
 
 from .continuity_schema import SCHEMA
 
+TABLES = "SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1"
+
 
 
 class ContinuityStore:
@@ -102,10 +103,9 @@ class ContinuityStore:
             self.db.execute("PRAGMA temp_store=FILE")
             self.db.execute("PRAGMA mmap_size=0")
             if mode != "write":
-                # No DDL and no lock: the header read is a plain WAL read.
-                version = self.db.execute("PRAGMA user_version").fetchone()[0]
-                if version != SCHEMA_VERSION:
-                    raise ValidationError(f"continuity: ledger schema {version} is not {SCHEMA_VERSION}; recreate this prerelease instance")
+                # No DDL and no lock: the catalog read is a plain WAL read.
+                if not self.db.execute(TABLES).fetchone():
+                    raise ValidationError("continuity: ledger is not initialized; run hx install or start the loop")
                 # A reader never commits, so NORMAL only governs the checkpoints it never runs.
                 self.db.execute("PRAGMA synchronous=" + ("NORMAL" if mode == "read" else "FULL"))
                 if mode == "read":
@@ -114,17 +114,10 @@ class ContinuityStore:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.execute("PRAGMA synchronous=FULL")
             self.db.execute("BEGIN IMMEDIATE")
-            version = self.db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, SCHEMA_VERSION):
-                raise ValidationError(f"continuity: unsupported schema {version}; recreate this prerelease instance with schema {SCHEMA_VERSION}")
-            if version == 0:
-                existing = self.db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()
-                if existing:
-                    raise ValidationError("continuity: unversioned database is not a fresh instance")
+            if not self.db.execute(TABLES).fetchone():
                 for statement in SCHEMA.split(";"):
                     if statement.strip():
                         self.db.execute(statement)
-            self.db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             from . import dependency_packets, check_artifacts, change_delivery, dotnet_build, plan_dispatch
             dependency_packets.initialize(self.db)
             check_artifacts.initialize(self.db)

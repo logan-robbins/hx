@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from hx import appmap
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION, canonical
+from hx.continuity_store import Conflict, ContinuityStore, canonical
 from hx.errors import ValidationError
 
 
@@ -217,11 +217,10 @@ def test_map_directory_cannot_redirect_writes_outside_repository(tmp_path):
     assert not list(outside.iterdir())
 
 
-def test_schema_five_reopen_preserves_authority(mapped):
+def test_reopen_preserves_authority(mapped):
     store, _, _, _, _ = mapped
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT count(*) FROM map_snapshots").fetchone()[0] == 0
+    with ContinuityStore(store.root) as reopened:
+        assert reopened.db.execute("SELECT count(*) FROM map_snapshots").fetchone()[0] == 0
 
 
 def test_map_cli_validates_and_reads_one_record(mapped, run_hx):

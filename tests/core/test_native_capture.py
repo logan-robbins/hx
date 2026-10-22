@@ -191,13 +191,13 @@ def test_concurrent_retry_has_one_delivery_and_event(ledger):
     assert store.db.execute("SELECT count(*) FROM events").fetchone()[0] == 1
 
 
-def test_schema_three_reopen_preserves_existing_task(ledger):
+def test_reopen_preserves_existing_task(ledger):
     store, _ = ledger
-    with ContinuityStore(store.root) as upgraded:
-        with upgraded.transaction() as tx:
+    with ContinuityStore(store.root) as reopened:
+        with reopened.transaction() as tx:
             assert tx.task("T")["payload"]["goal"] == "Capture the original run."
-        assert upgraded.db.execute("SELECT count(*) FROM native_bindings").fetchone()[0] == 0
-        assert not upgraded.db.execute("PRAGMA foreign_key_check").fetchall()
+        assert reopened.db.execute("SELECT count(*) FROM native_bindings").fetchone()[0] == 0
+        assert not reopened.db.execute("PRAGMA foreign_key_check").fetchall()
 
 
 def test_capture_cli_binds_and_acknowledges_durable_delivery(ledger, run_hx, child_env):

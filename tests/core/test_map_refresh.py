@@ -8,7 +8,7 @@ import uuid
 import pytest
 
 from hx import appmap, checks, map_dependencies, map_refresh, map_updates, passes
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from .test_appmap import mapped, record
 from .test_checks import definition
@@ -241,11 +241,10 @@ def test_explicit_task_revision_can_rebind_after_reconciliation(bound):
     assert store.db.execute("SELECT task_revision FROM task_replan_queue WHERE task_id='bound'").fetchone()[0] == 1
 
 
-def test_schema_seven_reopen_retains_source_index_and_cli_drains(active, run_hx):
+def test_reopen_retains_source_index_and_cli_drains(active, run_hx):
     store, repo, _, _, _, _, overlay, _, _ = active
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT count(*) FROM map_sources").fetchone()[0] == 2
+    with ContinuityStore(store.root) as reopened:
+        assert reopened.db.execute("SELECT count(*) FROM map_sources").fetchone()[0] == 2
     changed_source(active)
     result = run_hx("map", "refresh", "--repo", str(repo), "--snapshot", overlay, "--path", "compiler.py", "--limit", "1", "--root", str(store.root))
     assert result.returncode == 0, result.stderr

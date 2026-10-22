@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from hx import hook_contract, native_producer
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from .conftest import SRC
 
@@ -121,13 +121,12 @@ def test_launch_identity_cannot_be_reassigned_and_partial_contract_refuses(insta
             hook_contract.validate(ledger, run_id=newer, launch_id="launch-one", adapter="meta", worker_id="eng-001")
 
 
-def test_schema_eleven_reopen_retains_existing_runs_and_adds_launch_contracts(tmp_path):
+def test_reopen_retains_runs_without_launch_contracts(tmp_path):
     with ContinuityStore(tmp_path) as ledger:
         run = start(ledger)
-    with ContinuityStore(tmp_path) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT 1 FROM runs WHERE run_id=?", (run,)).fetchone()
-        assert upgraded.db.execute("SELECT count(*) FROM native_launch_contracts").fetchone()[0] == 0
+    with ContinuityStore(tmp_path) as reopened:
+        assert reopened.db.execute("SELECT 1 FROM runs WHERE run_id=?", (run,)).fetchone()
+        assert reopened.db.execute("SELECT count(*) FROM native_launch_contracts").fetchone()[0] == 0
 
 
 @pytest.mark.skipif(not os.environ.get("HX_PI_EXTENSION_LOADER"), reason="requires an explicit installed Pi extension loader; no model calls")

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from hx import checks, context_packets as packets, instruction_materials, observer, planning, progress, prompt_compiler, unit_execution
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import ValidationError
 from hx.facts import RequiredContextOverflow
 from .test_appmap import mapped
@@ -264,15 +264,6 @@ def test_provider_counter_is_versioned_and_byte_fallback_preserves_unicode(assig
     assert packet["charged_tokens"] == len(packet["text"].encode())
     with pytest.raises(ValidationError, match="counter requires"):
         packets.issue(store, run, request_id="unnamed", count_tokens=lambda text: len(text))
-
-
-def test_unsupported_schema_is_rejected_without_checkpoint_migration(assignment):
-    store, _, run, _ = assignment
-    store.db.execute("DROP TABLE context_requests")
-    store.db.execute("PRAGMA user_version=9")
-    with pytest.raises(ValidationError, match="unsupported schema 9"):
-        ContinuityStore(store.root)
-    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 9
 
 
 def test_progress_cannot_clear_scope_pause_and_context_preserves_it(assignment):

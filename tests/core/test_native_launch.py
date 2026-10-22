@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from hx import native_launch, native_producer
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.install import install_skeleton
 from .conftest import SRC
 from .test_appmap import mapped
@@ -126,12 +126,11 @@ def test_failed_preparation_retains_ownership_and_does_not_retry_implicitly(conf
         native_launch.verify(store, run)
 
 
-def test_schema_twelve_reopen_preserves_contracts(configured):
+def test_reopen_preserves_contracts(configured):
     store, _, run = configured
     launch = prepare(configured)
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert upgraded.db.execute("SELECT run_id FROM native_launch_contracts WHERE launch_id=?",
+    with ContinuityStore(store.root) as reopened:
+        assert reopened.db.execute("SELECT run_id FROM native_launch_contracts WHERE launch_id=?",
                                    (launch["launch_id"],)).fetchone()[0] == run
 
 

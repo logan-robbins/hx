@@ -242,9 +242,8 @@ the maintained-file budget remain fully indexed and appear in the mandatory size
 The separate parser resource bound refuses indexing before publishing partial coverage.
 Binary bodies are excluded and counted in `skipped`; streamed fingerprints remain in
 `exclusions` for scope freshness. No file-count cap applies.
-A derived index without current namespaces is rebuilt from source; an index of another
-schema version is refused until it is removed and rebuilt. Extractor-generation changes
-invalidate old candidates before the next refresh.
+A derived index without current namespaces is rebuilt from source. Extractor-generation
+changes invalidate old candidates before the next refresh.
 
 Natural UTF-8 source exports use `lane=syntax`, `extractor=stdlib-natural`.
 Extension matching and symbol lookup are case insensitive. `.nat` is a generic

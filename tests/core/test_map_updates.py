@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from hx import appmap, map_updates
-from hx.continuity_store import ContinuityStore, Conflict, SCHEMA_VERSION
+from hx.continuity_store import ContinuityStore, Conflict
 from hx.errors import ValidationError
 from .test_appmap import commit, git, mapped, record
 
@@ -252,11 +252,10 @@ def test_overlay_creation_is_idempotent_and_map_proposal_cli_works(active, run_h
     assert json.loads(result.stdout)["records"]["compiler"]["version"] == 2
 
 
-def test_schema_six_reopen_retains_relation_index(active):
+def test_reopen_retains_relation_index(active):
     store, repo, info, _, _, baseline, _, _, _ = active
-    with ContinuityStore(store.root) as upgraded:
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-        assert appmap.get_record(upgraded, repo, baseline, "compiler")["validated_edges"]
+    with ContinuityStore(store.root) as reopened:
+        assert appmap.get_record(reopened, repo, baseline, "compiler")["validated_edges"]
 
 
 def test_unchanged_proposal_sources_use_cache_instead_of_file_reads(active, monkeypatch):

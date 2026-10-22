@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from hx import appmap, map_updates, planning, retrieval
-from hx.continuity_store import Conflict, ContinuityStore, SCHEMA_VERSION
+from hx.continuity_store import Conflict, ContinuityStore
 from hx.errors import Refused, ValidationError
 from hx.facts import RequiredContextOverflow
 from .test_appmap import git, mapped, record
@@ -207,14 +207,6 @@ def test_brief_to_plan_cli_has_operator_boundary(active, tmp_path, run_hx):
     assert json.loads(applied.stdout)["task_versions"] == {"implement": 1}
     with pytest.raises(Refused):
         planning.main(["apply", "--file", str(source)], store.root, env={"HARNESS_ID": "eng-001"})
-
-
-def test_old_schema_is_refused_without_migration(active):
-    store = active[0]
-    store.db.execute("PRAGMA user_version=8")
-    with pytest.raises(ValidationError, match="schema|version"):
-        ContinuityStore(store.root)
-    assert store.db.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 def test_graph_freshness_refuses_changed_scope_and_rebuild_unlocks(active):

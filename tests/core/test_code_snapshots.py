@@ -599,19 +599,6 @@ def test_caller_count_excludes_all_definition_files_beyond_symbol_output_cap(tmp
     assert len(rows) == 3 and all(r["path"].startswith("reference_") for r in rows)
 
 
-def test_index_storage_has_no_schema_migration(tmp_path):
-    from hx.errors import ValidationError
-    repo = repository(tmp_path)
-    root = tmp_path / "state"
-    code_index.index_repo(root, repo)
-    conn = connect(root)
-    conn.execute("PRAGMA user_version=0")
-    conn.commit()
-    conn.close()
-    with pytest.raises(ValidationError, match="unsupported code index schema"):
-        connect(root)
-
-
 def test_named_reuse_and_impact_avoid_global_json_views(tmp_path, monkeypatch):
     from hx import code_reuse
 
