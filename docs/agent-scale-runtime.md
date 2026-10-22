@@ -126,9 +126,12 @@ Check recipes accept optional `source: {complete, inputs, dependencies}`. A comp
 closure scopes the source identity; omitted/incomplete closures retain repository-wide
 fingerprinting. Graph candidates alone cannot establish completeness. All recipe inputs,
 tools, environment, fixtures, platform and external version files still participate.
-Matching executions can be reused across runs with a new run-bound receipt. Cache corruption
-invalidates reuse. A process claim survives interruption until reconciliation proves its
-owned process group is gone; missing process identity stays unresolved.
+Matching executions can be reused across runs with a new run-bound receipt. Identities are
+relative to the checkout plus its repository namespace and commit, so an equal check already
+running in another worktree or root on the box is joined instead of run again; the joiner gets
+its own receipt naming the original execution. Cache corruption invalidates reuse. A process
+claim survives interruption until reconciliation proves its owned process group is gone;
+missing process identity stays unresolved.
 
 ```sh
 hx build graph src/App/App.csproj --cwd /absolute/product --configuration Release
@@ -150,14 +153,16 @@ the original solution. Its reader bootstraps offline through the same managed br
 and is cached as an immutable artifact. Matching solution builds are reusable; unknown
 custom solution behavior stays explicitly incomplete.
 
-The broker deduplicates equal requests, bounds concurrency across host processes, and
-isolates writable intermediate/output directories. Test shards materialize the immutable
-build in private writable state and run without rebuilding it. Receipts retain the build
-identity and test recipe. Managed jobs must drain before assignment completion.
+The broker joins an equal build or test shard already running in any root or worktree on the
+box, adopting a successful build into the joiner's own checkout place; it bounds concurrency
+across host processes and isolates writable intermediate/output directories. Test shards
+materialize the immutable build in private writable state and run without rebuilding it.
+Receipts retain the build identity and test recipe. Managed jobs must drain before assignment
+completion.
 
 Runner-specific arguments remain distinct: the VSTest `--filter` selects its shard;
 MTP uses its native runner options through `--runner-arg=VALUE`. A fresh build needs a
-new request identity and still cannot override a live equal claim.
+new request identity and joins a live equal build rather than starting a second one.
 
 ## Review, landing, and fixed validation
 

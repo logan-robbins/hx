@@ -351,3 +351,73 @@ def test_a_check_without_a_declared_report_has_no_summary_and_a_file_report_need
 def test_spawn_failure_has_no_summary(tmp_path):
     observed = checks.execute([str(tmp_path / "missing")], tmp_path, {}, tmp_path / "output", 1, 1000)
     assert observed["reason"] == "spawn_failed" and observed["summary"] is None
+
+
+JOINED = """import os, pathlib, time
+with open(os.environ["COUNTER"], "a") as counter:
+    counter.write("ran\\n")
+release = pathlib.Path(os.environ["RELEASE"])
+while not release.exists():
+    time.sleep(0.02)
+print("joined proof")
+"""
+
+
+def test_a_check_with_the_same_inputs_in_two_worktrees_runs_once(tmp_path):
+    """Two roots run one check from two worktrees at one commit while the first execution is live."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test",
+           "-c", "commit.gpgSign=false", "-c", "core.hooksPath=/dev/null"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "source.py").write_text("value = 1\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-qm", "Fixture"], check=True)
+    worktree = tmp_path / "second-worktree"
+    subprocess.run([*git, "worktree", "add", "-q", "--detach", str(worktree)], check=True)
+    counter, release = tmp_path / "executions", tmp_path / "release"
+    env = {"PATH": os.defpath, "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1", "COUNTER": str(counter), "RELEASE": str(release)}
+    recipe = {**definition(JOINED), "timeout_s": 30}
+
+    def started(store, task, checkout, worker):
+        with store.transaction() as tx:
+            tx.put_task(task, {"goal": "Verify exact inputs.", "workdir": str(checkout)}, expected_revision=0)
+            return tx.start_run(task, 1, worker)
+
+    def requested(root, checkout, worker):
+        with ContinuityStore(root) as store:
+            run = started(store, "T", checkout, worker)
+            began = time.perf_counter()
+            result = checks.run_check(store, run, "unit", recipe=recipe, env=env)
+            return run, result, time.perf_counter() - began
+
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(requested, tmp_path / "first-root", repo, "eng-001")
+        end = time.monotonic() + 10
+        while not counter.exists() and time.monotonic() < end:
+            time.sleep(0.02)
+        try:
+            assert counter.exists()
+            second = pool.submit(requested, tmp_path / "second-root", worktree, "eng-002")
+            time.sleep(0.5)
+            assert not second.done()
+        finally:
+            release.write_text("done")
+        (_, owner, owned), (run, joiner, waited) = first.result(timeout=30), second.result(timeout=30)
+    assert counter.read_text() == "ran\n"
+    assert owner["valid"] and "joined" not in owner, owner
+    assert joiner["valid"] and joiner["reusable"] and not joiner["reused"], joiner
+    assert joiner["joined"] == {"root": str((tmp_path / "first-root").resolve()), "execution_id": owner["execution_id"]}
+    assert joiner["artifact_hash"] == owner["artifact_hash"] and joiner["receipt_id"] != owner["receipt_id"]
+    with ContinuityStore(tmp_path / "second-root") as store:
+        assert read(store, joiner["event_id"])["content"] == "joined proof\n"
+        assert checks.current(store, run, joiner["receipt_id"], env=env)["current"]
+        # The identity is the checkout's content at its commit, so the main checkout reuses it here.
+        reused = checks.run_check(store, started(store, "U", repo, "eng-003"), "unit", recipe=recipe, env=env)
+        assert reused["valid"] and reused["reused"] and reused["execution_id"] == joiner["execution_id"]
+        (worktree / "source.py").write_text("value = 2\n")
+        assert not checks.current(store, run, joiner["receipt_id"], env=env)["current"]
+    assert counter.read_text() == "ran\n"
+    print(f"\njoined check: owner {owned:.2f}s, joiner {waited:.2f}s from another root and worktree; 1 execution, 3 receipts")

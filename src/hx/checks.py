@@ -1,4 +1,9 @@
-"""Input-bound checks, bounded output capture, and reusable execution receipts."""
+"""Input-bound checks, bounded output capture, and reusable execution receipts.
+
+An equal check already running anywhere on the box (any root, any worktree at the same
+commit with equal inputs) is joined: this request waits for it, installs its output and
+records its own receipt naming the original execution.
+"""
 
 from __future__ import annotations
 
@@ -14,11 +19,13 @@ import time
 import uuid
 from pathlib import Path
 
-from . import check_artifacts, fingerprints, test_summary
+from . import check_artifacts, fingerprints, host_jobs, test_summary
 from .continuity_store import ContinuityStore, Conflict, _id, canonical, digest
 from .errors import ValidationError
 
 MAX_RECIPE_BYTES = 16384
+# An execution with any of these observed inputs it cannot vouch for; joiners rerun it.
+UNSOUND = frozenset({"incomplete_source_identity", "source_changed_during_check", "environment_changed_during_check"})
 
 
 def validate(recipe: dict) -> str:
@@ -228,6 +235,37 @@ def _install_output(tx, output, execution_id, max_bytes):
                                slot="output", max_bytes=max_bytes)
 
 
+def _join(store, identity_hash, execution_id, *, since):
+    """Hold the check identity on the host, or take an equal execution's outcome.
+
+    An equal execution that is running, or finished at or after `since`, is waited on.
+    Returns its outcome once its output is installed in this store, else None when this
+    execution holds the identity and must run.
+    """
+    skip = set()
+    while True:
+        holder = host_jobs.claim("check:" + identity_hash, store.root.resolve(), execution_id, since=since, skip=skip)
+        if holder is None:
+            return None
+        outcome = host_jobs.wait(holder["job"])
+        skip.add(holder["job"])
+        if outcome is None or not outcome["sound"]:
+            continue
+        if Path(outcome["root"]) == store.root.resolve():
+            if _artifact_intact(store, outcome["artifact_hash"]):
+                return outcome
+            continue
+        try:
+            with store.transaction() as tx:
+                copied = tx.put_artifact_file(Path(outcome["root"]) / "state" / "artifacts" / outcome["artifact_hash"],
+                                              owner_type="receipt", owner_id=execution_id, slot="output",
+                                              max_bytes=64 * 1024 * 1024)
+        except (OSError, ValidationError):
+            continue
+        if copied == outcome["artifact_hash"]:
+            return outcome
+
+
 def reusable(store, run_id, check_id, version, source, environment, *, allow_reuse=True):
     if not source["complete"] or not environment["complete"]:
         return None
@@ -339,23 +377,39 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
         tx.db.execute("INSERT INTO check_executions VALUES(?,?,?,?,?,'running',?)", (execution_id, run_id, request_id, check_id, version,
             canonical({"started_at": time.time(), "owner_pid": os.getpid(), "output": str(output)})))
     # No ledger write lock is held while reading sources or executing the check.
+    # A --fresh request joins only an equal execution still running.
+    since = time.time() if allow_reuse else None
     before = source_identity(cwd, recipe, child_env)
     before_env, argv = fingerprints.environment(cwd, recipe["argv"], recipe["environment"], child_env)
     identity_hash = check_artifacts.identity(version, before, before_env)
-    reuse = None
     with store.transaction() as tx:
         _assignment(tx, run_id, check_id, recipe, worker_id)
         reuse = reusable(store, run_id, check_id, version, before, before_env, allow_reuse=allow_reuse)
-        if reuse is None:
+    joined = holds = None
+    if reuse is None and before["complete"] and before_env["complete"]:
+        joined = _join(store, identity_hash, execution_id, since=since)
+        holds = joined is None
+    if joined is not None:
+        observed = joined["execution"]
+    elif reuse is None:
+        with store.transaction() as tx:
             tx._change()
-            check_artifacts.reserve(tx, execution_id, identity_hash,
-                                    claim=before["complete"] and before_env["complete"])
-    if reuse is None:
+            check_artifacts.reserve(tx, execution_id, identity_hash)
         output.parent.mkdir(parents=True, exist_ok=True)
         command, report = test_summary.bind(recipe.get("report"), argv, output.with_name(execution_id + ".report"))
-        observed = execute(command, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"],
-                           on_spawn=lambda process: check_artifacts.spawned(store, execution_id, process),
-                           report=(recipe["report"], report) if "report" in recipe else None)
+        try:
+            if holds:
+                host_jobs.spawning(execution_id)
+            observed = execute(command, cwd, child_env, output, recipe["timeout_s"], recipe["max_output_bytes"],
+                               on_spawn=lambda process: check_artifacts.spawned(store, execution_id, process),
+                               report=(recipe["report"], report) if "report" in recipe else None)
+            if holds:
+                host_jobs.spawning(execution_id, False)
+        except BaseException:
+            # Alive without an outcome: equal requests wait for reconciliation, not a duplicate.
+            if holds:
+                host_jobs.interrupt(execution_id)
+            raise
     else:
         observed = reuse["payload"]["execution"]
     after = source_identity(cwd, recipe, child_env)
@@ -376,7 +430,14 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
             _assignment(tx, run_id, check_id, recipe, worker_id)
         except (Conflict, ValidationError):
             reasons.append("assignment_changed_during_check")
-        if reuse is None:
+        if joined is not None:
+            artifact = joined["artifact_hash"]
+            if not _artifact_intact(store, artifact):
+                reasons.append("joined_output_missing_or_corrupt")
+            tx.db.execute("""INSERT INTO artifact_refs VALUES(?,?,?,?)
+                ON CONFLICT(owner_type,owner_id,slot) DO UPDATE SET hash=excluded.hash""", ("receipt", execution_id, "output", artifact))
+            check_artifacts.reserve(tx, execution_id, identity_hash)
+        elif reuse is None:
             artifact = _install_output(tx, output, execution_id, recipe["max_output_bytes"])
         else:
             artifact = reuse["artifact_hash"]
@@ -389,12 +450,16 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
                   "execution_id": reuse["execution_id"] if reuse else execution_id,
                   "reusable": valid and before_env["complete"] and after_env["complete"],
                   "reasons": reasons, "artifact_hash": artifact, "summary": observed["summary"]}
+        if joined is not None:
+            result["joined"] = {"root": joined["root"], "execution_id": joined["execution_id"]}
         event = tx.append_event(run_id, "checks", f"check:{execution_id}", "check_result", result)
         result["event_id"] = event["event_id"]
         payload = {"schema_version": 2, "result": result, "reusable": result["reusable"],
                    "argv": recipe["argv"], "resolved_argv": argv, "cwd": str(cwd), "recipe": recipe,
                    "source_before": before, "source_after": after, "environment_before": before_env,
                    "environment_after": after_env, "execution": observed, "completed_at": time.time()}
+        if joined is not None:
+            payload["joined"] = result["joined"]
         if reuse is None:
             check_artifacts.finish(tx, execution_id, artifact, payload)
             provenance = {"execution_id": execution_id, "identity_hash": identity_hash,
@@ -412,6 +477,11 @@ def run_check(store: ContinuityStore, run_id: str, check_id: str, *, recipe: dic
         tx.db.execute("UPDATE check_executions SET status='finished',payload=? WHERE execution_id=?", (canonical({"result": result}), execution_id))
         tx.enqueue("projection", f"check:{execution_id}", {"run_id": run_id, "receipt_id": execution_id, "event_id": event["event_id"]})
     output.unlink(missing_ok=True)
+    if holds:
+        # Joiners take the execution and its output, never this run's receipt.
+        host_jobs.finish(execution_id, {"root": str(store.root.resolve()), "execution_id": execution_id,
+                                        "artifact_hash": artifact, "execution": observed,
+                                        "sound": not UNSOUND.intersection(reasons)})
     return result
 
 

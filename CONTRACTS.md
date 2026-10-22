@@ -117,6 +117,17 @@ that ceiling or the pass's frozen context allowance is refused before content is
 `hx exec` and `tool-exec` refuse
 recognized source-dump commands before execution instead of reducing their output.
 Search candidates and reduced non-file command output retain their separate bounded contracts.
+A scoped native search or listing (Grep, Glob and their harness equivalents) inside the task
+workdir of a Git checkout with a commit is reused box-wide from a per-user, per-boot host ledger
+(`hx-search-UID` in the temp directory). Its key is the repository namespace, the commit, the
+query with paths relative to the checkout, and the scope's content: relative names and kinds of
+at most 256 entries, with sizes for a listing and SHA-256 file contents for a search; a scope
+with a symbolic link or more entries is not cached. A result of at most 2048 bytes is recorded
+only when the scope is unchanged at settlement; paths under the checkout are stored as
+`{repository}` and served under the requesting checkout, and a result naming its checkout any
+other way is not recorded. An equal later search in any lane, worktree or root is refused with
+the cached result, marked complete only when the tool reported a complete, untruncated result.
+The ledger keeps 128 results per namespace and 256 in all.
 Complete transport is evidence of emitted content, not proof of model attention or obedience.
 
 `hx complete done` requests managed completion under the caller's `HX_CONTINUITY_RUN`.
@@ -179,7 +190,9 @@ kind together. `seam` is the cache-aware seam profile: `soft_fraction` (number i
 default 0.6), `cache_ttl_s` (integer 0–86400, default 300; 3600 for a 1-hour cache) and
 `min_benefit_bytes` (integer 0–2^30, default 65536). `notifications.per_tick` (integer 1–256,
 default 8) bounds the notifications one tick delivers. `partition.merge` lists at most 64
-`hx plan partition` pairing rules (§ Dependency packet plan). Any other key or value is refused. Each
+`hx plan partition` pairing rules (§ Dependency packet plan). `pools.build` (integer 1–64,
+default 2) and `pools.test` (integer 1–64, default 4) bound `hx build` builds and test shards
+across the box (§ .NET build broker). Any other key or value is refused. Each
 agent's harness `companion` has `provider` (`anthropic`, the default and the only built
 transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
 `state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
@@ -534,9 +547,18 @@ uses scoped source identity; omitted/false closure retains repository-wide hashi
 `inputs` remain included. Unknown external/environment dependencies disallow reusable proof.
 Graph candidates cannot assert completeness. Execution artifacts are keyed by complete
 recipe/source/environment identities, including tools, platform, cwd and external versions.
-Equal in-flight requests share an execution. Reuse creates a new requesting-run receipt.
-Corruption rejects reuse. Interrupted claims remain held until owned process/group death
-is proven; absent spawn identity remains unresolved.
+Identities are portable: a path under the checkout is hashed relative to it beside the
+repository namespace and commit, so equal content at one commit in any worktree or root has
+one identity. A complete identity claims a per-user, per-boot host ledger (`hx-jobs-UID` in
+the temp directory) before it executes; a request whose identity is held by a live execution
+in any root joins it, waits, copies its output into its own root when the roots differ, and
+records its own execution and receipt with `joined: {root, execution_id}` naming the original.
+A sound outcome (no `incomplete_source_identity` or changed-during-check reason) is shared;
+otherwise the joiner runs. Reuse within a root takes the newest finished execution and
+creates a new requesting-run receipt. Corruption rejects reuse. An execution interrupted
+while its owner lives stays held until owned process/group death is proven; absent spawn
+identity remains unresolved. A held identity whose owner, spawn and children are gone is
+reclaimed by the next equal request.
 
 A recipe may declare `report`, the runner's machine-readable format: `junit-xml` (pytest
 `--junit-xml`), `trx` (`dotnet test --logger trx`), `go-json` (`go test -json`), `cargo-json`
@@ -567,9 +589,26 @@ chunk. A summary is a parse of the runner's report, not an execution receipt.
 `graph` and `build` name a project/solution plus cwd, configuration, optional framework,
 runtime and source-contract JSON. MSBuild evaluated properties/items/imports, SDK, packages
 and source dependencies determine completeness and build identity. Unknown custom build
-closures do not qualify for cache reuse. `build` accepts run/request identity and a bounded
-job count; equal requests deduplicate across processes. Host slots limit simultaneous builds.
-Immutable restore/build artifacts coexist with private writable intermediate/test state.
+closures do not qualify for cache reuse. `build` accepts run/request identity. Build and test
+identities are portable: paths under the checkout, the root and the job's artifact place are
+replaced by anchors before hashing, and the source identity adds repository namespace and
+commit. An equal build or test shard already running in any root on the box is joined through
+the per-user, per-boot host job ledger (`hx-jobs-UID` in the temp directory), also by `fresh`
+requests: the joiner starts no process. A test shard and a product failure (restore, build or
+test failure, timeout, output limit, background processes, spawn failure) are shared as they
+are. A successful build is adopted: the joiner copies its artifact blob, materializes it into
+its own checkout's place (`state/dotnet/jobs/<seed>/<checkout>/artifacts`), evaluates it there
+and records an adopted build whose `joined: {root, job_id}` names the original; a mismatched
+evaluation makes the joiner build. Each request records its own job, artifact row and
+receipt. Per-user, per-boot host slots shared by every root on the box limit
+simultaneous builds and test shards: a root acquires a `build` (or `test`) slot only while the
+box holds fewer of that kind than its own `pools.build` (`pools.test`), else the request stays
+queued and is refused for a later retry. Roots configured differently therefore never together
+exceed the largest limit, and a smaller-limit root can starve under contention; configure every
+root on a box alike. A slot belongs to its acquiring process by kernel process identity; one
+whose owner and every recorded child process are gone is reclaimed at the next acquisition.
+Immutable restore/build artifacts coexist with private writable intermediate/test state; the
+restore and build caches are per checkout place, so sequential reuse stays within a checkout.
 Optional `--platform` participates in evaluated identity. Ordinary SDK `.sln`/`.slnx`
 solutions obtain exact mapped project/global/reference contexts from the installed
 MSBuild ProjectGraph API. The offline reader bootstrap uses the same managed broker

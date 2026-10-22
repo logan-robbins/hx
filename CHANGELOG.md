@@ -20,6 +20,34 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   `edges(limit=1_000_000)` and the JSON graph views; `submaps` boundary links are now
   `{repo,from_path,to_path,kind,lane,status,stale}`, and an import of the file itself is no
   longer a link.
+- Native search reuse is box-wide and commit-keyed (docs/fleet-throughput-plan.md P1.3;
+  CONTRACTS.md § Admission and native execution). A scoped Grep or Glob result is keyed by
+  repository namespace, commit, the query relative to the checkout and the scope's content (file
+  contents for a search, names and sizes for a listing) instead of the absolute worktree and
+  inode metadata, so one lane's result serves every lane, worktree and root at that commit whose
+  scope matches, with paths served under the reader's own checkout; a changed file invalidates
+  only its own worktree. The cache moved from the per-root `search_coverage` table to the host
+  ledger `hx-search-UID` in the temp directory; a workdir that is not a Git checkout with a
+  commit is not cached. The ledger schema is 24; recreate prerelease instances.
+- Equal-input .NET builds, test shards and checks run once per box
+  (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker, § Scoped check
+  execution artifacts). Check, build and test identities hash checkout paths relative to the
+  checkout beside its repository namespace and commit, and .NET identities replace the root and
+  the job's artifact place with anchors, so equal inputs in any worktree or root have one
+  identity. A per-user, per-boot host ledger (`hx-jobs-UID` in the temp directory) replaces the
+  per-root `dotnet_claims` and `check_artifact_claims` tables: a request equal to an execution
+  running anywhere on the box joins it and records its own receipt with `joined` naming the
+  original. A joined build is adopted into the joiner's checkout place
+  (`state/dotnet/jobs/<seed>/<checkout>/artifacts`) and evaluated there; `fresh` no longer
+  refuses a live equal build but joins it. The restore and build caches are keyed by that place.
+- `hx build` slot limits come from config, not from the last `--jobs` any root passed
+  (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker). `--jobs` is gone from
+  `hx build build` and `hx build test`; set `pools.build` (1–64, default 2) and `pools.test`
+  (1–64, default 4) in `config/hx.json` instead, alike on every root of a box. Builds and test
+  shards hold separate box-wide pools, each root admits only while the box holds fewer slots of
+  the kind than its own limit, and a slot whose owning process and recorded children are gone is
+  reclaimed by process identity instead of staying held until `hx build reconcile`. The host
+  ledger moved to `hx-slots-UID` in the temp directory.
 - `check_policy` in a schema-2 plan is `{reviewer,required_checks,role}`, and
   `config/planning.json` requires `role`: the configured seat role that executes the unit,
   which the plan executor matches against `harness.json`. Add `role` to every plan and to

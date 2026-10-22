@@ -1,10 +1,12 @@
 import hashlib
 import json
+import os
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
-from hx import native_tools, runtime_policy
+from hx import native_tools, runtime_policy, search_coverage
 from hx.continuity_store import Conflict
 from .test_appmap import mapped
 from .test_map_updates import active
@@ -74,6 +76,12 @@ def test_noisy_commands_route_by_shape_not_first_word(runtime):
         assert fire(store, run, row, 'tool-start', payload(f'quiet-{index}', tool_input={'command': command})) == 0, command
 
 
+def coverage(sql):
+    """One value from this test's host search ledger."""
+    with closing(search_coverage.connect()) as db:
+        return db.execute(sql).fetchone()[0]
+
+
 def test_search_result_reused_after_reset_but_invalidated_by_source_change(runtime):
     store, repo, run, _ = runtime
     row = submitted(runtime)
@@ -82,7 +90,7 @@ def test_search_result_reused_after_reset_but_invalidated_by_source_change(runti
     body = payload('search1', tool_name='Grep', tool_input={'path': str(path), 'pattern': 'Compiler', 'head_limit': 40})
     assert fire(store, run, row, 'tool-start', body) == 0
     assert fire(store, run, row, 'log', {**body, 'tool_response': {'matches': ['Compiler = 1'], 'complete': True}}) == 0
-    assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 1
+    assert coverage('SELECT count(*) FROM coverage') == 1
     # Cache identity depends on sources and query, not a worker's context checkpoint.
     assert fire(store, run, row, 'tool-start', {**body, 'tool_use_id': 'repeat'}) == 2
     path.write_text('Compiler = 2\n')
@@ -97,11 +105,11 @@ def test_search_does_not_cache_errors_or_claim_truncated_absence(runtime):
     body = payload('error-search', tool_name='Grep', tool_input={'path': str(path), 'pattern': 'missing', 'head_limit': 1})
     assert fire(store, run, row, 'tool-start', body) == 0
     assert fire(store, run, row, 'log', {**body, 'tool_response': {'error': 'failed'}}) == 0
-    assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 0
+    assert coverage('SELECT count(*) FROM coverage') == 0
     retry = {**body, 'tool_use_id': 'retry-search'}
     assert fire(store, run, row, 'tool-start', retry) == 0
     assert fire(store, run, row, 'log', {**retry, 'tool_response': {'matches': [], 'complete': True, 'truncated': True}}) == 0
-    assert store.db.execute('SELECT complete FROM search_coverage').fetchone()[0] == 0
+    assert coverage('SELECT complete FROM coverage') == 0
 
 
 def test_search_cache_ignores_source_changed_during_search(runtime):
@@ -113,7 +121,71 @@ def test_search_cache_ignores_source_changed_during_search(runtime):
     assert fire(store, run, row, 'tool-start', body) == 0
     path.write_text('after\n')
     assert fire(store, run, row, 'log', {**body, 'tool_response': 'before'}) == 0
-    assert store.db.execute('SELECT count(*) FROM search_coverage').fetchone()[0] == 0
+    assert coverage('SELECT count(*) FROM coverage') == 0
+
+
+def test_one_grep_serves_sixty_worktrees_at_a_commit_and_a_change_invalidates_only_its_own(tmp_path):
+    """60 lanes in 3 roots, one worktree each at one commit, issue the same scoped Grep."""
+    import subprocess
+    import time
+    from contextlib import ExitStack
+    from hx.continuity_store import ContinuityStore
+    repo = tmp_path / 'lane-00'
+    (repo / 'src').mkdir(parents=True)
+    git = ['git', '-C', str(repo), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+           '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null']
+    subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+    for index in range(40):
+        (repo / 'src' / f'module_{index:02}.py').write_text(f'class Compiler{index}:\n    pass\n' * 50)
+    subprocess.run([*git, 'add', '.'], check=True)
+    subprocess.run([*git, 'commit', '-qm', 'Fixture'], check=True)
+    lanes = [repo, *(tmp_path / f'lane-{index:02}' for index in range(1, 60))]
+    for lane in lanes[1:]:
+        subprocess.run([*git, 'worktree', 'add', '-q', '--detach', str(lane)], check=True)
+    executions, served = [], {}
+
+    def grep(store, index, call):
+        lane = lanes[index]
+        body = {'tool_name': 'Grep', 'tool_input': {'path': str(lane / 'src'), 'pattern': 'Compiler3:',
+                                                    'output_mode': 'files_with_matches'}}
+        request = search_coverage.prepare({'workdir': str(lane)}, body)
+        try:
+            with store.transaction() as tx:
+                search_coverage.remember(tx, {'launch_id': f'launch-{index}'}, 'session', 'main', call, request)
+        except native_tools.AdmissionDenied as exc:
+            served[index] = str(exc)
+            return
+        executions.append(index)
+        found = sorted(str(path) for path in (lane / 'src').glob('*.py') if 'Compiler3:' in path.read_text())
+        with store.transaction() as tx:
+            search_coverage.settle(tx, f'launch-{index}', 'session', 'main', call,
+                                   {**body, 'tool_response': {'filenames': found, 'numFiles': len(found)}})
+
+    with ExitStack() as stack:
+        roots = [stack.enter_context(ContinuityStore(tmp_path / f'root-{index}')) for index in range(3)]
+        began = time.perf_counter()
+        for index in range(60):
+            grep(roots[index % 3], index, 'first')
+        elapsed = time.perf_counter() - began
+        assert executions == [0] and sorted(served) == list(range(1, 60))
+        for index, text in served.items():
+            # Each lane is served its own checkout's paths, never lane 0's.
+            assert f'{lanes[index]}/src/module_03.py' in text and str(repo) + '/' not in text
+        (lanes[7] / 'src' / 'module_05.py').write_text('class Compiler3:\n    pass\n')
+        served.clear()
+        for index in range(60):
+            grep(roots[index % 3], index, 'second')
+        assert executions == [0, 7] and sorted(served) == [index for index in range(60) if index != 7]
+        assert f'{lanes[8]}/src/module_05.py' not in served[8]
+        grep(roots[1], 7, 'third')
+        assert executions == [0, 7] and f'{lanes[7]}/src/module_05.py' in served[7]
+        # A pipe in the scope is neither hashed nor waited on: the search is simply not cached.
+        os.mkfifo(lanes[3] / 'src' / 'pipe')
+        assert search_coverage.prepare({'workdir': str(lanes[3])}, {'tool_name': 'Grep',
+            'tool_input': {'path': str(lanes[3] / 'src'), 'pattern': 'Compiler3:'}}) is None
+    with closing(search_coverage.connect()) as db:
+        assert db.execute('SELECT count(*) FROM coverage').fetchone()[0] == 2
+    print(f'\nsearch cache: 60 worktrees in 3 roots, 1 execution, 59 served in {elapsed:.2f}s total')
 
 
 def test_required_full_instruction_material_can_be_read_without_excerpt_and_cannot_be_mutated(runtime):
