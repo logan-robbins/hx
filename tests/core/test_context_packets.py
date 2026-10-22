@@ -208,7 +208,7 @@ def test_capture_lag_includes_bytes_not_yet_seen_by_observer(assignment, tmp_pat
     store, _, run, _ = assignment
     source = tmp_path / "native.jsonl"
     source.write_bytes(b"")
-    source_id = observer.register(store, run_id=run, stream_id="native", path=source, decoder="hook-v1", session_id="S")
+    source_id = observer.register(store, run_id=run, stream_id="native", path=source, decoder="hook", session_id="S")
     observer.drain(store, source_id)
     ready = packets.issue(store, run, request_id="empty", mode="planned")
     assert ready["extraction_ready"]

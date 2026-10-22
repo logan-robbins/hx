@@ -19,8 +19,8 @@ from .errors import ValidationError
 from .events import decode
 from .observer import MAX_RECORD_BYTES, SPOOL_BYTES, append_observation, encode_observation, notify, spool_size
 
-TRANSPORTS = {name: {"hook-v1", "public-batch-v1"} for name in ("codex", "claude", "meta", "grok", "pi")}
-TRANSPORTS["pi"].add("pi-v1")
+TRANSPORTS = {name: {"hook", "public-batch"} for name in ("codex", "claude", "meta", "grok", "pi")}
+TRANSPORTS["pi"].add("pi")
 
 
 def _run(tx, run_id: str, worker_id: str | None = None):
@@ -37,7 +37,7 @@ def _run(tx, run_id: str, worker_id: str | None = None):
 
 
 def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
-         session_id: str, decoder: str = "hook-v1", worker_id: str | None = None,
+         session_id: str, decoder: str = "hook", worker_id: str | None = None,
          retain_late: bool = False) -> str:
     for value in (run_id, stream_id, session_id):
         _id(value)
@@ -51,7 +51,7 @@ def bind(store: ContinuityStore, *, run_id: str, stream_id: str, adapter: str,
             # The producer may retain a late observation for reconciliation, but
             # enqueue still refuses to apply new evidence to an ended/amended run.
             row = tx.db.execute("SELECT worker_id FROM runs WHERE run_id=?", (run_id,)).fetchone()
-            if row is None or worker_id is None or row[0] != worker_id or decoder != "public-batch-v1":
+            if row is None or worker_id is None or row[0] != worker_id or decoder != "public-batch":
                 raise Conflict("late producer binding requires the original worker and run")
         else:
             _run(tx, run_id, worker_id)
@@ -111,7 +111,7 @@ def enqueue(store: ContinuityStore, binding_id: str, delivery_id: str, payload: 
                 raise Conflict("event session differs from its capture binding")
         if "parentId" in payload:
             raise ValidationError("tree records require the registered observer's active ancestry filter")
-        events = decode(binding["decoder_version"], payload)
+        events = decode(binding["decoder"], payload)
         # Admit before installing any artifact, so repeated pressure rejections
         # cannot grow a disk orphan pile. Serialize one public event at a time.
         charge = 0
@@ -176,7 +176,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     for field in ("run", "stream", "session"):
         registration.add_argument(f"--{field}", required=True)
     registration.add_argument("--adapter", choices=sorted(TRANSPORTS), required=True)
-    registration.add_argument("--decoder", default="hook-v1")
+    registration.add_argument("--decoder", default="hook")
     delivery = commands.add_parser("enqueue")
     delivery.add_argument("binding")
     delivery.add_argument("--delivery", required=True, help="producer ID reused for every retry of these bytes")

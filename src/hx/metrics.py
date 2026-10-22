@@ -46,13 +46,16 @@ def agent_figures(root, runs):
             result[workers[row['run_id']]]['flavors'].add(row['adapter'])
         # Child streams and hook copies of transcript messages are excluded.
         for row in db.execute(f"""SELECT e.event_id,e.run_id,e.kind,e.payload,
-                (SELECT o.decoder_version FROM event_origins o WHERE o.event_id=e.event_id LIMIT 1) AS decoder,
+                (SELECT o.decoder FROM event_origins o WHERE o.event_id=e.event_id LIMIT 1) AS decoder,
                 (SELECT b.adapter FROM native_event_origins n JOIN native_bindings b USING(binding_id)
                  WHERE n.event_id=e.event_id LIMIT 1) AS adapter
                 FROM events e WHERE e.run_id IN ({marks}) AND e.stream_id LIKE 'native:%'
                 AND e.kind IN ('assistant_message','boundary') ORDER BY e.rowid""", tuple(workers)):
-            source = row['decoder'] if row['decoder'] in {'claude-v1', DECODER} else row['adapter']
-            if source not in {'claude-v1', DECODER, 'pi', 'meta'}:
+            if row['decoder'] in {'claude', DECODER}:
+                source = row['decoder']
+            elif row['adapter'] in {'pi', 'meta'}:
+                source = row['adapter']
+            else:
                 continue
             observation = _observation(root, json.loads(row['payload']))
             if observation is None:
@@ -60,7 +63,7 @@ def agent_figures(root, runs):
             figures, data, usage = result[workers[row['run_id']]], observation['data'], observation.get('usage') or {}
             if row['kind'] == 'assistant_message' and source != 'meta' and data.get('claim') and isinstance(data.get('text'), str):
                 add(figures, 'chat_bytes', len(data['text'].encode()))
-            if source == 'claude-v1' and row['kind'] == 'assistant_message' and type(usage.get('output_tokens')) is int:
+            if source == 'claude' and row['kind'] == 'assistant_message' and type(usage.get('output_tokens')) is int:
                 # Records of one API response repeat its usage; count the response once.
                 key = (workers[row['run_id']], data.get('message_id') or row['event_id'])
                 claude[key] = max(claude.get(key, 0), usage['output_tokens'])

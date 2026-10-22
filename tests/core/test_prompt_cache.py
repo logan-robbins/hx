@@ -101,7 +101,7 @@ def test_worker_report_preserves_scoped_captured_usage_without_guessing_residenc
     usage={'input_tokens':100,'cache_read_input_tokens':80,'output_tokens':20}
     with store.transaction() as tx:
         tx.db.execute('INSERT INTO native_bindings VALUES(?,?,?,?,?,?,?)',
-            ('usage-binding',run,'main','claude','session','claude-jsonl-v1',json.dumps(usage)))
+            ('usage-binding',run,'main','claude','session','claude',json.dumps(usage)))
         tx.db.execute('INSERT INTO runtime_cycles VALUES(?,?)',('tokens:'+launch['launch_id'],json.dumps({'tokens':180,'reset':'none'})))
     result=prompt_cache.agent_report(store.root,'eng-001')
     assert result['provider_usage'][0]['latest_usage']==usage

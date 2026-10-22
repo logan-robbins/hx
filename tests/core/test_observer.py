@@ -21,7 +21,7 @@ def capture(tmp_path):
             run = tx.start_run("T1", 1, "eng-001")
         path = tmp_path / "session.jsonl"
         path.write_bytes(b"")
-        source = register(store, run_id=run, stream_id="main", path=path, decoder="hook-v1", session_id="S1")
+        source = register(store, run_id=run, stream_id="main", path=path, decoder="hook", session_id="S1")
         yield store, run, path, source
 
 
@@ -91,7 +91,7 @@ def test_readiness_bounds_source_scope_and_does_not_read_bodies(capture, monkeyp
     drain(store, source)
     for index in range(MAX_SOURCES):
         register(store, run_id=run, stream_id=f"extra-{index}", path=path,
-                 decoder="hook-v1", session_id=f"extra-{index}")
+                 decoder="hook", session_id=f"extra-{index}")
     def no_reads(*args, **kwargs):
         raise AssertionError("readiness must not open transcript bodies")
     monkeypatch.setattr(Path, "open", no_reads)
@@ -205,7 +205,7 @@ def test_duplicate_delivery_uses_native_id_not_text(capture):
 def test_cli_register_drain_status_use_the_requested_root(capture, run_hx):
     store, run, path, source = capture
     registered = run_hx("observe", "register", "--root", str(store.root), "--run", run,
-                        "--stream", "main", "--path", str(path), "--decoder", "hook-v1", "--session", "S1")
+                        "--stream", "main", "--path", str(path), "--decoder", "hook", "--session", "S1")
     assert registered.returncode == 0, registered.stderr
     assert registered.stdout.strip() == source
     append(path, tool())
@@ -300,14 +300,14 @@ def test_artifact_io_failure_is_not_mistaken_for_a_readable_source_gap(capture, 
 
 
 def test_claude_captures_public_messages_failures_usage_but_no_thinking():
-    events = decode("claude-v1", {"type": "assistant", "uuid": "A1", "message": {
+    events = decode("claude", {"type": "assistant", "uuid": "A1", "message": {
         "role": "assistant", "usage": {"input_tokens": 50, "cache_read_input_tokens": 80},
         "content": [{"type": "thinking", "thinking": "PRIVATE SECRET"},
                     {"type": "text", "text": "The interface changed."}]}})
     assert events[0].data["text"] == "The interface changed."
     assert events[0].usage == {"input_tokens": 50, "cache_read_input_tokens": 80}
     assert "PRIVATE SECRET" not in repr(events)
-    result = decode("claude-v1", {"type": "user", "uuid": "U1", "message": {"content": [
+    result = decode("claude", {"type": "user", "uuid": "U1", "message": {"content": [
         {"type": "tool_result", "tool_use_id": "C1", "content": "assertion failed", "is_error": True}]}})
     assert result[0].kind == "tool_result" and result[0].data["is_error"]
 
@@ -319,13 +319,13 @@ def test_all_adapter_hook_payloads_preserve_actions(adapter):
     if adapter in {"claude", "pi"}:
         body = {"event": "log", "tool_name": "read", "tool_use_id": "C1",
                 "tool_input": {"path": "src/x"}, "tool_response": {"text": "exact result"}}
-    result = decode("hook-v1", body)[0]
+    result = decode("hook", body)[0]
     assert result.native_id == "tool:C1"
     assert result.data["tool_response"]["text"] == "exact result"
 
 
 def test_stop_preserves_message_even_when_transcript_is_not_flushed():
-    events = decode("hook-v1", {"event": "stop", "last_assistant_message": "Do not reuse R1.",
+    events = decode("hook", {"event": "stop", "last_assistant_message": "Do not reuse R1.",
                                "background_tasks": [{"agent_id": "s1"}]})
     assert [x.kind for x in events] == ["assistant_message", "finish"]
     assert events[0].data["text"] == "Do not reuse R1."
@@ -333,7 +333,7 @@ def test_stop_preserves_message_even_when_transcript_is_not_flushed():
 
 
 def test_pi_sessionless_stdout_needs_no_transcript():
-    result = decode("pi-v1", {"type": "tool_execution_end", "toolCallId": "call1",
+    result = decode("pi", {"type": "tool_execution_end", "toolCallId": "call1",
                              "toolName": "bash", "result": {"content": [{"type": "text", "text": "failure"}]}, "isError": True})
     assert result[0].kind == "tool_result" and result[0].data["is_error"]
 
@@ -350,7 +350,7 @@ def test_pi_full_stdout_lifecycle_excludes_thinking_updates():
         {"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}},
         {"type": "turn_end", "toolResults": []}, {"type": "agent_end", "messages": []},
     ]
-    events = [event for row in stream for event in decode("pi-v1", row)]
+    events = [event for row in stream for event in decode("pi", row)]
     assert "PRIVATE" not in repr(events)
     assert any(event.kind == "tool_result" for event in events)
     assert any(event.data.get("tool_input") == {"command": "true"} for event in events)
@@ -360,20 +360,20 @@ def test_pi_full_stdout_lifecycle_excludes_thinking_updates():
 @pytest.mark.parametrize("content", [None, {}, [{"type": "text", "text": {}}], [{"type": "new-public-kind"}]])
 def test_pi_unknown_completed_content_requires_reconciliation(content):
     with pytest.raises(DecodeGap):
-        decode("pi-v1", {"type": "message_end", "message": {"role": "assistant", "content": content}})
+        decode("pi", {"type": "message_end", "message": {"role": "assistant", "content": content}})
 
 
 def test_unknown_native_shape_is_a_gap_not_an_empty_result():
     with pytest.raises(DecodeGap):
-        decode("claude-v1", {"type": "future-message-format", "text": "important"})
+        decode("claude", {"type": "future-message-format", "text": "important"})
     with pytest.raises(DecodeGap):
-        decode("claude-v1", {"type": ["not", "a", "type"]})
+        decode("claude", {"type": ["not", "a", "type"]})
 
 
 def test_branch_capture_excludes_inactive_siblings(capture):
     store, run, path, _ = capture
     path = path.with_name("pi.jsonl")
-    source = register(store, run_id=run, stream_id="pi", path=path, decoder="pi-v1", session_id="PI",
+    source = register(store, run_id=run, stream_id="pi", path=path, decoder="pi", session_id="PI",
                       branch_ids=["a", "b"])
     for identifier, parent, text in [("a", None, "root"), ("old", "a", "inactive sibling"),
                                      ("b", "a", "active"), ("c", "b", "new continuation"),
@@ -385,12 +385,12 @@ def test_branch_capture_excludes_inactive_siblings(capture):
     assert "inactive sibling" not in text
     assert "later continuation" in text
     with pytest.raises(Conflict, match="branch changed"):
-        register(store, run_id=run, stream_id="other", path=path, decoder="pi-v1", session_id="PI", branch_ids=["a", "old"])
+        register(store, run_id=run, stream_id="other", path=path, decoder="pi", session_id="PI", branch_ids=["a", "old"])
 
 
 def test_tree_source_without_active_ancestry_is_not_assumed_current(capture):
     store, run, path, _ = capture
-    source = register(store, run_id=run, stream_id="pi", path=path, decoder="pi-v1", session_id="PI")
+    source = register(store, run_id=run, stream_id="pi", path=path, decoder="pi", session_id="PI")
     append(path, {"type": "message", "id": "a", "parentId": None, "message": {"role": "user", "content": "unknown branch"}})
     result = drain(store, source)
     assert result["gaps"] and result["offset"] == 0

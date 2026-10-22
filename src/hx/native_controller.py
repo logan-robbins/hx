@@ -128,7 +128,7 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
         with ledger.transaction() as tx:
             row = native_launch.confirm(tx, verified)
             payload = {**row["payload"], "session": "hx-" + row["launch_id"], "tmux": tmux.tmux_command(env),
-                       "supervisor": "receipt-wait-v1"}
+                       "supervisor": "receipt-wait"}
             _transition(tx, run_id, {"prepared"}, "installing", payload=payload)
         row = native_launch._row(ledger, run_id)
         capsule = Path(payload["capsule"])

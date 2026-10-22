@@ -78,11 +78,11 @@ def stage(store, *, binding_id, delivery_id, payload, worker_id, queue_bytes=SPO
     if size > MAX_RECORD_BYTES or type(queue_bytes) is not int or queue_bytes < 1:
         raise ValidationError("public hook delivery exceeds its bounded queue contract")
     # Validate before a poison record can enter the durable retry queue.
-    decode("public-batch-v1", payload)
+    decode("public-batch", payload)
     payload_hash = digest(payload)
     with store.transaction() as tx:
         binding = tx.db.execute("SELECT * FROM native_bindings WHERE binding_id=?", (binding_id,)).fetchone()
-        if binding is None or binding["decoder_version"] != "public-batch-v1":
+        if binding is None or binding["decoder"] != "public-batch":
             raise ValidationError("producer requires a public-batch capture binding")
         owner = tx.db.execute("SELECT worker_id FROM runs WHERE run_id=?", (binding["run_id"],)).fetchone()[0]
         if owner != worker_id or payload.get("session_id") != binding["session_id"]:
@@ -106,8 +106,8 @@ def stage(store, *, binding_id, delivery_id, payload, worker_id, queue_bytes=SPO
 
 
 def produce(store, *, run_id, worker_id, adapter, session_id, stream_id, payload,
-            decoder="hook-v1", delivery_id=None, queue_bytes=SPOOL_BYTES):
-    if decoder not in {"hook-v1", "pi-v1"} or (decoder == "pi-v1" and adapter != "pi"):
+            decoder="hook", delivery_id=None, queue_bytes=SPOOL_BYTES):
+    if decoder not in {"hook", "pi"} or (decoder == "pi" and adapter != "pi"):
         raise ValidationError("producer decoder does not match the native adapter")
     for key in ("session_id", "sessionId"):
         if payload.get(key) not in (None, "") and payload[key] != session_id:
@@ -117,7 +117,7 @@ def produce(store, *, run_id, worker_id, adapter, session_id, stream_id, payload
         {"kind": event.kind, "data": event.data,
          "native_event_id": event.native_id, "usage": event.usage} for event in events]}
     binding = native_capture.bind(store, run_id=run_id, worker_id=worker_id, adapter=adapter,
-                                 session_id=session_id, stream_id=stream_id, decoder="public-batch-v1", retain_late=True)
+                                 session_id=session_id, stream_id=stream_id, decoder="public-batch", retain_late=True)
     delivery = delivery_id or str(uuid.uuid4())
     stage(store, binding_id=binding, delivery_id=delivery, payload=public, worker_id=worker_id, queue_bytes=queue_bytes)
     try:
@@ -180,12 +180,12 @@ def hook(store, *, run_id, worker_id, adapter, launch_id, event, payload, delive
     observed = dict(payload)
     observed.setdefault("hook_event_name", {"log-failure": "PostToolUseFailure", "request": "UserPromptSubmit",
                                            "tool-start": "PreToolUse"}.get(event, event))
-    decoder = "hook-v1"
+    decoder = "hook"
     if event == "message":
         if (adapter != "pi" or payload.get("type") != "message_end"
                 or not isinstance(payload.get("message"), dict)
                 or payload["message"].get("role") not in {"user", "assistant"}):
             raise ValidationError("message capture requires a Pi completed user or assistant message")
-        decoder = "pi-v1"
+        decoder = "pi"
     return produce(store, run_id=run_id, worker_id=worker_id, adapter=adapter, session_id=session,
                    stream_id=stream, payload=observed, decoder=decoder, delivery_id=delivery_id)

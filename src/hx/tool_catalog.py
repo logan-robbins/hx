@@ -88,7 +88,7 @@ def discover(store, run_id, query, *, env=None, cursor=None):
         questions = {name: {'type': 'noul', 'instructions': f'Would this tool help the stated next action: {purpose[:160]}'}
                      for name, purpose in page.items()}
         try:
-            judged = jev_decisions.decide(store, run_id, 'tool-discovery-v1', {'next_action': query}, questions,
+            judged = jev_decisions.decide(store, run_id, 'tool-discovery', {'next_action': query}, questions,
                                           binding=version, env=env)
             selected = sorted((name for name in questions if judged['answers'][name]['noul'] >= .65),
                               key=lambda name: (-judged['answers'][name]['noul'], name))[:3]

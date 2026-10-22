@@ -37,7 +37,7 @@ def transcript(store, run, stream, path, decoder, session, *records):
     observer.drain(store, observer.register(store, run_id=run, stream_id=stream, path=path, decoder=decoder, session_id=session))
 
 
-def hook(store, run, worker, adapter, session, payload, decoder='hook-v1'):
+def hook(store, run, worker, adapter, session, payload, decoder='hook'):
     native_producer.produce(store, run_id=run, worker_id=worker, adapter=adapter, session_id=session,
                             stream_id='native:' + adapter, payload=payload, decoder=decoder)
 
@@ -66,18 +66,18 @@ def test_agent_figures_count_only_captured_main_session_records_per_flavor(tmp_p
                 store.db.execute("INSERT INTO runs VALUES(?,'orders.work',1,?,0,'implementing',NULL,NULL,1,NULL)", (run, worker))
             store.db.execute('INSERT INTO native_launch_contracts VALUES(?,?,?,?)', ('launch-' + run, run, worker, adapter))
         store.db.commit()
-        transcript(store, 'run-1', 'native:claude', tmp_path / 'claude.jsonl', 'claude-v1', 'S',
+        transcript(store, 'run-1', 'native:claude', tmp_path / 'claude.jsonl', 'claude', 'S',
             {'type': 'user', 'uuid': 'u1', 'message': {'role': 'user', 'content': 'Fix the parser.'}},
             claude('a1', 'msg_1', [{'type': 'text', 'text': 'Done.'}], 3),
             claude('a2', 'msg_1', [{'type': 'tool_use', 'id': 'T1', 'name': 'Bash', 'input': {'command': 'true'}}], 7),
             claude('a3', 'msg_2', [{'type': 'text', 'text': 'Ünïcode'}], 5))
         # A child transcript and the Stop hook's copy of the last message are not main-session chat.
-        transcript(store, 'run-1', 'child:helper', tmp_path / 'child.jsonl', 'claude-v1', 'S',
+        transcript(store, 'run-1', 'child:helper', tmp_path / 'child.jsonl', 'claude', 'S',
             claude('c1', 'msg_9', [{'type': 'text', 'text': 'child chat'}], 50))
         hook(store, 'run-1', 'be-001', 'claude', 'S', {'hook_event_name': 'Stop', 'last_assistant_message': 'Done.'})
-        hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('Fix the parser.', 0, role='user'), 'pi-v1')
-        hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('Patched.', 6), 'pi-v1')
-        hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('x' * 5000, 4), 'pi-v1')
+        hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('Fix the parser.', 0, role='user'), 'pi')
+        hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('Patched.', 6), 'pi')
+        hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('x' * 5000, 4), 'pi')
         transcript(store, 'run-3', 'native:codex', tmp_path / 'rollout.jsonl', DECODER, 'C',
             codex('session_meta', id='C', session_id='C', cli_version=VERSION),
             codex('response_item', type='function_call', call_id='K', name='exec_command', arguments='{"cmd":"true"}'),

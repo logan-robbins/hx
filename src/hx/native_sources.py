@@ -48,7 +48,7 @@ def observe(store, *, run_id, launch_id, worker_id, adapter, event, payload):
         raise Conflict("original private home path was redirected")
     info = home.stat()
     sources = []
-    decoder, policy = "claude-v1", "claude-linear-v1"
+    decoder, policy = "claude", "claude-linear"
     if adapter == "codex":
         from .codex_rollout import DECODER, POLICY
         decoder, policy = DECODER, POLICY
