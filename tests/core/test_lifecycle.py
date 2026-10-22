@@ -173,7 +173,16 @@ def test_wake_cli_accepts_and_exits_0(instance, hx):
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(address)
     server.listen(1)
-    thread = threading.Thread(target=lambda: server.accept()[0].close(), daemon=True)
+    received = []
+    def serve():
+        # Read the whole wake before closing, as the Partner does. A stub that closes on accept
+        # races the CLI between its connect and its send, and on a Unix stream socket a write
+        # after the peer has closed is a broken pipe: `refused` on a loaded runner.
+        connection, _ = server.accept()
+        with connection:
+            while chunk := connection.recv(65536):
+                received.append(chunk)
+    thread = threading.Thread(target=serve, daemon=True)
     thread.start()
 
     socket_file = instance / "run" / "partner" / "socket.json"
@@ -185,6 +194,10 @@ def test_wake_cli_accepts_and_exits_0(instance, hx):
     server.close()
     assert result.stdout.strip().split("\n")[-1] == "HX-WAKE partner accepted"
     assert result.returncode == 0
+    assert [json.loads(line) for line in b"".join(received).decode().splitlines()] == [
+        {"type": "auth", "token": "t"},
+        {"type": "user", "message": {"role": "user", "content": "eng-001 done"}},
+    ]
 
 
 
