@@ -11,10 +11,9 @@ It is a shell script for the same reasons `e2e-install.sh` is: it is what a huma
 release, and what it proves is about an *installed* tool, which an in-tree pytest cannot
 establish about itself.
 
-Build-4 landed on 2026-09-20 and the proof runs for real. It still skips, with the reason
-printed, when the machine cannot host it: no `uv`, `git` or `tmux`, or no `claude` binary on
-PATH for the version check `hx install` step 1 performs. Nothing in it ever starts a real
-agent — `HX_CLAUDE_BIN` points every launch at the fake `claude`.
+It skips, with the reason printed, when the machine cannot host it: no `uv`, `git` or
+`tmux`. It needs no real `claude`: `hx install --claude` records the fake, and nothing in it
+ever starts a real agent — `HX_CLAUDE_BIN` points every launch at the fake `claude` too.
 """
 
 import pathlib
@@ -25,8 +24,6 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "packaging" / "e2e-deploy.sh"
-#: The script exits 0 with one of these when the machine cannot host the proof.
-GATES = ("SKIPPED (waiting on build-4)", "SKIPPED (no claude binary)")
 
 
 def test_the_script_is_executable_and_shell_clean():
@@ -72,13 +69,9 @@ def test_the_script_never_launches_a_real_agent():
 
 
 def test_end_to_end_deploy(tmp_path, capsys):
-    for tool in ("uv", "git", "tmux", "claude"):
+    for tool in ("uv", "git", "tmux"):
         if shutil.which(tool) is None:
-            pytest.skip(
-                f"{tool} is not on PATH; the deploy proof needs uv, git, tmux, and a claude "
-                f"binary for the version check in `hx install` step 1 (no agent is started "
-                f"with it — every launch uses the fake claude)"
-            )
+            pytest.skip(f"{tool} is not on PATH; the deploy proof needs uv, git and tmux")
 
     scratch = tmp_path / "deploy"
     r = subprocess.run(
@@ -88,11 +81,6 @@ def test_end_to_end_deploy(tmp_path, capsys):
         print(r.stdout)
         if r.stderr:
             print(r.stderr)
-
-    for gate in GATES:
-        if gate in r.stdout:
-            assert r.returncode == 0, "a gate must exit 0, not fail"
-            pytest.skip(gate)
 
     assert r.returncode == 0, f"packaging/e2e-deploy.sh exited {r.returncode}"
     assert "== PASS" in r.stdout, "the script exited 0 without reaching its PASS line"

@@ -17,7 +17,7 @@
 # `.claude/settings.json`, whose deny-all PreToolUse hook and `defaultMode: plan` denied every
 # tool call, so the agent could never reach `hx complete` and its goal evaluator gave up. Only
 # the home's settings may apply, so only `user` is loaded. Verified 2026-09-20 against
-# `claude --help` on the pinned 2.1.278 and against
+# `claude --help` (2.1.278) and against
 # code.claude.com/docs/en/cli-reference ("Comma-separated list of setting sources to load
 # (`user`, `project`, `local`)"). Managed settings are a separate level and still apply.
 #
@@ -101,8 +101,8 @@ if [ -z "$bin" ] && [ -f "$root/config/claude.json" ]; then
     "$root/config/claude.json")
 fi
 [ -n "$bin" ] || bin=$(command -v claude || true)
-[ -n "$bin" ] || die "refuse: no claude binary; \`hx install\` records {bin, version} in config/claude.json (spec 17.1)"
-[ -x "$bin" ] || die "refuse: pinned claude binary $bin is not executable (spec 17.1)"
+[ -n "$bin" ] || die "refuse: no claude binary; \`hx install\` records its path as \`bin\` in config/claude.json (spec 17.1)"
+[ -x "$bin" ] || die "refuse: claude binary $bin is not executable (spec 17.1)"
 
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
@@ -156,6 +156,7 @@ if [ "$mode" = exec ]; then
   export HARNESS_ID="$id"
   export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export CLAUDE_CONFIG_DIR="$home"
+  # Runtime stability: the binary under a running session never changes mid-turn.
   export DISABLE_AUTOUPDATER=1
   # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of
   # 2026-09-20 21:20 the Partner had to dig the absolute path out of config/hx.json.
@@ -214,7 +215,7 @@ env_args=(
   -e HARNESS_ID="$id"
   -e HARNESS_ROOT="$root"
   -e CLAUDE_CONFIG_DIR="$home"
-  -e DISABLE_AUTOUPDATER=1
+  -e DISABLE_AUTOUPDATER=1  # runtime stability: no binary swap under a running session
   -e IS_SANDBOX=1
   -e PATH="$root/bin:$PATH"
 )

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The fake `claude` used by the M0-M5 suites (ORCHESTRATION.md "Fake claude for M0-M5").
 
-It is put on PATH, or pinned in `config/claude.json`, in place of the real binary. It:
+It is put on PATH, or recorded in `config/claude.json`, in place of the real binary. It:
 
   1. records its argv, its environment and its cwd to
      `$HARNESS_ROOT/run/<id>/fake-argv.json`, so a test can assert the exact launch argv of
@@ -18,7 +18,7 @@ Scripted payloads come from a JSON file named by `HX_FAKE_SCRIPT`:
 
 `on` is either `start` or the exact pasted line that triggers the payload. Each entry runs
 `$HX_HOOK_BIN --id <id> <event>` with the payload as JSON on stdin and appends the result to
-`$HARNESS_ROOT/run/<id>/fake-hooks.log`. M6 onward runs the real pinned binary instead.
+`$HARNESS_ROOT/run/<id>/fake-hooks.log`. M6 onward runs the real recorded binary instead.
 """
 
 from __future__ import annotations
@@ -99,17 +99,7 @@ def load_script() -> list[dict]:
     return [entry for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
 
 
-#: The pinned version this fake claims to be. `hx install`, `hx upgrade` and `hx doctor` all
-#: read `claude --version` and compare against the package's tested list, so the fake has to
-#: answer it the way the real binary does: `<bare version> (Claude Code)`.
-DEFAULT_VERSION = "2.1.280"
-
-
 def main() -> int:
-    if "--version" in sys.argv[1:]:
-        print(f"{os.environ.get('HX_FAKE_CLAUDE_VERSION', DEFAULT_VERSION)} (Claude Code)")
-        return 0
-
     directory = run_dir()
     # The temp-and-rename keeps a reader from ever seeing a partial file.
     name = "fake-argv.json"

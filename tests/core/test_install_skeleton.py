@@ -160,7 +160,7 @@ def test_install_links_bin_hx_to_the_recorded_entry_points(tmp_path):
 
 
 def test_the_links_are_refreshed_when_the_entry_point_moves(tmp_path):
-    """A package upgrade that moves the binary is followed by one `hx install` (spec 17.1)."""
+    """An entry point that moves is followed by one `hx install` (spec 17.1)."""
     import os
 
     from hx.install import install_skeleton, link_bin

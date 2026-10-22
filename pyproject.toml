@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hx-harness"
-version = "0.1.0"
+version = "1.0.0"
 description = "Dependency packet planning, isolated native execution, and verified software delivery"
 requires-python = ">=3.14"
 dependencies = [
@@ -19,7 +19,7 @@ hx-hook = "hx.hooks:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-hx = ["skeleton/**/*", "skills/**/*", "ui/static/**/*", "packaging/**/*"]
+hx = ["skeleton/**/*", "skills/**/*", "ui/static/**/*"]
 
 [project.optional-dependencies]
 # `pip install -e ".[test]"`: the runner and the worker plugin that spreads the suite over

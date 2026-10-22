@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from hx import observer
-from hx.codex_rollout import DECODER, POLICY, VERSION
+from hx.codex_rollout import DECODER, POLICY
 from hx.continuity_store import Conflict, ContinuityStore, digest
 from hx.events import DecodeGap, decode
 from .test_appmap import mapped
@@ -25,7 +25,7 @@ def row(kind, **payload):
 
 
 def meta(**changes):
-    return row("session_meta", **{"id": "S", "session_id": "S", "cli_version": VERSION, **changes})
+    return row("session_meta", **{"id": "S", "session_id": "S", **changes})
 
 
 def append(path, *bodies):
@@ -76,9 +76,9 @@ def test_public_rollout_preserves_tool_evidence_usage_and_excludes_private_field
     assert not events[-1]["observation"]["data"]["settled"]
 
 
-@pytest.mark.parametrize("invalid", [meta(cli_version="unknown"), meta(id="other"), meta(forked_from_id="old"),
+@pytest.mark.parametrize("invalid", [meta(id="other"), meta(forked_from_id="old"),
     row("response_item", type="message", role="user", content="Unbound source.")])
-def test_unverified_identity_version_and_missing_metadata_do_not_advance(captured, invalid):
+def test_unverified_identity_and_missing_metadata_do_not_advance(captured, invalid):
     store, _, path, source = captured
     append(path, invalid)
     result = observer.drain(store, source)

@@ -225,7 +225,7 @@ if credential.startswith("sk-ant-api"):
 # Claude Code also asks, once per working directory, whether the folder is trusted. An
 # agent has no one to ask, and the directory is one hx created, so the answer is recorded
 # here rather than waited for. Key names confirmed against a real, human-accepted
-# `.claude.json` (read-only) and by the build-3 live run: with these two set, the pinned
+# `.claude.json` (read-only) and by the build-3 live run: with these two set, the
 # binary reaches its prompt with no dialog.
 projects = existing.get("projects")
 if not isinstance(projects, dict):

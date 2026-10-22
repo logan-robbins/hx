@@ -262,7 +262,7 @@ def codex_rollout(body):
     return decode(body)
 
 
-DECODERS = {"hook": hook, "claude": claude, "pi": pi, "codex-rollout-0.156.1": codex_rollout, "normalized": normalized,
+DECODERS = {"hook": hook, "claude": claude, "pi": pi, "codex-rollout": codex_rollout, "normalized": normalized,
             "public-batch": public_batch}
 
 
@@ -292,7 +292,7 @@ def is_bookkeeping(event):
               "tool_admission": {"tool_use_id", "tool_name", "agent_id"},
               "native_instructions": {"role", "content_hash"},
               "world_state": {"turn_id", "state_hash"}, "turn_context": {"turn_id", "state_hash"},
-              "session_meta": {"native_session_id", "cli_version"},
+              "session_meta": {"native_session_id"},
               "model_response": {"agent_id", "turn_id", "request_id", "response_id", "provider", "model",
                   "attempt", "step", "status", "finish_reason", "error", "message_count", "tool_count",
                   "tool_call_count", "usage_scope", "settled"}}

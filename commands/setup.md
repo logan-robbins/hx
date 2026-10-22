@@ -29,19 +29,17 @@ tmux -V                    # any recent tmux
 git --version
 uv --version               # uv installs the package and provides Python 3.14
 uv python find 3.14        # or: python3.14 --version
-claude --version           # must be a version hx has been tested with
+command -v claude          # Claude Code on PATH; hx records where it is
 ```
 
-The tested Claude Code versions are listed in `src/hx/packaging/tested-claude-versions.json`.
-Use `--ignore-claude-version` only when the human has asked to bypass this check. Auth may
-come from an OAuth token or an Anthropic API key in a supplied env file.
+Auth may come from an OAuth token or an Anthropic API key in a supplied env file.
 
 ## 2. Install the hx CLI
 
 If the user supplied a local `hx/` checkout, build and install that checkout:
 
 ```bash
-cd <local-hx-checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd <local-hx-checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 ```
 
 Otherwise use `uv tool install git+https://github.com/logan-robbins/hx`.
@@ -65,8 +63,7 @@ hx install --root ~/hx
 When the user supplies a dotenv file, add `--env-file /absolute/path/to/.env`. It is saved
 in the instance. Existing OAuth and provider seed tokens take precedence. The file can
 contain `ANTHROPIC_API_KEY` (or `ANTRHOPIC_API_KEY`), `OPENAI_API_KEY`, and `GROK_API_KEY`
-(or `XAI_API_KEY`), plus other environment variables agents need. Use
-`--ignore-claude-version` if the human authorized it.
+(or `XAI_API_KEY`), plus other environment variables agents need.
 
 Without an OAuth token or a usable env fallback, the first run stops with exit 4 and
 prints two steps. Relay them verbatim and wait: the human runs `claude setup-token`
@@ -77,7 +74,7 @@ Then run the install again:
 hx install --root ~/hx
 ```
 
-It records the Claude binary and version, lays out the instance, launches the Partner in
+It records the Claude binary, lays out the instance, launches the Partner in
 tmux session `partner`, and starts the UI at `http://127.0.0.1:8765/`.
 
 ## 4. Verify

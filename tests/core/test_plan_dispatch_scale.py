@@ -38,7 +38,7 @@ def root(tmp_path, name):
     appmap.import_baseline(store, repo)
     install_skeleton(store.root)
     config = store.root / "config"
-    (config / "claude.json").write_text(json.dumps({"bin": str(FAKE_CLAUDE), "version": "test-only"}))
+    (config / "claude.json").write_text(json.dumps({"bin": str(FAKE_CLAUDE)}))
     (config / "hx.json").write_text(json.dumps({"dispatch": SETTINGS}))
     token = store.root / "seed" / "token"
     token.parent.mkdir(parents=True, exist_ok=True)

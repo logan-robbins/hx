@@ -1,10 +1,8 @@
-"""The Claude Code plugin (`/.claude-plugin`, `/commands`) — validated, then pinned.
+"""The Claude Code plugin (`/.claude-plugin`, `/commands`), validated.
 
 The plugin is the install path for strangers: marketplace entry, manifest, and slash
-commands. Two things go stale here without anyone noticing: a command file quoting an
-`hx` subcommand that does not exist, and a manifest whose version drifts from the
-package. So this module checks both — every `hx <word>` in every command against
-`hx.cli.COMMANDS`, and every version string against `pyproject.toml`.
+commands. Every `hx <word>` in every command must be a real `hx.cli.COMMANDS` entry, and
+both manifests name the package's one version, the one in `pyproject.toml`.
 """
 
 from __future__ import annotations

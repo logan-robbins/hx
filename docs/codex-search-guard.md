@@ -92,7 +92,6 @@ endpoint.
 | `tests/core/search_guard_fixture.py` | new: stub Prompt Shields, stub Responses model, the `codex exec` driver |
 | `tests/core/stub_mcp_search.py` | new: stub stdio MCP server for the scenario test |
 | `tests/core/test_doctor.py` | the two new rows |
-| `CHANGELOG.md` | Added + Changed (rebuild instances) |
 | `README.md` | docs list entry for this document |
 
 `install.py` copies the package skeleton into an instance and `native_launch.py` copies
@@ -106,7 +105,6 @@ endpoint.
 ```json
 {
   "bin": "/opt/homebrew/bin/codex",
-  "version": "0.156.1",
   "search_guard": {
     "toolbox_url": "https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<toolbox>/mcp?api-version=v1",
     "content_safety_endpoint": "https://<resource>.cognitiveservices.azure.com"
@@ -249,7 +247,7 @@ tests against a stub Prompt Shields) and `test_e2e_codex.py` (4 scenario tests t
 5. `stub_mcp_search.py` + the scenario test; run it once with
    `HX_CODEX_TEST_BIN=/opt/homebrew/bin/codex`.
 6. Live test (skips without its env).
-7. CHANGELOG, README docs line.
+7. README docs line.
 
 ## 6. Validation
 

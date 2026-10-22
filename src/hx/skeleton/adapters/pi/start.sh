@@ -62,8 +62,8 @@ if [ -z "$bin" ] && [ -f "$root/config/pi.json" ]; then
     "$root/config/pi.json")
 fi
 [ -n "$bin" ] || bin=$(command -v pi || true)
-[ -n "$bin" ] || die "refuse: no pi binary; record {bin, version} in config/pi.json"
-[ -x "$bin" ] || die "refuse: pinned pi binary $bin is not executable"
+[ -n "$bin" ] || die "refuse: no pi binary; record its path as \`bin\` in config/pi.json"
+[ -x "$bin" ] || die "refuse: pi binary $bin is not executable"
 
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
@@ -104,8 +104,8 @@ export HARNESS_ID="$id"
 export HARNESS_ROOT="$HX_CONTINUITY_AUTHORITY"
 export PI_CODING_AGENT_DIR="$home"
 export PI_CODING_AGENT_SESSION_DIR="$home/sessions"
+# Runtime stability: no startup network, so no update check or package update mid-session.
 export PI_OFFLINE=1
-export PI_SKIP_VERSION_CHECK=1
 export PATH="$root/bin:$PATH"
 
 # No prompt argument. --append-system-prompt reads the persona file when the path exists

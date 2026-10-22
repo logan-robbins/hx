@@ -7,11 +7,8 @@ procedure, and it leaves the token step (§2) to you.
 ## What you need
 
 - macOS or Linux, `tmux`, `git`, Python 3.14, and `uv`.
-- Claude Code installed and on your `PATH`, at any current version. hx records the version it
-  finds and re-records it at every launch, so the fleet runs the latest release; `hx doctor`
-  says `tested` when it is one the live suite has passed on (the list is
-  `src/hx/packaging/tested-claude-versions.json`, currently `2.1.296`, `2.1.289`, `2.1.280`,
-  and `2.1.278`) and `untested` otherwise, and never refuses.
+- Claude Code installed and on your `PATH`. hx records where the binary is and launches
+  every agent with it.
 - A Claude subscription (Max or Pro), or an Anthropic API key supplied below.
 
 Alternatively, supply an Anthropic API key in a dotenv file. `hx` uses an existing
@@ -24,7 +21,7 @@ Grok workers. Other variables in the file are available to agents at startup.
 From the repository:
 
 ```bash
-cd ~/workspace/hx && uv build && uv tool install --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd ~/workspace/hx && uv build && uv tool install --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 ```
 
 Check it:
@@ -64,7 +61,7 @@ Then run the install again:
 hx install --root ~/hx
 ```
 
-It records your Claude binary and version, lays out the instance, launches the Partner in tmux
+It records your Claude binary, lays out the instance, launches the Partner in tmux
 session `partner`, and starts the UI in tmux session `ui` at `http://127.0.0.1:8765/`. Nothing under your own `~/.claude` is read or written; every agent runs
 in its own home under `~/hx/run/<id>/home` with the token in its environment.
 

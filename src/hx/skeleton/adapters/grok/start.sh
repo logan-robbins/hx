@@ -59,8 +59,8 @@ if [ -z "$bin" ] && [ -f "$root/config/grok.json" ]; then
     "$root/config/grok.json")
 fi
 [ -n "$bin" ] || bin=$(command -v grok || true)
-[ -n "$bin" ] || die "refuse: no grok binary; record {bin, version} in config/grok.json"
-[ -x "$bin" ] || die "refuse: pinned grok binary $bin is not executable"
+[ -n "$bin" ] || die "refuse: no grok binary; record its path as \`bin\` in config/grok.json"
+[ -x "$bin" ] || die "refuse: grok binary $bin is not executable"
 
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")

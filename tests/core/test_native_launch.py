@@ -52,10 +52,10 @@ def test_private_installation_hooks_use_shared_authority(configured, child_env, 
     login = tmp_path / "user" / ".codex" / "auth.json"
     login.parent.mkdir(parents=True)
     login.write_text('{"fixture":true}')
-    # Installation validates a pinned executable; it does not launch a model.
+    # Installation validates the recorded executable; it does not launch a model.
     # Keep this contract test independent of globally installed native CLIs.
     (store.root / 'config' / (flavor + '.json')).write_text(
-        json.dumps({'bin': sys.executable, 'version': 'installation-fixture'}))
+        json.dumps({'bin': sys.executable}))
     launch = prepare(configured, flavor)
     capsule = Path(launch["payload"]["capsule"])
     env = native_launch.environment(store.root, launch, env=child_env(HOME=str(login.parents[1])))

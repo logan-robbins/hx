@@ -1,7 +1,7 @@
 """`hx install` end to end (spec 17.2, all four steps; 17.1, 08).
 
-The v1 cut (spec 14 D25) left install with no mirror, no sparse worktrees, no unit files, no
-`hx push` and no `hx upgrade`. Everything runs against a fake `claude` and a HOME under
+Install has no mirror, no sparse worktrees, no unit files, no `hx push` and no `hx upgrade`
+(spec 14 D25). Everything runs against a fake `claude` and a HOME under
 `tmp_path`: the user's real `~/.claude` is never read, which `tests/guard` also proves from
 the outside and `test_no_install_path_reads_the_users_claude_home` proves from the inside.
 """
@@ -16,9 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import SRC, clean_env
-
-TESTED = json.loads((SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text())["versions"]
+from .conftest import FAKE_CLAUDE, clean_env
 
 
 def git(*args, cwd=None, check=True):
@@ -48,33 +46,27 @@ def run_install(tmp_path, root, fake_claude_on_path, *args, home=None, tmux=None
 # --- step 1: preflight ---------------------------------------------------------------------
 
 
-def test_step_1_pins_a_bare_tested_version(tmp_path, fake_claude_on_path, tmux_server):
+def test_step_1_records_the_binary_path_and_nothing_else(tmp_path, fake_claude_on_path, tmux_server):
     root = tmp_path / "instance"
-    result = run_install(tmp_path, root, fake_claude_on_path, "--skeleton-only")
-    assert result.returncode == 0, result.stdout + result.stderr
-    # --skeleton-only stops before step 1's pin is needed, so pin it the normal way:
-    (root / "seed").mkdir(parents=True, exist_ok=True)
+    (root / "seed").mkdir(parents=True)
     (root / "seed" / "token").write_text("sk-ant-oat-x\n")
     (root / "seed" / "token").chmod(0o600)
     result = run_install(tmp_path, root, fake_claude_on_path, tmux=tmux_server)
-    pin = json.loads((root / "config" / "claude.json").read_text())
-    assert pin["version"] == TESTED[0]
-    assert "(Claude Code)" not in pin["version"], "the version is bare (CONTRACTS.md)"
-    assert Path(pin["bin"]).is_file()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"1. claude at {FAKE_CLAUDE}" in result.stdout
+    assert json.loads((root / "config" / "claude.json").read_text()) == {"bin": str(FAKE_CLAUDE)}
 
 
-def test_step_1_records_an_untested_version_and_says_so(tmp_path):
-    """Versions are recorded, never refused: a release newer than the live-verified list
-    installs, is named `untested` beside the newest verified one, and the install goes on
-    to the token step exactly as a tested one does."""
-    from hx import claude_bin
+def test_step_1_records_the_binary_without_running_it(tmp_path):
+    """Step 1 finds `claude` and records where it is. It never runs it: a binary that fails
+    every invocation is recorded all the same, and the install goes on to the token step."""
     from hx.install import TOKEN_WAIT_EXIT
 
     root = tmp_path / "instance"
     bindir = tmp_path / "newbin"
     bindir.mkdir()
     binary = bindir / "claude"
-    binary.write_text('#!/usr/bin/env bash\necho "1.0.0 (Claude Code)"\n')
+    binary.write_text("#!/usr/bin/env bash\nexit 1\n")
     binary.chmod(0o755)
     home = tmp_path / "h"
     home.mkdir()
@@ -84,23 +76,8 @@ def test_step_1_records_an_untested_version_and_says_so(tmp_path):
         capture_output=True, text=True,
     )
     assert result.returncode == TOKEN_WAIT_EXIT, result.stdout + result.stderr
-    assert "1. claude 1.0.0 at" in result.stdout and "untested" in result.stdout
-    assert TESTED[0] in result.stdout, "it names the newest live-verified version beside it"
-    assert json.loads((root / "config" / "claude.json").read_text())["version"] == "1.0.0"
-    assert claude_bin.tested_status("1.0.0") == {"tested": False, "newest_tested": TESTED[0]}
-    assert claude_bin.tested_status(TESTED[0])["tested"] is True
-
-
-def test_the_gate_flag_is_a_harmless_no_op(tmp_path, fake_claude_on_path):
-    root = tmp_path / "instance"
-    home = tmp_path / "h3"
-    home.mkdir()
-    result = subprocess.run(
-        [sys.executable, "-m", "hx", "install", "--root", str(root), "--ignore-claude-version",
-         "--skeleton-only"],
-        env=clean_env(HOME=str(home), **fake_claude_on_path), capture_output=True, text=True,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"1. claude at {binary}" in result.stdout
+    assert json.loads((root / "config" / "claude.json").read_text()) == {"bin": str(binary)}
 
 
 def test_step_1_takes_an_explicit_binary(tmp_path, fake_claude_on_path):
@@ -186,41 +163,6 @@ def test_there_is_no_implicit_repository_creation_push_or_upgrade_command(run_hx
     assert not (tmp_path / 'instance' / '.git').exists()
 
 
-def test_doctor_warns_when_the_binary_moved_past_its_record(instance, hx, tmp_path):
-    """The record lags the binary only between an upstream release and the next launch
-    boundary; the doctor says so as a warning that names both versions, never a failure."""
-    from hx.doctor import FAIL, WARN, run_checks
-
-    bindir = tmp_path / "driftbin"
-    bindir.mkdir()
-    binary = bindir / "claude"
-    binary.write_text('#!/usr/bin/env bash\necho "9.9.9 (Claude Code)"\n')
-    binary.chmod(0o755)
-    pin = instance / "config" / "claude.json"
-    pin.write_text(json.dumps({"bin": str(binary), "version": TESTED[0]}))
-
-    rows = [c for c in run_checks(instance) if c[1] == "claude"]
-    assert rows and rows[0][0] == WARN, rows
-    assert "9.9.9" in rows[0][2] and TESTED[0] in rows[0][2] and "re-records" in rows[0][2], rows
-    assert not [c for c in rows if c[0] == FAIL]
-
-
-def test_a_launch_boundary_re_records_the_version(instance, tmp_path):
-    """`refresh_pin` is what `hx launch`, `hx restart` and `hx up` run first: the pin follows
-    the binary, so a fleet runs the latest release from its next launch."""
-    from hx import claude_bin
-
-    pin = json.loads((instance / "config" / "claude.json").read_text())
-    moved = claude_bin.refresh_pin(instance, env=clean_env(HX_FAKE_CLAUDE_VERSION="9.9.9"))
-    assert moved == {"bin": pin["bin"], "version": "9.9.9", "previous": pin["version"]}
-    assert json.loads((instance / "config" / "claude.json").read_text())["version"] == "9.9.9"
-    back = claude_bin.refresh_pin(instance, env=clean_env())
-    assert back["version"] == pin["version"] and back["previous"] == "9.9.9"
-    assert "previous" not in claude_bin.refresh_pin(instance, env=clean_env())
-    (instance / "config" / "claude.json").write_text(json.dumps({"bin": "/nope/claude", "version": "1"}))
-    assert claude_bin.refresh_pin(instance, env=clean_env()) is None, "a missing binary is the launcher's refusal, not this one's"
-
-
 # --- the standing rule ---------------------------------------------------------------------------
 
 
@@ -247,6 +189,6 @@ def test_no_install_path_reads_the_users_claude_home(tmp_path, fake_claude_on_pa
 
     root = tmp_path / "instance"
     monkeypatch.setenv("PATH", fake_claude_on_path["PATH"])
-    preflight(root, None, os.environ)
+    preflight(root, None)
     install_skeleton(root)
     assert opened == [], f"hx opened the user's Claude home: {opened}"

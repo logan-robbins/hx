@@ -121,9 +121,8 @@ def launch(root: Path, item_id: str, *, run_id: str | None = None,
             return advance(ledger, item_id, run_id, request_id, env=env)
     if run_id or request_id:
         raise Conflict("the Partner orchestrates plans and cannot own a worker run")
-    from . import claude_bin, envfile
+    from . import envfile
     envfile.sync_seed(root)
-    claude_bin.refresh_pin(root, env)
     already = tmux.has_session(PARTNER, env)
     if not already:
         from .partner_context import invalidate

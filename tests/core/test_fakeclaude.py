@@ -1,7 +1,7 @@
 """The fake `claude` used by the M0-M5 suites (ORCHESTRATION.md).
 
 It records argv, env and cwd; accepts pasted input on a real tmux pane; and emits scripted
-hook payloads. M6 onward runs the real pinned binary.
+hook payloads. M6 onward runs the real recorded binary.
 """
 
 from __future__ import annotations

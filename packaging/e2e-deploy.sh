@@ -43,13 +43,6 @@ ok "$SCRATCH"
 command -v uv >/dev/null 2>&1 || die "uv is not on PATH"
 command -v git >/dev/null 2>&1 || die "git is not on PATH"
 command -v tmux >/dev/null 2>&1 || die "tmux is not on PATH"
-if ! command -v claude >/dev/null 2>&1; then
-  printf '\n== SKIPPED (no claude binary)\n'
-  printf '   `hx install` step 1 pins {bin, version} and checks the version against the\n'
-  printf '   package tested list, so a real binary has to be on PATH. Nothing is launched\n'
-  printf '   with it: HX_CLAUDE_BIN points every launch at the fake claude.\n'
-  exit 0
-fi
 ok "uv $(uv --version), $(git --version), $(tmux -V)"
 
 step "1. record the real ~/.claude manifest"
@@ -90,10 +83,8 @@ mkdir -p "$FAKE_BIN_DIR"
 cp "$REPO/tests/fakeclaude/claude" "$FAKE_BIN_DIR/claude"
 chmod +x "$FAKE_BIN_DIR/claude"
 FAKE_BIN_EARLY="$FAKE_BIN_DIR/claude"
-# `hx install` step 1 records {bin, version} and refuses a version outside the package's
-# tested list, which the fake cannot satisfy and should not — that check is the point of the
-# step. So the *real* binary is what gets pinned, and HX_CLAUDE_BIN points `start.sh` at the
-# fake, so nothing in this proof ever starts a real agent.
+# `hx install --claude` records the fake as the instance's binary, and HX_CLAUDE_BIN points
+# `start.sh` at it too, so nothing in this proof ever starts a real agent.
 export HX_CLAUDE_BIN="$FAKE_BIN_EARLY"
 export HX_TMUX="tmux -L hx-deploy-$$"
 export HX_SKILLS_DIR="$REPO/src/hx/skills"
@@ -123,7 +114,7 @@ ok "$FAKE_USER with credentials, a deny-everything hook, a banner CLAUDE.md and 
 step "5. hx install stops for the seed token, and says how to make one"
 ROOT="$SCRATCH/hx"
 set +e
-"$HX" install --root "$ROOT" > "$SCRATCH/install-1.log" 2>&1
+"$HX" install --root "$ROOT" --claude "$FAKE_BIN_EARLY" > "$SCRATCH/install-1.log" 2>&1
 FIRST_STATUS=$?
 set -e
 [ "$FIRST_STATUS" -eq 4 ] || die "expected exit 4 until seed/token exists, got $FIRST_STATUS"
@@ -138,7 +129,7 @@ step "6. paste a token, and install again"
 mkdir -p "$ROOT/seed"
 printf 'deploy-proof-token-not-a-real-credential\n' > "$ROOT/seed/token"
 chmod 600 "$ROOT/seed/token"
-"$HX" install --root "$ROOT" \
+"$HX" install --root "$ROOT" --claude "$FAKE_BIN_EARLY" \
   > "$SCRATCH/install-2.log" 2>&1 \
   || { tail -30 "$SCRATCH/install-2.log" >&2; die "hx install failed with a token present"; }
 sed 's/^/   | /' "$SCRATCH/install-2.log" | tail -12
@@ -165,21 +156,14 @@ diff -u "$FAKE_BEFORE" "$SCRATCH/fake-user.after" > "$SCRATCH/fake-user.diff" \
   || { sed 's/^/   | /' "$SCRATCH/fake-user.diff" >&2; die "hx wrote to the user's Claude home"; }
 ok "$FAKE_USER is byte-identical before and after"
 
-step "9. config/claude.json records the bare version the binary reports"
+step "9. config/claude.json records the binary install was given, and nothing else"
 CLAUDE_JSON="$ROOT/config/claude.json"
 [ -f "$CLAUDE_JSON" ] || die "no $CLAUDE_JSON (spec 17.2 step 1)"
-python3 - "$CLAUDE_JSON" "$REPO/src/hx/packaging/tested-claude-versions.json" <<'PY' || die "config/claude.json is wrong"
-import json, re, subprocess, sys
+python3 - "$CLAUDE_JSON" "$FAKE_BIN_EARLY" <<'PY' || die "config/claude.json is wrong"
+import json, sys
 claude = json.load(open(sys.argv[1]))
-tested = json.load(open(sys.argv[2]))["versions"]
-assert set(claude) >= {"bin", "version"}, sorted(claude)
-version = claude["version"]
-assert re.fullmatch(r"\d+\.\d+\.\d+", version), f"{version!r} is not a bare version"
-probe = subprocess.run([claude["bin"], "--version"], capture_output=True, text=True)
-reported = (probe.stdout or probe.stderr).strip().splitlines()[0].removesuffix(" (Claude Code)").strip()
-assert reported == version, f"{claude['bin']} reports {reported!r}; config/claude.json recorded {version!r}"
+assert claude == {"bin": sys.argv[2]}, claude
 print(f"   ok  bin={claude['bin']}")
-print(f"   ok  version={version}, bare, what the binary reports, {'tested' if version in tested else 'untested'}")
 PY
 
 # --------------------------------------------------------------------------- the mirror

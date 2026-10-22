@@ -164,7 +164,6 @@ store/plan formats are replaced, with no compatibility workflow.
 - [docs/learnings.md](docs/learnings.md) — the central LEARNINGS file: propose, other-session review, numbered append; the signal index every agent carries
 - [Codex search guard](docs/codex-search-guard.md) — Codex web search as a Foundry toolbox MCP tool, queries and results inspected by hooks with Prompt Shields; off until `config/codex.json` names it
 - [CONTRACTS.md](CONTRACTS.md) — shared machine-readable shapes
-- [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 

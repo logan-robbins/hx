@@ -1,6 +1,6 @@
 ---
 name: hx-setup
-description: How a coding agent or another harness installs hx on a machine and brings up an instance — prerequisites, the wheel install, `hx install` and its stop for the seed token (the human's own step), verification, the UI, handing over to the Partner, keeping it running, upgrading, and what never to do. Use when asked to set up, install, deploy, verify, upgrade or explain how to set up hx.
+description: How a coding agent or another harness installs hx on a machine and brings up an instance — prerequisites, the wheel install, `hx install` and its stop for the seed token (the human's own step), verification, the UI, handing over to the Partner, keeping it running, and what never to do. Use when asked to set up, install, deploy, verify or explain how to set up hx.
 metadata:
   hx-audience: operator
   hx-roles: none
@@ -48,13 +48,11 @@ tmux -V                       # any recent tmux
 git --version
 uv --version                  # uv installs the package and provides Python 3.14
 uv python find 3.14           # or: python3.14 --version
-claude --version              # any current release; hx records it and says tested/untested
+command -v claude             # Claude Code on PATH
 ```
 
-hx records whatever `claude` it finds and re-records the version at every launch, so the
-fleet runs the latest release; nothing refuses a version. The versions the live suite has
-passed on are listed in `src/hx/packaging/tested-claude-versions.json` (also inside the
-installed package), and `hx install` and `hx doctor` print `tested` or `untested` against it.
+hx records the path of the `claude` it finds (`--claude <path>` names another) and launches
+every Claude agent with it.
 The default auth path is the instance's OAuth token. If the human supplies `--env-file`,
 missing credentials fall back to that file: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `XAI_API_KEY` or `GROK_API_KEY`. Existing
 credentials under `seed/` take precedence.
@@ -70,7 +68,7 @@ extractors cover Python, C#, TypeScript/JavaScript, Go, Rust and Software AG Nat
 From a checkout of the repository:
 
 ```bash
-cd <checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd <checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 ```
 
 (Once published: `uv tool install --python 3.14 hx-harness`.) Check:
@@ -128,15 +126,12 @@ Then run the install again:
 hx install --root ~/hx
 ```
 
-This time it records the `claude` binary and version it found (`config/claude.json`,
-re-recorded at every launch), lays out the instance (`config/`,
-`templates/`, `personas/`, `companion/`, `pods/`, `run/`, `state/`, `logs/`, `seed/`), launches
-the Partner in tmux session `partner`, and starts the UI in tmux session `ui`. It is
+This time it records the path of the `claude` binary it found (`config/claude.json`), lays
+out the instance (`config/`, `templates/`, `personas/`, `companion/`, `pods/`, `run/`,
+`state/`, `logs/`, `seed/`), launches the Partner in tmux session `partner`, and starts the UI
+in tmux session `ui`. It is
 idempotent: running it again adds missing skeleton files and keeps existing files, including
-adapters, `config/<id>/`, `PARTNER.md`, and credentials. When upgrading source code, check
-whether the instance's adapter scripts need the new package versions; refresh those files
-only while the affected agents are idle, then restart those sessions. Restart the `ui`
-session separately when UI code changes.
+adapters, `config/<id>/`, `PARTNER.md`, and credentials.
 
 Non-interactive callers (another harness) get the same contract: exit code 4 means "seed token
 missing"; write the token file by your own means, then call again. Nothing else is asked.
@@ -227,15 +222,7 @@ HARNESS_ROOT=~/hx HX_BIN="$(command -v hx)" HX_CODE_REPO=/path/to/repo ~/hx/bin/
 separate clean checkout to opt into the resolved (SCIP) lane when an indexer is installed.
 Offer the hook and the line above; do not edit their repository's hooks yourself.
 
-## 8. Package changes
-
-Build/install the current package and use its current instance/store schemas. This unreleased
-product refuses obsolete state and replaces it rather than maintaining compatibility.
-Preserve needed project source/evidence before replacing an obsolete instance. Do not change
-active worker source or installed prompts mid-run: drain/reconcile through the original
-run/request, then stop/replan under the current package.
-
-## 9. tmux, precisely
+## 8. tmux, precisely
 
 Target sessions by exact name: `tmux kill-session -t '=ui'`. A bare `-t ui` prefix-matches
 any session starting with `ui`, and the `=` must be quoted in zsh, which otherwise expands
@@ -243,13 +230,13 @@ any session starting with `ui`, and the `=` must be quoted in zsh, which otherwi
 through `tmux attach` by the human or `hx wake partner` by the UI, and workers only through
 `hx plan assign`, explicit `hx launch ID --run RUN --request REQUEST`, and accepted plan revisions run by the Partner.
 
-## 10. Several instances on one host
+## 9. Several instances on one host
 
 A programme split by ownership runs one instance per area, each with its own root, its own
 tmux server (`HX_TMUX="tmux -L hx-<area>"`), its own UI port and its own `seed/token`:
 
 ```bash
-hx install --root /path/fleet/instances/<area> --claude <pinned> --skeleton-only   # layout only, idempotent
+hx install --root /path/fleet/instances/<area> --claude <binary> --skeleton-only   # layout only, idempotent
 hxc() { local a=$1; shift; HARNESS_ROOT=/path/fleet/instances/$a HX_TMUX="tmux -L hx-$a" hx "$@"; }
 ```
 
@@ -259,7 +246,7 @@ key per instance: several Partners on a few OAuth seats hit usage limits within 
 usage-limited native process requires owned-process reconciliation. The procedure, the recovery and the product-repository
 rules are in `docs/multi-instance.md`.
 
-## 11. What only the operator runs
+## 10. What only the operator runs
 
 `hx help` from your shell (no `HARNESS_ID`) prints the operator column; `hx help --all` prints
 every audience's. Besides install, up, doctor, ui and heartbeat:

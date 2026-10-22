@@ -125,7 +125,7 @@ def register(store: ContinuityStore, *, run_id: str, stream_id: str, path: Path,
                 or (native_scope["actor_id"] is not None and
                     (not isinstance(native_scope["actor_id"], str) or not 1 <= len(native_scope["actor_id"]) <= 512))
                 or (decoder, native_scope.get("branch_policy")) not in {
-                    ("claude", "claude-linear"), ("codex-rollout-0.156.1", "codex-0.156.1-v1")}
+                    ("claude", "claude-linear"), ("codex-rollout", "codex-linear")}
                 or branch_ids is not None
                 or not Path(native_scope["root"]).is_absolute()
                 or ".." in Path(native_scope["root"]).parts
@@ -188,7 +188,7 @@ def _anchor(handle, offset: int) -> str:
 
 
 def _branch_active(body: dict, state: dict) -> bool:
-    if state.get("native_scope", {}).get("branch_policy") == "codex-0.156.1-v1":
+    if state.get("native_scope", {}).get("branch_policy") == "codex-linear":
         from .codex_rollout import active
         return active(body, state)
     if state.get("native_scope", {}).get("branch_policy") == "claude-linear":

@@ -106,6 +106,7 @@ if continuity:
         blocks.append('[[hooks.PostToolUseFailure]]\nmatcher = "Read|read|read_file|Bash|bash|exec_command|shell|shell_command|run_terminal_cmd|run_terminal_command|run_shell_command"\n'
             '  [[hooks.PostToolUseFailure.hooks]]\n  type = "command"\n' + f"  command = '{failure}'\n")
 
+# `auto_update = false`: runtime stability, the binary never changes under a running session.
 config = """\
 [cli]
 auto_update = false
