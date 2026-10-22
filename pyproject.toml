@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hx-harness"
-version = "0.1.0"
+version = "1.0.0"
 description = "Dependency packet planning, isolated native execution, and verified software delivery"
 requires-python = ">=3.14"
 dependencies = [

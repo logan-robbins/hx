@@ -11,7 +11,7 @@ available. Build and install the current checkout:
 
 ```bash
 uv build
-uv tool install --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+uv tool install --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 hx install --root ~/hx
 ```
 

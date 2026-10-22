@@ -68,7 +68,7 @@ extractors cover Python, C#, TypeScript/JavaScript, Go, Rust and Software AG Nat
 From a checkout of the repository:
 
 ```bash
-cd <checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd <checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 ```
 
 (Once published: `uv tool install --python 3.14 hx-harness`.) Check:

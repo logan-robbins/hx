@@ -39,7 +39,7 @@ Auth may come from an OAuth token or an Anthropic API key in a supplied env file
 If the user supplied a local `hx/` checkout, build and install that checkout:
 
 ```bash
-cd <local-hx-checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd <local-hx-checkout> && uv build --wheel && uv tool install --force --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 ```
 
 Otherwise use `uv tool install git+https://github.com/logan-robbins/hx`.

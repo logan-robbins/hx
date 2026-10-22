@@ -21,7 +21,7 @@ Grok workers. Other variables in the file are available to agents at startup.
 From the repository:
 
 ```bash
-cd ~/workspace/hx && uv build && uv tool install --python 3.14 dist/hx_harness-0.1.0-py3-none-any.whl
+cd ~/workspace/hx && uv build && uv tool install --python 3.14 dist/hx_harness-1.0.0-py3-none-any.whl
 ```
 
 Check it:
