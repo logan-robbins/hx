@@ -41,7 +41,7 @@ def test_the_cookie_is_accepted(ui, path):
 
 
 @pytest.mark.parametrize("path", GUARDED_GET)
-def test_the_query_token_is_no_longer_accepted(ui, path):
+def test_a_query_token_is_refused(ui, path):
     """A token in a URL lands in browser history, referrers and access logs."""
     response = ui.client.request("GET", f"{path}?token={ui.token}", token=None)
     assert response.status == 401
@@ -96,7 +96,7 @@ def test_two_instances_on_one_host_keep_separate_cookies(ui, second_ui):
     """Browsers scope cookies by host, never by port (RFC 6265 §8.5), so a fleet of
     instances on 127.0.0.1 shares one jar. Each server names its cookie after its own
     port and reads only that one: a jar holding both is accepted by both, the other
-    server's cookie alone is not, and the old fixed name is not either."""
+    server's cookie alone is not, and the bare prefix is not either."""
     mine = f"{token_cookie_name(ui.client.port)}={ui.token}"
     theirs = f"{token_cookie_name(second_ui.client.port)}={second_ui.token}"
     assert ui.client.port != second_ui.client.port
@@ -105,7 +105,7 @@ def test_two_instances_on_one_host_keep_separate_cookies(ui, second_ui):
     assert second_ui.client.get("/api/board", token=None, headers=both).status == 200
     assert ui.client.get("/api/board", token=None, headers={"Cookie": theirs}).status == 401
     assert second_ui.client.get("/api/board", token=None, headers={"Cookie": mine}).status == 401
-    legacy = {"Cookie": f"{TOKEN_COOKIE}={ui.token}"}
-    assert ui.client.get("/api/board", token=None, headers=legacy).status == 401
+    bare = {"Cookie": f"{TOKEN_COOKIE}={ui.token}"}
+    assert ui.client.get("/api/board", token=None, headers=bare).status == 401
     header = second_ui.client.get("/", token=None).headers["Set-Cookie"]
     assert header.startswith(f"{token_cookie_name(second_ui.client.port)}=")

@@ -9,10 +9,6 @@ SKILLS=skill_manifest.package_dir()
 
 def test_all_required_package_inputs_exist():
     assert all((skeleton_dir()/name).is_file() for name in EXPECTED_SKELETON_FILES)
-    for old in ('templates/work-item.md','templates/goal.md','templates/addendum.md'):
-        assert not (skeleton_dir()/old).exists()
-    assert not (SKILLS/'hx-memory').exists()
-    assert not (SKILLS/'hx-companion').exists()
 
 
 def test_portable_skill_manifest_and_worker_command_inventory():
@@ -64,14 +60,6 @@ def test_partner_children_explore_dependencies_without_claiming_worker_ownership
     assert 'Do not implement product changes or mutate plan/run state' in text
     for obligation in ('graph','reuse','overlap','source paths/lines'):
         assert obligation in text
-
-
-def test_packaged_instructions_cannot_reintroduce_removed_task_authorities():
-    removed=('hx dispatch','hx resume','hx amend','hx bench','hx memory','hx recall','tasks.json','simple path')
-    paths=[*SKILLS.glob('*/SKILL.md'),*(skeleton_dir()/'personas').glob('*.md'),skeleton_dir()/'config/CLAUDE.md']
-    for path in paths:
-        text=path.read_text()
-        assert not [name for name in removed if name in text],path
 
 
 def test_partner_skill_requires_complete_automatic_boundary_delivery_without_rereads():

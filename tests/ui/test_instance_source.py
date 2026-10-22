@@ -29,10 +29,10 @@ def test_sweep_detects_wal_changes_and_checkpoint_removal(tmp_path):
     assert 'board' in watcher._changed()  # closing the writer checkpoints/deletes the WAL
 
 
-def test_sweep_ignores_obsolete_files(tmp_path):
+def test_sweep_ignores_files_outside_the_ledger(tmp_path):
     source=InstanceSource(tmp_path)
     before=source.scan()
-    (tmp_path/'tasks.json').write_text('obsolete')
+    (tmp_path/'notes.json').write_text('unrelated')
     (tmp_path/'pods').mkdir()
     assert source.scan()==before
 

@@ -1,4 +1,4 @@
-"""Current identity/channel selection and bounded context, without migration paths."""
+"""Identity/channel selection and bounded context."""
 import json
 import pytest
 from hx import instruction_materials, persona, learn

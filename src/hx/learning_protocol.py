@@ -89,7 +89,7 @@ def call(store, job_id, name, args):
             if event.get('original_unavailable'):
                 return {'event_id': event['event_id'], 'content': canonical(event['payload']),
                         'complete': False, 'original_unavailable': True,
-                        'reason': 'Only a bounded legacy capture survives; leave the original evidence pending.'}
+                        'reason': 'Only a bounded capture survives; leave the original evidence pending.'}
             if body['source'] == 'ledger':
                 source = tx.db.execute('SELECT * FROM events WHERE event_id=?', (event['event_id'],)).fetchone()
                 payload = json.loads(source['payload'])

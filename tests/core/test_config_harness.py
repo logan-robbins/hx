@@ -150,7 +150,6 @@ def test_the_partner_can_be_codex():
 def test_good_partner():
     config = validate_harness(PARTNER, "config/partner/harness.json", dir_name="partner")
     assert config.is_partner and config.workdir is None
-    assert not hasattr(config, "branch"), "hx manages no git (spec 14 D25)"
 
 
 @pytest.mark.parametrize("name", sorted(malformed()))

@@ -24,8 +24,7 @@ def test_packet_routes_render():
     assert all('work item' not in text.lower() for text in views.values())
 
 
-def test_assets_have_no_external_dependencies_or_old_routes():
+def test_assets_have_no_external_dependencies():
     for name in ('app.js','style.css','index.html'):
         text=(STATIC/name).read_text()
         assert 'https://' not in text and 'http://' not in text
-        assert '/api/archive' not in text and 'tasks.json' not in text

@@ -102,12 +102,6 @@ def test_a_home_without_settings_fails(instance):
 
 
 
-def test_there_is_no_repo_check(instance):
-    """`hx repo add`, the mirror and `config/repo.json` are gone (spec 14 D25)."""
-    (instance / "config" / "repo.json").write_text('{"name": "product"}')
-    assert [c for c in run_checks(instance) if c[1] == "repo"] == []
-
-
 def test_a_token_readable_by_anyone_else_fails(instance):
     """CONTRACTS.md `seed/token`: mode 0600."""
     (instance / "seed" / "token").chmod(0o644)

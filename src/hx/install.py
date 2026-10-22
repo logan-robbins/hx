@@ -7,8 +7,7 @@ Four steps, in order:
   3. an existing OAuth token, or API keys from a supplied dotenv file
   4. `hx launch partner` and `hx ui`, then print `tmux attach -t partner` and the URL
 
-That is the whole of deployment (spec 14 D25): no mirror, no worktrees, no unit files. After
-this the human types nothing but chat.
+That is the whole of deployment; after this the human types nothing but chat.
 
 hx reads nothing from the user's `~/.claude` at any point, on any platform: auth is the
 instance credential at `seed/token` (spec 11 Auth). `--skeleton-only` stops after step 2, which is

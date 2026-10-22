@@ -116,9 +116,9 @@ if [ "$mode" = exec ]; then
 
   # No prompt argument. -m takes the harness model id; the reasoning effort
   # rides a -c override because the CLI exposes no --effort flag.
-  # --dangerously-bypass-approvals-and-sandbox is the whole unattended posture:
-  # approvals are gone, so no -a/--ask-for-approval is passed (the current CLI
-  # rejects that combination outright). -s stays explicit so the sandbox mode
+  # --dangerously-bypass-approvals-and-sandbox is the whole unattended posture,
+  # so no -a/--ask-for-approval is passed (the CLI rejects that combination
+  # outright). -s stays explicit so the sandbox mode
   # is on the record. --dangerously-bypass-hook-trust runs install-time hooks.
   exec "$bin" --dangerously-bypass-approvals-and-sandbox \
     --dangerously-bypass-hook-trust \

@@ -7,9 +7,8 @@ installation, acknowledgment, tool policy, and initial-input budget preflight.
 Configured sources are common policy, audience mechanics, the role persona's
 Domain judgment section, worker purpose, Companion role retention, and operator
 policy. Identity expands from harness.json. Source and bundle limits apply before
-publication. Per-id instruction files and global CLAUDE.md are not an alternate
-worker prompt authority; required assignment facts arrive in the current ledger
-checkpoint or frozen observation pass rather than the invariant prefix.
+publication. Required assignment facts arrive in the current ledger checkpoint or
+frozen observation pass rather than the invariant prefix.
 """
 
 from __future__ import annotations

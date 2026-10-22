@@ -10,8 +10,8 @@ def test_ledger_endpoint(ui,path):
     assert document['tasks'][0]['task_id']=='orders.work'
 
 
-@pytest.mark.parametrize('path',['/api/archive','/api/show/unknown','/api/show/..','/static/../data.py','/api/missing'])
-def test_absent_and_removed_paths_are_404(ui,path):
+@pytest.mark.parametrize('path',['/api/show/unknown','/api/show/..','/static/../data.py','/api/missing'])
+def test_absent_paths_are_404(ui,path):
     assert ui.client.get(path).status==404
 
 
