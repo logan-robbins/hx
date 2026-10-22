@@ -53,7 +53,7 @@ obligations so shared capabilities are built once. Preserve unresolved dynamic r
 
 ## Draft and accept the dependency packet graph
 
-Every directive uses the same `schema_version: 2` plan and worker lifecycle. Determine packet
+Every directive uses the same dependency packet plan and worker lifecycle. Determine packet
 boundaries from observable behavior, dependencies, contracts, resource contention, and useful
 parallelism. Request length and apparent simplicity do not determine packet count.
 

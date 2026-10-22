@@ -52,7 +52,7 @@ def root(tmp_path, name):
         (config / worker / "harness.json").write_text(json.dumps({"id": worker, "pod": "eng", "role": "backend-engineer",
                                                                   "model": "claude-opus-5-5", "effort": "high", "workdir": str(tree)}))
         tasks.append(unit(tree, f"{name}-u{index:03d}"))
-    planning.apply(store, {"schema_version": 2, "plan_id": name, "expected_revision": 0, "repository": info["repo_id"],
+    planning.apply(store, {"plan_id": name, "expected_revision": 0, "repository": info["repo_id"],
                            "goal": "Run every packet of the fleet at once.", "constraints": ["Each packet stays in its worktree."],
                            "tasks": tasks})
     return store

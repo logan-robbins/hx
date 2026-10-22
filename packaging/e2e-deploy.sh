@@ -207,7 +207,7 @@ git -C "$WORKDIR" init -q
 git -C "$WORKDIR" config user.name "Packaging proof"
 git -C "$WORKDIR" config user.email "packaging@example.invalid"
 printf 'def proof():\n    return True\n' > "$WORKDIR/proof.py"
-printf '{"schema_version":1,"repo_id":"55b3d70b-9af1-4839-88da-cbc65b284ef9"}\n' > "$WORKDIR/.hx/map/manifest.json"
+printf '{"repo_id":"55b3d70b-9af1-4839-88da-cbc65b284ef9"}\n' > "$WORKDIR/.hx/map/manifest.json"
 git -C "$WORKDIR" add .
 git -C "$WORKDIR" commit -qm "Fixture source for installed packet proof"
 python3 - "$ROOT" "$WORKDIR" "$SCRATCH/plan.json" <<'PY_PACKET'
@@ -221,7 +221,7 @@ unit = dict(id='deploy-proof.work',expected_revision=0,behavior='Inspect the com
     write_paths=['proof.py'],map_inputs=[],resources=[],prerequisites=[],
     check_policy={'reviewer':'qa-001','required_checks':['unit']},
     outputs=[{'id':'proof','version':1,'kind':'receipt','obligation':'Verify installed execution.'}])
-target.write_text(json.dumps(dict(schema_version=2,plan_id='deploy-proof',expected_revision=0,
+target.write_text(json.dumps(dict(plan_id='deploy-proof',expected_revision=0,
     repository='55b3d70b-9af1-4839-88da-cbc65b284ef9',goal='Verify the installed worker runtime.',constraints=[],tasks=[unit])))
 PY_PACKET
 "$HX" code index --repo "$WORKDIR" > "$SCRATCH/index.log" 2>&1 \
@@ -248,7 +248,6 @@ PY_CAPSULE
 python3 - "$SCRATCH/board.json" "$RUN_ID" <<'PY_BOARD'
 import json,sys
 view=json.load(open(sys.argv[1]))
-assert view['schema_version']==2
 assert any(run['run_id']==sys.argv[2] for run in view['runs'])
 assert view['tasks'][0]['payload']['dependency_packet'] is True
 assert view['leases'], 'admitted packet has no ownership lease'

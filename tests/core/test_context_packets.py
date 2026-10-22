@@ -180,7 +180,7 @@ def test_facts_do_not_cross_tasks_when_worker_is_reused(assignment):
     fact(assignment, payload={"text": "OLD TASK SPECIFIC FACT"})
     packets.issue(store, run, request_id="old")
     unit_execution.stop(store, run)
-    body = {"schema_version": 2, "plan_id": "new-plan", "expected_revision": 0,
+    body = {"plan_id": "new-plan", "expected_revision": 0,
             "repository": planning.assignment(store, "implement")["repository"],
             "goal": "Verify a different goal.", "constraints": [], "tasks": [unit(repo, "new-unit")]}
     planning.apply(store, body)

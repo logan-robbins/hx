@@ -352,7 +352,7 @@ def report(root, item_id: str | None = None, *, now: str | None = None, env=None
         if item_id not in ids:
             raise NotFound(f"unknown id: {item_id} (no config/{item_id}/)")
         ids = [item_id]
-    return {"schema_version":2,"ts": now or timestamps.now(),
+    return {"ts": now or timestamps.now(),
             "agents": [agent_report(root, i, now=now, env=env) for i in ids]}
 
 

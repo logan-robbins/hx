@@ -129,7 +129,7 @@ def test_partner_orchestration_report_and_cli_remain_available(instance,capsys):
     assert result['agents'][0]['kind']=='partner'
     assert result['agents'][0]['invariant']['identity_bytes']>0
     assert prompt_cache.main(['report','partner','--json'],instance)==0
-    assert json.loads(capsys.readouterr().out)['schema_version']==2
+    assert json.loads(capsys.readouterr().out)['agents'][0]['kind']=='partner'
     assert prompt_cache.main(['report','eng-001'],instance)==0
     assert 'unmeasured' in capsys.readouterr().out
 

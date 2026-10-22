@@ -71,7 +71,7 @@ Map responsibilities to a provider instance, publish exact immutable interfaces/
 and explicitly supply those external identities/obligations to consumers before admission.
 Do not infer a cross-instance lease or current proof from a local status view.
 
-Use schema-2 dependency packets. Materialize source and accept the correct workdir before
+Use dependency packets. Materialize source and accept the correct workdir before
 admission. Assign ready units, then explicitly launch each admitted run with a stable request.
 Schedule every justified ready overlap within safe ownership and host capacity; whole-wave
 barriers and request-size heuristics do not determine packet count or start time.

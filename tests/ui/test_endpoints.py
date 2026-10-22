@@ -6,7 +6,6 @@ import pytest
 def test_ledger_endpoint(ui,path):
     status,document=ui.client.json(path)
     assert status==200
-    assert document['schema_version']==2
     assert document['tasks'][0]['task_id']=='orders.work'
 
 

@@ -74,8 +74,8 @@ class FixtureSource(Source):
             raise NotFound(f'no fixture {name}') from exc
         except (OSError, ValueError) as exc:
             raise SourceError(str(exc)) from exc
-        if not isinstance(value, dict) or value.get('schema_version') != 2:
-            raise SourceError('expected packet projection schema_version=2')
+        if not isinstance(value, dict):
+            raise SourceError('expected a packet projection object')
         return value
 
     def board(self):
@@ -156,8 +156,8 @@ class InstanceSource(Source):
             result = json.loads(run_hx(self.root, args, binary=self.binary, document=True, env=self.env))
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
-        if not isinstance(result, dict) or result.get('schema_version') != 2:
-            raise CommandError('expected packet projection schema_version=2')
+        if not isinstance(result, dict):
+            raise CommandError('expected a packet projection object')
         return result
 
     def board(self):

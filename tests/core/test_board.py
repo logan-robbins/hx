@@ -18,7 +18,7 @@ def seed(root):
         db = store.db
         db.execute("INSERT INTO task_heads VALUES('orders.work',1)")
         db.execute('INSERT INTO tasks VALUES(?,1,NULL,?,1)', ('orders.work',canonical(payload)))
-        definition={'schema_version':2,'plan_id':'orders','goal':'Order lookup','tasks':[payload]}
+        definition={'plan_id':'orders','goal':'Order lookup','tasks':[payload]}
         db.execute("INSERT INTO plan_heads VALUES('orders',1)")
         db.execute('INSERT INTO plans VALUES(?,1,?,?)', ('orders','hash',canonical({'definition': definition})))
         db.execute("INSERT INTO plan_units VALUES('orders',1,'orders.work',1)")

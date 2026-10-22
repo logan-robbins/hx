@@ -23,12 +23,6 @@ def packet(repo, name='implement', *, paths=None, prerequisites=None, resources=
     return body
 
 
-def packet_plan(fleet,tasks):
-    body = plan(fleet,tasks)
-    body['schema_version'] = 2
-    return body
-
-
 def binding(task, *, recipes=None):
     primary=next(iter(recipes)) if recipes else 'unit'
     return {'definition_of_done':['Every packet obligation has a current passing check.'],
@@ -50,7 +44,7 @@ def run_receipts(store,run,names=('unit',)):
 
 def test_partner_packets_omit_scripts_worker_binds_before_edits_and_policy_reviewer_is_independent(fleet):
     store,repo = fleet[:2]
-    planning.apply(store,packet_plan(fleet,[packet(repo)]))
+    planning.apply(store,plan(fleet,[packet(repo)]))
     assigned = units.assign(store,'implement',1,'eng-001')
     run = assigned['run_id']
     assert assigned['assignment']['checks']=={}
@@ -76,7 +70,7 @@ def test_partner_packets_omit_scripts_worker_binds_before_edits_and_policy_revie
 
 def test_binding_rejects_incomplete_coverage_and_after_first_edit(fleet):
     store,repo=fleet[:2]
-    planning.apply(store,packet_plan(fleet,[packet(repo)]))
+    planning.apply(store,plan(fleet,[packet(repo)]))
     run=units.assign(store,'implement',1,'eng-001')['run_id']
     body=binding(planning.assignment(store,'implement'))
     body['coverage'].pop('acceptance.0')
@@ -100,7 +94,7 @@ def interface_plan(fleet,tmp_path):
     need={'task_id':'producer','output_id':'interface','version':1,'need':'substitutable','stand_in':True,'provider_output':'provider','provider_version':1}
     consumer=packet(other,'consumer',paths=['app.py'],prerequisites=[need])
     consumer['outputs'] += [{'id':'application','version':1,'kind':'source','paths':['app.py'],'obligation':'Consumer behavior works with the allowed stand-in.'}]
-    planning.apply(store,packet_plan(fleet,[producer,consumer]))
+    planning.apply(store,plan(fleet,[producer,consumer]))
     return producer,consumer,other
 
 
@@ -163,7 +157,7 @@ def test_contract_is_immutable_source_snapshot_and_revision_requires_version_bum
     packets.acquire_contract(store,'consumer','producer','interface',snapshot)
     assert (snapshot/'api.py').read_text()=='def adapt(value): return value\n'
     units.stop(store,run)
-    revised=packet_plan(fleet,[producer,consumer])
+    revised=plan(fleet,[producer,consumer])
     revised['expected_revision']=1
     for task in revised['tasks']:
         task['expected_revision']=1
@@ -177,7 +171,7 @@ def test_contract_is_immutable_source_snapshot_and_revision_requires_version_bum
 def test_substitutable_needs_require_explicit_permission_and_exact_provider(fleet,tmp_path):
     store,repo=fleet[:2]
     producer,consumer,other=interface_plan(fleet,tmp_path)
-    bad=packet_plan(fleet,[producer,consumer])
+    bad=plan(fleet,[producer,consumer])
     consumer['prerequisites'][0]['stand_in']=False
     with pytest.raises(ValidationError,match='permission'):
         planning.validate(store,bad)
@@ -194,7 +188,7 @@ def test_shared_resource_admission_is_atomic_and_stop_frees_capacity(fleet,tmp_p
     git(repo,'worktree','add','-qb','resource-other',str(other))
     a=packet(repo,'a',resources=[{'id':'database','mode':modes[0]}])
     b=packet(other,'b',resources=[{'id':'database','mode':modes[1]}])
-    planning.apply(store,packet_plan(fleet,[a,b]))
+    planning.apply(store,plan(fleet,[a,b]))
     first=units.assign(store,'a',1,'eng-001')['run_id']
     if blocked:
         with pytest.raises(Conflict,match='resource'):
@@ -207,7 +201,7 @@ def test_packet_commands_are_reachable_and_worker_ownership_is_enforced(fleet,tm
     store,repo=fleet[:2]
     policy=store.root/'config/planning.json'
     policy.parent.mkdir(parents=True,exist_ok=True)
-    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['unit'],'role':'backend-engineer'}))
+    policy.write_text(json.dumps({'reviewer':'qa-001','required_checks':['unit'],'role':'backend-engineer'}))
     request=tmp_path/'goal.json'
     request.write_text(json.dumps({'plan_id':'continuation','task_id':'implement','goal':'Preserve compiler behavior.','require':['compiler']}))
     generated=run_hx('plan','draft','--repo',str(repo),'--snapshot',fleet[6],'--file',str(request),'--root',str(store.root),env_extra={'HOME':str(tmp_path/'operator-home')})
@@ -215,7 +209,7 @@ def test_packet_commands_are_reachable_and_worker_ownership_is_enforced(fleet,tm
     draft=json.loads(generated.stdout)
     assert draft['ready'] and draft['binding_required']
     body=draft['plan']
-    assert body['schema_version']==2 and 'checks' not in body['tasks'][0]
+    assert 'checks' not in body['tasks'][0]
     path=tmp_path/'packet.json'
     path.write_text(json.dumps(body))
     operator_env={'HOME':str(tmp_path/'operator-home')}
@@ -255,7 +249,7 @@ def test_separate_integration_proves_real_provider_and_publishes_deployability(f
         {'task_id':'producer','output_id':'proof','version':1,'need':'hard'},
         {'task_id':'consumer','output_id':'proof','version':1,'need':'hard'}])
     integration['outputs'].append({'id':'installed','version':1,'kind':'source','paths':['provider.py','app.py'],'obligation':'Installed consumer runs against the exact real provider.'})
-    revised=packet_plan(fleet,[producer,consumer,integration])
+    revised=plan(fleet,[producer,consumer,integration])
     revised['expected_revision']=1
     producer['expected_revision']=consumer['expected_revision']=1
     planning.apply(store,revised)

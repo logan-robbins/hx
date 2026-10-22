@@ -40,7 +40,7 @@ SOURCES = {
 SCOPES = ["billing", "ledger", "shared", "jobs"]
 MERGE = [{"id": "close-report", "kind": "calls", "from": {"prefix": "ledger", "suffix": "close.py"},
           "to": {"name": "report"}}]
-POLICY = {"schema_version": 1, "reviewer": "qa-001", "required_checks": ["unit"], "role": "backend-engineer"}
+POLICY = {"reviewer": "qa-001", "required_checks": ["unit"], "role": "backend-engineer"}
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ def test_partition_reproduces_providers_families_pairs_and_waves(partitioned, tm
                                ["billing.invoice.py"]]
     assert (report["width"], report["depth"]) == (5, 2)
 
-    # The draft is a schema-2 plan the validator accepts with the same hard-need waves.
+    # The draft is a dependency packet plan the validator accepts with the same hard-need waves.
     plan = json.loads(out.read_text())
     assert report["file"] == str(out.resolve()) and plan["repository"] == info["repo_id"]
     tasks = {task["id"]: task for task in plan["tasks"]}
@@ -159,7 +159,7 @@ def test_link_query_bounds_the_graph_and_the_draft_refuses_a_truncated_one(parti
     report = plan_partition.report(store.root, repo, SCOPES, [])
     assert report["truncated"] and report["links"] == 3
     with pytest.raises(ValidationError, match="truncated"):
-        plan_partition.draft(report, {k: POLICY[k] for k in ("reviewer", "required_checks", "role")}, "partition")
+        plan_partition.draft(report, dict(POLICY), "partition")
 
 
 def test_a_shared_repository_service_answers_the_partition(partitioned, tmp_path):

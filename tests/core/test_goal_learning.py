@@ -17,7 +17,7 @@ def seed_check(active):
     store, repo, _, component, _, _, _, _, _ = active
     policy=store.root/'config/planning.json'
     policy.parent.mkdir(parents=True,exist_ok=True)
-    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['compiler-check'],'role':'backend-engineer'}))
+    policy.write_text(json.dumps({'reviewer':'qa-001','required_checks':['compiler-check'],'role':'backend-engineer'}))
     recipe = definition("print('compiler contract checked')")
     recipe.update(id='compiler-check', argv=['python3', '-c', "print('compiler contract checked')"], inputs=['compiler.py'])
     node = record('compiler-check', 'check', data={'recipe': recipe})
@@ -82,7 +82,6 @@ def test_completed_goal_teaches_next_goal_without_research(active, monkeypatch):
     assert followup['plan']['tasks'][0]['write_paths'] == []
     assert followup['recipe_suggestions'] == draft['recipe_suggestions']
     assert 'checks' not in followup['plan']['tasks'][0]
-    assert draft['plan']['schema_version']==2
 
 
 def test_transfer_and_scoped_export_make_findings_portable(active, tmp_path):

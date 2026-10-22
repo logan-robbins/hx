@@ -137,7 +137,7 @@ Partner. Other native harnesses can be assigned as workers when configured. Type
 API access is required for Jev; the runtime has no inference fallback for Jev decisions.
 See [getting started](docs/getting-started.md) for credentials and installation.
 
-Worker tasks use one schema-2 dependency packet lifecycle. A configured source workdir precedes admission; optional provisioning is needed only when no
+Worker tasks use one dependency packet lifecycle. A configured source workdir precedes admission; optional provisioning is needed only when no
 suitable prepared directory exists; `hx plan assign` reserves ownership and explicit `hx launch ID
 --run RUN --request REQUEST` advances native startup. Workers bind executable checks before
 edits and obtain approval from the configured independent reviewer. Empty write scopes still

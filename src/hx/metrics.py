@@ -82,7 +82,7 @@ def agent_figures(root, runs):
 
 def collect_fleet(root, *, env=None, identity=None):
     view = board.snapshot(root, identity)
-    return {'schema_version': 2, 'root_abs': view['root_abs'], 'ts': view['ts'],
+    return {'root_abs': view['root_abs'], 'ts': view['ts'],
             'ledger_revision': view['ledger_revision'], 'identity': identity,
             'packets': len(view['tasks']), 'packet_statuses': dict(Counter(t['status'] for t in view['tasks'])),
             'runs': len(view['runs']), 'active_runs': sum(r['ended_at'] is None for r in view['runs']),

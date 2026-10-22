@@ -26,7 +26,7 @@ def unit(repo, name="implement", *, paths=None, prerequisites=None):
 
 
 def plan(active, tasks=None):
-    return {"schema_version": 2, "plan_id": "continuation", "expected_revision": 0,
+    return {"plan_id": "continuation", "expected_revision": 0,
         "repository": active[2]["repo_id"], "goal": "Preserve current obligations across continuation.",
         "constraints": ["Do not acknowledge events arriving after the frozen boundary."],
         "tasks": tasks or [unit(active[1])]}
@@ -272,11 +272,10 @@ def test_plan_final_scope_check_refuses_source_changed_after_cold_preparation(ac
     assert not store.db.execute('SELECT 1 FROM plan_heads').fetchone()
 
 
-@pytest.mark.parametrize("version", [1, 0, 3, True])
-def test_only_current_packet_schema_is_accepted(active, version):
+def test_plan_refuses_fields_outside_the_packet_plan(active):
     body = plan(active)
-    body["schema_version"] = version
-    with pytest.raises(ValidationError, match="schema_version=2"):
+    body["notes"] = "unplanned"
+    with pytest.raises(ValidationError, match="plan requires exactly"):
         planning.apply(active[0], body)
     assert not active[0].db.execute("SELECT 1 FROM plan_heads").fetchone()
 

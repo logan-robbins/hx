@@ -200,7 +200,7 @@ tmux attach -t partner
 
 and the UI at the address reported by `hx up` (`config/ui.json` chooses the port).
 From here the Partner explores graph dependencies and searches/reuses existing capabilities
-for every directive, drafts schema-2 packets, schedules maximum useful parallel work, reserves
+for every directive, drafts dependency packets, schedules maximum useful parallel work, reserves
 ready runs, explicitly launches them, and reports verified outcomes. The human describes
 intent and unresolved choices; the setup operator does not create worker assignments.
 The Partner uses `hx-partner` and `hx-fleet`; workers use `hx-worker`.

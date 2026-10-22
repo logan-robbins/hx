@@ -113,7 +113,7 @@ def parse_goal(path: str | Path) -> Goal:
 def collect(root):
     from .board import collect as board
     view = board(root)
-    return {key: view[key] for key in ('schema_version', 'root_abs', 'ts', 'ledger_revision', 'plans', 'tasks', 'truncated')}
+    return {key: view[key] for key in ('root_abs', 'ts', 'ledger_revision', 'plans', 'tasks', 'truncated')}
 
 
 def main(argv, root, *, env=None):
