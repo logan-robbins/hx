@@ -18,7 +18,6 @@ WORKER = {
     "workdir": "/work/wt/eng-001",
     "harness": {"args": []},
     "companion": {
-        "provider": "anthropic",
         "model": "claude-haiku-4-5-20251001",
         "batch_records": 20,
         "state_budget_tokens": 10000,
@@ -46,15 +45,10 @@ def malformed():
         "unknown effort": {**WORKER, "effort": "ludicrous"},
         "empty pod": {**WORKER, "pod": ""},
         "worker without workdir": {k: v for k, v in WORKER.items() if k != "workdir"},
-        "`branch` is not a field": {**WORKER, "branch": "agent/eng-001"},
-        "unknown field": {**WORKER, "provider": "anthropic"},
+        "unknown field": {**WORKER, "nickname": "eng"},
         "harness args not strings": {**WORKER, "harness": {"args": [1]}},
         "unknown flavor": {**WORKER, "flavor": "fleet"},
         "companion budget not an integer": {**WORKER, "companion": {"state_budget_tokens": "big"}},
-        "companion seam interval is gone": {**WORKER, "companion": {"seam_min_interval_s": 600}},
-        "companion cache ttl is gone": {**WORKER, "companion": {"cache_ttl": "1h"}},
-        "companion claude-cli is gone": {**WORKER, "companion": {"provider": "claude-cli"}},
-        "companion unknown provider": {**WORKER, "companion": {"provider": "openai"}},
         "unknown companion field": {**WORKER, "companion": {"temperature": 1}},
         "companion disabled not a boolean": {**WORKER, "companion": {"disabled": "yes"}},
         "companion bad effort": {**WORKER, "companion": {"effort": "ludicrous"}},
@@ -234,14 +228,6 @@ def test_workdir_must_exist(instance):
     with pytest.raises(ValidationError) as exc:
         load_harness(instance / "config" / "eng-001" / "harness.json", root=instance)
     assert "workdir" in str(exc.value)
-
-
-@pytest.mark.parametrize("provider", ["anthropic", "openai-api"])
-def test_the_companion_providers(provider, tmp_path):
-    path = tmp_path / "eng-001" / "harness.json"
-    path.parent.mkdir()
-    path.write_text(json.dumps({**WORKER, "companion": {"provider": provider}}))
-    assert load_harness(path, check_cross_file=False).companion["provider"] == provider
 
 
 def test_a_relative_workdir_resolves_against_the_root(instance):

@@ -421,12 +421,3 @@ def test_interrupted_deterministic_commit_replays_without_model_or_inspection_wr
     assert store.db.execute('SELECT classified_seq FROM cursors').fetchone()[0] == 2
 
 
-def test_an_unbuilt_provider_is_refused_before_any_job(planned):
-    store, _, _ = planned
-    path = store.root / 'config/eng-001/harness.json'
-    config = json.loads(path.read_text())
-    config['companion'] = {**config.get('companion', {}), 'provider': 'openai-api'}
-    path.write_text(json.dumps(config))
-    with silent(), pytest.raises(ValidationError, match='only anthropic'):
-        job_for(planned)
-    assert not store.db.execute('SELECT 1 FROM companion_jobs').fetchone()

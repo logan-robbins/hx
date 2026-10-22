@@ -2,8 +2,7 @@
 
 Spec 05 names four cross-file rules: `id` equals the directory name; `model` exists in
 `models.json`; `role` has a `companion/roles/<role>.md`; `workdir` exists. The Partner has no
-`workdir`: it runs in HARNESS_ROOT. There is no `branch` — hx manages no git (spec 14 D25).
-Failure is exit 2.
+`workdir`: it runs in HARNESS_ROOT. hx manages no git. Failure is exit 2.
 """
 
 from __future__ import annotations
@@ -32,7 +31,8 @@ _EXPLORER_FIELDS = ("model", "effort")
 #: rendered persona has no purpose and `hx doctor` warns (docs/prompt-runtime.md).
 PURPOSE_PLACEHOLDER = "{{purpose}}"
 
-#: Which adapter launches this agent. Absent means Claude, so existing configs keep working.
+#: Which adapter launches this agent; `claude` when the field is absent, as the shipped
+#: Partner and worker templates leave it.
 FLAVORS = ("claude", "pi", "grok", "meta", "codex")
 
 #: Flavors whose CLI takes no system-prompt flag, verified per adapter: `muse` exposes none
@@ -56,12 +56,12 @@ PERSONA_CHANNEL = {"claude": "hook", "codex": "agents", "pi": "flag", "grok": "f
 
 def invariants_channel(flavor: str) -> str:
     """`home`, `agents` or `hook`: where the invariants reach an agent of this flavor."""
-    return INVARIANTS_CHANNEL.get(flavor, "home")
+    return INVARIANTS_CHANNEL[flavor]
 
 
 def persona_channel(flavor: str) -> str:
     """`hook`, `flag` or `agents`: where the persona reaches an agent of this flavor."""
-    return PERSONA_CHANNEL.get(flavor, "hook")
+    return PERSONA_CHANNEL[flavor]
 
 #: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
 #: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no
@@ -73,15 +73,10 @@ _COMPANION_INT_FIELDS = (
     "state_budget_tokens",
 )
 
-_COMPANION_STR_FIELDS = ("provider", "model", "effort")
+_COMPANION_STR_FIELDS = ("model", "effort")
 
 #: `disabled` runs this agent without a Companion.
 _COMPANION_BOOL_FIELDS = ("disabled",)
-
-#: `anthropic` is the Messages API with an API key (`companion_api.py`), the only transport
-#: built and the default. `openai-api` is the OpenAI API companion for Codex/OpenAI lanes
-#: (fleet direction 2026-10-05); it validates, and a pass refuses it until it is built.
-COMPANION_PROVIDERS = ("anthropic", "openai-api")
 
 
 def resolve_workdir(workdir: str, root: Path) -> Path:
@@ -261,12 +256,6 @@ def validate_harness(
         raise ValidationError(
             f"{path}: `companion.effort` must be one of {', '.join(EFFORT_LEVELS)} "
             f"(spec 11), got `{companion_effort}`"
-        )
-    provider = companion.get("provider")
-    if provider is not None and provider not in COMPANION_PROVIDERS:
-        raise ValidationError(
-            f"{path}: `companion.provider` must be one of {', '.join(COMPANION_PROVIDERS)} "
-            f"(spec 05), got `{provider!r}`"
         )
 
     unknown_companion = sorted(
