@@ -17,7 +17,7 @@ graphs remain separately addressable so shared capabilities can be built once an
 hx is designed to make each assignment start with the right context, use only the
 tools it needs, avoid repeated repository searches, and finish with machine-checked
 outputs. The current implementation includes application mapping, task planning,
-required Jev calls for bounded observation and routing judgments, token controls,
+bounded Jev calls for observation and routing judgments, token controls,
 incremental capture, context reset, tool-output reduction, and managed completion.
 
 **→ [Getting started](docs/getting-started.md)** sets up a Partner. [Operating hx](docs/operating.md)
@@ -92,7 +92,7 @@ and worktree on the box, immutable artifacts, and test shards that avoid repeate
 The Companion processes frozen captured events and submits structured changes to current
 task state and the application map. Native worker passes expose only bounded evidence reads
 for non-file observations, complete verified source evidence, and structured patch submission;
-the Companion cannot execute the worker's commands. Jev is required for its bounded judgments about
+the Companion cannot execute the worker's commands. Jev makes bounded judgments about
 observation deltas, repeated tool observations, optional tool discovery, and surplus
 output. Jev does not choose which facts survive, write facts, generate task plans, or
 switch models. The companion handles factual changes; deterministic code validates
@@ -134,8 +134,8 @@ configuration, commands, and the boundaries of reusable proof.
 
 hx requires Python 3.14, `tmux`, `git`, and a supported Claude installation for the
 Partner. Other native harnesses can be assigned as workers when configured. Jev needs
-`TYPESAFE_API_KEY` in the process environment or the instance env file; the runtime has no
-inference fallback for Jev decisions.
+`TYPESAFE_API_KEY` in the process environment or the instance env file; when Jev is
+unavailable its decisions settle unclassified and no other model stands in.
 See [getting started](docs/getting-started.md) for credentials and installation.
 
 Worker tasks use one dependency packet lifecycle. A configured source workdir precedes admission; optional provisioning is needed only when no

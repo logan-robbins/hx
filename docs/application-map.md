@@ -55,8 +55,8 @@ unfamiliar values. Unfamiliar structural types are refused.
 
 An anchor contains `path`, `symbol` (qualified name or null), and `sha256`. Optional
 `line` and `end_line` are display hints. Python qualified symbols are resolved from
-syntax, including decorators. Other languages currently use whole-file anchors;
-unsupported symbol resolution fails explicitly. Paths cannot escape the repository
+syntax, including decorators; other languages resolve through the syntax index (below).
+A symbol that cannot be resolved fails explicitly. Paths cannot escape the repository
 or fingerprint the map itself. Whole-file hashing streams data without putting file
 contents into the model's context. Source changes during validation fail the operation.
 
