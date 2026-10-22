@@ -28,10 +28,10 @@ case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
   *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
-# The Partner may run on Codex (spec 12): `hx wake` reaches it by pasting into
+# The Partner may run on Codex: `hx wake` reaches it by pasting into
 # its pane, and the guard rides `PreToolUse` exactly as on Claude.
 
-root=${HARNESS_ROOT:?hx exports it for every adapter (spec 11)}
+root=${HARNESS_ROOT:?hx exports it for every adapter}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
 # The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
@@ -117,7 +117,7 @@ if continuity or item_id == "partner":
     from hx.file_read_delivery import install_profile
     install_profile(Path(root), item_id)
 
-# The Claude hook set (spec 09.1), in Codex's TOML shape. Matchers follow the
+# The Claude hook set, in Codex's TOML shape. Matchers follow the
 # official reference: SessionStart filters the start source, PostToolUse and
 # the compaction events match every occurrence when matcher is omitted, and
 # the Agent matcher catches subagent tool calls for the subagent-result hook.
@@ -254,7 +254,7 @@ fi
 skills_src=${HX_SKILLS_DIR:-}
 if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
   # The Partner gets hx-partner and hx-fleet, a worker gets hx-worker, like the
-  # Claude adapter (spec 11, 12): the manifest decides (src/hx/skills/manifest.json).
+  # Claude adapter: the manifest decides (src/hx/skills/manifest.json).
   wants=$("$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id") ||
     die "skill manifest: cannot select the skills for $id from $skills_src"
   for want in $wants; do

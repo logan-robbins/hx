@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def flush(root: Path, item_id: str, *, env=None) -> bool:
-    """True once every stream is caught up (spec 08). A failed pass leaves its stream behind."""
+    """True once every stream is caught up. A failed pass leaves its stream behind."""
     from . import companion as companion_mod
     companion_mod.require_partner(item_id)
     companion_mod.run_due(root, item_id, force=True, env=env)

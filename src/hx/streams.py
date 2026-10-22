@@ -1,8 +1,7 @@
-"""Reading the raw streams under `logs/<id>/` (spec 07).
+"""Reading the raw streams under `logs/<id>/`.
 
-The streams are written by `hx-hook` from M2 onward. M0 only needs to see them from the
-board: how many subagent streams are open, the last `context_tokens`, and how many seam
-records a dispatch has taken.
+The streams are written by `hx-hook`. The board reads how many subagent streams are open,
+the last `context_tokens`, and how many seam records a dispatch has taken.
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ def open_subagents(root: Path, item_id: str) -> int:
 def iter_records(path: Path):
     """Yield the parsed records of a stream, skipping lines that are not JSON objects.
 
-    A hook appends one line per event under a per-stream lock (spec 07); a partial final
+    A hook appends one line per event under a per-stream lock; a partial final
     line can only be a crash artefact, and the board reports the stream rather than failing.
     """
     if not path.is_file():
@@ -98,11 +97,11 @@ def count_seams(root: Path, item_id: str, since: str | None) -> int | None:
     return count
 
 
-# --- appending (spec 07.1) ----------------------------------------------------------------
+# --- appending ---------------------------------------------------------------------------
 #
-# "Each raw record is one line under 4 KB, written with a single write(2) on an O_APPEND
-# descriptor, with `seq` assigned under a per-stream lock." Concurrent hook invocations on the
-# same stream then append whole lines in order. The `log` hook (M4) uses this too.
+# Each raw record is one line under 4 KB, written with a single write(2) on an O_APPEND
+# descriptor, with `seq` assigned under a per-stream lock. Concurrent hook invocations on the
+# same stream then append whole lines in order. The `log` hook uses this too.
 
 import fcntl
 import os
@@ -110,9 +109,9 @@ import tempfile
 
 from . import timestamps
 
-#: Spec 07.1: one line under 4 KB.
+#: One line under 4 KB.
 MAX_RECORD_BYTES = 4096
-#: Spec 07.1: head excerpts, with `ref` pointing at the full payload in the transcript.
+#: Head excerpts, with `ref` pointing at the full payload in the transcript.
 EXCERPT_CHARS = 2000
 
 
@@ -190,12 +189,12 @@ def append_record(root: Path, item_id: str, stream: str, record: dict) -> int:
             os.close(handle)
 
 
-# --- FIFO retention (spec 07.1) --------------------------------------------------------------
+# --- FIFO retention --------------------------------------------------------------------------
 #
-# "`max_records` (default 500) and `max_bytes` (default 4 MB) per stream, whichever is hit
+# `max_records` (default 500) and `max_bytes` (default 4 MB) per stream, whichever is hit
 # first. `hx-hook` truncates from the head on every append that would exceed a bound, but never
 # below `state.seq − keep_behind` (default 100), so the Companion always has a window of
-# already-processed evidence behind its cursor and everything ahead of it."
+# already-processed evidence behind its cursor and everything ahead of it.
 
 MAX_RECORDS = 500
 MAX_BYTES = 4 * 1024 * 1024

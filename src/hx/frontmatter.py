@@ -1,6 +1,6 @@
 """The YAML-subset frontmatter parser shared by goal files and work items.
 
-hx is stdlib only (spec 08), so this parses exactly the subset the spec uses and rejects
+hx is stdlib only, so this parses exactly the subset hx uses and rejects
 everything else by name rather than guessing. Supported:
 
     ---

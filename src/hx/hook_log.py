@@ -1,13 +1,13 @@
-"""The `log` hook: `PostToolUse`, every tool, every agent (spec 09.1, 07.1).
+"""The `log` hook: `PostToolUse`, every tool, every agent.
 
 One raw record per tool call, appended to the stream of the thread that made it: the main
 stream, or the subagent's `sNNN` looked up from `run/<id>/subagents.json` by the payload's
 `agent_id`. The raw stream exists for one reader, the Companion; the HarnessAgent never sees
-it (spec 07.1).
+it.
 
 It is also where the hard seam trigger lives: when `context_tokens` on the **main** stream
 reaches the model's threshold from `config/models.json`, the hook touches `run/<id>/seam` and
-the next `stop` takes the seam (spec 02 Seams, 09.3). Rows whose payloads carry no usage
+the next `stop` takes the seam. Rows whose payloads carry no usage
 counts (meta, codex) compare the session transcript size on disk against the same
 threshold instead — bytes overstate context, so it fires early, which is the safe
 direction. Subagent streams never trigger one — a subagent's window is its own.
@@ -91,7 +91,7 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         "event": "post_tool",
         "tool": payload.get("tool_name"),
         # Head excerpts, with `ref` pointing at the full payload in the transcript: nothing is
-        # lost, and the Companion follows the ref when an excerpt is not enough (spec 07.1).
+        # lost, and the Companion follows the ref when an excerpt is not enough.
         "input": streams.excerpt(tool_input),
         "output": streams.excerpt(tool_response),
         "context_tokens": tokens,
@@ -112,7 +112,7 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
 
     streams.append_record(root, item_id, stream, record)
 
-    # The hard trigger: it does not wait for a step to close (spec 05, 02 Seams). The
+    # The hard trigger: it does not wait for a step to close. The
     # Partner takes it like any agent; its seam rehydrates from the context file and no
     # goal pointer is involved. Without usage counts the transcript size on disk stands
     # in; the record above keeps `context_tokens` honestly unknown either way.

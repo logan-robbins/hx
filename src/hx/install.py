@@ -1,4 +1,4 @@
-"""`hx install` — the one manual command (spec 17.2).
+"""`hx install` — the one manual command.
 
 Four steps, in order:
 
@@ -10,7 +10,7 @@ Four steps, in order:
 That is the whole of deployment; after this the human types nothing but chat.
 
 hx reads nothing from the user's `~/.claude` at any point, on any platform: auth is the
-instance credential at `seed/token` (spec 11 Auth). `--skeleton-only` stops after step 2, which is
+instance credential at `seed/token`. `--skeleton-only` stops after step 2, which is
 what the test suites use.
 """
 
@@ -29,7 +29,7 @@ from .errors import HxError, NotFound
 from .ids import PARTNER
 from .root import resolve_root
 
-#: Directories of spec 03 that exist in every instance from the moment it is created.
+#: Directories that exist in every instance from the moment it is created.
 LAYOUT_DIRS = (
     "adapters",
     "bin",
@@ -40,14 +40,14 @@ LAYOUT_DIRS = (
     "state",
 )
 
-#: Spec 03: everything but `config/` is runtime state, so the instance ignores it in git.
-GITIGNORE = """# Written by `hx install` (spec 03). Only config/ is worth committing.
+#: Everything but `config/` is runtime state, so the instance ignores it in git.
+GITIGNORE = """# Written by `hx install`. Only config/ is worth committing.
 logs/
 state/
 run/
 """
 
-#: Exactly what spec 17.2 step 2 says a fresh instance is created with, plus the adapters.
+#: Exactly what a fresh instance is created with, adapters included.
 #: No worker: the example worker configuration ships as `templates/worker/` for the Partner to
 #: copy into `config/<id>/` when it creates an agent (CONTRACTS.md "Fresh instance contents").
 EXPECTED_SKELETON_FILES = (
@@ -114,7 +114,7 @@ def entry_points() -> dict[str, str]:
     The entry-point scripts sit next to the running interpreter — that is where `uv tool
     install` and a venv put them. Hook commands in every `run/<id>/home/settings.json`
     reference these, so an install into another venv or tool directory is followed by another
-    `hx install`, which re-records them (spec 17.1).
+    `hx install`, which re-records them.
     """
     # `sys.executable` unresolved: inside a venv that is the venv's own python, which is the
     # interpreter hx runs on and the one whose bin/ holds the entry-point scripts. Resolving
@@ -128,7 +128,7 @@ def entry_points() -> dict[str, str]:
 
 
 def write_hx_json(root: Path) -> dict[str, str]:
-    """Record the entry points the adapters and hooks read (CONTRACTS.md, spec 17.1)."""
+    """Record the entry points the adapters and hooks read (CONTRACTS.md)."""
     recorded = entry_points()
     # The entry points are rewritten; anything else the instance records there (`skills`,
     # `learnings`, `learnings_prefix`; CONTRACTS.md) survives a re-install.
@@ -146,16 +146,15 @@ def write_hx_json(root: Path) -> dict[str, str]:
     return recorded
 
 
-#: `bin/hx` and `bin/hx-hook` of spec 03, as symlinks to whatever `config/hx.json` records.
+#: `bin/hx` and `bin/hx-hook`, as symlinks to whatever `config/hx.json` records.
 BIN_LINKS = (("hx", "hx_bin"), ("hx-hook", "hook_bin"))
 
 
 def link_bin(root: Path, recorded: dict[str, str]) -> list[Path]:
-    """Point `$HARNESS_ROOT/bin/{hx,hx-hook}` at the package's entry points (spec 03).
+    """Point `$HARNESS_ROOT/bin/{hx,hx-hook}` at the package's entry points.
 
     `start.sh` prepends this directory to every agent's `PATH`, so an agent runs `hx board`
-    rather than hunting for the binary through `config/hx.json` — which is what the Partner
-    had to do in the live rehearsal of 2026-09-20 21:20 (build-8 item 11). Symlinks, not
+    rather than hunting for the binary through `config/hx.json`. Symlinks, not
     copies, so an entry point that moves is followed by one `hx install`.
     """
     bindir = root / "bin"
@@ -242,7 +241,7 @@ def install_skeleton(root: Path) -> dict:
     }
 
 
-#: Spec 17.2 step 3 stops here until the human has pasted the token. A distinct exit code, so
+#: Step 3 stops here until the human has pasted the token. A distinct exit code, so
 #: a script can tell "waiting for the human" from "something is wrong".
 TOKEN_WAIT_EXIT = 4
 
@@ -267,18 +266,18 @@ def find_claude(explicit: str | None = None) -> str:
     found = shutil.which("claude")
     if not found:
         raise NotFound(
-            "claude is not on PATH; install Claude Code, or pass `--claude <path>` (spec 17.2 step 1)"
+            "claude is not on PATH; install Claude Code, or pass `--claude <path>`"
         )
     return str(Path(found).absolute())
 
 
 def preflight(root: Path, claude: str | None) -> str:
-    """Step 1: refuse root, check the tools, find the `claude` to record (spec 17.2 step 1)."""
+    """Step 1: refuse root, check the tools, find the `claude` to record."""
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         raise HxError(
             "refuse: hx does not run as root. Every agent launches Claude Code with "
             "--dangerously-skip-permissions, which Claude Code itself refuses under root or "
-            "sudo (spec 17.2 step 1, 11 Permissions)",
+            "sudo",
             exit_code=1,
         )
 
@@ -288,7 +287,7 @@ def preflight(root: Path, claude: str | None) -> str:
 
     for tool in ("tmux", "git"):
         if not shutil.which(tool):
-            raise HxError(f"{tool} is not on PATH; hx needs it (spec 17.2 step 1)")
+            raise HxError(f"{tool} is not on PATH; hx needs it")
 
     return find_claude(claude)
 
@@ -298,7 +297,7 @@ def seed_token_path(root: Path) -> Path:
 
 
 def check_seed_token(root: Path) -> bool:
-    """Step 3: the token is the one thing hx cannot do for the human (spec 11 Auth).
+    """Step 3: the token is the one thing hx cannot do for the human.
 
     Returns True when it is there; tightens its mode to 0600 on the way past.
     """
@@ -318,7 +317,7 @@ def token_instructions(root: Path) -> str:
         f"  2. paste the token it prints into {seed_token_path(root)}\n"
         "\n"
         "Then run this command again. hx reads nothing from your own ~/.claude, on any\n"
-        "platform: this token is the whole of an agent's auth (spec 11 Auth)."
+        "platform: this token is the whole of an agent's auth."
     )
 
 
@@ -330,7 +329,7 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     parser.add_argument(
         "--skeleton-only",
         action="store_true",
-        help="stop after step 2: the layout and the package skeleton (spec 17.2)",
+        help="stop after step 2: the layout and the package skeleton",
     )
     args = parser.parse_args(argv)
 

@@ -1,15 +1,15 @@
-"""`hx wake partner "<text>"` — the one way anything reaches the Partner (spec 08, 12).
+"""`hx wake partner "<text>"` — the one way anything reaches the Partner.
 
 A Claude Partner is reached over cross-session messaging, which is on by default and
 delivered with no approval hold in any permission mode: an idle Partner starts a turn, a
-busy one reads it between tool calls (spec 01.1, verified against
+busy one reads it between tool calls (verified against
 code.claude.com/docs/en/cross-session-messaging).
 
 The socket and token are per process and are recorded to `run/partner/socket.json` by the
-`context` hook at every `SessionStart`, so they survive `/clear` (spec 09, 12).
+`context` hook at every `SessionStart`, so they survive `/clear`.
 
 The wire format is an auth line then the message, each newline-terminated; the socket answers
-nothing (spec 08, live-verified E6).
+nothing (live-verified).
 
 A Codex Partner has no messaging socket, so the wake is pasted into its tmux pane instead —
 the same paste `hx goal` uses, which never blocks: the polls that watch the input box are
@@ -30,8 +30,7 @@ from .ids import PARTNER
 SOCKET_FILE = "run/partner/socket.json"
 
 #: CONTRACTS.md: "It never blocks and never retries." This bounds the connect and the two
-#: writes so a stale socket file cannot hang a caller; it is not a wait for a condition, which
-#: is what spec 08's "no timeouts anywhere" rules out.
+#: writes so a stale socket file cannot hang a caller; it is not a wait for a condition.
 _SOCKET_TIMEOUT_S = 5.0
 
 
@@ -66,7 +65,7 @@ NOT_REACHED_EXIT = 3
 
 
 def _paste_to_partner(text: str) -> str:
-    """The non-Claude wake path: paste the text into the Partner's pane (spec 12).
+    """The non-Claude wake path: paste the text into the Partner's pane.
 
     `no-socket` when there is no pane to paste into, `refused` when the paste
     itself failed, `accepted` once the text left this process for the pane.
@@ -135,7 +134,7 @@ def main(argv: list[str], root: Path, *, env=None) -> int:
     args = parser.parse_args(argv)
 
     if args.target != PARTNER:
-        raise Refused(f"refuse: `{args.target}` is not a wake target; only the Partner is woken (spec 08)")
+        raise Refused(f"refuse: `{args.target}` is not a wake target; only the Partner is woken")
     status = wake_partner_status(root, args.text)
     # Last line, exactly; exit 0 only when the Partner actually took it (CONTRACTS.md).
     print(f"HX-WAKE partner {status}")

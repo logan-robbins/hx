@@ -1,4 +1,4 @@
-"""Validator and parser for `config/models.json` (spec 05).
+"""Validator and parser for `config/models.json`.
 
 One row per model: `window` is the model's context window and `threshold` is hx's seam
 threshold, the point at which the `log` hook marks a seam. 1M-window models are capped at
@@ -7,9 +7,8 @@ threshold, the point at which the `log` hook marks a seam. 1M-window models are 
 `autocompact_window` is optional and is the one number here that *is* passed to Claude Code:
 `adapters/claude/start.sh` exports it as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` for the agent's
 session, which moves native autocompaction down from the model's own window (about 967k on a
-1M model) to a number the operator picks. Spec 11 assumed the native window and therefore said
-the variable stays unset; running an agent at a 250k autocompact window makes that assumption
-false, and hx has to know the number to keep its own seam below it. Hence the rule
+1M model) to a number the operator picks, and hx has to know the number to keep its own seam
+below it. Hence the rule
 `threshold < autocompact_window <= window`: hx seams first, native compaction never runs, and
 a row that inverts the two is rejected here rather than discovered as a lost conversation.
 """
@@ -22,7 +21,7 @@ from pathlib import Path
 
 from .errors import ValidationError
 
-#: Spec 05: "1M-window models are capped at 500000."
+#: 1M-window models are capped at 500000.
 LARGE_WINDOW = 1_000_000
 LARGE_WINDOW_THRESHOLD_CAP = 500_000
 
@@ -93,7 +92,7 @@ def validate_models(data: object, path: str | Path) -> dict[str, Model]:
         if window >= LARGE_WINDOW and threshold > LARGE_WINDOW_THRESHOLD_CAP:
             raise ValidationError(
                 f"{path}: model `{model_id}`: a window of {window} is capped at a threshold of "
-                f"{LARGE_WINDOW_THRESHOLD_CAP} (spec 05), got {threshold}"
+                f"{LARGE_WINDOW_THRESHOLD_CAP}, got {threshold}"
             )
         autocompact = values.get("autocompact_window")
         if autocompact is not None:
@@ -121,7 +120,7 @@ def load_models(path: str | Path) -> dict[str, Model]:
     """Read and validate `config/models.json`."""
     path = Path(path)
     if not path.exists():
-        raise ValidationError(f"{path}: missing; every instance needs config/models.json (spec 05)")
+        raise ValidationError(f"{path}: missing; every instance needs config/models.json")
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as exc:

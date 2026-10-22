@@ -1,7 +1,7 @@
 """The thin tmux layer.
 
 `HX_TMUX` lets a test point hx at a private tmux server (`tmux -L hx-test-<pid>`) so a
-test never touches the user's tmux sessions. Everything else here is read-only in M0.
+test never touches the user's tmux sessions.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def has_session(name: str, env: dict[str, str] | None = None) -> bool:
 
 
 def pane_log(root, item_id: str):
-    """`logs/<id>/<id>-pane.log`: the raw pane capture (spec 03, 11).
+    """`logs/<id>/<id>-pane.log`: the raw pane capture.
 
     Human-readable process diagnostics are separate from authoritative ledger capture.
     """

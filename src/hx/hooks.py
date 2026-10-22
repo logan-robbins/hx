@@ -26,8 +26,7 @@ from .errors import HxError
 from .ids import is_id
 from .root import resolve_root
 
-#: The hx event vocabulary of spec 09.1, and the build goal that delivers each
-#: (`handoff/orchestrator-to-build.md`, 2026-09-20 renumbering).
+#: The hx event vocabulary.
 EVENTS = {
     "context": 3,
     "log": 5,
@@ -36,11 +35,8 @@ EVENTS = {
     "subagent-result": 5,
     "precompact": 5,
     "postcompact": 5,
-    # The turn marker ships with the M4 batch (spec 13).
     "stop": 5,
-    # The Partner's `PreToolUse` guard over `config/partner/guard.json`. It shipped with
-    # goal eng-008, not a build-lane goal; the number only feeds the never-shown
-    # "not implemented" message.
+    # The Partner's `PreToolUse` guard over `config/partner/guard.json`.
     "guard": 9,
     "request": 9,
     "log-failure": 9,
@@ -67,7 +63,7 @@ _HANDLERS = {
     "subagent-stop": hook_subagent.stop,
     "subagent-result": hook_subagent.result,
     "stop": hook_stop.handle,
-    # Log-only, and `precompact` never blocks (spec 02, 09.1; live findings E4 and E8).
+    # Log-only, and `precompact` never blocks.
     "precompact": hook_compact.pre,
     "postcompact": hook_compact.post,
     # Exit 2 blocks the call; its line goes to stderr, which is what the model is shown.
@@ -125,7 +121,7 @@ def read_payload(stream=None) -> dict:
 
 
 def check_id(item_id: str, env) -> None:
-    """The baked-in `--id` must match `HARNESS_ID` when the session sets one (goal item 4).
+    """The baked-in `--id` must match `HARNESS_ID` when the session sets one.
 
     A mismatch means the settings file of one agent's home is being used by another.
     """
@@ -261,7 +257,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
 
     parser = argparse.ArgumentParser(prog="hx-hook", add_help=True)
     parser.add_argument("--id", required=True, dest="item_id", help="the id, baked in by install.sh")
-    parser.add_argument("event", choices=sorted(EVENTS), help="the hx hook event (spec 09.1)")
+    parser.add_argument("event", choices=sorted(EVENTS), help="the hx hook event")
     parser.add_argument("--root", help=argparse.SUPPRESS)
     parser.add_argument('--read-segment', type=int, help=argparse.SUPPRESS)
     parser.add_argument('--context-segment', type=int, help=argparse.SUPPRESS)
@@ -362,7 +358,7 @@ def main(argv: list[str] | None = None, *, stdin=None, env=None) -> int:
             return code
 
         print(
-            f"hx-hook: {event}: not implemented (build-{EVENTS[event]}) for --id {item_id}",
+            f"hx-hook: {event}: not implemented for --id {item_id}",
             file=sys.stderr,
         )
         return 0

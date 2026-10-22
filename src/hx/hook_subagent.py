@@ -1,9 +1,9 @@
-"""The three subagent hooks (spec 09.1, 07.3, 09.4).
+"""The three subagent hooks.
 
 `SubagentStart` is the only boundary a subagent gets: hx assigns its handle, opens its stream,
 composes its context and delivers it completely as JSON `additionalContext` — **JSON is the
 only accepted form for this event**; plain stdout is not injected (verified against
-code.claude.com/docs/en/hooks#subagentstart, 2026-09-20).
+code.claude.com/docs/en/hooks#subagentstart).
 
 `SubagentStop` closes the stream. `PostToolUse(Agent)` is the only path by which anything
 reaches the parent, so the closed-stream digest is handed back there.
@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import compose as compose_mod, store, streams, subagents
 
-#: Until the Companion writes real digests (M5), a closed stream still gets a file, so the
+#: Until the Companion writes the stream's digest, a closed stream still gets a file, so the
 #: path the parent is handed always exists.
 DIGEST_PLACEHOLDER = "_pending companion_\n"
 
@@ -30,7 +30,7 @@ def prompts_path(root: Path, item_id: str) -> Path:
 
 
 def record_prompt(root: Path, item_id: str, agent_id: str, prompt: str) -> None:
-    """Keep the spawn prompt by `agentId`, so a recompose can use it (build-6 live finding)."""
+    """Keep the spawn prompt by `agentId`, so a recompose can use it."""
     path = prompts_path(root, item_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = {}
@@ -115,7 +115,7 @@ def _start_body(payload: dict, item_id: str, root: Path, *, env=None) -> str:
         "agent_type": payload.get("agent_type"),
     })
 
-    # The subagent's own context file: SUBAGENTS.md as who it is, its prompt as the task (07.3).
+    # The subagent's own context file: SUBAGENTS.md as who it is, its prompt as the task.
     path = compose_mod.compose(root, item_id, stream, subagent_prompt=prompt, env=env)
 
     return path.read_text()
@@ -164,15 +164,14 @@ def stop(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str
 
 
 def result(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """`PostToolUse(Agent)` (spec 09.1).
+    """`PostToolUse(Agent)`.
 
-    Two live findings shape this (build-6). The Agent tool is **asynchronous**: this hook
+    Two live findings shape this. The Agent tool is **asynchronous**: this hook
     fires when the subagent is *launched*, with `tool_response.status == "async_launched"`,
-    not when it finishes — so there is no digest to hand back yet, and spec 09.1's
-    "the only path that reaches the parent" does not hold as written.
+    not when it finishes — so there is no digest to hand back yet.
 
     What the payload does carry is the spawn prompt, keyed by the same `agentId` that
-    `SubagentStart` reports. That is the pairing build-5 could not find, so hx records it
+    `SubagentStart` reports, so hx records it
     here and the subagent's context file uses it.
     """
     if '_hx_context_segment' in payload:

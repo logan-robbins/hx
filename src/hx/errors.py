@@ -2,7 +2,7 @@
 
 `HxError` carries the process exit code the CLI uses. Validator and parser messages
 always name the file and the rule that rejected it, so the message alone is enough to
-find and fix the offending file (spec 13 M0).
+find and fix the offending file.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ class HxRefusal(HxError):
 
 
 class ValidationError(HxError):
-    """A config, goal, or work item file failed validation. Exit 2 (spec 05)."""
+    """A config, goal, or work item file failed validation. Exit 2."""
 
     exit_code = 2
 
@@ -36,8 +36,7 @@ class NotFound(HxError):
     """A named id, goal file, or work item does not exist.
 
     Distinct from `ValidationError` so a caller can tell "no such id" from "the instance is
-    broken": the UI turns this into 404 and everything else into 502
-    (handoff/ui-to-build.md).
+    broken": the UI turns this into 404 and everything else into 502.
     """
 
     exit_code = 2
@@ -47,7 +46,7 @@ class Refused(HxError):
     """A transition hx will not make: the wrong state, the wrong caller, a failing check.
 
     Exit 1, like `HxRefusal`, because the instance is intact and the caller asked for
-    something the rules do not allow (spec 06, 08).
+    something the rules do not allow.
     """
 
     exit_code = 1

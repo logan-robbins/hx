@@ -1,6 +1,6 @@
 """The id vocabulary, in one place.
 
-An id is `partner` or `<pod-ish word>-NNN` (spec 06). Every other module imports `ID_RE`
+An id is `partner` or `<pod-ish word>-NNN`. Every other module imports `ID_RE`
 rather than restating it.
 """
 

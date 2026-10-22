@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 # adapters/claude/start.sh <id> — the entire launch; nothing else starts a Claude Code
-# process (spec 17.4).
+# process.
 #
-#   start.sh <id>          ensure tmux session <id> with the session env of spec 11, and run
+#   start.sh <id>          ensure tmux session <id> with the session env, and run
 #                          the launcher in window `main` (cwd harness.json.workdir,
 #                          HARNESS_ROOT for partner)
 #   start.sh --exec <id>   the launcher itself: refresh the home's CLAUDE.md, then exec (the
 #                          persona arrives through the SessionStart `context` hook)
 #
-# The argv is exactly spec 17.4: no prompt argument, no --resume, no compaction variables.
+# The argv is fixed: no prompt argument, no --resume, no compaction variables.
 #
 # `--setting-sources user` is not optional. Claude Code loads three settings sources — `user`
 # ($CLAUDE_CONFIG_DIR/settings.json), `project` (<cwd>/.claude/settings.json) and `local`
-# (<cwd>/.claude/settings.local.json) — and the workdir is a checkout hx does not own. In the
-# live rehearsal of 2026-09-20 21:20 a worker loaded its product repo's own
-# `.claude/settings.json`, whose deny-all PreToolUse hook and `defaultMode: plan` denied every
-# tool call, so the agent could never reach `hx complete` and its goal evaluator gave up. Only
-# the home's settings may apply, so only `user` is loaded. Verified 2026-09-20 against
-# `claude --help` (2.1.278) and against
+# (<cwd>/.claude/settings.local.json) — and the workdir is a checkout hx does not own. A
+# product repo's own `.claude/settings.json` can carry a deny-all PreToolUse hook or
+# `defaultMode: plan` that denies every tool call, so the agent never reaches `hx complete`. Only
+# the home's settings may apply, so only `user` is loaded. Verified against `claude --help` and
 # code.claude.com/docs/en/cli-reference ("Comma-separated list of setting sources to load
 # (`user`, `project`, `local`)"). Managed settings are a separate level and still apply.
 #
@@ -41,17 +39,17 @@ done
 id=$1
 case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
-  *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`, spec 06)" ;;
+  *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-root=${HARNESS_ROOT:?hx exports it for every adapter (spec 11)}
+root=${HARNESS_ROOT:?hx exports it for every adapter}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
 # The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
 python=${HX_PYTHON:-}
 [ -n "$python" ] || die "HX_PYTHON is unset; hx runs this adapter with the interpreter it runs on"
-command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
+command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 # Every worker executable descends from the controller's admitted run supervisor.
 "$python" -m hx.adapter_guard "$id" claude "$mode" agent || die "worker launch admission refused"
@@ -63,9 +61,9 @@ harness=$root/config/$id/harness.json
 persona=$root/run/$id/persona.md
 
 # --- refusals, checked in both modes so a bad instance fails before tmux is touched -------
-[ -f "$harness" ] || die "refuse: no $harness (spec 05)"
+[ -f "$harness" ] || die "refuse: no $harness"
 [ -f "$home/settings.json" ] || die \
-  "refuse: no $home/settings.json; run adapters/claude/install.sh $id first (spec 11)"
+  "refuse: no $home/settings.json; run adapters/claude/install.sh $id first"
 
 token_file=$root/seed/token
 [ -f "$token_file" ] || die \
@@ -76,7 +74,7 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
   be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
 # The directory this agent runs in: `workdir` from config/<id>/harness.json, whatever the
-# Partner chose for it (spec 17.2). hx creates no repository and no branch there.
+# Partner chose for it. hx creates no repository and no branch there.
 if [ "$id" = partner ]; then
   cwd=$root
 else
@@ -86,7 +84,7 @@ import json, os, sys
 print(os.path.join(sys.argv[2], json.load(open(sys.argv[1]))["workdir"]))
 CWDEOF
 )
-  [ -d "$cwd" ] || die "refuse: no workdir $cwd; it is \`workdir\` in $harness and must exist (spec 17.2)"
+  [ -d "$cwd" ] || die "refuse: no workdir $cwd; it is \`workdir\` in $harness and must exist"
 fi
 
 bin=${HX_CLAUDE_BIN:-}
@@ -95,17 +93,17 @@ if [ -z "$bin" ] && [ -f "$root/config/claude.json" ]; then
     "$root/config/claude.json")
 fi
 [ -n "$bin" ] || bin=$(command -v claude || true)
-[ -n "$bin" ] || die "refuse: no claude binary; \`hx install\` records its path as \`bin\` in config/claude.json (spec 17.1)"
-[ -x "$bin" ] || die "refuse: claude binary $bin is not executable (spec 17.1)"
+[ -n "$bin" ] || die "refuse: no claude binary; \`hx install\` records its path as \`bin\` in config/claude.json"
+[ -x "$bin" ] || die "refuse: claude binary $bin is not executable"
 
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
-[ -n "$model" ] || die "refuse: $harness has no \`model\` (spec 05)"
-[ -n "$effort" ] || die "refuse: $harness has no \`effort\` (spec 05)"
+[ -n "$model" ] || die "refuse: $harness has no \`model\`"
+[ -n "$effort" ] || die "refuse: $harness has no \`effort\`"
 
 # `autocompact_window` from this model's row in config/models.json, exported below as
 # CLAUDE_CODE_AUTO_COMPACT_WINDOW. Optional: a row without it leaves the variable unset and
-# the session keeps Claude Code's native autocompact window (spec 11 Compaction). With it,
+# the session keeps Claude Code's native autocompact window. With it,
 # native compaction is moved down to a number the operator picks, and `config_models.py` has
 # already refused any row where hx's seam threshold is not below it. Empty on anything
 # unexpected — a missing file, an unlisted model, a malformed row: a launch never fails
@@ -145,15 +143,14 @@ if [ "$mode" = exec ]; then
   fi
 
   cd "$cwd"
-  # The session env of spec 11 and 17.4. Exported rather than passed to `env`, so the token
+  # The session env. Exported rather than passed to `env`, so the token
   # never becomes an argv element of anything.
   export HARNESS_ID="$id"
   export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export CLAUDE_CONFIG_DIR="$home"
   # Runtime stability: the binary under a running session never changes mid-turn.
   export DISABLE_AUTOUPDATER=1
-  # `hx` on the agent's PATH (spec 03, build-8 item 11). In the live rehearsal of
-  # 2026-09-20 21:20 the Partner had to dig the absolute path out of config/hx.json.
+  # `hx` on the agent's PATH, so no agent digs the absolute path out of config/hx.json.
   export PATH="$root/bin:$PATH"
   if [ -n "${HX_MAX_OUTPUT_TOKENS:-}" ]; then
     export CLAUDE_CODE_MAX_OUTPUT_TOKENS="$HX_MAX_OUTPUT_TOKENS"
@@ -172,7 +169,7 @@ if [ "$mode" = exec ]; then
   if [ -n "$autocompact" ]; then
     export CLAUDE_CODE_AUTO_COMPACT_WINDOW="$autocompact"
   fi
-  # Every agent runs sandboxed and with permissions bypassed, always (spec 11). The
+  # Every agent runs sandboxed and with permissions bypassed, always. The
   # `.claude.json` pre-seed stays too: both mechanisms, so no dialog can ever appear.
   export IS_SANDBOX=1
   credential=$(cat "$token_file")
@@ -184,7 +181,7 @@ if [ "$mode" = exec ]; then
     unset ANTHROPIC_API_KEY
   fi
 
-  # Spec 17.4, exactly. No prompt argument, ever.
+  # No prompt argument, ever.
   tool_args=()
   if [ -n "${HX_CONTINUITY_RUN:-}" ]; then
     selected_tools=$("$python" -c 'import json,sys;print(",".join(json.load(open(sys.argv[1]))["selected"]))' "$root/run/$id/toolset.json")
@@ -201,9 +198,9 @@ fi
 
 # --- session mode: put the launcher in window `main` of tmux session <id> ------------------
 read -r -a TMUX_CMD <<< "${HX_TMUX:-tmux}"
-command -v "${TMUX_CMD[0]}" >/dev/null 2>&1 || die "refuse: ${TMUX_CMD[0]} not found; every agent runs in tmux (spec 17.4)"
+command -v "${TMUX_CMD[0]}" >/dev/null 2>&1 || die "refuse: ${TMUX_CMD[0]} not found; every agent runs in tmux"
 
-# The session env of spec 11. HX_* variables (a test's tmux socket, a scratch binary) are
+# The session env. HX_* variables (a test's tmux socket, a scratch binary) are
 # forwarded so a scratch instance behaves exactly like a real one.
 env_args=(
   -e HARNESS_ID="$id"
@@ -240,7 +237,7 @@ else
   fi
 fi
 
-# The pane capture, the UI's fallback for a dead session (spec 03, 11). Not a Companion
+# The pane capture, the UI's fallback for a dead session. Not a Companion
 # stream: `hx.streams` ignores it and the runtime retains it only as bounded execution diagnostics.
 "${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
 "${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"

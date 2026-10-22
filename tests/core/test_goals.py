@@ -74,7 +74,7 @@ def test_every_malformed_goal_is_rejected_by_name(name, tmp_path):
         parse_goal(path)
     message = str(exc.value)
     assert str(path) in message, f"{name}: message does not name the file: {message}"
-    assert "spec 06" in message or "frontmatter" in message, (
+    assert "goal is" in message or "frontmatter" in message, (
         f"{name}: message does not name the rule: {message}"
     )
 

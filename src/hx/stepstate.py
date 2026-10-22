@@ -1,10 +1,10 @@
-"""The step state: schema, validation, budget, and eviction (spec 07.2, 10).
+"""The step state: schema, validation, budget, and eviction.
 
 The Companion returns one JSON object per call and hx is the thing that decides whether to
 keep it. An invalid or oversized write is discarded and the previous state stands, because a
 corrupted step state is worse than a stale one: it is what the agent is rehydrated from.
 
-The budget is `companion.state_budget_tokens`, estimated at 4 characters per token (spec 10).
+The budget is `companion.state_budget_tokens`, estimated at 4 characters per token.
 The prompt asks the Companion to stay inside it; this is the deterministic backstop for when
 it overshoots, evicting in the order `companion/BASE.md` fixes.
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-#: Spec 07.2. Every key is optional on the wire — a Companion that has nothing to say about
+#: Every key is optional on the wire — a Companion that has nothing to say about
 #: dead ends should not have to send an empty list — but anything present must have this shape.
 SCHEMA: dict[str, type | tuple[type, ...]] = {
     "seq": int,
@@ -46,7 +46,7 @@ WORKING_SET_FIELDS: dict[str, type | tuple[type, ...]] = {
     "hypothesis": str,
 }
 
-#: Spec 10 "Evict under budget, in order".
+#: Evict under budget, in this order.
 EVICTION_ORDER = (
     "collapse_closed_steps",
     "oldest_dead_ends",
@@ -54,7 +54,7 @@ EVICTION_ORDER = (
     "untouched_file_notes",
 )
 
-#: Spec 10: the budget is in tokens, estimated at 4 characters per token.
+#: The budget is in tokens, estimated at 4 characters per token.
 CHARS_PER_TOKEN = 4
 
 
@@ -67,7 +67,7 @@ def estimate_tokens(state: dict) -> int:
 
 
 def validate(data: object, *, previous_seq: int | None = None) -> dict:
-    """Return the state, or raise `InvalidState` naming what was wrong (spec 07.2)."""
+    """Return the state, or raise `InvalidState` naming what was wrong."""
     if not isinstance(data, dict):
         raise InvalidState(f"step state must be a JSON object, got {type(data).__name__}")
 
@@ -142,7 +142,7 @@ def _touched_paths(state: dict) -> set[str]:
 
 
 def evict(state: dict, budget_tokens: int) -> tuple[dict, list[str]]:
-    """Bring the state inside the budget, in spec 10's order. Returns (state, what was done).
+    """Bring the state inside the budget, in `EVICTION_ORDER`. Returns (state, what was done).
 
     Deterministic on purpose: two runs over the same state evict the same things, so a state
     that shrinks is reproducible and a regression in the Companion's own output is visible.

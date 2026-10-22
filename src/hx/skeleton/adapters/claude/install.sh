@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# adapters/claude/install.sh <id> — write the per-agent Claude Code home (spec 11, 17.3).
+# adapters/claude/install.sh <id> — write the per-agent Claude Code home.
 #
 # Writes $HARNESS_ROOT/run/<id>/home/settings.json with:
-#   - the hx hooks of spec 09.1, each carrying `--id <id>`, pointed at $HARNESS_ROOT/bin/hx-hook.
+#   - the hx hooks, each carrying `--id <id>`, pointed at $HARNESS_ROOT/bin/hx-hook.
 #     The Partner alone also gets the `guard` PreToolUse hook over config/partner/guard.json;
-#     no worker is ever guarded (spec 09.1)
+#     no worker is ever guarded
 #   - instruction-files mode `claude-md`, so no AGENTS.md is ever discovered
 #   - claudeMdExcludes for the agent's own workdir
 #   - the bypass-permissions acceptance, so no launch is ever interactive
-#   - crossSessionInbound: accept, for the Partner only (spec 05, 11, 17.3)
+#   - crossSessionInbound: accept, for the Partner only
 # Agent homes hold no full credentials. The instance's OAuth token, or API key fallback,
 # is at $HARNESS_ROOT/seed/token. start.sh selects the matching environment variable. hx
 # never reads the user's ~/.claude, any .credentials.json, or the macOS Keychain.
@@ -22,16 +22,16 @@ die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 id=$1
 case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
-  *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`, spec 06)" ;;
+  *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
 
-root=${HARNESS_ROOT:?hx exports it for every adapter (spec 11)}
+root=${HARNESS_ROOT:?hx exports it for every adapter}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
 # The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.
 python=${HX_PYTHON:-}
 [ -n "$python" ] || die "HX_PYTHON is unset; hx runs this adapter with the interpreter it runs on"
-command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
+command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14"
 
 token_file=$root/seed/token
 [ -f "$token_file" ] || die \
@@ -44,7 +44,7 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 # Every hook runs bin/hx-hook, which `hx install` links to the package entry point.
 hook_bin=$root/bin/hx-hook
 
-# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5).
+# Skills from the package, loaded on demand; nothing is symlinked.
 skills_src=${HX_SKILLS_DIR:-}
 copy_skills() {
   local target=$1; shift
@@ -68,7 +68,7 @@ manifest_skills() {
 home=$root/run/$id/home
 mkdir -p "$home"
 
-# The directory this agent will run in, which start.sh also uses (spec 17.4): the `workdir`
+# The directory this agent will run in, which start.sh also uses: the `workdir`
 # the Partner chose in config/<id>/harness.json, HARNESS_ROOT for the Partner itself. A
 # relative workdir resolves against HARNESS_ROOT (CONTRACTS.md).
 if [ "$id" = partner ]; then
@@ -100,7 +100,7 @@ from hx.hook_contract import installation_args
 continuity = installation_args(Path(root), item_id, "claude", os.environ)
 
 
-# Only the Partner's reads and context still travel as hook transport segments.
+# Only the Partner's reads and context travel as hook transport segments.
 if is_partner:
     from hx.file_read_delivery import install_profile
     install_profile(Path(root), item_id)
@@ -139,7 +139,7 @@ if continuity:
 
 # The guard is the one hook that enforces anything, and it is the Partner's alone: it
 # directs by status and dispatch, and config/partner/guard.json names what it must not run or
-# read (spec 09.1). The matcher is `hook_guard.MATCHER`.
+# read. The matcher is `hook_guard.MATCHER`.
 if is_partner:
     hooks["PreToolUse"] = [entry("guard", "*")]
     hooks.setdefault('PostToolUseFailure', [entry('log-failure', '*')])
@@ -163,7 +163,7 @@ if is_partner:
 
 settings = {
     "hooks": hooks,
-    # Only config/CLAUDE.md loads; the product repo's instruction files never do (spec 03).
+    # Only config/CLAUDE.md loads; the product repo's instruction files never do.
     "pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}},
     "claudeMdExcludes": [
         f"{cwd}/**/CLAUDE.md",
@@ -172,13 +172,13 @@ settings = {
         f"{cwd}/**/AGENTS.md",
         f"{cwd}/**/.claude/AGENTS.md",
     ],
-    # Bypass permissions, always. The Partner's guard is a hook, not a permission rule (spec 05, 09.1).
+    # Bypass permissions, always. The Partner's guard is a hook, not a permission rule.
     "skipDangerousModePermissionPrompt": True,
 }
 if continuity:
     settings["autoMemoryEnabled"] = False
 if is_partner:
-    # The human and hx wake the Partner through the messaging socket (spec 11, 12).
+    # The human and hx wake the Partner through the messaging socket.
     settings["crossSessionInbound"] = "accept"
 settings["theme"] = "dark"
 
@@ -187,7 +187,7 @@ with open(target, "w") as handle:
     handle.write("\n")
 
 # A brand-new CLAUDE_CONFIG_DIR runs the first-run onboarding wizard (theme picker, tips),
-# which would stop a launch dead: "Nothing about launch is interactive" (spec 05, 11).
+# which would stop a launch dead: nothing about launch is interactive.
 # The flag lives in the config dir's own .claude.json, next to settings.json. Existing keys
 # are kept, so a home that has been running is not reset.
 config_json = os.environ["HX_CONFIG_JSON"]
@@ -210,7 +210,7 @@ if credential.startswith("sk-ant-api"):
 # Claude Code also asks, once per working directory, whether the folder is trusted. An
 # agent has no one to ask, and the directory is one hx created, so the answer is recorded
 # here rather than waited for. Key names confirmed against a real, human-accepted
-# `.claude.json` (read-only) and by the build-3 live run: with these two set, the
+# `.claude.json` (read-only) and by a live run: with these two set, the
 # binary reaches its prompt with no dialog.
 projects = existing.get("projects")
 if not isinstance(projects, dict):
@@ -230,7 +230,7 @@ with open(config_json, "w") as handle:
     handle.write("\n")
 PYEOF
 
-# The one CLAUDE.md that loads, installed as this home's user-level CLAUDE.md (spec 11).
+# The one CLAUDE.md that loads, installed as this home's user-level CLAUDE.md.
 if [ -f "$root/config/CLAUDE.md" ]; then
   cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
 fi

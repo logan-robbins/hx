@@ -24,10 +24,10 @@ case "$id" in
   partner|[a-z]*-[0-9][0-9][0-9]) ;;
   *) die "refuse: \`$id\` is not an id (\`partner\` or \`<pod>-NNN\`)" ;;
 esac
-# The Partner may run on Codex (spec 12); it runs in HARNESS_ROOT.
+# The Partner may run on Codex; it runs in HARNESS_ROOT.
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-root=${HARNESS_ROOT:?hx exports it for every adapter (spec 11)}
+root=${HARNESS_ROOT:?hx exports it for every adapter}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
 # The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.

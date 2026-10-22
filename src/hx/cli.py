@@ -94,7 +94,7 @@ IMPLEMENTED = {
     "ui": ui_cmd.main,
     "up": lifecycle.main_up,
     "wake": wake_cmd.main,
-    # Provider model lists diffed against the registry (TOOL_SKILL_PLAN step 3).
+    # Provider model lists diffed against the registry.
     "models": models_cmd.main,
 }
 
@@ -144,7 +144,7 @@ def _root_for(argv: list[str], env) -> Path:
     return resolve_root(override, env)
 
 
-# --- exposure (TOOL_SKILL_PLAN §Inventory) --------------------------------------------------------
+# --- exposure -------------------------------------------------------------------------------------
 
 #: Who sees which capability. Each entry is `command`, `command sub` or `command sub --flag`
 #: (`command --flag` for a flag of a command without subcommands). The worker column is the
@@ -184,7 +184,6 @@ AUDIENCES: dict[str, set[str]] = {
         "discipline profile", "discipline orient",
 
         "content index", "content stats",
-        # GRAPH_PLAN steps 2-8 (the graph lane builds them; the gate covers them already).
         "code contracts", "code submaps", "code stats", "code import",
         "code journal",
         "code audit",
@@ -206,11 +205,9 @@ AUDIENCES: dict[str, set[str]] = {
         "exec", "sift", "tool-exec", "file-read",
         "tools discover", "tools load", "tools call", "tools status",
         "discipline commit", "evidence",
-        # GRAPH_PLAN steps 2-6, with --expect/--owners.
         "code type", "code signature", "code callers", "code register", "code tests-for",
         "code conform", "code precedent", "code contract", "code map", "code fresh",
         "code audit",
-        # TOOL_SKILL_PLAN step 5.
         "discipline pull",
         "repo diff", "repo merge-base", "repo history", "repo file",
         "repo materialize",
@@ -300,7 +297,7 @@ def help_audience(env) -> str:
 
 
 def gate(command: str, rest: list[str], env) -> None:
-    """Refuse a worker caller anything outside its column (TOOL_SKILL_PLAN §Key Decisions)."""
+    """Refuse a worker caller anything outside its column."""
     from .caller import caller, require_partner_caller
     from .ids import PARTNER
 
@@ -370,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
     env = os.environ
 
     if argv and argv[0] == "help":
-        # The caller's column of the inventory (TOOL_SKILL_PLAN step 1); `--all` for every one.
+        # The caller's column of the inventory; `--all` for every one.
         return main_help(argv[1:], env)
     if argv and argv[0] in ("-h", "--help") and help_audience(env) == "worker":
         # A worker is shown its own column, never the whole list.
@@ -390,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        # The standing refusal runs before anything else, for every command (ORCHESTRATION.md).
+        # The standing refusal runs before anything else, for every command.
         root = _root_for(rest, env)
         # Authority backs visibility: a worker caller is refused anything outside its column.
         gate(command, rest, env)

@@ -1,4 +1,4 @@
-"""The UI server (spec 16.1).
+"""The UI server.
 
 Python stdlib `http.server` on `127.0.0.1`, no build step and no CDN. Every
 request but the static index carries the bearer token from `run/ui-token`,
@@ -53,7 +53,7 @@ TOKEN_COOKIE = "hx_ui_token"
 
 def token_cookie_name(port: int) -> str:
     return f"{TOKEN_COOKIE}_{port}"
-#: Spec 16.1: the mtime sweep runs once a second.
+#: The mtime sweep runs once a second.
 SCAN_INTERVAL = 1.0
 #: Scans between SSE comment frames, so a proxy or a dead peer is noticed without
 #: putting a timeout on the wait itself.
@@ -441,7 +441,7 @@ def serve_fixtures(directory: Path | str, *, port: int = DEFAULT_PORT, host: str
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m hx.ui", description="the hx UI (spec 16)")
+    parser = argparse.ArgumentParser(prog="python -m hx.ui", description="the hx UI")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--root", help="HARNESS_ROOT of a live instance")
     group.add_argument("--fixtures", help="a directory of CONTRACTS.md fixtures")

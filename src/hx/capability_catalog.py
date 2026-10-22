@@ -61,7 +61,7 @@ class MCP:
             answer = self.call('initialize', {'protocolVersion': HANDSHAKE_VERSION, 'capabilities': {}, 'clientInfo': {'name': 'hx', 'version': '1'}})
         except Rejected as refusal:
             raise Conflict(self.discover_refusal(refusal.error)) from None
-        # TOOL_SKILL_PLAN step 8: the version this server answered with, kept in the catalog.
+        # The version this server answered with, kept in the catalog.
         version = answer.get('protocolVersion') if isinstance(answer, dict) else None
         self.protocol_version = version if isinstance(version, str) and len(version) <= 32 else None
         self.send({'jsonrpc': '2.0', 'method': 'notifications/initialized'})

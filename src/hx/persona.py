@@ -18,7 +18,7 @@ VARIABLE_RE = re.compile(r"\{\{([a-zA-Z_][a-zA-Z_0-9]*)\}\}")
 #: 32 KiB wherever hx knows no tighter limit. Claude Code caps SessionStart output at 10,000
 #: characters; past that it saves the text to a file and the model gets a 2,000-character
 #: preview and the path, and is not told to read it (code.claude.com/docs/en/hooks, "JSON
-#: output", checked 2026-10-13). So on Claude the bound is 10,000.
+#: output"). So on Claude the bound is 10,000.
 HOOK_BYTES = 32 * 1024
 HOOK_BYTES_BY_FLAVOR = {"claude": 10_000}
 
@@ -42,7 +42,7 @@ def identity_values(root: Path, item_id: str) -> dict[str, str]:
 def _harness(root: Path, item_id: str) -> dict:
     path = root / "config" / item_id / "harness.json"
     if not path.is_file():
-        raise NotFound(f"{path}: no config for {item_id}; every id has a config/<id>/ (spec 03)")
+        raise NotFound(f"{path}: no config for {item_id}; every id has a config/<id>/")
     return json.loads(path.read_text())
 
 

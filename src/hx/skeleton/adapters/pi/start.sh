@@ -16,7 +16,7 @@ case "$id" in
 esac
 [ "$id" != partner ] || die "refuse: the Partner stays on claude"
 
-root=${HARNESS_ROOT:?hx exports it for every adapter (spec 11)}
+root=${HARNESS_ROOT:?hx exports it for every adapter}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
 # The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.

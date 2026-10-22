@@ -2,8 +2,7 @@
 
 Every hx command calls `resolve_root()` before doing anything else. hx refuses any root
 that is, or resolves (symlinks included) inside, the user's `~/.claude`, and never derives
-an instance path from the user's Claude home (ORCHESTRATION.md standing rule 2,
-tests/guard/test_harness_root_refusal.py).
+an instance path from the user's Claude home (tests/guard/test_harness_root_refusal.py).
 """
 
 from __future__ import annotations
@@ -13,9 +12,8 @@ from pathlib import Path
 
 from .errors import HxRefusal
 
-#: Where the instance lives when `HARNESS_ROOT` is not set. Spec 17.1 says `/srv/hx` on a
-#: server and `~/hx` on a workstation; hx only ever defaults to the workstation form and
-#: a server install passes `HARNESS_ROOT` explicitly.
+#: Where the instance lives when `HARNESS_ROOT` is not set: `~/hx`, the workstation form.
+#: A server install passes `HARNESS_ROOT` explicitly.
 DEFAULT_ROOT_NAME = "hx"
 
 
@@ -67,7 +65,7 @@ def check_root(root: Path, env: os._Environ[str] | dict[str, str] | None = None)
         if _is_within(candidate, reference):
             raise HxRefusal(
                 f"refuse to use {root} as HARNESS_ROOT: it is inside the user's Claude "
-                f"home {claude}; hx never touches the user's ~/.claude (spec 17.3). "
+                f"home {claude}; hx never touches the user's ~/.claude. "
                 f"Set HARNESS_ROOT to a directory outside it."
             )
 

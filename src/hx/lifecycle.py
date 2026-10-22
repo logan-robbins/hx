@@ -26,7 +26,7 @@ def adapter(root: Path, name: str, item_id: str | None = None) -> Path:
     chosen = flavor_of(root, item_id) if item_id else "claude"
     path = root / "adapters" / chosen / name
     if not path.is_file():
-        raise NotFound(f"{path}: missing; `hx install` copies the adapters from the package (spec 17.2)")
+        raise NotFound(f"{path}: missing; `hx install` copies the adapters from the package")
     return path
 
 
@@ -66,7 +66,7 @@ def ui_url(root: Path) -> str:
 
 
 def start_ui(root: Path, *, env=None) -> bool:
-    """`hx ui` in tmux session `ui` (spec 16.1, 17.2). Idempotent: a live one is left alone.
+    """`hx ui` in tmux session `ui`. Idempotent: a live one is left alone.
 
     It is a session and not a daemon for the same reason every agent is: one place to look,
     `tmux attach -t ui`, and `hx heartbeat` can see whether it is still there.
@@ -77,7 +77,7 @@ def start_ui(root: Path, *, env=None) -> bool:
         return False
     hx_bin = root / "bin" / "hx"
     if not hx_bin.exists():
-        raise NotFound(f"{root}: no bin/hx; `hx install` links it (spec 03)")
+        raise NotFound(f"{root}: no bin/hx; `hx install` links it")
 
     # The session env, as `start.sh` builds it: HARNESS_ROOT plus every HX_* the caller has,
     # so a scratch instance's UI talks to the scratch tmux server and nothing else.
