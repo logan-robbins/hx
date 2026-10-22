@@ -1,7 +1,7 @@
 """Reading Claude Code's own transcript, for the one number hx needs from it.
 
 `context_tokens` is the size of the context the model was last sent, read from the `usage`
-block of the latest assistant record in the transcript the hook was handed (spec 07.1). It is
+block of the latest assistant record in the transcript the hook was handed. It is
 what the `log` hook compares against the seam threshold, and what `hx board` reports.
 """
 

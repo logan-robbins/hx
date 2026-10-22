@@ -2,7 +2,7 @@
 
 Acceptance checks run for up to an hour and a Companion pass for up to a
 minute. The tick submits them here and reaps their outcomes on a later tick, so
-one slow check no longer holds every other run's completion, restart, reset and
+one slow check never holds every other run's completion, restart, reset and
 Companion behind it. `Jobs.inline()` runs each job at submission on the
 caller's ledger; tests and `hx loop --once` use it. The service uses threads,
 each opening its own ledger connection.

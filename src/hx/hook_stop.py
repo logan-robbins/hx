@@ -58,8 +58,8 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(COLD_MISS)
     if marker.exists():
-        # The `/clear` this queues runs after this hook returns — live-verified, spec 09.2
-        # step 3. A seam that cannot be taken yet leaves its marker for the next boundary.
+        # The `/clear` this queues runs after this hook returns — live-verified. A seam that
+        # cannot be taken yet leaves its marker for the next boundary.
         from . import seam as seam_mod
 
         seam_mod.seam(root, item_id, env=env)

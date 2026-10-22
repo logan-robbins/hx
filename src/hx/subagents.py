@@ -1,4 +1,4 @@
-"""Subagent handles: `run/<id>/subagents.json` and the `sNNN` vocabulary (spec 01, 09.1).
+"""Subagent handles: `run/<id>/subagents.json` and the `sNNN` vocabulary.
 
 A subagent is addressed by handle `<id>-sNNN`. Claude Code gives hooks an opaque `agent_id`;
 hx maps it to the next free `sNNN` at `SubagentStart` and every later hook looks it up here,
@@ -77,7 +77,7 @@ def stream_for(item_id: str, handle: str) -> str:
 
 
 def handle_for(root: Path, item_id: str, agent_id: str | None) -> tuple[str, bool]:
-    """The stream a hook's payload belongs to, and whether it is the main one (spec 09.1).
+    """The stream a hook's payload belongs to, and whether it is the main one.
 
     An `agent_id` hx has never seen — a subagent that started before hx was watching — falls
     back to the main stream rather than inventing a handle, because a record on the wrong

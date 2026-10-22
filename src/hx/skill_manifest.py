@@ -1,6 +1,6 @@
 """The skill manifest: which packaged skill each agent home gets, and the lint behind it.
 
-Visibility is budget (TOOL_SKILL_PLAN §Inventory): every skill an agent carries costs its
+Visibility is budget: every skill an agent carries costs its
 description in every listing, so each one is installed for exactly the audience and roles
 that need it. `src/hx/skills/manifest.json` is the one place that says so —
 
@@ -32,7 +32,7 @@ from .errors import ValidationError
 
 MANIFEST = "manifest.json"
 
-#: The audiences of TOOL_SKILL_PLAN §Inventory a skill can be written for.
+#: The audiences a skill can be written for.
 AUDIENCE_NAMES = ("operator", "partner", "worker", "subagent")
 #: Audiences that run as a worker for the refusal lint: what they carry must not name a
 #: command the worker is refused.

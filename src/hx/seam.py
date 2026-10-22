@@ -21,10 +21,10 @@ from .errors import Refused
 from .hook_log import seam_marker
 from .ids import PARTNER
 
-#: What the `context` hook sees as `source` when the queued `/clear` runs (spec 09.1).
+#: What the `context` hook sees as `source` when the queued `/clear` runs.
 SEAM_SOURCE = "clear"
 
-#: Returned by `seam()` when the turn left background work running (spec 09.2 step 2).
+#: Returned by `seam()` when the turn left background work running.
 DEFERRED = "deferred"
 TAKEN = "taken"
 #: Returned by `seam()` when the take is not ready yet: a menu awaits the human. The marker
@@ -62,7 +62,7 @@ def pane_ready(root: Path, item_id: str, *, env=None) -> bool:
 
 
 def background_tasks(root: Path, item_id: str) -> list:
-    """What the last `stop` hook recorded in `run/<id>/turn` (spec 09.1)."""
+    """What the last `stop` hook recorded in `run/<id>/turn`."""
     from .hook_stop import turn_marker
 
     path = turn_marker(root, item_id)
@@ -85,7 +85,7 @@ def step_state(root: Path, item_id: str) -> dict:
 
 def seam_record(root: Path, item_id: str, context_file: Path | None, *, source: str = SEAM_SOURCE,
                 reason: str = "manual") -> dict:
-    """The `seam` record of spec 07.4, which `hx metrics` reads (CONTRACTS.md).
+    """The `seam` record, which `hx metrics` reads (CONTRACTS.md).
     `context_file_bytes` is the size of the file the boundary reads: `PARTNER.md`,
     with the `## Status` hx just wrote."""
     state = step_state(root, item_id)
@@ -120,11 +120,11 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
     pending = background_tasks(root, item_id)
     if pending:
         # Not a boundary: the turn ended but work is still running behind it. The marker
-        # stays exactly where it is and the next `stop` retries (spec 09.2 step 2).
+        # stays exactly where it is and the next `stop` retries.
         return {"id": item_id, "outcome": DEFERRED, "seq": None, "background_tasks": pending}
 
 
-    # Readiness gate (spec 09.2): take only when the pane can receive `/clear`. Otherwise
+    # Readiness gate: take only when the pane can receive `/clear`. Otherwise
     # append a watcher record and leave the marker for the next boundary. It never waits
     # on the Companion: records newer than its last pass stay in the stream for the next
     # pass, and the step state it already installed is the checkpoint.
@@ -134,7 +134,7 @@ def seam(root: Path, item_id: str, *, env=None) -> dict:
                                     {"event": "seam_waiting", "ready": "menu"})
         return {"id": item_id, "outcome": WAITING, "seq": seq, "background_tasks": []}
 
-    # Sequence is spec 08's: `## Status` is written from what the Companion recorded, then
+    # Sequence: `## Status` is written from what the Companion recorded, then
     # the `/clear` is queued and the record written.
     context_file = compose_mod.compose(root, item_id, stream, env=env)
 

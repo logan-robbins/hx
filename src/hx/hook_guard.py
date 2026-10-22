@@ -1,4 +1,4 @@
-"""The `guard` hook: `PreToolUse`, the Partner only (spec 09.1).
+"""The `guard` hook: `PreToolUse`, the Partner only.
 
 The Partner directs by status and dispatch. Verification, control runs, test runs and code
 reads belong to QA and the engineers, and the rule is enforced here rather than remembered.
@@ -251,7 +251,7 @@ def judge(payload: dict, rules: Rules) -> str | None:
 
 def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
     if item_id != PARTNER:
-        # The adapter installs it for the Partner alone; a worker is never guarded (spec 09.1).
+        # The adapter installs it for the Partner alone; a worker is never guarded.
         log(root, item_id, "inactive: the guard is the Partner's")
         return 0, ""
     rules, why = load_rules(root)

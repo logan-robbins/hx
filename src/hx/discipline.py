@@ -222,7 +222,7 @@ BASE_REFS = ("dev", "origin/dev", "main", "master", "origin/main", "origin/maste
 
 
 def pull(repo) -> dict:
-    """How far behind its principal branch this worktree is (TOOL_SKILL_PLAN step 5).
+    """How far behind its principal branch this worktree is.
 
     Read-only git on local refs (it never fetches: `git fetch` first for a remote base).
     The base is the first of `BASE_REFS` that has a merge-base with HEAD, as `commit_range`
@@ -256,7 +256,7 @@ def pull(repo) -> dict:
             f"pull {base}: {behind} commit(s) behind, {len(diverged)} file(s) changed there"}
 
 
-# --- post-seam orientation (TOOL_SKILL_PLAN step 5) ------------------------------------------------
+# --- post-seam orientation ------------------------------------------------------------------------
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "edit", "write",
               "search_replace", "str_replace", "create_file"}

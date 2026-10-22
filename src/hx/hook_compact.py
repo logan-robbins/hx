@@ -1,7 +1,7 @@
-"""The `precompact` and `postcompact` hooks (spec 09.1, 02 "Compaction (last resort)").
+"""The `precompact` and `postcompact` hooks.
 
 Both are **log-only**, and `precompact` deliberately does not block. Two live findings decided
-that (`01-terminology.md` 1.1, E4 and E8):
+that:
 
   - blocking `PreCompact(auto)` suppresses compaction for the rest of that turn even if a
     later `PreCompact` is allowed, so a block is not a "not yet", it is a "not this turn";
@@ -40,7 +40,7 @@ def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]
     It never blocks and never runs a pass: holding compaction hostage for a model call
     trades a slow summary for a hung turn, and the loop's next Partner pass lands in the
     state the `SessionStart(compact)` context file is composed from. It returns nothing —
-    no decision output, ever (spec 02).
+    no decision output, ever.
     """
     from .companion import require_partner
     require_partner(item_id)

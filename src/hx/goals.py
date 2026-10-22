@@ -56,27 +56,27 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
     if data:
         raise ValidationError(
             f"{path_str}: frontmatter key(s) {', '.join(sorted(data))}; a goal has no "
-            f"frontmatter, only one `{GOAL_HEADING}` paragraph (spec 06, CONTRACTS.md)"
+            f"frontmatter, only one `{GOAL_HEADING}` paragraph (CONTRACTS.md)"
         )
 
     headings = _headings(body)
     goals = [h for h in headings if h[1] == 2 and h[2] == GOAL_HEADING.removeprefix("## ")]
     if not goals:
         raise ValidationError(
-            f"{path_str}: no `{GOAL_HEADING}` section; a goal is one `{GOAL_HEADING}` paragraph "
-            f"(spec 06). provide it as a planning input"
+            f"{path_str}: no `{GOAL_HEADING}` section; a goal is one `{GOAL_HEADING}` paragraph"
+            f". provide it as a planning input"
         )
     if len(goals) > 1:
         raise ValidationError(
             f"{path_str}: `{GOAL_HEADING}` appears more than once; a goal is one "
-            f"`{GOAL_HEADING}` paragraph (spec 06)"
+            f"`{GOAL_HEADING}` paragraph"
         )
     others = [h for h in headings if h is not goals[0]]
     if others:
         _, level, heading = others[0]
         raise ValidationError(
             f"{path_str}: `{'#' * level} {heading}`; a goal is one `{GOAL_HEADING}` paragraph and "
-            f"no other heading (spec 06)"
+            f"no other heading"
         )
 
     lines = body.split("\n")
@@ -85,11 +85,11 @@ def parse_goal_text(text: str, path: str | Path) -> Goal:
     if before:
         raise ValidationError(
             f"{path_str}: text above `{GOAL_HEADING}`; a goal is one `{GOAL_HEADING}` paragraph "
-            f"and nothing else (spec 06)"
+            f"and nothing else"
         )
     goal_text = "\n".join(lines[start + 1 :]).strip("\n")
     if goal_text.strip() == "":
-        raise ValidationError(f"{path_str}: `{GOAL_HEADING}` is empty; the goal is the whole task (spec 06)")
+        raise ValidationError(f"{path_str}: `{GOAL_HEADING}` is empty; the goal is the whole task")
 
     return Goal(path=Path(path), goal=goal_text, text=body.strip("\n") + "\n")
 

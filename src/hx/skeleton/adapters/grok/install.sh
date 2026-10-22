@@ -4,7 +4,7 @@
 # The home is GROK_HOME for this agent. It holds config.toml (minimal screen,
 # always-approve posture and the hx hooks) and skills. Auth is
 # XAI_API_KEY from seed/grok-token, exported at launch; the home holds no
-# credentials. Nothing is read from ~/.grok. Goal delivery is grok's native
+# credentials. Nothing is read from ~/.grok.
 # Native continuation and completion are owned by the admitted ledger run.
 set -euo pipefail
 
@@ -19,7 +19,7 @@ esac
 [ "$id" != partner ] || die \
   "refuse: the Partner stays on claude; hx wake uses its messaging socket"
 
-root=${HARNESS_ROOT:?hx exports it for every adapter (spec 11)}
+root=${HARNESS_ROOT:?hx exports it for every adapter}
 [ -d "$root" ] || die "HARNESS_ROOT $root does not exist"
 
 # The interpreter hx runs on: hx sets HX_PYTHON for every adapter it runs.

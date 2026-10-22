@@ -164,7 +164,7 @@ def _poll(name: str, env, wanted: bool, probe: str) -> bool:
 
 
 def paste(name: str, text: str, env=None) -> bool:
-    """Paste through a tmux buffer loaded from a file, then submit it (build-2 item 3).
+    """Paste through a tmux buffer loaded from a file, then submit it.
 
     `load-buffer` from a file rather than `set-buffer` with an argument, so what is pasted
     never passes through a command line and no shell can touch it.
@@ -188,12 +188,12 @@ def paste(name: str, text: str, env=None) -> bool:
 
 
 def submit(name: str, text: str, env=None) -> bool:
-    """Press Enter until the pasted text has left the input box (build-8 item 10).
+    """Press Enter until the pasted text has left the input box.
 
-    Two things eat an Enter, and both were found live on 2.1.278:
+    Two things eat an Enter, and both were found live:
 
       1. the paste itself — an Enter arriving while the TUI is still ingesting it is
-         swallowed with it, which is what stranded the first paste of every session;
+         swallowed with it, which strands the first paste of a session;
       2. the slash-command autocomplete — pasting `/clear` opens the command menu, and the
          first Enter goes to the menu rather than to the prompt.
 

@@ -1,7 +1,6 @@
 """`hx models` — what each provider serves now, diffed against what hx ships.
 
-TOOL_SKILL_PLAN §Tools To Build, P0 `hx models`: one read-only query per provider, in
-order —
+One read-only query per provider, in order —
 
     anthropic  GET https://api.anthropic.com/v1/models?lifecycle=active&limit=1000
                (X-Api-Key: ANTHROPIC_API_KEY, anthropic-version: 2023-06-01)

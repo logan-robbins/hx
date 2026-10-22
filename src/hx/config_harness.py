@@ -1,6 +1,6 @@
-"""Validator and parser for `config/<id>/harness.json` (spec 05).
+"""Validator and parser for `config/<id>/harness.json`.
 
-Spec 05 names four cross-file rules: `id` equals the directory name; `model` exists in
+Four cross-file rules: `id` equals the directory name; `model` exists in
 `models.json`; `role` has a `companion/roles/<role>.md`; `workdir` exists. The Partner has no
 `workdir`: it runs in HARNESS_ROOT. hx manages no git. Failure is exit 2.
 """
@@ -15,7 +15,7 @@ from .config_models import Model, load_models
 from .errors import ValidationError
 from .ids import ID_RE, PARTNER
 
-#: `--effort <level>` at launch, spec 11 ("`low`…`max`").
+#: `--effort <level>` at launch.
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 _REQUIRED = ("id", "pod", "role", "model", "effort")
@@ -65,7 +65,7 @@ def persona_channel(flavor: str) -> str:
 
 #: The Partner runs on Claude or Codex. The other flavors stay worker-only: `hx wake`
 #: reaches a Codex Partner by pasting into its pane, while pi/grok/meta have no
-#: wake path at all (spec 12).
+#: wake path at all.
 PARTNER_FLAVORS = ("claude", "codex")
 
 _COMPANION_INT_FIELDS = (
@@ -82,7 +82,7 @@ _COMPANION_BOOL_FIELDS = ("disabled",)
 def resolve_workdir(workdir: str, root: Path) -> Path:
     """A relative `workdir` is relative to HARNESS_ROOT (CONTRACTS.md); an absolute one stands.
 
-    Spec 17.2: the workdir is whatever directory the Partner chose for that agent. hx neither
+    The workdir is whatever directory the Partner chose for that agent. hx neither
     creates a repository there nor cares whether it is one.
     """
     path = Path(workdir)
@@ -133,7 +133,7 @@ def validate_harness(
 ) -> HarnessConfig:
     """Validate one `harness.json` body.
 
-    `dir_name`, `models` and `root` enable the cross-file rules of spec 05; each is skipped
+    `dir_name`, `models` and `root` enable the cross-file rules; each is skipped
     when the caller has not supplied what it needs.
     """
     path = str(path)
@@ -152,12 +152,12 @@ def validate_harness(
     item_id = _require_str(data, "id", path)
     if not ID_RE.match(item_id):
         raise ValidationError(
-            f"{path}: `id` `{item_id}` does not match the id form `partner` or `<pod>-NNN` (spec 06)"
+            f"{path}: `id` `{item_id}` does not match the id form `partner` or `<pod>-NNN`"
         )
     if dir_name is not None and item_id != dir_name:
         raise ValidationError(
             f"{path}: `id` is `{item_id}` but the directory is `config/{dir_name}/`; "
-            f"spec 05 requires them to be equal"
+            f"they must be equal"
         )
 
     pod = _require_str(data, "pod", path)
@@ -166,17 +166,17 @@ def validate_harness(
     effort = _require_str(data, "effort", path)
     if effort not in EFFORT_LEVELS:
         raise ValidationError(
-            f"{path}: `effort` must be one of {', '.join(EFFORT_LEVELS)} (spec 11), got `{effort}`"
+            f"{path}: `effort` must be one of {', '.join(EFFORT_LEVELS)}, got `{effort}`"
         )
 
     if item_id == PARTNER:
         if pod != PARTNER:
-            raise ValidationError(f'{path}: the Partner must have `"pod": "partner"` (spec 05), got `{pod}`')
+            raise ValidationError(f'{path}: the Partner must have `"pod": "partner"`, got `{pod}`')
         if role != PARTNER:
-            raise ValidationError(f'{path}: the Partner must have `"role": "partner"` (spec 05), got `{role}`')
+            raise ValidationError(f'{path}: the Partner must have `"role": "partner"`, got `{role}`')
         if data.get("workdir") is not None:
             raise ValidationError(
-                f"{path}: the Partner has no `workdir`: it runs in HARNESS_ROOT (spec 05, 17.4)"
+                f"{path}: the Partner has no `workdir`: it runs in HARNESS_ROOT"
             )
         workdir = None
     else:
@@ -189,7 +189,7 @@ def validate_harness(
         )
     if item_id == PARTNER and flavor not in PARTNER_FLAVORS:
         raise ValidationError(
-            f"{path}: the Partner runs on claude or codex (spec 12), "
+            f"{path}: the Partner runs on claude or codex, "
             f"got `flavor` `{flavor}`"
         )
 
@@ -215,8 +215,8 @@ def validate_harness(
                 )
         if explorer["effort"] not in EFFORT_LEVELS:
             raise ValidationError(
-                f"{path}: `explorer.effort` must be one of {', '.join(EFFORT_LEVELS)} "
-                f"(spec 11), got `{explorer['effort']}`"
+                f"{path}: `explorer.effort` must be one of {', '.join(EFFORT_LEVELS)}, "
+                f"got `{explorer['effort']}`"
             )
 
     harness = data.get("harness") or {}
@@ -254,8 +254,8 @@ def validate_harness(
     companion_effort = companion.get("effort")
     if companion_effort is not None and companion_effort not in EFFORT_LEVELS:
         raise ValidationError(
-            f"{path}: `companion.effort` must be one of {', '.join(EFFORT_LEVELS)} "
-            f"(spec 11), got `{companion_effort}`"
+            f"{path}: `companion.effort` must be one of {', '.join(EFFORT_LEVELS)}, "
+            f"got `{companion_effort}`"
         )
 
     unknown_companion = sorted(
@@ -283,8 +283,8 @@ def validate_harness(
     if models is not None and model not in models:
         raise ValidationError(
             f"{path}: `model` `{model}` is not in config/models.json "
-            f"(known: {', '.join(sorted(models)) or 'none'}); spec 05 requires it to be listed, "
-            f"and models are always full ids, never aliases (spec 08)"
+            f"(known: {', '.join(sorted(models)) or 'none'}); it must be listed, "
+            f"and models are always full ids, never aliases"
         )
     if models is not None and explorer and explorer["model"] not in models:
         raise ValidationError(
@@ -296,12 +296,12 @@ def validate_harness(
         role_file = root / "companion" / "roles" / f"{role}.md"
         if not role_file.is_file():
             raise ValidationError(
-                f"{path}: `role` `{role}` has no {role_file.relative_to(root)} (spec 05)"
+                f"{path}: `role` `{role}` has no {role_file.relative_to(root)}"
             )
         if workdir is not None and not resolve_workdir(workdir, root).is_dir():
             raise ValidationError(
                 f"{path}: `workdir` `{workdir}` does not exist "
-                f"(resolved to {resolve_workdir(workdir, root)}); spec 05"
+                f"(resolved to {resolve_workdir(workdir, root)})"
             )
 
     return HarnessConfig(
@@ -326,7 +326,7 @@ def flavor_of(root: Path, item_id: str) -> str:
     try:
         data = json.loads(path.read_text())
     except FileNotFoundError:
-        raise ValidationError(f"{path}: missing (spec 05)") from None
+        raise ValidationError(f"{path}: missing") from None
     except json.JSONDecodeError as exc:
         raise ValidationError(f"{path}: not valid JSON: {exc}") from exc
     flavor = data.get("flavor", "claude") if isinstance(data, dict) else None
@@ -348,7 +348,7 @@ def load_harness(
     """
     path = Path(path)
     if not path.exists():
-        raise ValidationError(f"{path}: missing (spec 05)")
+        raise ValidationError(f"{path}: missing")
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as exc:

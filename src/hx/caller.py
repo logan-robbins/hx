@@ -1,4 +1,4 @@
-"""Who is allowed to run what (spec 08).
+"""Who is allowed to run what.
 
 Agent-side commands identify the caller by `HARNESS_ID`, set on the tmux session by
 `start.sh`. Partner commands refuse when `HARNESS_ID` is set and is not `partner`; system
@@ -27,7 +27,7 @@ def require_partner_caller(command: str, env=None, *, owner: str | None = None) 
         raise Refused(
             f"refuse: `hx {command}` is {owner or 'the Partner' + chr(39) + 's'}, and HARNESS_ID "
             f"is `{who}`. A worker records blockers and decisions through `hx progress` "
-            f"instead of acting for itself (spec 08; `hx help` lists your commands)"
+            f"instead of acting for itself (`hx help` lists your commands)"
         )
 
 
@@ -37,7 +37,7 @@ def require_agent_caller(command: str, env=None) -> str:
     if who is None:
         raise HxError(
             f"{command}: HARNESS_ID is not set; this command is run by a HarnessAgent inside "
-            f"its own tmux session, where `start.sh` sets it (spec 08, 17.4)"
+            f"its own tmux session, where `start.sh` sets it"
         )
     if not is_id(who):
         raise HxError(f"{command}: HARNESS_ID `{who}` is not an id (`partner` or `<pod>-NNN`)")

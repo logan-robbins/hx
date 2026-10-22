@@ -40,7 +40,7 @@ def _relative(root: Path, path: Path) -> str:
 
 
 def _section(title: str, source: str | None, body: str) -> str:
-    """One section, carrying the path it came from (goal build-3 item 1)."""
+    """One section, carrying the path it came from."""
     head = f"## {title}" if source is None else f"## {title}\n\n_source: `{source}`_"
     return f"{head}\n\n{body.rstrip() or NONE_YET}\n"
 
@@ -69,10 +69,10 @@ def subagents(root: Path, item_id: str) -> tuple[str, str]:
     return source or f"templates/worker/SUBAGENTS.md", text
 
 
-#: What a subagent gets in place of the goal. Spec 07.3 says "the subagent prompt", but the
-#: `SubagentStart` payload does not carry one: its documented fields are `session_id`,
-#: `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`, and a live run on
-#: 2026-09-20 confirmed there is nothing else to read. The subagent already has the parent's
+#: What a subagent gets in place of the goal. The `SubagentStart` payload does not carry the
+#: subagent prompt: its documented fields are `session_id`,
+#: `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`, and a live run
+#: confirmed there is nothing else to read. The subagent already has the parent's
 #: instruction as its first message, so the section says where its task came from rather than
 #: pretending to repeat it.
 SUBAGENT_TASK = (
@@ -120,7 +120,7 @@ def _ev(entry: dict) -> str:
 
 
 def render_step_state(state: dict) -> str:
-    """The step state, rendered dense rather than dumped: one tagged line per fact (spec 07.2).
+    """The step state, rendered dense rather than dumped: one tagged line per fact.
 
     Unknown keys are rendered too, so a Companion that grows a field is not silently dropped
     from the file the agent actually reads.
@@ -200,7 +200,7 @@ def render_step_state(state: dict) -> str:
 
 
 def step_state(root: Path, item_id: str, stream: str) -> tuple[str | None, str]:
-    """Written by the Companion (spec 07.2); absent until its first pass."""
+    """Written by the Companion; absent until its first pass."""
     path = root / "state" / item_id / f"{stream}.json"
     if not path.is_file():
         return None, ""

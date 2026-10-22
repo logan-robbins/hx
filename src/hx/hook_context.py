@@ -60,7 +60,7 @@ def _body(payload: dict, item_id: str, root: Path, *, env=None) -> str:
     compose_mod.compose(root, item_id, stream, env=env)
     handed = persona_mod.boundary(root, item_id, env=env)
 
-    # A boundary record, so the Companion sees where the conversation restarted (spec 07.1).
+    # A boundary record, so the Companion sees where the conversation restarted.
     # Record the complete source body once, before automatic transport fan-out.
     streams.append_record(
         root,

@@ -73,7 +73,7 @@ def invariant_budget(*, window: int, threshold: int) -> dict:
                     "for the current task, which is restructured at cold seams."}
 
 
-# --- hx cache report (TOOL_SKILL_PLAN step 8) ----------------------------------------------------
+# --- hx cache report -----------------------------------------------------------------------------
 
 #: What a report says about prefix parts hx cannot see from the filesystem: the adapter's own
 #: tool schemas and whatever the host injects. Reported, never estimated.

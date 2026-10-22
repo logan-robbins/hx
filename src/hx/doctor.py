@@ -1,8 +1,8 @@
-"""`hx doctor` — what is here, what is missing, what is broken (spec 08).
+"""`hx doctor` — what is here, what is missing, what is broken.
 
-Every line is `<status>  <check>  <detail>`. It checks exactly what spec 08 lists: tmux, git,
-the Python floor, the recorded `claude` binary, the paths in `config/hx.json`, the
-seed token, each `run/<id>/home/settings.json`, and the sandbox flags of every running agent.
+Every line is `<status>  <check>  <detail>`. It checks tmux, git, the Python floor, the
+recorded `claude` binary, the paths in `config/hx.json`, the seed token, each
+`run/<id>/home/settings.json`, and the sandbox flags of every running agent.
 
 Worker homes come from admitted native launch capsules. Checks never infer assignment
 state from worker files or boot a process.
@@ -29,7 +29,7 @@ from .ids import ID_RE
 from .install import EXPECTED_SKELETON_FILES
 from .root import resolve_root
 
-#: Spec 17.2 step 1 and pyproject `requires-python`.
+#: As pyproject `requires-python`.
 PYTHON_FLOOR = (3, 14)
 
 from .doctor_homes import (OK, WARN, FAIL, _pi_home, _pi_instance, _grok_home, _grok_instance,
@@ -48,7 +48,7 @@ def _binary_version(binary: str, *args: str) -> str | None:
     return (result.stdout or result.stderr).strip().splitlines()[0] if (result.stdout or result.stderr) else path
 
 
-#: Spec 11: not negotiable, and checked on every live agent.
+#: Not negotiable, and checked on every live agent.
 REQUIRED_ENV = ("IS_SANDBOX=1",)
 REQUIRED_FLAG = "--dangerously-skip-permissions"
 
@@ -113,7 +113,7 @@ def live_agent_checks(item_id: str, env=None) -> list[tuple[str, str]]:
     elif "start.sh" in command:
         # The launcher has not exec'd the binary yet: it is still running its refusals.
         # Reading its argv here says nothing about the agent, and a
-        # failure would be simply untrue (handoff/gtm-to-build.md gtm-8).
+        # failure would be simply untrue.
         found.append((
             WARN,
             f"{item_id} is still launching (start.sh has not exec'd yet); "
@@ -272,7 +272,7 @@ def live_grok_checks(root: Path, item_id: str, env=None) -> list[tuple[str, str]
 
 
 #: Skill directories an agent CLI may discover inside its working directory: Claude's project
-#: skills, the Agent Skills location Codex and Pi scan, and Pi's own (TOOL_SKILL_PLAN step 7).
+#: skills, the Agent Skills location Codex and Pi scan, and Pi's own.
 WORKDIR_SKILL_DIRS = (".claude/skills", ".agents/skills", ".pi/skills")
 #: Flavors that scan `$HOME/.agents/skills` whatever their own config directory says.
 HOST_SKILL_FLAVORS = ("codex", "pi")
@@ -299,7 +299,7 @@ def skill_isolation(root: Path, flavors: dict[str, str], env=None) -> list[tuple
     unverified for project skills; Codex and Pi need project trust, which
     hx never grants. Codex and Pi also scan `$HOME/.agents/skills` regardless of `CODEX_HOME`
     or `PI_CODING_AGENT_DIR`, so a non-empty one is reported while such a worker is configured
-    (Pi launches with `--no-skills`). Warnings until docs/two-worlds.md records both checks.
+    (Pi launches with `--no-skills`).
     """
     env = os.environ if env is None else env
     rows: list[tuple[str, str, str]] = []
@@ -312,7 +312,7 @@ def skill_isolation(root: Path, flavors: dict[str, str], env=None) -> list[tuple
         if found:
             rows.append((WARN, "skills-isolation",
                          f"{item_id}: workdir {workdir} contains {', '.join(found)}; a checkout's "
-                         "skills must never load into a worker (docs/two-worlds.md, Skills)"))
+                         "skills must never load into a worker"))
     host_workers = [i for i in workers if flavors[i] in HOST_SKILL_FLAVORS]
     home = env.get("HOME")
     if host_workers and home:
@@ -325,7 +325,7 @@ def skill_isolation(root: Path, flavors: dict[str, str], env=None) -> list[tuple
             rows.append((WARN, "skills-isolation",
                          f"~/.agents/skills holds {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
                          f"while Codex or Pi worker(s) {', '.join(host_workers)} are configured; "
-                         "Codex scans it whatever CODEX_HOME says (docs/two-worlds.md, Skills)"))
+                         "Codex scans it whatever CODEX_HOME says"))
     return rows
 
 
@@ -387,7 +387,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             OK if python_ok else FAIL,
             "python",
             f"{platform.python_version()} ({sys.executable})"
-            + ("" if python_ok else f"; hx needs >= {'.'.join(map(str, PYTHON_FLOOR))} (spec 17.2)"),
+            + ("" if python_ok else f"; hx needs >= {'.'.join(map(str, PYTHON_FLOOR))}"),
         )
     )
 
@@ -414,14 +414,14 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         else:
             binary = recorded.get("bin") if isinstance(recorded, dict) else None
             if not binary:
-                checks.append((FAIL, "claude", "config/claude.json has no `bin` (spec 17.1)"))
+                checks.append((FAIL, "claude", "config/claude.json has no `bin`"))
             elif not (Path(binary).is_file() and os.access(binary, os.X_OK)):
-                checks.append((FAIL, "claude", f"recorded binary {binary} is missing or not executable (spec 17.1)"))
+                checks.append((FAIL, "claude", f"recorded binary {binary} is missing or not executable"))
             else:
                 checks.append((OK, "claude", binary))
     else:
         checks.append(
-            (WARN, "claude", "config/claude.json absent; `hx install` records the binary (spec 17.1)")
+            (WARN, "claude", "config/claude.json absent; `hx install` records the binary")
         )
 
     if not root.is_dir():
@@ -500,7 +500,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             )
             checks.append((OK, "models", f"{len(models)} model(s): {described}"))
 
-    # The skills the adapters install (TOOL_SKILL_PLAN step 1): the manifest, the Agent Skills
+    # The skills the adapters install: the manifest, the Agent Skills
     # frontmatter rules, the size bounds, and no worker skill naming a command a worker is
     # refused. `HX_SKILLS_DIR` points it at another directory, as it does the adapters.
     from . import skill_manifest
@@ -517,7 +517,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             checks.append((FAIL, "hx.json", f"config/hx.json is not valid JSON: {exc}"))
             recorded = {}
         # `bin/hx` and `bin/hx-hook` link to these, and every agent's hooks run `bin/hx-hook`;
-        # a missing one is silently broken hooks (spec 17.1).
+        # a missing one is silently broken hooks.
         for key in ("hx_bin", "hook_bin"):
             value = recorded.get(key)
             if not value:
@@ -531,14 +531,14 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
             (WARN, "hx.json", "config/hx.json absent; `hx install --skeleton-only` records it (CONTRACTS.md)")
         )
 
-    # `bin/hx` and `bin/hx-hook` are what puts hx on every agent's PATH (spec 03, 17.1).
+    # `bin/hx` and `bin/hx-hook` are what puts hx on every agent's PATH.
     for name in ("hx", "hx-hook"):
         link = root / "bin" / name
         if not link.exists():
             checks.append((
                 FAIL, "bin",
-                f"bin/{name} is missing; agents get hx on their PATH from $HARNESS_ROOT/bin "
-                f"(spec 03). `hx install` writes it",
+                f"bin/{name} is missing; agents get hx on their PATH from $HARNESS_ROOT/bin. "
+                "`hx install` writes it",
             ))
         elif not os.access(link, os.X_OK):
             checks.append((
@@ -554,7 +554,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         checks.append((
             FAIL, "token",
             "seed/token absent; the human runs `claude setup-token` once and pastes the token "
-            "there, mode 0600 (spec 11 Auth, 17.2 step 3)",
+            "there, mode 0600",
         ))
     elif token.stat().st_mode & 0o77:
         checks.append((FAIL, "token", "seed/token is readable by group or other; it must be mode 0600"))
@@ -582,7 +582,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         if item_id == "partner" and flavor not in PARTNER_FLAVORS:
             checks.append((
                 FAIL, f"flavor:{item_id}",
-                "the Partner runs on claude or codex (spec 12)",
+                "the Partner runs on claude or codex",
             ))
         if not home.is_dir():
             checks.append((
@@ -590,7 +590,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
                 f"{home} absent; inspect the native launch preparation",
             ))
             continue
-        # Homes hold no credentials: auth is the instance token (spec 11 Auth).
+        # Homes hold no credentials: auth is the instance token.
         # Grok and codex homes carry config.toml and a meta home muse/settings.json
         # instead of settings.json.
         target = home / {
@@ -612,7 +612,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
         elif flavor == "codex":
             checks.extend(_codex_home(root, home, item_id))
         else:
-            # The pre-seeded first-launch state (spec 08): without it the pane stops at the
+            # The pre-seeded first-launch state: without it the pane stops at the
             # onboarding wizard or the workspace-trust dialog and nothing about launch is
             # non-interactive any more (CONTRACTS.md `run/<id>/home/.claude.json`).
             checks.append(_first_launch_state(home, item_id))
@@ -629,12 +629,12 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     codex_ids = [item_id for item_id in ids if flavors.get(item_id) == "codex"]
     if codex_ids:
         checks.extend(_codex_instance(root, codex_ids))
-    # Two-worlds isolation for skill discovery (TOOL_SKILL_PLAN step 7).
+    # Two-worlds isolation for skill discovery.
     checks.extend(skill_isolation(root, flavors, env))
 
-    # A live agent must be sandboxed and bypassing permissions, always (spec 11, the
-    # 2026-09-20 directive). Checked from the session environment tmux reports and from the
-    # argv of the process in the pane, because either one alone can be stale.
+    # A live agent must be sandboxed and bypassing permissions, always. Checked from the
+    # session environment tmux reports and from the argv of the process in the pane,
+    # because either one alone can be stale.
     # A Pi session has neither flag; it is checked for its own config dir and --no-approve.
     for item_id in ids:
         if item_id != "partner" or item_id not in flavors or not tmux.has_session(item_id, env):

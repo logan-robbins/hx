@@ -63,7 +63,7 @@ TOOLS = [{"name": "submit_state",
 
 
 def require_partner(item_id: str) -> None:
-    """File passes maintain only the orchestrator's conversation state."""
+    """File passes maintain only the Partner's conversation state."""
     if item_id != PARTNER:
         raise Refused('worker companions require a ledger run and native companion job')
 
@@ -85,7 +85,7 @@ def _sha(path: Path) -> str:
 
 
 def prompt_version(root: Path, role: str) -> dict:
-    """The shas of `BASE.md` and the role file — what `hx metrics` compares across (spec 07.4)."""
+    """The shas of `BASE.md` and the role file — what `hx metrics` compares across."""
     return {
         "base": _sha(root / "companion" / "BASE.md"),
         "role": _sha(root / "companion" / "roles" / f"{role}.md"),
@@ -100,7 +100,7 @@ def config_for(root: Path, item_id: str) -> HarnessConfig:
 
 
 def is_disabled(root: Path, item_id: str) -> bool:
-    """True when this agent runs without a Companion (`companion.disabled`, spec 05).
+    """True when this agent runs without a Companion (`companion.disabled`).
 
     Never raises: an unreadable config means the caller is already failing
     elsewhere, and a disabled check must not be what takes it down.
@@ -118,7 +118,7 @@ def system_prompt(root: Path, config: HarnessConfig) -> str:
     role = root / "companion" / "roles" / f"{config.role}.md"
     for path in (base, role):
         if not path.is_file():
-            raise NotFound(f"{path}: missing; the Companion's system prompt is composed from it (spec 10)")
+            raise NotFound(f"{path}: missing; the Companion's system prompt is composed from it")
     budget = (config.companion or {}).get("state_budget_tokens", 10000)
     facts = "\n".join([
         "## This agent",

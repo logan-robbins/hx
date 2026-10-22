@@ -119,7 +119,7 @@ def advance_one(store, *, env=None, jobs=None):
                 checked = outcome.result()
             if not checked['valid']:
                 intent.update(status='failed', failed_check=check_id, evidence='hx evidence ' + checked['event_id'])
-                # The never-twice question, advisory only (TOOL_SKILL_PLAN step 4).
+                # The never-twice question, advisory only.
                 note = _repeat_note(store, row, check_id, checked, env)
                 if note:
                     intent['learnings'] = note
@@ -176,8 +176,8 @@ def advance_one(store, *, env=None, jobs=None):
 def _repeat_note(store, row, check_id, checked, env):
     """`learnings: repeat of <Rule> (score)` for a failed acceptance check, or None.
 
-    The first 2,000 bytes of the check's retained output are the `learn.repeat` signal
-    (TOOL_SKILL_PLAN step 4). Advisory: an unreadable receipt, a missing learnings directory
+    The first 2,000 bytes of the check's retained output are the `learn.repeat` signal.
+    Advisory: an unreadable receipt, a missing learnings directory
     or anything else simply yields no note, and the failure path is unchanged.
     """
     from . import evidence, learn

@@ -1,8 +1,8 @@
-"""`hx ui` — the read-only web view of one instance (spec 08, 16).
+"""`hx ui` — the read-only web view of one instance.
 
-The ui lane owns `src/hx/ui/**`; this is only the CLI entry that hands it the root. `serve`
+The UI is `src/hx/ui/**`; this is only the CLI entry that hands it the root. `serve`
 blocks until the server is shut down, reads the port from `config/ui.json` itself, and writes
-nothing under `HARNESS_ROOT` except `run/ui-token` (handoff/ui-to-build.md).
+nothing under `HARNESS_ROOT` except `run/ui-token`.
 """
 
 from __future__ import annotations

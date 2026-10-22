@@ -414,7 +414,7 @@ def repeat(root: Path, signal: str, *, env: dict[str, str] | None = None) -> dic
                        "new": "propose with hx learn propose"}[verdict]}
 
 
-#: How much of a failing check's output becomes the repeat signal (TOOL_SKILL_PLAN step 4).
+#: How much of a failing check's output becomes the repeat signal.
 REPEAT_SIGNAL_BYTES = 2000
 REPEATS = Path("state") / "learn" / "repeats.jsonl"
 
