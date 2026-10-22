@@ -1,4 +1,4 @@
-"""The end-to-end packaging check, run as a test (spec 17, M10 part 1).
+"""The end-to-end packaging check, run as a test.
 
 `packaging/e2e-install.sh` builds the wheel, installs it as a uv tool into a HOME that did not
 exist a moment ago, and runs the installed `hx` against a fresh instance. It is a shell script
@@ -38,7 +38,7 @@ def test_end_to_end_install(tmp_path, capsys):
         pytest.skip(
             "uv is not on PATH, so the wheel cannot be built or installed as a tool; "
             "install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` "
-            "(the packaging milestone M10 requires it, and CI installs it)"
+            "(CI installs it)"
         )
 
     scratch = tmp_path / "e2e"

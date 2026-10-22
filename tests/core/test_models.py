@@ -1,4 +1,4 @@
-"""`hx models` (TOOL_SKILL_PLAN step 3): provider lists diffed against the registry.
+"""`hx models`: provider lists diffed against the registry.
 
 Every request goes through `hx.models_cmd.fetch`, which these tests replace: no network call
 is ever made here. One fixture per provider listing shape; one deprecated ID, one missing

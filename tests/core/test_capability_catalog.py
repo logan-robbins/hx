@@ -80,7 +80,7 @@ def test_shipped_skills_load_whole_with_current_catalog_purposes(tmp_path):
 
 
 def test_index_records_the_protocol_version_each_server_answers_with(indexed):
-    """TOOL_SKILL_PLAN step 8: the catalog keeps the `initialize` answer per server."""
+    """The catalog keeps the `initialize` answer per server."""
     store, _ = indexed
     catalog = capabilities.read(store.root)
     assert catalog['servers'] == {'local': {'protocol_version': '2024-11-05'}}

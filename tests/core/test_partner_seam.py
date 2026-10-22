@@ -1,10 +1,9 @@
-"""The Partner takes seams like any agent (spec 12, 02 Seams).
+"""The Partner takes seams like any agent.
 
-Regression: the Partner was exempted from the seam path at three points — the
-`log` hard trigger never marked it, `stop` deleted its marker as stale, and
-`seam()` refused it for having no work item — so a long Partner turn grew to
-native autocompaction, the lossy path seams exist to replace. A Partner seam
-is `/clear` + rehydrate from `PARTNER.md`, which the `context` hook points it at after its
+The `log` hard trigger marks the Partner, `stop` consumes its marker rather than deleting it
+as stale, and `seam()` accepts it without a work item, so a long Partner turn seams instead of
+growing to native autocompaction, the lossy path seams exist to replace. A Partner seam is
+`/clear` + rehydrate from `PARTNER.md`, which the `context` hook points it at after its
 persona and identity line; no goal pointer is ever sent.
 """
 
@@ -18,7 +17,7 @@ from .test_streams import events, pasted, post_tool, transcript_with
 
 
 def test_the_log_hook_marks_a_partner_seam_at_the_threshold(instance, tmp_path):
-    """spec 02, 09.1: the hard trigger covers the Partner too."""
+    """The hard trigger covers the Partner too."""
     from hx.hook_log import seam_marker, threshold_for
 
     threshold = threshold_for(instance, "partner")
@@ -34,7 +33,7 @@ def test_the_log_hook_marks_a_partner_seam_at_the_threshold(instance, tmp_path):
 
 
 def test_stop_takes_a_pending_partner_seam(instance, launched, tmux_server):
-    """spec 09.2: the marker is consumed via `hx seam`, not deleted as stale."""
+    """The marker is consumed via `hx seam`, not deleted as stale."""
     from hx.hook_log import seam_marker
 
     from .conftest import wait_for

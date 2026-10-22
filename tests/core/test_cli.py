@@ -1,4 +1,4 @@
-"""Subcommand dispatch for every command in spec 08 (goal build-1 item 1)."""
+"""Subcommand dispatch for every `hx` command."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def test_hook_entrypoint_knows_the_spec_09_events():
     assert set(EVENTS) == {
         "context", "log", "subagent-start", "subagent-stop",
         "subagent-result", "stop", "precompact", "postcompact",
-        # The Partner's PreToolUse guard over config/partner/guard.json (spec 09.1).
+        # The Partner's PreToolUse guard over config/partner/guard.json.
         "guard",
         # Explicit normalized observation routes for planned-run capture.
         "request", "log-failure", "tool-start", "message", "model-response",
@@ -58,7 +58,7 @@ def test_hook_entrypoint_knows_the_spec_09_events():
     }
 
 
-# --- exposure (TOOL_SKILL_PLAN step 1) -------------------------------------------------------------
+# --- exposure ------------------------------------------------------------------------------------
 
 from hx import cli as cli_mod  # noqa: E402
 
@@ -191,9 +191,8 @@ def test_planned_workers_cannot_import_or_create_episodic_memory(run_hx, tmp_pat
     assert not (tmp_path / 'planned/state').exists()
 
 
-#: TOOL_SKILL_PLAN step 8: every worker-column command's `--help` carries an example. `code *`
-#: is excluded: its parser lives in src/hx/code_index.py, which the code-graph work owns
-#: (GRAPH_PLAN.md); that plan adds its own examples.
+#: Every worker-column command's `--help` carries an example. `code *` is excluded: its parser
+#: lives in src/hx/code_index.py and is outside this sweep.
 HELP_EXAMPLE_ENTRIES = sorted(
     entry for entry in cli_mod.AUDIENCES["worker"] | cli_mod.AUDIENCES["subagent"]
     if entry.split()[0] != "code"

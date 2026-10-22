@@ -1,8 +1,8 @@
-"""`hx doctor` (spec 08, goal build-1 item 1).
+"""`hx doctor`.
 
 It prints the resolved root, the Python version, the tmux version, and the recorded binary
-from `config/claude.json` when present, and exits 0. `fail` is reserved for what M0 owns;
-everything a later milestone brings is `warn` (handoff/orchestrator-to-build.md answer 5).
+from `config/claude.json` when present, and exits 0. `fail` is reserved for what stops an
+instance from running, such as a missing token; a missing skeleton file is `warn`.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def test_a_recorded_binary_that_is_gone_fails(instance):
 
 
 def test_missing_skeleton_files_are_warnings_not_failures(instance, monkeypatch):
-    """The gtm lane owns these; doctor reports each missing one (goal build-1 item 2)."""
+    """Doctor reports each missing skeleton file as a warning."""
     _no_live_server(monkeypatch)
     (instance / "PARTNER.md").unlink()
     (instance / "templates" / "worker" / "harness.json").unlink()
@@ -83,7 +83,7 @@ def test_a_broken_models_file_fails(instance):
 
 
 def test_a_missing_token_fails(instance):
-    """Tightened in build-4: an instance with no token cannot launch anything."""
+    """An instance with no token cannot launch anything."""
     (instance / "seed" / "token").unlink()
     assert ("token", FAIL) in statuses(run_checks(instance))
 
@@ -113,7 +113,7 @@ def test_a_good_token_is_ok(instance):
 
 
 def test_a_fresh_skeleton_root_says_what_is_still_missing(run_hx, tmp_path):
-    """A `--skeleton-only` root is not a working instance: no token, no homes (spec 17.2)."""
+    """A `--skeleton-only` root is not a working instance: no token, no homes."""
     root = tmp_path / "scratch"
     created = run_hx("install", "--skeleton-only", "--root", str(root))
     assert created.returncode == 0, created.stderr
@@ -133,7 +133,7 @@ def test_json_form(run_hx, instance):
     assert {c["status"] for c in payload["checks"]} <= {OK, WARN, FAIL}
 
 
-# --- build-8 item 9: the pre-seeded first-launch state ------------------------------------------
+# --- the pre-seeded first-launch state ---------------------------------------------------------
 
 
 def seed_home(instance, item_id="partner", **state):
@@ -152,7 +152,7 @@ def home_checks(instance, item_id="partner"):
 
 
 def test_doctor_fails_when_the_first_launch_state_is_missing(instance):
-    """spec 08: each home's settings **and its pre-seeded first-launch state file**."""
+    """Each home's settings **and its pre-seeded first-launch state file**."""
     seed_home(instance)
     failures = [c for c in home_checks(instance) if c[0] == FAIL]
     assert failures and ".claude.json missing" in failures[0][2]
@@ -212,7 +212,7 @@ def test_codex_instance_with_token_and_binary_passes(instance, tmp_path):
 
 
 def test_codex_instance_accepts_login_homes_without_a_token(instance):
-    """ChatGPT-login homes need no seed token (spec 11)."""
+    """ChatGPT-login homes need no seed token."""
     from hx.doctor import _codex_instance
 
     home = instance / "run" / "eng-001" / "home"
@@ -344,7 +344,7 @@ def test_complete_context_total_overflow_names_every_affected_agent(instance, mo
     assert 'complete' in detail and 'budget' in detail
 
 
-# --- skills (TOOL_SKILL_PLAN step 1) -----------------------------------------------------------
+# --- skills ------------------------------------------------------------------------------------
 
 
 def _skill(directory, name, *, description="Use when testing.", body="Body.\n", extra=""):
@@ -399,7 +399,7 @@ def test_config_hx_json_skills_must_name_optional_shipped_skills(instance, monke
     assert "names `hx-worker`, which is not optional" in text
 
 
-# --- skill isolation (TOOL_SKILL_PLAN step 7, docs/two-worlds.md) -------------------------------
+# --- skill isolation ---------------------------------------------------------------------------
 
 
 def _isolation(checks):
@@ -450,8 +450,9 @@ def test_the_partners_directory_is_not_a_worker_workdir(instance, monkeypatch, t
 
 
 def test_the_shipped_skills_pass_the_lint_one_by_one():
-    """Every shipped skill passes `validate_skill`, the worker lint for its audiences, and the
-    format rules of TOOL_SKILL_PLAN §Skills To Add that the new skills carry."""
+    """Every shipped skill passes `validate_skill` and the worker lint for its audiences, and
+    `hx-signoff` and `hx-conversion` keep the facade format: the size cap, the hx metadata, and
+    none of the banned constructs."""
     from hx import skill_manifest
     from hx.cli import AUDIENCES
 

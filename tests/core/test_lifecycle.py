@@ -98,7 +98,7 @@ def test_wake_partner_returns_false_when_the_socket_is_stale(instance):
 
 
 def test_wake_partner_sends_the_auth_line_then_the_message(instance):
-    """spec 08, live-verified E6: auth line, then the user message, newline-terminated."""
+    """Auth line, then the user message, newline-terminated (observed live)."""
     from hx.wake import wake_partner
 
     address = str(Path(tempfile.mkdtemp(prefix="hxw")) / "p.sock")
@@ -178,10 +178,9 @@ def test_wake_cli_accepts_and_exits_0(instance, hx):
 
 # --- readiness detection, against the real TUI's chrome ------------------------------------------
 #
-# These strings are the live pane chrome of Claude Code 2.1.278, captured on 2026-09-20 from
-# a logged-in session (goal build-3 item 8, and `REAL_IDLE_PLACEHOLDER` from build-7's
-# live check). They are the record of what the real TUI draws; `hx.goal.pane_is_idle`
-# is judged against them.
+# These strings are the live pane chrome of Claude Code, captured from a logged-in session.
+# They are the record of what the real TUI draws; `hx.goal.pane_is_idle` is judged against
+# them.
 
 REAL_IDLE = "\n".join([
     "❯ ",
@@ -190,7 +189,7 @@ REAL_IDLE = "\n".join([
     "",
 ])
 #: A freshly launched pane with an empty input: the prompt carries a placeholder hint, so the
-#: prompt line is not blank. This hung `hx launch` forever until build-7 (live, 2.1.278).
+#: prompt line is not blank; a detector that misses it leaves `hx launch` waiting forever.
 REAL_IDLE_PLACEHOLDER = "\n".join([
     "─" * 80,
     '❯ Try "create a util logging.py that..."',
@@ -220,14 +219,14 @@ def test_the_real_tui_idle_pane_reads_as_idle():
 
 
 def test_a_prompt_with_the_empty_input_placeholder_reads_as_idle():
-    """Live, build-7: a fresh pane draws `❯ Try "…"`, and it is idle."""
+    """A fresh pane draws `❯ Try "…"`, and it is idle (observed live)."""
     from hx.goal import pane_is_idle
 
     assert pane_is_idle(REAL_IDLE_PLACEHOLDER) is True
 
 
 def test_the_real_tui_busy_pane_reads_as_busy():
-    """The input box is drawn mid-turn, so the prompt alone says nothing (build-3 item 8)."""
+    """The input box is drawn mid-turn, so the prompt alone says nothing."""
     from hx.goal import pane_is_idle
 
     assert "❯" in REAL_BUSY, "the prompt is present while the session works"
@@ -244,7 +243,7 @@ def test_the_prompt_glyph_is_the_one_the_tui_draws():
 
 
 def test_only_the_prompt_glyph_carries_a_placeholder():
-    """`> text` is ordinary output; `❯ text` is the input box with its hint (build-7)."""
+    """`> text` is ordinary output; `❯ text` is the input box with its hint."""
     from hx.goal import _PLACEHOLDER_PROMPT, pane_is_idle
 
     assert _PLACEHOLDER_PROMPT.match('❯ Try "create a util logging.py that..."')
@@ -260,7 +259,7 @@ def test_a_pane_that_has_not_drawn_yet_is_not_idle(instance):
     assert pane_is_idle("$ \n") is False
 
 
-#: Codex 0.159.2 idle chrome, captured live 2026-10-02. The `›` is U+203A.
+#: Codex idle chrome, captured live. The `›` is U+203A.
 CODEX_IDLE = "\n".join([
     "  >_ OpenAI Codex (v0.159.2)",
     "     /data/worktrees/hx-eng-032",
@@ -288,7 +287,7 @@ CODEX_BUSY = "\n".join([
 
 
 def test_a_codex_idle_pane_reads_as_idle():
-    """Live, 0.159.2: `› Ask Codex…` is the idle box; missing it hung dispatch."""
+    """`› Ask Codex…` is the idle box; a detector that misses it hangs dispatch (observed live)."""
     from hx.goal import pane_is_idle
 
     assert pane_is_idle(CODEX_IDLE) is True
@@ -302,9 +301,9 @@ def test_a_codex_busy_pane_reads_as_busy():
     assert pane_is_idle(CODEX_BUSY) is False
 
 
-# --- build-8 item 10: the input box, and what is still sitting in it ----------------------------
+# --- the input box, and what is still sitting in it -------------------------------------------
 #
-# The live chrome of a pane holding an unsubmitted paste (2.1.278, 2026-09-20 04:10 and 21:17).
+# The live chrome of a pane holding an unsubmitted paste.
 # The Enter that followed `paste-buffer` was swallowed and the text stayed put. The pasted
 # pointer is a stand-in; the box, the wrap and the transcript echo are as captured.
 
@@ -358,7 +357,7 @@ def test_the_placeholder_is_not_mistaken_for_pending_text():
 
 
 def test_the_fake_pane_reads_the_same_way():
-    """One detector for both, as with `pane_is_idle` (ORCHESTRATION.md "Fake claude")."""
+    """One detector for both, as with `pane_is_idle`."""
     pointer = "/goal The goal for eng-001 is in /abs/item.md"
     assert holds(FAKE_UNSUBMITTED, pointer)
     assert not holds(FAKE_SUBMITTED, pointer)

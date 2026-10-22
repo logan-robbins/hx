@@ -1,4 +1,4 @@
-"""Server-sent events: the once-a-second mtime sweep of spec 16.1."""
+"""Server-sent events: the once-a-second mtime sweep."""
 
 from __future__ import annotations
 

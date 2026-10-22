@@ -1,9 +1,9 @@
-"""Fixtures for the build lane's tests.
+"""Fixtures for the core tests.
 
 Every test runs against a scratch instance: pytest `tmp_path` for the unit tests, and for
 the tmux tests a real tmux server on a private socket (`tmux -L hx-test-<pid>`), killed at
 teardown. Nothing here ever points HOME, CLAUDE_CONFIG_DIR or HARNESS_ROOT at the user's
-own `~/.claude` (ORCHESTRATION.md standing rules).
+own `~/.claude`.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ PERSONA = "You are eng-001, an engineer.\nYou commit as you go.\n"
 
 
 def manifest_skills(root: Path, item_id: str, **env: str) -> set[str]:
-    """The skills `src/hx/skills/manifest.json` gives `<id>`'s home (TOOL_SKILL_PLAN step 1)."""
+    """The skills `src/hx/skills/manifest.json` gives `<id>`'s home."""
     sys.path.insert(0, str(SRC))
     from hx import skill_manifest
 
@@ -151,7 +151,7 @@ def instance(tmp_path):
         roles.mkdir(parents=True, exist_ok=True)
         (roles / f"{role}.md").write_text(f"# {role}\n")
 
-    # Auth is one long-lived token per instance (spec 11 Auth, CONTRACTS.md `seed/token`).
+    # Auth is one long-lived token per instance (CONTRACTS.md `seed/token`).
     token = root / "seed" / "token"
     token.parent.mkdir(parents=True, exist_ok=True)
     token.write_text("sk-ant-oat-fake-token\n")
@@ -161,7 +161,7 @@ def instance(tmp_path):
     (root / "config" / "claude.json").write_text(json.dumps({"bin": str(FAKE_CLAUDE)}, indent=2) + "\n")
 
     # A real git worktree, so `hx complete done`'s clean-worktree check is exercised rather
-    # than skipped (spec 06).
+    # than skipped.
     workdir = root / "wt" / "eng-001"
     subprocess.run(["git", "init", "-q", str(workdir)], check=True, capture_output=True)
     for key, value in (("user.email", "hx@example.invalid"), ("user.name", "hx test")):
@@ -198,7 +198,7 @@ def work_item(instance):
     return _write
 
 
-#: A goal is one `## Goal` paragraph and nothing else (spec 06, CONTRACTS.md "Goals").
+#: A goal is one `## Goal` paragraph and nothing else.
 GOAL = """## Goal
 
 {goal}
@@ -209,7 +209,7 @@ EVIDENCE = "- the change is committed: `git log --oneline -1` in the workdir (fi
 
 
 def write_goal(root: Path, item_id: str, *, goal="Do the thing.") -> Path:
-    """A goal file that passes spec 06. Any path will do; `hx dispatch` deletes it."""
+    """A goal file that passes the goal validator. Any path will do; `hx dispatch` deletes it."""
     path = root / "run" / f"goal-{item_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(GOAL.format(goal=goal))
@@ -229,7 +229,7 @@ def write_evidence(root: Path, item_id: str, text: str = EVIDENCE) -> Path:
 
 
 def manifest(root: Path, *, skip=()) -> dict[str, str]:
-    """sha256 of every file under `root`, for "changes nothing" assertions (spec 13 M1)."""
+    """sha256 of every file under `root`, for "changes nothing" assertions."""
     import hashlib
 
     found = {}
@@ -351,9 +351,8 @@ def launched(instance, hx, tmux_server):
 def tmux_server(tmp_path):
     """A real tmux server on a private socket, killed and cleaned up at teardown.
 
-    Every live check ends by killing what it launched (goal build-4 item 7). The teardown
-    asserts it: a session that outlives its test is a leaked agent, and one of those once
-    ended up on the machine's default tmux server, where the lanes themselves run.
+    Every live check ends by killing what it launched, and the teardown asserts it: a session
+    that outlives its test is a leaked agent.
     """
     if shutil.which("tmux") is None:
         pytest.skip("tmux is not installed")
@@ -363,8 +362,7 @@ def tmux_server(tmp_path):
     yield command
 
     # Kill what the test launched, then prove it is gone. A session that survives its own
-    # teardown is a leaked agent; one of those once ended up on the machine's default tmux
-    # server, where the lanes themselves run.
+    # teardown is a leaked agent.
     subprocess.run([*command, "kill-server"], capture_output=True, check=False)
     listed = subprocess.run(
         [*command, "list-sessions", "-F", "#{session_name}"],

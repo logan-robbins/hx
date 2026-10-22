@@ -1,4 +1,4 @@
-"""Goal-file parser and validator (spec 06, CONTRACTS.md "Goals").
+"""Goal-file parser and validator.
 
 A goal is one `## Goal` paragraph, optionally followed by one to three sentences on what it
 depends on, and nothing else: the worker writes its own `## Definition of done` in the work

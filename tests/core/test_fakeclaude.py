@@ -1,7 +1,7 @@
-"""The fake `claude` used by the M0-M5 suites (ORCHESTRATION.md).
+"""The fake `claude` the tests launch in place of the real binary.
 
 It records argv, env and cwd; accepts pasted input on a real tmux pane; and emits scripted
-hook payloads. M6 onward runs the real recorded binary.
+hook payloads.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def test_it_appends_every_pasted_line(tmp_path):
 
 
 def test_it_takes_pasted_input_on_a_real_tmux_pane(tmp_path, tmux_server):
-    """`hx goal` pastes into window `main` via a tmux buffer (spec 08)."""
+    """`hx goal` pastes into window `main` via a tmux buffer."""
     root = tmp_path / "instance"
     (root / "run").mkdir(parents=True)
     env = clean_env(HARNESS_ROOT=str(root), HARNESS_ID="eng-001")
@@ -80,7 +80,7 @@ def test_it_takes_pasted_input_on_a_real_tmux_pane(tmp_path, tmux_server):
 
 
 def test_it_emits_scripted_hook_payloads(tmp_path):
-    """Used from M1 to drive `hx-hook` the way a real session would."""
+    """It drives `hx-hook` the way a real session would."""
     root = tmp_path / "instance"
     (root / "run").mkdir(parents=True)
     recorder = tmp_path / "recorder.py"

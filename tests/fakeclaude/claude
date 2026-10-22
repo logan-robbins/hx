@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""The fake `claude` used by the M0-M5 suites (ORCHESTRATION.md "Fake claude for M0-M5").
+"""The fake `claude` the tests launch in place of the real binary.
 
 It is put on PATH, or recorded in `config/claude.json`, in place of the real binary. It:
 
   1. records its argv, its environment and its cwd to
-     `$HARNESS_ROOT/run/<id>/fake-argv.json`, so a test can assert the exact launch argv of
-     spec 17.4. The write is atomic, so a reader never sees a partial file;
+     `$HARNESS_ROOT/run/<id>/fake-argv.json`, so a test can assert the exact launch argv.
+     The write is atomic, so a reader never sees a partial file;
   2. stays alive reading stdin on a real tmux pane, appending every pasted line to
      `$HARNESS_ROOT/run/<id>/fake-input.log`, so a test can assert what `hx goal` pasted;
   3. emits scripted hook payloads, so a test can drive `hx-hook` the way a real session
-     would (used from M1).
+     would.
 
 Scripted payloads come from a JSON file named by `HX_FAKE_SCRIPT`:
 
@@ -18,7 +18,7 @@ Scripted payloads come from a JSON file named by `HX_FAKE_SCRIPT`:
 
 `on` is either `start` or the exact pasted line that triggers the payload. Each entry runs
 `$HX_HOOK_BIN --id <id> <event>` with the payload as JSON on stdin and appends the result to
-`$HARNESS_ROOT/run/<id>/fake-hooks.log`. M6 onward runs the real recorded binary instead.
+`$HARNESS_ROOT/run/<id>/fake-hooks.log`.
 """
 
 from __future__ import annotations
@@ -77,8 +77,8 @@ def emit(entry: dict, target: Path) -> None:
         handle.flush()
 
 
-#: The idle prompt `hx.goal.pane_is_idle` looks for. The real TUI draws a `>` input box
-#: instead; `hx.goal.IDLE_PROMPTS` carries both patterns and M6 confirms the real one.
+#: The idle prompt `hx.goal.pane_is_idle` looks for. The real TUI draws its own input box
+#: instead; `hx.goal.IDLE_PROMPTS` carries both patterns.
 IDLE_PROMPT = "hx-fake-idle>"
 
 
@@ -143,7 +143,7 @@ def main() -> int:
             break
         # `/fake-hold` leaves the pane mid-turn, with no idle prompt, the way a real session
         # looks while it is working; `/fake-release` ends the turn. This is how a test drives
-        # `hx goal`'s readiness wait, which blocks until the idle prompt is back (spec 08).
+        # `hx goal`'s readiness wait, which blocks until the idle prompt is back.
         if line.strip() == "/fake-hold":
             holding = True
             continue

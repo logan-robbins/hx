@@ -45,7 +45,7 @@ def guard(shields, tmp_path):
 
 
 def hook(tool_input, tool_response=None):
-    """A Codex 0.156.1 tool hook payload for the toolbox's search tool (F8)."""
+    """A Codex tool hook payload for the toolbox's search tool (F8)."""
     body = {"session_id": "sess-1", "turn_id": "turn-1", "cwd": "/tmp", "transcript_path": None,
             "model": "gpt-5.5", "permission_mode": "default", "tool_name": "mcp__foundry__web_search",
             "tool_use_id": "call-1", "tool_input": tool_input,
@@ -134,7 +134,7 @@ def test_post_reads_text_items_resource_text_and_structured_content(guard):
 
 
 def test_post_scans_citation_metadata_codex_forwards_to_the_model(guard):
-    """Codex 0.156.1 hands the model a resource item whole, `_meta` included (scenario-checked)."""
+    """Codex hands the model a resource item whole, `_meta` included (scenario-checked)."""
     response = toolbox_result("Sunny.", ["https://weather.example/seattle"])
     response["content"][0]["resource"]["_meta"]["annotations"][0]["title"] = INJECTION
     done = guard("post", hook({"search_query": "q"}, response))

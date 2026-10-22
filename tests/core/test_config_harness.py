@@ -1,4 +1,4 @@
-"""`config/<id>/harness.json` validator (spec 05), including its four cross-file rules."""
+"""`config/<id>/harness.json` validator, including its four cross-file rules."""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ def test_the_partner_cannot_be_grok():
 
 
 def test_companion_disabled_is_accepted():
-    """`companion.disabled` runs the agent with no Companion window at all (spec 05)."""
+    """`companion.disabled` runs the agent with no Companion window at all."""
     for value in (True, False):
         config = validate_harness(
             {**WORKER, "companion": {**WORKER["companion"], "disabled": value}},
@@ -142,7 +142,7 @@ def test_flavor_codex_is_accepted():
 
 
 def test_the_partner_can_be_codex():
-    """The Partner runs on Claude or Codex (spec 12)."""
+    """The Partner runs on Claude or Codex."""
     config = validate_harness({**PARTNER, "flavor": "codex"}, "config/partner/harness.json", dir_name="partner")
     assert config.flavor == "codex" and config.is_partner
 
@@ -230,7 +230,7 @@ def test_workdir_must_exist(instance):
 
 
 def test_a_relative_workdir_resolves_against_the_root(instance):
-    """The skeleton ships `"workdir": "wt/eng-001"` (CONTRACTS.md, handoff/gtm-to-build.md)."""
+    """A relative `workdir` such as `wt/eng-001` resolves against HARNESS_ROOT."""
     path = instance / "config" / "eng-001" / "harness.json"
     body = json.loads(path.read_text())
     body["workdir"] = "wt/eng-001"
@@ -245,7 +245,7 @@ def test_a_relative_workdir_resolves_against_the_root(instance):
 
 
 def test_an_absolute_workdir_still_stands(instance, tmp_path):
-    """Spec 05's own example is `"/work/wt/eng-001"`."""
+    """An absolute `workdir` such as `"/work/wt/eng-001"` stands as given."""
     elsewhere = tmp_path / "work" / "wt" / "eng-001"
     elsewhere.mkdir(parents=True)
     path = instance / "config" / "eng-001" / "harness.json"
@@ -256,13 +256,13 @@ def test_an_absolute_workdir_still_stands(instance, tmp_path):
 
 
 def test_the_skeleton_harness_files_validate():
-    """The gtm lane authors these; a break here is reported, not fixed (ORCHESTRATION.md)."""
+    """The harness files the skeleton ships validate."""
     from hx.install import skeleton_dir
 
     partner = skeleton_dir() / "config" / "partner" / "harness.json"
     assert load_harness(partner, check_cross_file=False).id == "partner"
     # `templates/worker/harness.json` is a template the Partner copies and fills in, so it
-    # carries placeholders rather than an id and is not a config file yet (CONTRACTS.md).
+    # carries placeholders rather than an id and is not a config file yet.
     worker = skeleton_dir() / "templates" / "worker" / "harness.json"
     if worker.exists():
         assert "workdir" in worker.read_text()

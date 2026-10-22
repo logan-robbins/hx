@@ -1,4 +1,4 @@
-"""`POST /api/partner/wake` is the UI's only write path (spec 16)."""
+"""`POST /api/partner/wake` is the UI's only write path."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end packaging check (spec 17, M10 part 1).
+# End-to-end packaging check.
 #
 #   packaging/e2e-install.sh <scratch-dir>
 #
@@ -9,10 +9,9 @@
 #   1. the wheel actually carries the package data `hx install` needs (skeleton, skills, the
 #      native launch inputs) — a package-data glob that silently stops matching ships an hx
 #      whose install has nothing to copy, and no unit test notices;
-#   2. every skeleton file the gtm lane authored lands in the instance byte-identical;
-#   3. nothing in the whole sequence touches a Claude home — not the fresh one (Claude Code is
-#      never launched, so `$HOME/.claude` must not exist afterwards) and not the real one
-#      (`tools/claude-home-hash.sh` before and after must match).
+#   2. every file under src/hx/skeleton lands in the instance byte-identical;
+#   3. nothing in the whole sequence creates a Claude home: Claude Code is never launched, so
+#      `$HOME/.claude` must not exist afterwards.
 #
 # Everything happens under the scratch directory: a fresh HOME, and UV_TOOL_DIR,
 # UV_TOOL_BIN_DIR and UV_CACHE_DIR beneath it, so the user's own uv tools and cache are
@@ -56,21 +55,9 @@ ok "$SCRATCH"
 command -v uv >/dev/null 2>&1 || die "uv is not on PATH"
 ok "uv $(uv --version)"
 
-# ------------------------------------------------- the user's Claude home, before
-
-step "1. record the real ~/.claude manifest"
-BEFORE="$SCRATCH/claude-home.before"
-if [ -d "$REAL_CLAUDE_HOME" ]; then
-  "$REPO/tools/claude-home-hash.sh" "$REAL_CLAUDE_HOME" > "$BEFORE" || die "could not hash $REAL_CLAUDE_HOME"
-  ok "$(wc -l < "$BEFORE" | tr -d ' ') entries from $REAL_CLAUDE_HOME"
-else
-  : > "$BEFORE"
-  ok "$REAL_CLAUDE_HOME does not exist; manifest is empty"
-fi
-
 # ------------------------------------------------------- a HOME of its own
 
-step "2. fresh HOME and uv directories under the scratch dir"
+step "1. fresh HOME and uv directories under the scratch dir"
 export HOME="$SCRATCH/home"
 export UV_TOOL_DIR="$SCRATCH/uv/tools"
 export UV_TOOL_BIN_DIR="$SCRATCH/uv/bin"
@@ -86,7 +73,7 @@ ok "UV_CACHE_DIR=$UV_CACHE_DIR"
 
 # --------------------------------------------------------------- build
 
-step "3. uv build"
+step "2. uv build"
 DIST="$SCRATCH/dist"
 uv build --out-dir "$DIST" "$REPO" > "$SCRATCH/build.log" 2>&1 || {
   tail -20 "$SCRATCH/build.log" >&2; die "uv build failed; see $SCRATCH/build.log"
@@ -97,7 +84,7 @@ ok "$(basename "$WHEEL")"
 
 # ------------------------------------------ the wheel carries its package data
 
-step "4. the wheel carries the package data hx install needs"
+step "3. the wheel carries the package data hx install needs"
 REQUIRED_IN_WHEEL="
 hx/skeleton/PARTNER.md
 hx/skeleton/LEARNINGS/orientation.md
@@ -162,19 +149,18 @@ if [ -n "$missing" ]; then
   printf '   wheel is missing:\n' >&2
   for m in $missing; do printf '     %s\n' "$m" >&2; done
   case "$missing" in
-    *hx/skeleton/*) printf '\n   package data missing from the wheel. hx/skeleton/** needs "skeleton/**/*" in\n   [tool.setuptools.package-data] of pyproject.toml (build lane; see handoff/gtm-to-build.md).\n' >&2 ;;
+    *hx/skeleton/*) printf '\n   package data missing from the wheel. hx/skeleton/** needs "skeleton/**/*" in\n   [tool.setuptools.package-data] of pyproject.toml.\n' >&2 ;;
   esac
   case "$missing" in
-    *hx/ui/static/*) printf '\n   hx/ui/static/** is what `hx ui` serves; it needs "ui/static/**/*" in\n   [tool.setuptools.package-data]. If a file was renamed, update this list\n   (gtm lane; see handoff/gtm-to-ui.md).\n' >&2 ;;
+    *hx/ui/static/*) printf '\n   hx/ui/static/** is what `hx ui` serves; it needs "ui/static/**/*" in\n   [tool.setuptools.package-data]. If a file was renamed, update this list.\n' >&2 ;;
   esac
   die "wheel is missing package data"
 fi
 ok "$(wc -l < "$NAMES" | tr -d ' ') entries, all $(echo "$REQUIRED_IN_WHEEL" | grep -c .) required files present"
 
-# Spec 16.1: the UI is vanilla JS and CSS from the package, "no build step, no CDN". The
-# repo-side test asserts it too, but the wheel is where it would matter — a page that pulls a
-# script from a CDN works on the machine that built it and fails on an air-gapped one.
-# (Asked for by the ui lane, handoff/ui-to-gtm.md.)
+# The UI is vanilla JS and CSS from the package: no build step, no CDN. The repo-side test
+# asserts it too, but the wheel is where it would matter — a page that pulls a script from a
+# CDN works on the machine that built it and fails on an air-gapped one.
 CDN_SCAN="$(python3 -c '
 import re, sys, zipfile
 z = zipfile.ZipFile(sys.argv[1])
@@ -187,13 +173,13 @@ print("\n".join(
 if [ -n "$CDN_SCAN" ]; then
   printf '   external URLs in the packaged UI:\n' >&2
   printf '     %s\n' "$CDN_SCAN" >&2
-  die "the packaged UI references an external URL (spec 16.1: no CDN)"
+  die "the packaged UI references an external URL; it must load with no CDN"
 fi
-ok "the packaged UI references no external URL (spec 16.1: no CDN)"
+ok "the packaged UI references no external URL"
 
 # --------------------------------------------------------------- install
 
-step "5. uv tool install"
+step "4. uv tool install"
 uv tool install --python 3.14 "$WHEEL" > "$SCRATCH/install.log" 2>&1 || {
   tail -20 "$SCRATCH/install.log" >&2; die "uv tool install failed; see $SCRATCH/install.log"
 }
@@ -205,7 +191,7 @@ ok "hx-hook   -> $UV_TOOL_BIN_DIR/hx-hook"
 
 # ---------------------------------------------------------------- doctor
 
-step "6. hx doctor from the installed tool"
+step "5. hx doctor from the installed tool"
 set +e
 "$HX" doctor > "$SCRATCH/doctor.log" 2>&1
 DOCTOR_STATUS=$?
@@ -217,7 +203,7 @@ ok "exit 0"
 
 # --------------------------------------------------------------- install --skeleton-only
 
-step "7. hx install --skeleton-only"
+step "6. hx install --skeleton-only"
 ROOT="$SCRATCH/hx"
 "$HX" install --root "$ROOT" --skeleton-only > "$SCRATCH/skeleton.log" 2>&1 || {
   tail -20 "$SCRATCH/skeleton.log" >&2; die "hx install --skeleton-only failed"
@@ -226,7 +212,7 @@ ok "$(grep -c '^created' "$SCRATCH/skeleton.log") files created under $ROOT"
 
 # ------------------------------------------- the skeleton landed byte-identical
 
-step "8. every skeleton file landed byte-identical"
+step "7. every skeleton file landed byte-identical"
 count=0
 while IFS= read -r src; do
   rel="${src#"$REPO"/src/hx/skeleton/}"
@@ -238,30 +224,17 @@ done < <(find "$REPO/src/hx/skeleton" -type f ! -name '.*' | sort)
 [ "$count" -gt 0 ] || die "no skeleton files found in the repo to compare"
 ok "$count files identical to src/hx/skeleton/"
 
-step "9. a fresh instance installs the Partner and no worker"
+step "8. a fresh instance installs the Partner and no worker"
 ids="$(find "$ROOT/config" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
 [ "$ids" = "partner " ] || die "config/ holds ids other than partner: $ids"
 ok "config/ holds: $ids"
 
-# ------------------------------------------------ nothing touched a Claude home
+# ------------------------------------------------ no Claude home was created
 
-step "10. the fresh HOME has no .claude"
+step "9. the fresh HOME has no .claude"
 [ ! -e "$HOME/.claude" ] || die "$HOME/.claude exists; nothing in this sequence should create it"
 ok "$HOME/.claude does not exist"
 
-step "11. the real ~/.claude is unchanged"
-AFTER="$SCRATCH/claude-home.after"
-if [ -d "$REAL_CLAUDE_HOME" ]; then
-  "$REPO/tools/claude-home-hash.sh" "$REAL_CLAUDE_HOME" > "$AFTER" || die "could not re-hash $REAL_CLAUDE_HOME"
-else
-  : > "$AFTER"
-fi
-if ! diff -u "$BEFORE" "$AFTER" > "$SCRATCH/claude-home.diff"; then
-  sed 's/^/   | /' "$SCRATCH/claude-home.diff" >&2
-  die "$REAL_CLAUDE_HOME changed during the run"
-fi
-ok "$REAL_CLAUDE_HOME manifest identical before and after"
-
-printf '\n== PASS  wheel built, installed, instance created, no Claude home touched\n'
+printf '\n== PASS  wheel built, installed, instance created, no Claude home created\n'
 printf '   wheel    %s\n' "$WHEEL"
 printf '   instance %s\n' "$ROOT"

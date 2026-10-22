@@ -230,7 +230,7 @@ def test_codex_install_writes_home_and_provisions_auth(instance, tmp_path):
 
 
 def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_path):
-    """The Partner may run on Codex (spec 12): partner skills."""
+    """The Partner may run on Codex: partner skills."""
     _codex_token(instance)
     script = instance / "adapters" / "codex" / "install.sh"
     result = subprocess.run(
@@ -267,7 +267,7 @@ def test_codex_install_accepts_the_partner_with_partner_skills(instance, tmp_pat
 
 
 def test_codex_worker_has_no_pre_tool_use_hook(instance, tmp_path):
-    """The guard is the Partner's alone: no worker is ever guarded (spec 09.1)."""
+    """The guard is the Partner's alone: no worker is ever guarded."""
     _codex_token(instance)
     result = subprocess.run(
         ["bash", str(instance / "adapters" / "codex" / "install.sh"), "eng-001"],
@@ -286,7 +286,7 @@ def test_codex_worker_has_no_pre_tool_use_hook(instance, tmp_path):
 
 
 def test_codex_start_exec_runs_the_partner_in_the_root(instance, tmp_path):
-    """No workdir on the Partner harness: the session runs in HARNESS_ROOT (spec 12)."""
+    """No workdir on the Partner harness: the session runs in HARNESS_ROOT."""
     _codex_token(instance)
     install = subprocess.run(
         ["bash", str(instance / "adapters" / "codex" / "install.sh"), "partner"],

@@ -38,7 +38,7 @@ def payload(call='call-1', **changes):
 
 
 def claude_read(text, path='source'):
-    """Claude's own Read `tool_response` for a whole file (live shape, Claude Code 2.1.299)."""
+    """Claude's own Read `tool_response` for a whole file (live shape)."""
     lines = text.count('\n') + 1
     return {'type': 'text', 'file': {'filePath': str(path), 'content': text, 'numLines': lines,
                                      'startLine': 1, 'totalLines': lines}}
