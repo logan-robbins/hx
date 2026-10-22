@@ -75,8 +75,8 @@ if [ -z "$bin" ] && [ -f "$root/config/codex.json" ]; then
     "$root/config/codex.json")
 fi
 [ -n "$bin" ] || bin=$(command -v codex || true)
-[ -n "$bin" ] || die "refuse: no codex binary; record {bin, version} in config/codex.json"
-[ -x "$bin" ] || die "refuse: pinned codex binary $bin is not executable"
+[ -n "$bin" ] || die "refuse: no codex binary; record its path as \`bin\` in config/codex.json"
+[ -x "$bin" ] || die "refuse: codex binary $bin is not executable"
 
 role=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["role"])' "$harness")
 # The role persona, read from $CODEX_HOME/AGENTS.md (`config_harness.PERSONA_CHANNEL`): nothing is rendered

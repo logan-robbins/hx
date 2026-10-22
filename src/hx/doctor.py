@@ -1,7 +1,7 @@
 """`hx doctor` — what is here, what is missing, what is broken (spec 08).
 
 Every line is `<status>  <check>  <detail>`. It checks exactly what spec 08 lists: tmux, git,
-the Python floor, the pinned `claude` binary and version, the paths in `config/hx.json`, the
+the Python floor, the recorded `claude` binary, the paths in `config/hx.json`, the
 seed token, each `run/<id>/home/settings.json`, and the sandbox flags of every running agent.
 
 Worker homes come from admitted native launch capsules. Checks never infer assignment
@@ -38,15 +38,6 @@ from .doctor_context import checks as _complete_context_size
 
 #: A path component that is a version (`muse-bin-1.4.3-R5018.1`, `claude/2.1.278/bin/claude`).
 VERSIONED_PATH_RE = re.compile(r"(?:^|[-_/])v?[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:[-_.][A-Za-z0-9]+)*(?:/|$)")
-
-
-#: `claude --version` prints `2.1.278 (Claude Code)`; both config/claude.json and
-#: packaging/tested-claude-versions.json hold the bare version (CONTRACTS.md).
-CLAUDE_VERSION_SUFFIX = " (Claude Code)"
-
-
-def bare_claude_version(output: str) -> str:
-    return output.strip().removesuffix(CLAUDE_VERSION_SUFFIX).strip()
 
 
 def _binary_version(binary: str, *args: str) -> str | None:
@@ -305,7 +296,7 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
 
     A worker's workdir is a product checkout, and its `.claude/skills`, `.agents/skills` or
     `.pi/skills` must never load into the worker. Claude under `--setting-sources user` is
-    unverified for project skills on the pinned version; Codex and Pi need project trust, which
+    unverified for project skills; Codex and Pi need project trust, which
     hx never grants. Codex and Pi also scan `$HOME/.agents/skills` regardless of `CODEX_HOME`
     or `PI_CODING_AGENT_DIR`, so a non-empty one is reported while such a worker is configured
     (Pi launches with `--no-skills`). Warnings until docs/two-worlds.md records both checks.
@@ -417,41 +408,20 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
     claude_json = root / "config" / "claude.json"
     if claude_json.is_file():
         try:
-            pinned = json.loads(claude_json.read_text())
+            recorded = json.loads(claude_json.read_text())
         except json.JSONDecodeError as exc:
             checks.append((FAIL, "claude", f"config/claude.json is not valid JSON: {exc}"))
         else:
-            binary = pinned.get("bin")
-            pinned_version = pinned.get("version")
+            binary = recorded.get("bin") if isinstance(recorded, dict) else None
             if not binary:
                 checks.append((FAIL, "claude", "config/claude.json has no `bin` (spec 17.1)"))
-            elif not Path(binary).is_file():
-                checks.append((FAIL, "claude", f"pinned binary {binary} is not there (spec 17.1)"))
+            elif not (Path(binary).is_file() and os.access(binary, os.X_OK)):
+                checks.append((FAIL, "claude", f"recorded binary {binary} is missing or not executable (spec 17.1)"))
             else:
-                installed = subprocess.run(
-                    [binary, "--version"], capture_output=True, text=True, check=False
-                )
-                installed_version = bare_claude_version(installed.stdout or "")
-                from . import claude_bin
-                if pinned_version and installed_version and installed_version != pinned_version:
-                    # A record, not a gate: the binary moved on and the next launch boundary
-                    # re-records it (`hx.claude_bin.refresh_pin`). Worth knowing, never fatal.
-                    checks.append((
-                        WARN,
-                        "claude",
-                        f"{binary} now reports {installed_version}; config/claude.json recorded "
-                        f"{pinned_version}. The next `hx launch` or `hx up` "
-                        f"re-records it ({claude_bin.describe(installed_version)})",
-                    ))
-                else:
-                    shown = installed_version or pinned_version
-                    checks.append((
-                        OK, "claude",
-                        f"{binary} at {claude_bin.describe(shown) if shown else 'an unrecorded version'}",
-                    ))
+                checks.append((OK, "claude", binary))
     else:
         checks.append(
-            (WARN, "claude", "config/claude.json absent; `hx install` records {bin, version} (spec 17.1)")
+            (WARN, "claude", "config/claude.json absent; `hx install` records the binary (spec 17.1)")
         )
 
     if not root.is_dir():

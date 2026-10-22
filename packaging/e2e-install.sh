@@ -7,8 +7,8 @@
 # the installed `hx` against a fresh instance, and proves three things:
 #
 #   1. the wheel actually carries the package data `hx install` needs (skeleton, skills, the
-#      native launch inputs, the tested-versions list) — a package-data glob that silently stops
-#      matching ships an hx whose install has nothing to copy, and no unit test notices;
+#      native launch inputs) — a package-data glob that silently stops matching ships an hx
+#      whose install has nothing to copy, and no unit test notices;
 #   2. every skeleton file the gtm lane authored lands in the instance byte-identical;
 #   3. nothing in the whole sequence touches a Claude home — not the fresh one (Claude Code is
 #      never launched, so `$HOME/.claude` must not exist afterwards) and not the real one
@@ -144,7 +144,6 @@ hx/skeleton/config/partner/harness.json
 hx/skills/hx-partner/SKILL.md
 hx/skills/hx-fleet/SKILL.md
 hx/skills/hx-worker/SKILL.md
-hx/packaging/tested-claude-versions.json
 hx/adapter_guard.py
 hx/native_controller.py
 hx/continuity_store.py
@@ -163,7 +162,7 @@ if [ -n "$missing" ]; then
   printf '   wheel is missing:\n' >&2
   for m in $missing; do printf '     %s\n' "$m" >&2; done
   case "$missing" in
-    *hx/packaging/*|*hx/skeleton/personas/*) printf '\n   package data missing from the wheel. hx/packaging/** needs "packaging/**/*" and\n   hx/skeleton/** needs "skeleton/**/*" in [tool.setuptools.package-data] of\n   pyproject.toml (build lane; see handoff/gtm-to-build.md).\n' >&2 ;;
+    *hx/skeleton/*) printf '\n   package data missing from the wheel. hx/skeleton/** needs "skeleton/**/*" in\n   [tool.setuptools.package-data] of pyproject.toml (build lane; see handoff/gtm-to-build.md).\n' >&2 ;;
   esac
   case "$missing" in
     *hx/ui/static/*) printf '\n   hx/ui/static/** is what `hx ui` serves; it needs "ui/static/**/*" in\n   [tool.setuptools.package-data]. If a file was renamed, update this list\n   (gtm lane; see handoff/gtm-to-ui.md).\n' >&2 ;;
@@ -212,7 +211,7 @@ set +e
 DOCTOR_STATUS=$?
 set -e
 sed 's/^/   | /' "$SCRATCH/doctor.log"
-# doctor exits 1 only on what it owns (python, tmux, git, a broken pinned binary).
+# doctor exits 1 only on what it owns (python, tmux, git, a broken recorded binary).
 [ "$DOCTOR_STATUS" -eq 0 ] || die "hx doctor exited $DOCTOR_STATUS (see $SCRATCH/doctor.log)"
 ok "exit 0"
 

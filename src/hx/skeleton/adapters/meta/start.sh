@@ -59,8 +59,8 @@ if [ -z "$bin" ] && [ -f "$root/config/meta.json" ]; then
     "$root/config/meta.json")
 fi
 [ -n "$bin" ] || bin=$(command -v muse || true)
-[ -n "$bin" ] || die "refuse: no muse binary; record {bin, version} in config/meta.json"
-[ -x "$bin" ] || die "refuse: pinned muse binary $bin is not executable"
+[ -n "$bin" ] || die "refuse: no muse binary; record its path as \`bin\` in config/meta.json"
+[ -x "$bin" ] || die "refuse: muse binary $bin is not executable"
 
 model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
 effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")

@@ -98,7 +98,7 @@ def runtime(configured, tmux_server, child_env, tmp_path, monkeypatch):
     login.write_text('{"fixture":true}')
     env = child_env(HX_TMUX=" ".join(tmux_server), HOME=str(login.parents[1]), HX_PYTHON=sys.executable)
     for flavor in ("claude", "codex", "meta", "grok", "pi"):
-        (store.root / "config" / (flavor + ".json")).write_text(json.dumps({"bin": str(executable), "version": "test-only"}))
+        (store.root / "config" / (flavor + ".json")).write_text(json.dumps({"bin": str(executable)}))
         token = store.root / "seed" / ("token" if flavor == "claude" else flavor + "-token")
         token.write_text("fixture-key")
         token.chmod(0o600)
@@ -261,7 +261,7 @@ def test_installed_muse_startup_and_request_hooks(runtime, tmp_path):
         "for option in ('--model', '--reasoning-effort'):\n    index=args.index(option)\n    del args[index:index+2]\n"
         f"os.execv({str(executable)!r}, [{str(executable)!r}, '--provider', 'echo', *args])\n")
     wrapper.chmod(0o700)
-    (store.root / "config/meta.json").write_text(json.dumps({"bin": str(wrapper), "version": "installed-echo-check"}))
+    (store.root / "config/meta.json").write_text(json.dumps({"bin": str(wrapper)}))
     controller.advance(store, "eng-001", run, "launch", env=env, submit=False)
     row = native_launch._row(store, run)
     wait_for(lambda: controller.goal.pane_is_idle(controller.goal.capture_pane(row["payload"]["session"], env) or ""),

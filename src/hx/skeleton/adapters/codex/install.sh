@@ -77,8 +77,8 @@ if [ -z "$bin" ] && [ -f "$root/config/codex.json" ]; then
     "$root/config/codex.json")
 fi
 [ -n "$bin" ] || bin=$(command -v codex || true)
-[ -n "$bin" ] || die "refuse: no codex binary; record {bin, version} in config/codex.json"
-[ -x "$bin" ] || die "refuse: pinned codex binary $bin is not executable"
+[ -n "$bin" ] || die "refuse: no codex binary; record its path as \`bin\` in config/codex.json"
+[ -x "$bin" ] || die "refuse: codex binary $bin is not executable"
 
 # Inspected web search (docs/codex-search-guard.md): config/codex.json `search_guard`
 # names the Foundry toolbox and the Content Safety endpoint. Both, or no object.

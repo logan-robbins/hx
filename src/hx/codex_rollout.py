@@ -1,7 +1,7 @@
-"""Public rollout decoder verified against installed Codex CLI 0.156.1.
+"""Public Codex rollout decoder.
 
-The hook transcript is not a stable vendor API. Unknown versions/records require
-reconciliation; encrypted items and private reasoning never enter the ledger.
+The hook transcript is not a stable vendor API. Unknown records require reconciliation;
+encrypted items and private reasoning never enter the ledger.
 """
 
 from __future__ import annotations
@@ -11,9 +11,8 @@ import json
 from .continuity_store import digest
 from .events import DecodeGap, Event, _usage, public_text
 
-VERSION = "0.156.1"
-POLICY = "codex-0.156.1-v1"
-DECODER = "codex-rollout-0.156.1"
+POLICY = "codex-linear-v1"
+DECODER = "codex-rollout-v1"
 
 
 def active(body, state):
@@ -28,9 +27,8 @@ def active(body, state):
         if payload.get(key) not in (None, session):
             raise DecodeGap("Codex record belongs to another native session")
     if body.get("type") == "session_meta":
-        if (state.get("native_meta_seen") or payload.get("id") != session
-                or payload.get("cli_version") != VERSION or payload.get("forked_from_id")):
-            raise DecodeGap("Codex source identity, version, or ancestry is unverified")
+        if state.get("native_meta_seen") or payload.get("id") != session or payload.get("forked_from_id"):
+            raise DecodeGap("Codex source identity or ancestry is unverified")
         state["native_meta_seen"] = True
     elif not state.get("native_meta_seen"):
         raise DecodeGap("Codex source must begin with its verified session metadata")
@@ -157,9 +155,7 @@ def decode(body):
     if not isinstance(payload, dict):
         raise DecodeGap("invalid Codex rollout envelope")
     if kind == "session_meta":
-        if payload.get("cli_version") != VERSION:
-            raise DecodeGap("unverified Codex rollout version")
-        return [Event("boundary", {"source": kind, "native_session_id": payload.get("id"), "cli_version": VERSION})]
+        return [Event("boundary", {"source": kind, "native_session_id": payload.get("id")})]
     if kind == "response_item":
         return _response(payload)
     if kind in {"world_state", "turn_context"}:

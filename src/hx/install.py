@@ -2,7 +2,7 @@
 
 Four steps, in order:
 
-  1. refuse root; check tmux, git, Python; find `claude` and pin a tested version
+  1. refuse root; check tmux, git, Python; find `claude` and record its path
   2. create the instance from the package skeleton
   3. an existing OAuth token, or API keys from a supplied dotenv file
   4. `hx launch partner` and `hx ui`, then print `tmux attach -t partner` and the URL
@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 from . import store
-from .errors import HxError
+from .errors import HxError, NotFound
 from .ids import PARTNER
 from .root import resolve_root
 
@@ -114,9 +114,9 @@ def entry_points() -> dict[str, str]:
 
     The entry-point scripts sit next to the running interpreter — that is where `uv tool
     install` and a venv both put them — so resolve from `sys.executable` first and fall back
-    to PATH. Hook commands in every `run/<id>/home/settings.json` reference these, so a
-    package upgrade that moves them is followed by another `hx install`, which re-records
-    them (spec 17.1).
+    to PATH. Hook commands in every `run/<id>/home/settings.json` reference these, so an
+    install into another venv or tool directory is followed by another `hx install`, which
+    re-records them (spec 17.1).
     """
     # `sys.executable` unresolved: inside a venv that is the venv's own python, which is the
     # interpreter hx runs on and the one whose bin/ holds the entry-point scripts. Resolving
@@ -160,7 +160,7 @@ def link_bin(root: Path, recorded: dict[str, str]) -> list[Path]:
     `start.sh` prepends this directory to every agent's `PATH`, so an agent runs `hx board`
     rather than hunting for the binary through `config/hx.json` — which is what the Partner
     had to do in the live rehearsal of 2026-09-20 21:20 (build-8 item 11). Symlinks, not
-    copies, so a package upgrade that moves the entry point is followed by one `hx install`.
+    copies, so an entry point that moves is followed by one `hx install`.
     """
     bindir = root / "bin"
     bindir.mkdir(parents=True, exist_ok=True)
@@ -250,19 +250,34 @@ def install_skeleton(root: Path) -> dict:
 #: a script can tell "waiting for the human" from "something is wrong".
 TOKEN_WAIT_EXIT = 4
 
+#: `{"bin": "<abs path>"}`: the `claude` every Claude launch of this instance runs.
+CLAUDE_CONFIG = "config/claude.json"
 
-def preflight(root: Path, claude: str | None, env=None, *, ignore_claude_version: bool = False) -> dict:
-    """Step 1: refuse root, check the tools, record the `claude` found (spec 17.2 step 1).
 
-    `ignore_claude_version` is accepted for callers written against the former tested-version
-    gate. Versions are recorded, never refused, so it changes nothing.
+def find_claude(explicit: str | None = None) -> str:
+    """The `claude` binary: `--claude` when given, else the one on PATH.
+
+    The path is made absolute but symlinks are *not* resolved. The native installer's
+    `~/.local/bin/claude` is a symlink into `~/.local/share/claude/versions/<v>`, and its
+    auto-update repoints the link and deletes the old target: a resolved path names a file
+    that will not be there next week, and every launch then fails. The launcher is the
+    stable name.
     """
-    import shutil
-    import subprocess
-    import sys
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_file():
+            raise NotFound(f"{explicit}: no such file")
+        return str(path.absolute())
+    found = shutil.which("claude")
+    if not found:
+        raise NotFound(
+            "claude is not on PATH; install Claude Code, or pass `--claude <path>` (spec 17.2 step 1)"
+        )
+    return str(Path(found).absolute())
 
-    from . import claude_bin
 
+def preflight(root: Path, claude: str | None) -> str:
+    """Step 1: refuse root, check the tools, find the `claude` to record (spec 17.2 step 1)."""
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         raise HxError(
             "refuse: hx does not run as root. Every agent launches Claude Code with "
@@ -279,9 +294,7 @@ def preflight(root: Path, claude: str | None, env=None, *, ignore_claude_version
         if not shutil.which(tool):
             raise HxError(f"{tool} is not on PATH; hx needs it (spec 17.2 step 1)")
 
-    binary = claude_bin.find_binary(claude)
-    pinned = claude_bin.probe(binary, env=env)
-    return {"bin": binary, "version": pinned}
+    return find_claude(claude)
 
 
 def seed_token_path(root: Path) -> Path:
@@ -316,10 +329,8 @@ def token_instructions(root: Path) -> str:
 def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hx install", add_help=True)
     parser.add_argument("--root", help="HARNESS_ROOT to create (default: $HARNESS_ROOT, else ~/hx)")
-    parser.add_argument("--claude", default=None, help="the claude binary to pin (default: PATH)")
+    parser.add_argument("--claude", default=None, help="the claude binary to record (default: PATH)")
     parser.add_argument("--env-file", help="load provider API keys from this dotenv file at startup")
-    # Accepted so scripts written against the former tested-version gate keep working; a no-op.
-    parser.add_argument("--ignore-claude-version", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--skeleton-only",
         action="store_true",
@@ -331,12 +342,10 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
     root = resolve_root(args.root, env)
 
     # --- step 1 ------------------------------------------------------------------------
-    pin = None
+    claude = None
     if not args.skeleton_only:
-        pin = preflight(root, args.claude, env, ignore_claude_version=args.ignore_claude_version)
-        from . import claude_bin
-
-        print(f"1. claude {pin['version']} at {pin['bin']} ({claude_bin.status_text(pin['version'])})")
+        claude = preflight(root, args.claude)
+        print(f"1. claude at {claude}")
 
     # --- step 2 ------------------------------------------------------------------------
     result = install_skeleton(root)
@@ -352,11 +361,9 @@ def main(argv: list[str], root: Path | None = None, *, env: dict[str, str] | Non
         envfile.configure(root, args.env_file)
     envfile.sync_seed(root)
 
-    if pin is not None:
-        from . import claude_bin
-
-        claude_bin.write_pin(root, pin["bin"], pin["version"])
-        print(f"   created  {claude_bin.CONFIG}")
+    if claude is not None:
+        store.atomic_write_json(root / CLAUDE_CONFIG, {"bin": claude})
+        print(f"   created  {CLAUDE_CONFIG}")
 
     if args.skeleton_only:
         return 0

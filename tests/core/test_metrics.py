@@ -2,7 +2,7 @@
 import json
 
 from hx import metrics, native_producer, observer
-from hx.codex_rollout import DECODER, VERSION
+from hx.codex_rollout import DECODER
 from hx.continuity_store import ContinuityStore
 from .test_board import seed
 
@@ -79,7 +79,7 @@ def test_agent_figures_count_only_captured_main_session_records_per_flavor(tmp_p
         hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('Patched.', 6), 'pi-v1')
         hook(store, 'run-2', 'pi-001', 'pi', 'P', pi('x' * 5000, 4), 'pi-v1')
         transcript(store, 'run-3', 'native:codex', tmp_path / 'rollout.jsonl', DECODER, 'C',
-            codex('session_meta', id='C', session_id='C', cli_version=VERSION),
+            codex('session_meta', id='C', session_id='C'),
             codex('response_item', type='function_call', call_id='K', name='exec_command', arguments='{"cmd":"true"}'),
             codex('token_usage_record', response_id='r1', usage={'input_tokens': 8, 'output_tokens': 4}),
             codex('response_item', type='message', role='assistant', id='A', content=[{'type': 'output_text', 'text': 'Check failed.'}]),

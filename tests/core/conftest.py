@@ -155,16 +155,8 @@ def instance(tmp_path):
     token.write_text("sk-ant-oat-fake-token\n")
     token.chmod(0o600)
 
-    supported = json.loads(
-        (SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text()
-    )["versions"]
-    # Pin the selected simulator's reported version, as a real installation does.
-    tested = subprocess.run([sys.executable, str(FAKE_CLAUDE), "--version"],
-        env=clean_env(), check=True, capture_output=True, text=True).stdout.split()[0]
-    assert tested in supported, "the fake Claude version must be in the tested set"
-    (root / "config" / "claude.json").write_text(
-        json.dumps({"bin": str(FAKE_CLAUDE), "version": tested}, indent=2) + "\n"
-    )
+    # Record the fake as the instance's binary, as `hx install` records the real one.
+    (root / "config" / "claude.json").write_text(json.dumps({"bin": str(FAKE_CLAUDE)}, indent=2) + "\n")
 
     # A real git worktree, so `hx complete done`'s clean-worktree check is exercised rather
     # than skipped (spec 06).
@@ -410,25 +402,7 @@ def wait_for(predicate, *, what: str, limit: float = 30.0, interval: float = 0.0
     raise AssertionError(f"timed out after {limit}s waiting for {what}")
 
 
-#: A stand-in for the real `claude` during install tests: it answers `--version` with a bare
-#: version from the package's tested list and does nothing else.
-FAKE_CLAUDE_BIN = """#!/usr/bin/env bash
-if [ "$1" = "--version" ]; then echo "{version} (Claude Code)"; exit 0; fi
-exec {real} "$@"
-"""
-
-
 @pytest.fixture
-def fake_claude_on_path(tmp_path):
-    """Put a fake `claude` first on PATH, pinned to a version the package has tested."""
-    import json as _json
-
-    tested = _json.loads(
-        (SRC / "hx" / "packaging" / "tested-claude-versions.json").read_text()
-    )["versions"][0]
-    bindir = tmp_path / "fakebin"
-    bindir.mkdir(exist_ok=True)
-    binary = bindir / "claude"
-    binary.write_text(FAKE_CLAUDE_BIN.format(version=tested, real=FAKE_CLAUDE))
-    binary.chmod(0o755)
-    return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}", "HX_FAKE_CLAUDE_VERSION": tested}
+def fake_claude_on_path():
+    """Put the fake `claude` first on PATH, where `hx install` step 1 finds it."""
+    return {"PATH": f"{FAKE_CLAUDE.parent}:{os.environ.get('PATH', '')}"}

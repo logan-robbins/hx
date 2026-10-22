@@ -68,7 +68,7 @@ def _pi_instance(root: Path) -> list[tuple[str, str, str]]:
 
     recorded = root / "config" / "pi.json"
     if not recorded.is_file():
-        found.append((WARN, "pi", "config/pi.json absent; record {bin, version} of the pi binary"))
+        found.append((WARN, "pi", "config/pi.json absent; record the pi binary's path as `bin`"))
     else:
         try:
             body = json.loads(recorded.read_text())
@@ -77,7 +77,7 @@ def _pi_instance(root: Path) -> list[tuple[str, str, str]]:
         else:
             binary = body.get("bin") if isinstance(body, dict) else None
             if binary and os.access(binary, os.X_OK):
-                found.append((OK, "pi", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+                found.append((OK, "pi", binary))
             else:
                 found.append((FAIL, "pi", f"config/pi.json bin {binary!r} is missing or not executable"))
     return found
@@ -136,7 +136,7 @@ def _grok_instance(root: Path) -> list[tuple[str, str, str]]:
 
     recorded = root / "config" / "grok.json"
     if not recorded.is_file():
-        found.append((WARN, "grok", "config/grok.json absent; record {bin, version} of the grok binary"))
+        found.append((WARN, "grok", "config/grok.json absent; record the grok binary's path as `bin`"))
     else:
         try:
             body = json.loads(recorded.read_text())
@@ -145,7 +145,7 @@ def _grok_instance(root: Path) -> list[tuple[str, str, str]]:
         else:
             binary = body.get("bin") if isinstance(body, dict) else None
             if binary and os.access(binary, os.X_OK):
-                found.append((OK, "grok", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+                found.append((OK, "grok", binary))
             else:
                 found.append((FAIL, "grok", f"config/grok.json bin {binary!r} is missing or not executable"))
     return found
@@ -196,7 +196,7 @@ def _meta_instance(root: Path) -> list[tuple[str, str, str]]:
 
     recorded = root / "config" / "meta.json"
     if not recorded.is_file():
-        found.append((WARN, "meta", "config/meta.json absent; record {bin, version} of the muse binary"))
+        found.append((WARN, "meta", "config/meta.json absent; record the muse binary's path as `bin`"))
     else:
         try:
             body = json.loads(recorded.read_text())
@@ -205,7 +205,7 @@ def _meta_instance(root: Path) -> list[tuple[str, str, str]]:
         else:
             binary = body.get("bin") if isinstance(body, dict) else None
             if binary and os.access(binary, os.X_OK):
-                found.append((OK, "meta", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+                found.append((OK, "meta", binary))
             else:
                 found.append((FAIL, "meta", f"config/meta.json bin {binary!r} is missing or not executable"))
     return found
@@ -283,7 +283,7 @@ def _codex_instance(root: Path, ids: list[str]) -> list[tuple[str, str, str]]:
 
     recorded = root / "config" / "codex.json"
     if not recorded.is_file():
-        found.append((WARN, "codex", "config/codex.json absent; record {bin, version} of the codex binary"))
+        found.append((WARN, "codex", "config/codex.json absent; record the codex binary's path as `bin`"))
     else:
         try:
             body = json.loads(recorded.read_text())
@@ -292,7 +292,7 @@ def _codex_instance(root: Path, ids: list[str]) -> list[tuple[str, str, str]]:
         else:
             binary = body.get("bin") if isinstance(body, dict) else None
             if binary and os.access(binary, os.X_OK):
-                found.append((OK, "codex", f"{binary} pinned at {body.get('version') or 'an unrecorded version'}"))
+                found.append((OK, "codex", binary))
             else:
                 found.append((FAIL, "codex", f"config/codex.json bin {binary!r} is missing or not executable"))
             guard = body.get("search_guard") if isinstance(body, dict) else None

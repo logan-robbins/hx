@@ -1,6 +1,6 @@
 """`hx doctor` (spec 08, goal build-1 item 1).
 
-It prints the resolved root, the Python version, the tmux version, and the pinned binary
+It prints the resolved root, the Python version, the tmux version, and the recorded binary
 from `config/claude.json` when present, and exits 0. `fail` is reserved for what M0 owns;
 everything a later milestone brings is `warn` (handoff/orchestrator-to-build.md answer 5).
 """
@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from hx.doctor import FAIL, OK, WARN, bare_claude_version, run_checks
+from hx.doctor import FAIL, OK, WARN, run_checks
 
 
 def statuses(checks):
@@ -22,12 +22,6 @@ def detail_for(checks, name):
     return [detail for _, check, detail in checks if check == name]
 
 
-def test_bare_claude_version_strips_the_suffix():
-    """CONTRACTS.md "Claude Code version strings"."""
-    assert bare_claude_version("2.1.278 (Claude Code)\n") == "2.1.278"
-    assert bare_claude_version("2.1.278") == "2.1.278"
-
-
 def test_reports_root_python_tmux_and_git(instance):
     checks = run_checks(instance)
     names = {check for _, check, _ in checks}
@@ -36,11 +30,11 @@ def test_reports_root_python_tmux_and_git(instance):
     assert all(status != FAIL for status, check, _ in checks if check in ("python", "tmux", "git"))
 
 
-def test_reports_the_pinned_binary(instance):
+def test_reports_the_recorded_binary(instance):
     checks = run_checks(instance)
     assert ("claude", OK) in statuses(checks), [c for c in checks if c[1] == "claude"]
-    detail = next(c[2] for c in checks if c[1] == "claude")
-    assert "(tested)" in detail, detail  # the fake's version is in the live-verified list
+    recorded = json.loads((instance / "config" / "claude.json").read_text())["bin"]
+    assert detail_for(checks, "claude") == [recorded]
 
 
 def _no_live_server(monkeypatch):
@@ -49,7 +43,7 @@ def _no_live_server(monkeypatch):
     monkeypatch.setenv("HX_TMUX", "tmux -L hx-doctor-no-server")
 
 
-def test_an_unpinned_instance_only_warns(instance, monkeypatch):
+def test_an_unrecorded_binary_only_warns(instance, monkeypatch):
     _no_live_server(monkeypatch)
     (instance / "config" / "claude.json").unlink()
     checks = run_checks(instance)
@@ -57,8 +51,8 @@ def test_an_unpinned_instance_only_warns(instance, monkeypatch):
     assert not [c for c in checks if c[0] == FAIL]
 
 
-def test_a_pinned_binary_that_is_gone_fails(instance):
-    (instance / "config" / "claude.json").write_text(json.dumps({"bin": "/nope/claude", "version": "9"}))
+def test_a_recorded_binary_that_is_gone_fails(instance):
+    (instance / "config" / "claude.json").write_text(json.dumps({"bin": "/nope/claude"}))
     checks = run_checks(instance)
     assert ("claude", FAIL) in statuses(checks)
 
@@ -206,7 +200,7 @@ def test_codex_instance_without_a_token_fails(instance):
     assert ("codex-token", FAIL) in statuses(_codex_instance(instance, []))
 
 
-def test_codex_instance_with_token_and_pin_passes(instance, tmp_path):
+def test_codex_instance_with_token_and_binary_passes(instance, tmp_path):
     from hx.doctor import _codex_instance
 
     token = instance / "seed" / "codex-token"
@@ -217,7 +211,7 @@ def test_codex_instance_with_token_and_pin_passes(instance, tmp_path):
     probe.write_text("#!/bin/sh\nexit 0\n")
     probe.chmod(0o755)
     (instance / "config" / "codex.json").write_text(
-        json.dumps({"bin": str(probe), "version": "0.156.1"})
+        json.dumps({"bin": str(probe)})
     )
     assert ("codex-token", OK) in statuses(_codex_instance(instance, []))
     assert ("codex", OK) in statuses(_codex_instance(instance, []))
@@ -289,7 +283,7 @@ def test_codex_instance_names_a_missing_search_guard_key(instance, search_guard,
 def test_a_versioned_binary_path_fails(instance):
     """A launcher's auto-update deletes the old version; a path that names one dies with it."""
     (instance / "config" / "meta.json").write_text(json.dumps({
-        "bin": str(instance / "muse-bin-1.4.3-R5018.1" / "muse"), "version": "1.4.3"}))
+        "bin": str(instance / "muse-bin-1.4.3-R5018.1" / "muse")}))
     checks = run_checks(instance)
     assert ("bin-path", FAIL) in statuses(checks), detail_for(checks, "bin-path")
 
@@ -298,7 +292,7 @@ def test_a_stable_launcher_path_passes(instance):
     launcher = instance / "bin" / "muse"
     launcher.parent.mkdir(exist_ok=True)
     launcher.write_text("#!/bin/sh\n")
-    (instance / "config" / "meta.json").write_text(json.dumps({"bin": str(launcher), "version": "1.4.3"}))
+    (instance / "config" / "meta.json").write_text(json.dumps({"bin": str(launcher)}))
     checks = run_checks(instance)
     assert "bin-path" not in {check for _, check, _ in checks}
 
