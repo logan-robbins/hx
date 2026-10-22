@@ -54,6 +54,20 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   planning.json; a plan without it is refused. A draft request's `role` overrides the policy's.
 
 ### Added
+- `hx.credential_mask` (issue #5, docs/fleet-throughput-plan.md P0.6a, D15): the exact
+  credentials hx loads — `seed/token`, which `start.sh` exports as `ANTHROPIC_API_KEY` or
+  `CLAUDE_CODE_OAUTH_TOKEN`; the `envfile.SEED_KEYS` providers from the environment, the
+  instance env file and `seed/`; and the Jev key — are masked by equality, never by pattern
+  (§4.3), before a ledger event is hashed and stored, before an observation or a captured
+  check/tool output becomes an artifact (the observation before its identity, the capture as it
+  leaves the pipe, and every installed file chunk by chunk with a carry across the 64 KiB
+  boundary), before a hook stream record is written, and before any Jev request is serialized
+  (`jev.encode`). Each value is also masked in its three base64 alignments. Masking keeps
+  length (`*` runs), so sizes, offsets, chunk hashes and archives stay valid; values under 16
+  characters are left alone. The set is loaded once per process from the named keys only; a
+  rotation is seen by the next process, and a capture repeated after one stays idempotent.
+  Limits: the worker's own transcript and pane log hold what it printed, and ledger rows other
+  than events (task payloads, recipes, receipts, records) are written as given.
 - `hx plan partition --repo WT [--scope PATH...] [--out plan.json]` (Partner;
   docs/fleet-throughput-plan.md P1.4; CONTRACTS.md § Dependency packet plan) reports, from the
   code graph, the shared providers (declarations called from two or more scopes, ranked by
@@ -193,6 +207,13 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ### Changed
 
+- `hx content fetch` no longer redacts by pattern: `content_store.redact(text, root)` masks the
+  loaded credentials exactly and the `authorization|token|secret|password` regex is deleted (it
+  missed `ANTHROPIC_API_KEY=…`, since `\b` does not fire after `_`, and `{"token": "…"}`;
+  issue #5). `hx models` masks with the same mechanism (`*` runs, not `[redacted]`).
+  `jev.encode` and `jev.evaluate` take the instance `root`, `checks.execute` takes the
+  instance mask, `observer.encode_observation` takes `root`, and `envfile.SEED_KEYS` is public.
+  `jev` imports `httpx` only when it calls. Nothing to do for an existing instance.
 - Every Codex home pins `web_search = "cached"` unless `config/codex.json` has a
   `search_guard` (docs/codex-search-guard.md): hx launches Codex with a full-access sandbox,
   which otherwise defaults the hosted search tool to live, and no hook sees that tool.

@@ -10,8 +10,6 @@ import shlex
 import time
 from pathlib import Path
 
-import httpx
-
 from .continuity_store import canonical
 from .errors import ValidationError
 
@@ -69,7 +67,11 @@ def credential(root, env=None):
     return value
 
 
-def encode(state, questions):
+def encode(state, questions, *, root):
+    """The one request body every Jev caller sends, with the instance's loaded credentials
+    masked (`credential_mask`) before it is sized or sent."""
+    from . import credential_mask
+
     if not isinstance(state, (str, dict, list)) or not isinstance(questions, dict) or not 1 <= len(questions) <= MAX_QUESTIONS:
         raise ValidationError("Jev requires bounded state and 1–16 typed questions")
     for name, question in questions.items():
@@ -86,7 +88,8 @@ def encode(state, questions):
                 raise ValidationError("Jev Noul criteria require true and false")
         else:
             raise ValidationError("unsupported Jev question type")
-    body = canonical({"model": MODEL, "state": state, "questions": questions}).encode()
+    body = canonical(credential_mask.for_root(root).apply(
+        {"model": MODEL, "state": state, "questions": questions})).encode()
     if len(body) > INPUT_BYTES:
         raise Unavailable("input_budget")
     return body
@@ -126,6 +129,8 @@ def validate(response, questions):
 
 
 async def _post(endpoint, key, body, timeout):
+    import httpx
+
     # One overall deadline covers connection, headers, and a slowly streamed body.
     async with asyncio.timeout(timeout):
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
@@ -141,10 +146,12 @@ async def _post(endpoint, key, body, timeout):
                 return json.loads(raw)
 
 
-def evaluate(state, questions, *, key, endpoint=ENDPOINT, timeout=DEADLINE):
+def evaluate(state, questions, *, key, root, endpoint=ENDPOINT, timeout=DEADLINE):
+    import httpx
+
     if not 0 < timeout <= DEADLINE:
         raise ValidationError("Jev deadline must be at most 500 ms")
-    body = encode(state, questions)
+    body = encode(state, questions, root=root)
     started = time.monotonic()
     try:
         response = asyncio.run(_post(endpoint, key, body, timeout))

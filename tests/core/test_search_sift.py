@@ -8,7 +8,7 @@ from hx import jev, search_sift
 
 @pytest.fixture
 def fake_jev(monkeypatch):
-    def evaluate(state, questions, *, key, endpoint=None, timeout=None):
+    def evaluate(state, questions, *, key, root, endpoint=None, timeout=None):
         answers = {}
         for name, question in questions.items():
             if question["type"] == "choice":

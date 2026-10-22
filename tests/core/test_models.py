@@ -236,7 +236,7 @@ def test_a_credential_echoed_by_a_provider_is_scrubbed(instance, registry, monke
 
     monkeypatch.setattr(models_cmd, "fetch", echo)
     doc = models_cmd.report(instance, providers=["meta"], env=_all_keys(), docs_path=registry)
-    assert META_KEY not in json.dumps(doc) and "[redacted]" in doc["providers"]["meta"]["reason"]
+    assert META_KEY not in json.dumps(doc) and "*" * len(META_KEY) in doc["providers"]["meta"]["reason"]
 
 
 def test_usage_errors_exit_2_and_workers_are_refused(run_hx, instance):

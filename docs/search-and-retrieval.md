@@ -234,8 +234,9 @@ hx content stats
 Fetches are cached per URL for 24 hours by default (`--ttl-ms`, `--force`
 to bypass), restricted to http/https, and blocked from link-local cloud
 metadata, multicast, and reserved ranges; `HX_FETCH_STRICT=1` additionally
-blocks loopback and private ranges. Fetched content is secret-redacted
-before storage.
+blocks loopback and private ranges. Before storage, the exact credentials hx
+itself loaded are masked (`hx.credential_mask`, fleet plan P0.6a); nothing is
+redacted by pattern.
 
 ## Isolated execution — `hx exec`
 

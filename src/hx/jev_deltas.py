@@ -39,13 +39,13 @@ def classify(store, body, *, env=None):
             batches.append((observations, questions))
             observations, questions = {}, {}
         try:
-            jev.encode({**base, 'events': {**observations, **new}}, {**questions, **ask})
+            jev.encode({**base, 'events': {**observations, **new}}, {**questions, **ask}, root=store.root)
         except jev.Unavailable:
             if questions:
                 batches.append((observations, questions))
                 observations, questions = {}, {}
             try:
-                jev.encode({**base, 'events': new}, ask)
+                jev.encode({**base, 'events': new}, ask, root=store.root)
             except jev.Unavailable:
                 # The generative companion has scoped reads for this exact event.
                 # No made-up Jev answer and no unbounded API request.

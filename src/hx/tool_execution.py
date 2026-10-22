@@ -7,7 +7,7 @@ import os
 import uuid
 from pathlib import Path
 
-from . import checks, output_reduction, passes, test_summary
+from . import checks, credential_mask, output_reduction, passes, test_summary
 from .continuity_store import Conflict, ContinuityStore, canonical, digest, _id
 from .errors import ValidationError
 
@@ -54,6 +54,7 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None, report=None)
         output.parent.mkdir(parents=True, exist_ok=True)
         command, report_path = test_summary.bind(report, argv, output.with_name(output.name + '.report'))
         observed = checks.execute(command, directory, child, output, 60, CAPTURE_BYTES,
+                                  mask=credential_mask.for_root(store.root),
                                   report=None if report is None else (report, report_path))
         with store.transaction() as tx:
             artifact = tx.put_artifact_file(output, owner_type='tool', owner_id=run_id + ':' + request_id, slot='output', max_bytes=CAPTURE_BYTES)

@@ -232,10 +232,12 @@ def _execute(store, job_id, argv, cwd, env, phase, timeout_s, max_bytes):
         # A crash between spawn and identity capture must stay unresolved.
         payload['spawn_pending'] = True
         _write(tx, job_id, payload)
+    from . import credential_mask
     held = payload.get('host_job')
     if held:
         host_jobs.spawning(job_id)
     observation = checks.execute(argv, cwd, env, output, timeout_s, max_bytes,
+                                 mask=credential_mask.for_root(store.root),
                                  on_spawn=lambda process: _spawn(store, job_id, process))
     if held:
         host_jobs.spawning(job_id, False)

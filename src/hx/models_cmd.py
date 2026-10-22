@@ -18,7 +18,7 @@ an API key (`sk-ant-api…`). A missing credential is `unverified`, any HTTP or 
 failure is `error` with its status, 5 s per provider, no retry, no fallback. Nothing is
 written: the diff is the proposal, and the Partner or operator commits the registry change.
 No credential is ever printed: output names where a key came from, never the key, and every
-string is scrubbed of the values in use before it leaves this module.
+string is masked of the values in use (`credential_mask`) before it leaves this module.
 """
 
 from __future__ import annotations
@@ -337,21 +337,11 @@ def report(root: Path, *, providers: list[str] | None = None, env=None,
                   f"{row['max_input_tokens']}" for model_id, row in block["window_over"].items()]
     doc = {"ts": timestamps.now(), "docs": str(docs_path) if docs is not None else None,
            "env_file": env_note, "providers": blocks, "stale": stale}
+    from . import credential_mask
+
     secrets = [credential(name, root, env, env_file)[0] for name in blocks if name != "typesafe"]
-    return _scrub(doc, [s for s in secrets if s])
-
-
-def _scrub(value, secrets: list[str]):
-    """Belt and braces: no string leaving this module contains a credential in use."""
-    if isinstance(value, str):
-        for secret in secrets:
-            value = value.replace(secret, "[redacted]")
-        return value
-    if isinstance(value, dict):
-        return {_scrub(k, secrets): _scrub(v, secrets) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_scrub(v, secrets) for v in value]
-    return value
+    # Belt and braces: no string leaving this module contains a credential in use.
+    return credential_mask.Mask(s for s in secrets if s).apply(doc)
 
 
 def _short(items, limit: int = 12) -> str:

@@ -322,7 +322,7 @@ import os,subprocess,sys
 from pathlib import Path
 from hx import checks,delivery_validation
 from hx.continuity_store import ContinuityStore
-def crash(argv,cwd,env,output,timeout,maximum,on_spawn,report):
+def crash(argv,cwd,env,output,timeout,maximum,mask,on_spawn,report):
     with output.open('wb') as stream:
         child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'],cwd=cwd,env=env,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
     on_spawn(child)

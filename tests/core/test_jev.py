@@ -54,9 +54,10 @@ def transport(response=RESPONSE, *, status=200, delay=0, oversized=False):
         thread.join(timeout=2)
 
 
-def test_actual_http_contract_sends_one_batched_request_and_validates_response():
+def test_actual_http_contract_sends_one_batched_request_and_validates_response(tmp_path):
     with transport() as (endpoint, requests):
-        result = jev.evaluate({'goal': 'Fix the parser.'}, QUESTIONS, key='local-fixture-key', endpoint=endpoint)
+        result = jev.evaluate({'goal': 'Fix the parser.'}, QUESTIONS, key='local-fixture-key', endpoint=endpoint,
+                              root=tmp_path)
     assert len(requests) == 1
     assert requests[0]['path'] == '/v1/systemone'
     assert requests[0]['authorization'] == 'Bearer local-fixture-key'
@@ -88,22 +89,22 @@ def test_invalid_answers_never_become_decisions(failure):
 
 @pytest.mark.parametrize('settings,reason', [({'status': 429}, 'http_429'), ({'delay': 0.2}, 'timeout'),
                                            ({'oversized': True}, 'output_budget')])
-def test_transport_failure_has_no_retry_or_substitute(settings, reason):
+def test_transport_failure_has_no_retry_or_substitute(settings, reason, tmp_path):
     with transport(**settings) as (endpoint, requests):
         started = time.monotonic()
         with pytest.raises(jev.Unavailable, match=reason):
-            jev.evaluate('goal', QUESTIONS, key='local-fixture-key', endpoint=endpoint,
+            jev.evaluate('goal', QUESTIONS, key='local-fixture-key', endpoint=endpoint, root=tmp_path,
                          timeout=0.05 if reason == 'timeout' else jev.DEADLINE)
         assert time.monotonic() - started < 1
     assert len(requests) <= 1
 
 
-def test_input_bound_prevents_any_network_call(monkeypatch):
+def test_input_bound_prevents_any_network_call(monkeypatch, tmp_path):
     async def forbidden(*args):
         pytest.fail('oversized inputs must not be sent')
     monkeypatch.setattr(jev, '_post', forbidden)
     with pytest.raises(jev.Unavailable, match='input_budget'):
-        jev.evaluate('x' * 4000, QUESTIONS, key='fixture')
+        jev.evaluate('x' * 4000, QUESTIONS, key='fixture', root=tmp_path)
 
 
 def test_named_dotenv_key_is_read_without_copying_other_entries(tmp_path):

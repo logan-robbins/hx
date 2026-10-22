@@ -117,7 +117,7 @@ def enqueue(store: ContinuityStore, binding_id: str, delivery_id: str, payload: 
         charge = 0
         for index, event in enumerate(events):
             key, public_payload, encoded = encode_observation(session_id=binding["session_id"], event=event,
-                fallback_identity=("delivery", binding_id, delivery_id, index))
+                fallback_identity=("delivery", binding_id, delivery_id, index), root=store.root)
             if not tx.db.execute("SELECT 1 FROM events WHERE run_id=? AND capture_key=?",
                                  (binding["run_id"], key)).fetchone():
                 charge += len(canonical(public_payload).encode())
