@@ -374,8 +374,7 @@ def tmux_server(tmp_path):
     ]
     _remove_socket_file(socket)
     assert not survivors, (
-        f"these sessions outlived the teardown: {survivors}. A live check kills what it "
-        f"launched (goal build-4 item 7)."
+        f"these sessions outlived the teardown: {survivors}. A live check kills what it launched."
     )
 
 

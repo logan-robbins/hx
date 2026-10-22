@@ -118,7 +118,7 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
                 by_event[hook["command"].rsplit(" ", 1)[1]] = (claude_event, entry.get("matcher"))
 
     assert by_event["context"] == ("SessionStart", "startup|resume|clear|compact")
-    assert "PreToolUse" not in settings["hooks"], "a worker is never guarded (spec 09.1)"
+    assert "PreToolUse" not in settings["hooks"], "a worker is never guarded"
     assert by_event["log"] == ("PostToolUse", "*")
     assert "subagent-result" not in by_event
     assert by_event["subagent-start"][0] == "SubagentStart"

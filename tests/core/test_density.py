@@ -161,17 +161,15 @@ def test_an_empty_state_renders_to_nothing_so_the_section_says_none_yet():
     assert render_step_state({}) == ""
 
 
-MARKDOWN_RENDERING_CHARS = 1264
+RENDERING_BUDGET_CHARS = 1264
 
 
-def test_the_rendering_is_smaller_than_the_markdown_it_replaced():
-    """`MARKDOWN_RENDERING_CHARS` is the size of FULL_STATE as markdown headings and bullets.
-    The saving is structural — the same facts, without the furniture — and it is paid for once
-    per boundary per stream, on top of the shorter strings the companion prompts ask for."""
+def test_the_rendering_stays_under_its_budget():
+    """FULL_STATE as markdown headings and bullets would be `RENDERING_BUDGET_CHARS`; the
+    rendering carries the same facts without the furniture, and it is paid for once per
+    boundary per stream, on top of the shorter strings the companion prompts ask for."""
     size = len(render_step_state(FULL_STATE))
-    assert size < MARKDOWN_RENDERING_CHARS, (
-        f"{size} chars against {MARKDOWN_RENDERING_CHARS} for the old markdown rendering"
-    )
+    assert size < RENDERING_BUDGET_CHARS, f"{size} chars against the {RENDERING_BUDGET_CHARS} budget"
 
 
 # ---------------------------------------------------------------- the prompts behind it
