@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -117,13 +116,7 @@ def sdk(tmp_path, monkeypatch):
     packs=tmp_path/'packs'; packs.mkdir(); (packs/'ref.dll').write_bytes(b'ref-v1')
     log=tmp_path/'sdk.log'
     env={'PATH':os.defpath,'LANG':'C','FAKE_LOG':str(log),'FAKE_SDK':str(tools),'FAKE_PACKS':str(packs)}
-    host=tmp_path/'host.sqlite'
-    def connect():
-        db=sqlite3.connect(host,timeout=10,isolation_level=None); db.row_factory=sqlite3.Row
-        db.execute('CREATE TABLE IF NOT EXISTS slots (job TEXT PRIMARY KEY,owner TEXT NOT NULL,children TEXT NOT NULL)')
-        db.execute('CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY,value INTEGER NOT NULL)')
-        return db
-    monkeypatch.setattr(dotnet_slots,'connect',connect)
+    monkeypatch.setattr(dotnet_slots,'directory',lambda:tmp_path/'host-slots')
     with ContinuityStore(tmp_path/'ledger') as store:
         yield store,repo,env,str(fake),log
 
@@ -136,13 +129,7 @@ def installed_sdk_host_slots(request,tmp_path,monkeypatch):
     # own host admission database so concurrent pytest runs cannot consume one
     # another's production slots. Cross-process/shared-ledger admission is
     # exercised separately using the hermetic SDK and an explicitly shared DB.
-    path=tmp_path/'installed-sdk-host.sqlite'
-    def connect():
-        db=sqlite3.connect(path,timeout=10,isolation_level=None); db.row_factory=sqlite3.Row
-        db.execute('CREATE TABLE IF NOT EXISTS slots (job TEXT PRIMARY KEY,owner TEXT NOT NULL,children TEXT NOT NULL)')
-        db.execute('CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY,value INTEGER NOT NULL)')
-        return db
-    monkeypatch.setattr(dotnet_slots,'connect',connect)
+    monkeypatch.setattr(dotnet_slots,'directory',lambda:tmp_path/'installed-sdk-host-slots')
 
 
 def calls(log, target):
@@ -289,7 +276,9 @@ def test_equal_live_jobs_are_not_started_twice_and_fresh_cannot_override(sdk,tmp
 
 def test_host_limit_applies_across_separate_ledgers_and_queued_retries(sdk,tmp_path):
     store,repo,env,dotnet,log=sdk
-    dotnet_slots.acquire('external-job',1)
+    (store.root/'config').mkdir(exist_ok=True)
+    (store.root/'config'/'hx.json').write_text(json.dumps({'pools':{'build':1}}))
+    dotnet_slots.acquire('external-job','build',tmp_path/'other-root')
     try:
         with pytest.raises(Conflict,match='concurrency limit'):
             build(sdk,request_id='queued')
@@ -452,22 +441,17 @@ def test_real_process_equal_jobs_and_host_concurrency_share_durable_admission(sd
     store,repo,env,dotnet,log=sdk
     ready=tmp_path/'process-ready'; release=tmp_path/'process-release'
     env.update(FAKE_READY=str(ready),FAKE_RELEASE=str(release))
-    with closing(dotnet_slots.connect()) as db:
-        host_path=db.execute('PRAGMA database_list').fetchone()[2]
     body=tmp_path/'child-options.json'
-    body.write_text(json.dumps({'repo':str(repo),'env':env,'dotnet':dotnet,'root':str(store.root),'host':host_path}))
+    body.write_text(json.dumps({'repo':str(repo),'env':env,'dotnet':dotnet,'root':str(store.root),'host':str(dotnet_slots.directory())}))
     script=r'''
-import json,sqlite3,sys
+import json,sys
 from pathlib import Path
 from hx import dotnet_build as broker,dotnet_slots
 from hx.continuity_store import ContinuityStore,canonical
 args=json.loads(Path(sys.argv[1]).read_text())
-def connect():
- db=sqlite3.connect(args['host'],timeout=10,isolation_level=None); db.row_factory=sqlite3.Row
- return db
-dotnet_slots.connect=connect
+dotnet_slots.directory=lambda:Path(args['host'])
 with ContinuityStore(Path(args['root'])) as store:
- result=broker.build(store,'Test.csproj',cwd=Path(args['repo']),env=args['env'],dotnet=args['dotnet'],request_id='child-process',jobs=1)
+ result=broker.build(store,'Test.csproj',cwd=Path(args['repo']),env=args['env'],dotnet=args['dotnet'],request_id='child-process')
  print(canonical(result))
 '''
     process=subprocess.Popen([sys.executable,'-c',script,str(body)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
@@ -479,6 +463,8 @@ with ContinuityStore(Path(args['root'])) as store:
         with pytest.raises(Conflict,match='unresolved job'):
             build(sdk,request_id='duplicate-process')
         with ContinuityStore(tmp_path/'other-ledger') as other:
+            (other.root/'config').mkdir(exist_ok=True)
+            (other.root/'config'/'hx.json').write_text(json.dumps({'pools':{'build':1}}))
             with pytest.raises(Conflict,match='concurrency limit'):
                 broker.build(other,'Test.csproj',cwd=repo,env=env,dotnet=dotnet,request_id='other-process')
         active=store.db.execute("SELECT job_id FROM dotnet_jobs WHERE request_id='child-process'").fetchone()[0]
@@ -560,7 +546,7 @@ def test_cancelled_queued_request_cannot_be_revived_by_admission_or_completion(s
     job,_,_=broker._request(store,'build',None,'cancelled',{'project':str(repo/'Test.csproj')},repo,None)
     broker.reconcile(store,job)
     with pytest.raises(Conflict,match='cannot revive'):
-        broker._admit(store,job,'seed',1,None,None,repo)
+        broker._admit(store,job,'seed','build',None,None,repo)
     with pytest.raises(Conflict,match='cannot revive'):
         broker._finish(store,job,{'valid':False,'reasons':[]},None,None,repo)
     assert broker.status(store,job)['status']=='abandoned'

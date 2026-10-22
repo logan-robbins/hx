@@ -178,7 +178,9 @@ configured credentials; instance setup does not authorize changing personal harn
 kind together. `seam` is the cache-aware seam profile: `soft_fraction` (number in (0, 1],
 default 0.6), `cache_ttl_s` (integer 0–86400, default 300; 3600 for a 1-hour cache) and
 `min_benefit_bytes` (integer 0–2^30, default 65536). `notifications.per_tick` (integer 1–256,
-default 8) bounds the notifications one tick delivers. Any other key or value is refused. Each
+default 8) bounds the notifications one tick delivers. `pools.build` (integer 1–64, default 2)
+and `pools.test` (integer 1–64, default 4) bound `hx build` builds and test shards across the
+box (§ .NET build broker). Any other key or value is refused. Each
 agent's harness `companion` has `provider` (`anthropic`, the default and the only built
 transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
 `state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
@@ -520,8 +522,14 @@ chunk. A summary is a parse of the runner's report, not an execution receipt.
 `graph` and `build` name a project/solution plus cwd, configuration, optional framework,
 runtime and source-contract JSON. MSBuild evaluated properties/items/imports, SDK, packages
 and source dependencies determine completeness and build identity. Unknown custom build
-closures do not qualify for cache reuse. `build` accepts run/request identity and a bounded
-job count; equal requests deduplicate across processes. Host slots limit simultaneous builds.
+closures do not qualify for cache reuse. `build` accepts run/request identity; equal requests
+deduplicate across processes. Per-user, per-boot host slots shared by every root on the box limit
+simultaneous builds and test shards: a root acquires a `build` (or `test`) slot only while the
+box holds fewer of that kind than its own `pools.build` (`pools.test`), else the request stays
+queued and is refused for a later retry. Roots configured differently therefore never together
+exceed the largest limit, and a smaller-limit root can starve under contention; configure every
+root on a box alike. A slot belongs to its acquiring process by kernel process identity; one
+whose owner and every recorded child process are gone is reclaimed at the next acquisition.
 Immutable restore/build artifacts coexist with private writable intermediate/test state.
 Optional `--platform` participates in evaluated identity. Ordinary SDK `.sln`/`.slnx`
 solutions obtain exact mapped project/global/reference contexts from the installed

@@ -231,7 +231,7 @@ def _execute(store, job_id, argv, cwd, env, phase, timeout_s, max_bytes):
     return observation
 
 
-def _admit(store, job_id, seed, jobs, run_id, worker_id, cwd):
+def _admit(store, job_id, seed, pool, run_id, worker_id, cwd):
     with store.transaction() as tx:
         _owner(tx, run_id, worker_id, cwd)
         row,payload=_job(store,job_id)
@@ -241,7 +241,7 @@ def _admit(store, job_id, seed, jobs, run_id, worker_id, cwd):
         if active and active[0] == 'running':
             raise Conflict('equal build inputs already have an unresolved job; no duplicate build was started')
     slot = str(store.root.resolve()) + '/' + job_id
-    dotnet_slots.acquire(slot, jobs)
+    dotnet_slots.acquire(slot, pool, store.root)
     try:
         with store.transaction() as tx:
             _owner(tx, run_id, worker_id, cwd)
@@ -299,18 +299,16 @@ def _same(before, after):
     return all(before[k] == after[k] for k in ('hash', 'observation_hash'))
 
 
-def _limits(jobs, timeout_s, max_output_bytes):
+def _limits(timeout_s, max_output_bytes):
     if type(timeout_s) not in (int, float) or not math.isfinite(timeout_s) or not 0 < timeout_s <= 3600 or type(max_output_bytes) is not int or not 1 <= max_output_bytes <= 64*1024*1024:
         raise ValidationError('build/test needs a timeout up to one hour and output bound up to 64 MiB')
-    if jobs is not None and (type(jobs) is not int or not 1 <= jobs <= 64):
-        raise ValidationError('host build concurrency must be 1 through 64')
 
 
 def build(store, project, *, cwd=None, env=None, configuration='Debug', framework=None, runtime=None,
           source_contract=None, dotnet='dotnet', platform=None, run_id=None, request_id=None, worker_id=None,
-          jobs=None, timeout_s=900, max_output_bytes=8*1024*1024, fresh=False):
+          timeout_s=900, max_output_bytes=8*1024*1024, fresh=False):
     project, cwd = _location(project, cwd)
-    _limits(jobs, timeout_s, max_output_bytes)
+    _limits(timeout_s, max_output_bytes)
     dotnet_graph.properties(configuration, framework, runtime, platform=platform)
     if source_contract is not None:
         checks.validate({'schema_version': 1, 'id': 'closure', 'argv': [dotnet], 'cwd': '.', 'inputs': [],
@@ -359,7 +357,7 @@ def build(store, project, *, cwd=None, env=None, configuration='Debug', framewor
     if result:
         return _finish(store, job_id, result, run_id, worker_id, cwd, live_graph=current, env=child)
     try:
-        _admit(store, job_id, seed, jobs, run_id, worker_id, cwd)
+        _admit(store, job_id, seed, 'build', run_id, worker_id, cwd)
     except Conflict:
         # A known admission refusal starts no product process. Preserve request
         # replay after host capacity becomes available; do not reset live jobs
@@ -510,8 +508,8 @@ def current(store, run_id, receipt_id, *, env=None, worker_id=None):
 
 
 def test(store, build_id, *, request_id=None, run_id=None, worker_id=None, env=None, project=None, framework=None,
-         filter_expression=None, runner_args=None, jobs=None, timeout_s=900, max_output_bytes=8*1024*1024):
-    _limits(jobs, timeout_s, max_output_bytes)
+         filter_expression=None, runner_args=None, timeout_s=900, max_output_bytes=8*1024*1024):
+    _limits(timeout_s, max_output_bytes)
     artifact = artifact_metadata(store, build_id)
     if not artifact['complete'] or not dotnet_artifacts.intact(store, artifact):
         raise Conflict('test requires a complete intact immutable build artifact')
@@ -547,7 +545,7 @@ def test(store, build_id, *, request_id=None, run_id=None, worker_id=None, env=N
     if not current['complete'] or current['hash'] != artifact['graph_hash']:
         raise Conflict('build source, SDK, package state, configuration, or runner identity changed')
     seed = 'test:' + digest(requested)
-    _admit(store, job_id, seed, jobs, run_id, worker_id, cwd)
+    _admit(store, job_id, seed, 'test', run_id, worker_id, cwd)
     destination = store.root / 'state' / 'dotnet' / 'shards' / job_id / 'artifacts'
     dotnet_artifacts.materialize(store, artifact, destination)
     before = dotnet_artifacts.files(destination)
@@ -629,7 +627,6 @@ def main(argv, root, *, env=None):
         if name == 'build':
             item.add_argument('--run')
             item.add_argument('--request')
-            item.add_argument('--jobs', type=int)
             item.add_argument('--timeout', type=float, default=900)
             item.add_argument('--max-output-bytes', type=int, default=8*1024*1024)
             item.add_argument('--fresh', action='store_true')
@@ -641,7 +638,6 @@ def main(argv, root, *, env=None):
     item.add_argument('--framework')
     item.add_argument('--filter')
     item.add_argument('--runner-arg', action='append', default=[])
-    item.add_argument('--jobs', type=int)
     item.add_argument('--timeout', type=float, default=900)
     item.add_argument('--max-output-bytes', type=int, default=8*1024*1024)
     item.add_argument('--root')
@@ -671,12 +667,12 @@ def main(argv, root, *, env=None):
                 result = graph(store, args.project, **options)
             else:
                 result = build(store, args.project, **options, run_id=args.run, request_id=args.request,
-                               worker_id=child.get('HARNESS_ID'), jobs=args.jobs, timeout_s=args.timeout,
+                               worker_id=child.get('HARNESS_ID'), timeout_s=args.timeout,
                                max_output_bytes=args.max_output_bytes, fresh=args.fresh)
         elif args.command == 'test':
             result = test(store, args.build_id, env=child, run_id=args.run, request_id=args.request,
                           worker_id=child.get('HARNESS_ID'), project=args.project, framework=args.framework,
-                          filter_expression=args.filter, runner_args=args.runner_arg, jobs=args.jobs,
+                          filter_expression=args.filter, runner_args=args.runner_arg,
                           timeout_s=args.timeout, max_output_bytes=args.max_output_bytes)
         elif args.command == 'materialize':
             result = materialize(store, args.build_id, args.destination)

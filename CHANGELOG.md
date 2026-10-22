@@ -11,6 +11,14 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 ## [Unreleased]
 
 ### Changed
+- `hx build` slot limits come from config, not from the last `--jobs` any root passed
+  (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker). `--jobs` is gone from
+  `hx build build` and `hx build test`; set `pools.build` (1–64, default 2) and `pools.test`
+  (1–64, default 4) in `config/hx.json` instead, alike on every root of a box. Builds and test
+  shards hold separate box-wide pools, each root admits only while the box holds fewer slots of
+  the kind than its own limit, and a slot whose owning process and recorded children are gone is
+  reclaimed by process identity instead of staying held until `hx build reconcile`. The host
+  ledger moved to `hx-slots-UID` in the temp directory.
 - `check_policy` in a schema-2 plan is `{reviewer,required_checks,role}`, and
   `config/planning.json` requires `role`: the configured seat role that executes the unit,
   which the plan executor matches against `harness.json`. Add `role` to every plan and to
