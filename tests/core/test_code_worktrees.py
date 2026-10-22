@@ -1,4 +1,4 @@
-"""Every graph read answers for the checkout the command runs in (D1).
+"""Every graph read answers for the checkout the command runs in.
 
 Two worktrees of one repository share a namespace, source objects and extractions,
 but never each other's answers: search, absence, freshness, revisions and imports

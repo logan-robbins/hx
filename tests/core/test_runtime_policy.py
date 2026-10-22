@@ -374,7 +374,7 @@ def test_crlf_source_shown_as_lf_is_receipted_by_its_on_disk_bytes(runtime, caps
     body = payload('crlf-read', tool_name='Read', tool_input={'file_path': str(path)})
     assert fire(store, run, row, 'tool-start', body) == 0
     capsys.readouterr()
-    # Claude shows CRLF line endings as LF (live, Claude Code 2.1.299); the receipt keeps the file's bytes.
+    # Claude shows CRLF line endings as LF (observed live); the receipt keeps the file's bytes.
     assert fire(store, run, row, 'log', {**body, 'tool_response': claude_read('first line\nsecond line\n', path)}) == 0
     assert emitted(capsys) == (f'Complete file: sha256={hashlib.sha256(data).hexdigest()}; bytes={len(data)}; '
                                'CRLF line endings shown as LF')

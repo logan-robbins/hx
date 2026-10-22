@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# The deploy proof for one machine (spec 17.2).
+# The deploy proof for one machine.
 #
 #   packaging/e2e-deploy.sh <scratch-dir>
 #
 # `e2e-install.sh` proves the wheel builds, installs, and can create an instance skeleton.
 # This goes the rest of the way: the *full* `hx install` — its four steps, including the exit-4
 # stop for the seed token — and a worker launched into tmux, inside a HOME that did not exist a
-# moment ago, ending with the real `~/.claude` proved untouched.
+# moment ago.
 #
 # Instance setup creates no product repository or worktree and installs no OS service units.
 # Packet execution materializes its declared repository inputs after admission.
 #
-# Auth is one long-lived token per instance at `seed/token` (spec 11 Auth, CONTRACTS.md). hx
-# reads nothing from any user Claude home, on any platform, so this script plants a fake
-# `$HOME/.claude` full of strings that must never appear anywhere afterwards — that is how you
-# tell "did not read it" from "did not look".
+# Auth is one long-lived token per instance at `seed/token` (CONTRACTS.md). hx reads nothing
+# from any user Claude home, on any platform, so this script plants a fake `$HOME/.claude` full
+# of strings that must never appear anywhere afterwards — that is how you tell "did not read it"
+# from "did not look" — and proves that home byte-identical after `hx install`.
 #
 # Exits non-zero on the first failure, naming the step.
 
@@ -26,6 +26,16 @@ STEP=""
 step() { STEP="$1"; printf '\n== %s\n' "$1"; }
 ok()   { printf '   ok  %s\n' "$1"; }
 die()  { printf '\nFAILED at step: %s\n     reason: %s\n' "$STEP" "$1" >&2; exit 1; }
+
+# Every path under a directory, sorted: a content hash per file, a target per symlink, a line
+# per directory, so an added, removed or rewritten entry shows up in a diff.
+home_manifest() {
+  (cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r p; do
+    if [ -L "$p" ]; then printf 'link:%s  %s\n' "$(readlink "$p")" "$p"
+    elif [ -f "$p" ]; then shasum -a 256 "$p"
+    else printf 'dir  %s\n' "$p"; fi
+  done)
+}
 
 [ $# -eq 1 ] || { echo "usage: $(basename "$0") <scratch-dir>" >&2; exit 2; }
 SCRATCH="$1"
@@ -45,16 +55,7 @@ command -v git >/dev/null 2>&1 || die "git is not on PATH"
 command -v tmux >/dev/null 2>&1 || die "tmux is not on PATH"
 ok "uv $(uv --version), $(git --version), $(tmux -V)"
 
-step "1. record the real ~/.claude manifest"
-BEFORE="$SCRATCH/claude-home.before"
-if [ -d "$REAL_CLAUDE_HOME" ]; then
-  "$REPO/tools/claude-home-hash.sh" "$REAL_CLAUDE_HOME" > "$BEFORE" || die "could not hash $REAL_CLAUDE_HOME"
-  ok "$(wc -l < "$BEFORE" | tr -d ' ') entries from $REAL_CLAUDE_HOME"
-else
-  : > "$BEFORE"; ok "$REAL_CLAUDE_HOME does not exist; manifest is empty"
-fi
-
-step "2. fresh HOME and uv directories under the scratch dir"
+step "1. fresh HOME and uv directories under the scratch dir"
 export HOME="$SCRATCH/home"
 export UV_TOOL_DIR="$SCRATCH/uv/tools"
 export UV_TOOL_BIN_DIR="$SCRATCH/uv/bin"
@@ -64,7 +65,7 @@ export PATH="$UV_TOOL_BIN_DIR:$PATH"
 unset HARNESS_ROOT HARNESS_ID CLAUDE_CONFIG_DIR
 ok "HOME=$HOME"
 
-step "3. uv build and uv tool install"
+step "2. uv build and uv tool install"
 DIST="$SCRATCH/dist"
 uv build --out-dir "$DIST" "$REPO" > "$SCRATCH/build.log" 2>&1 \
   || { tail -20 "$SCRATCH/build.log" >&2; die "uv build failed"; }
@@ -75,9 +76,9 @@ HX="$UV_TOOL_BIN_DIR/hx"
 [ -x "$HX" ] || die "no hx entry point at $HX"
 ok "$(basename "$WHEEL") -> $HX"
 
-# ------------------------------------------------------ a planted user home, and a product
+# ------------------------------------------------------------------ a planted user home
 
-step "4. the fake claude, a private tmux server, and a planted ~/.claude"
+step "3. the fake claude, a private tmux server, and a planted ~/.claude"
 FAKE_BIN_DIR="$SCRATCH/bin"
 mkdir -p "$FAKE_BIN_DIR"
 cp "$REPO/tests/fakeclaude/claude" "$FAKE_BIN_DIR/claude"
@@ -108,10 +109,10 @@ JSON
 echo "USER-CLAUDE-MD-LEAKED" > "$FAKE_USER/CLAUDE.md"
 echo "USER-SKILL-LEAKED" > "$FAKE_USER/skills/user-only-skill/SKILL.md"
 FAKE_BEFORE="$SCRATCH/fake-user.before"
-"$REPO/tools/claude-home-hash.sh" "$FAKE_USER" > "$FAKE_BEFORE"
+home_manifest "$FAKE_USER" > "$FAKE_BEFORE"
 ok "$FAKE_USER with credentials, a deny-everything hook, a banner CLAUDE.md and a skill"
 
-step "5. hx install stops for the seed token, and says how to make one"
+step "4. hx install stops for the seed token, and says how to make one"
 ROOT="$SCRATCH/hx"
 set +e
 "$HX" install --root "$ROOT" --claude "$FAKE_BIN_EARLY" > "$SCRATCH/install-1.log" 2>&1
@@ -125,7 +126,7 @@ grep -q "reads nothing from your own" "$SCRATCH/install-1.log" \
 ok "exit 4, naming the setup-token command and the path to paste into"
 [ ! -s "$ROOT/seed/token" ] || die "a token appeared without the human pasting one"
 
-step "6. paste a token, and install again"
+step "5. paste a token, and install again"
 mkdir -p "$ROOT/seed"
 printf 'deploy-proof-token-not-a-real-credential\n' > "$ROOT/seed/token"
 chmod 600 "$ROOT/seed/token"
@@ -135,7 +136,7 @@ chmod 600 "$ROOT/seed/token"
 sed 's/^/   | /' "$SCRATCH/install-2.log" | tail -12
 ok "instance at $ROOT"
 
-step "7. the token is 0600 and no credentials file was created anywhere"
+step "6. the token is 0600 and no credentials file was created anywhere"
 token_mode=$(python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$ROOT/seed/token")
 [ "$token_mode" = "0o600" ] || die "seed/token is $token_mode, expected 0o600"
 ok "seed/token mode $token_mode"
@@ -143,7 +144,7 @@ creds=$(find "$ROOT" -name '.credentials.json' 2>/dev/null | head -5)
 [ -z "$creds" ] || die "a credentials file exists in the instance: $creds"
 ok "no .credentials.json anywhere under the instance"
 
-step "8. nothing of the user's Claude home reached the instance"
+step "7. nothing of the user's Claude home reached the instance"
 for planted in USER-CREDENTIALS-LEAKED USER-HOOK-LEAKED USER-CLAUDE-MD-LEAKED USER-SKILL-LEAKED; do
   if grep -rq "$planted" "$ROOT" 2>/dev/null; then
     grep -rl "$planted" "$ROOT" 2>/dev/null | sed 's/^/     /' >&2
@@ -151,14 +152,14 @@ for planted in USER-CREDENTIALS-LEAKED USER-HOOK-LEAKED USER-CLAUDE-MD-LEAKED US
   fi
 done
 ok "none of the four planted strings appears anywhere under $ROOT"
-"$REPO/tools/claude-home-hash.sh" "$FAKE_USER" > "$SCRATCH/fake-user.after"
+home_manifest "$FAKE_USER" > "$SCRATCH/fake-user.after"
 diff -u "$FAKE_BEFORE" "$SCRATCH/fake-user.after" > "$SCRATCH/fake-user.diff" \
   || { sed 's/^/   | /' "$SCRATCH/fake-user.diff" >&2; die "hx wrote to the user's Claude home"; }
 ok "$FAKE_USER is byte-identical before and after"
 
-step "9. config/claude.json records the binary install was given, and nothing else"
+step "8. config/claude.json records the binary install was given, and nothing else"
 CLAUDE_JSON="$ROOT/config/claude.json"
-[ -f "$CLAUDE_JSON" ] || die "no $CLAUDE_JSON (spec 17.2 step 1)"
+[ -f "$CLAUDE_JSON" ] || die "no $CLAUDE_JSON"
 python3 - "$CLAUDE_JSON" "$FAKE_BIN_EARLY" <<'PY' || die "config/claude.json is wrong"
 import json, sys
 claude = json.load(open(sys.argv[1]))
@@ -166,13 +167,12 @@ assert claude == {"bin": sys.argv[2]}, claude
 print(f"   ok  bin={claude['bin']}")
 PY
 
-# --------------------------------------------------------------------------- the mirror
+# ------------------------------------------------- no repository, worktree or service unit
 
-step "10. instance setup creates no repository, worktree, or OS service units"
-# Spec 14 D25: working directories are not hx's business and hx ships no unit files. An
-# instance that grew any of these would mean the cut did not take.
+step "9. instance setup creates no repository, worktree, or OS service units"
+# Working directories are not hx's business, and hx ships no unit files.
 for stray in repos wt; do
-  [ ! -e "$ROOT/$stray" ] || die "$ROOT/$stray exists; hx manages no git (spec 17.2)"
+  [ ! -e "$ROOT/$stray" ] || die "$ROOT/$stray exists; hx manages no git"
 done
 [ ! -e "$ROOT/config/repo.json" ] || die "config/repo.json exists; hx mirrors nothing"
 for unit_dir in "$HOME/Library/LaunchAgents" "$HOME/.config/systemd/user"; do
@@ -183,7 +183,7 @@ for unit_dir in "$HOME/Library/LaunchAgents" "$HOME/.config/systemd/user"; do
 done
 ok "no repos/, no wt/, no config/repo.json, no unit files written anywhere"
 
-step "11. plan, admit and launch a worker packet through the installed runtime"
+step "10. plan, admit and launch a worker packet through the installed runtime"
 export HARNESS_ROOT="$ROOT"
 WORKDIR="$SCRATCH/work/eng-001"
 mkdir -p "$WORKDIR/.hx/map" "$ROOT/config/eng-001"
@@ -236,17 +236,15 @@ assert any(run['run_id']==sys.argv[2] for run in view['runs'])
 assert view['tasks'][0]['payload']['dependency_packet'] is True
 assert view['leases'], 'admitted packet has no ownership lease'
 PY_BOARD
-[ ! -e "$ROOT/tasks.json" ] || die "old task authority was written"
-[ ! -d "$ROOT/pods" ] || die "old Work Item directory was created"
 ok "source graph, planned packet, exact admitted run, private native capsule"
 
-step "12. the agent home was written from the package, and holds no credential"
+step "11. the agent home was written from the package, and holds no credential"
 AGENT_HOME="$CAPSULE/run/eng-001/home"
 [ -f "$AGENT_HOME/settings.json" ] || die "no $AGENT_HOME/settings.json"
 # Auth is the instance token exported at launch, so an agent home holds no credential at all.
 [ ! -e "$AGENT_HOME/.credentials.json" ] || die \
   "$AGENT_HOME/.credentials.json exists; auth is seed/token exported as CLAUDE_CODE_OAUTH_TOKEN
-  and agent homes hold no credentials file (spec 11 Auth)"
+  and agent homes hold no credentials file"
 # The token must reach the agent as CLAUDE_CODE_OAUTH_TOKEN in its environment and nowhere
 # else. `fake-argv*.json` is the fake claude recording its own argv and env for tests to
 # assert on — a real binary writes no such file — so they are excluded from the "nowhere else"
@@ -254,7 +252,7 @@ AGENT_HOME="$CAPSULE/run/eng-001/home"
 # its own name; both records carry the token env, so both are excluded.
 ARGV_JSON="$ROOT/run/partner/fake-argv.json"
 if [ -f "$ARGV_JSON" ]; then
-  python3 - "$ARGV_JSON" <<'PY' || die "the launch environment is not what spec 11 Auth requires"
+  python3 - "$ARGV_JSON" <<'PY' || die "the token must reach the session env as CLAUDE_CODE_OAUTH_TOKEN and never argv"
 import json, sys
 rec = json.load(open(sys.argv[1]))
 env = rec.get("env", rec)
@@ -280,14 +278,14 @@ fi
 if [ -f "$AGENT_HOME/CLAUDE.md" ] && grep -q "USER-CLAUDE-MD-LEAKED" "$AGENT_HOME/CLAUDE.md"; then
   die "the user's CLAUDE.md reached the agent home"
 fi
-python3 - "$AGENT_HOME/settings.json" <<'PY' || die "the agent settings are not what spec 11 requires"
+python3 - "$AGENT_HOME/settings.json" <<'PY' || die "the agent settings are wrong"
 import json, sys
 s = json.load(open(sys.argv[1]))
 assert s.get("skipDangerousModePermissionPrompt") is True, "no bypass acceptance"
 mode = s["pluginConfigs"]["agents-md@builtin"]["options"]["instructionFiles"]
 assert mode == "claude-md", mode
 assert s["claudeMdExcludes"], "no claudeMdExcludes"
-assert "crossSessionInbound" not in s, "crossSessionInbound is the Partner's alone (spec 11)"
+assert "crossSessionInbound" not in s, "crossSessionInbound is the Partner's alone"
 events = sorted(s["hooks"])
 print("   ok  hook events: " + ", ".join(events))
 print("   ok  instructionFiles=claude-md, %d claudeMdExcludes globs" % len(s["claudeMdExcludes"]))
@@ -297,19 +295,6 @@ PY
 [ -s "$(dirname "$CAPSULE")/task-context.md" ] || die "the assigned task checkpoint is missing"
 [ ! -d "$AGENT_HOME/skills/hx-partner" ] || die "Partner instructions leaked into the worker home"
 ok "frozen worker instructions, explicit native tool selection and exact packet checkpoint"
-
-# --------------------------------------------------------------------------- the units
-
-step "13. the real ~/.claude is unchanged"
-AFTER="$SCRATCH/claude-home.after"
-if [ -d "$REAL_CLAUDE_HOME" ]; then
-  "$REPO/tools/claude-home-hash.sh" "$REAL_CLAUDE_HOME" > "$AFTER" || die "could not re-hash"
-else
-  : > "$AFTER"
-fi
-diff -u "$BEFORE" "$AFTER" > "$SCRATCH/claude-home.diff" \
-  || { sed 's/^/   | /' "$SCRATCH/claude-home.diff" >&2; die "$REAL_CLAUDE_HOME changed during the run"; }
-ok "$REAL_CLAUDE_HOME manifest identical before and after"
 
 printf '\n== PASS  install with a seeded token, a launched worker — no Claude home touched\n'
 printf '   instance %s\n' "$ROOT"

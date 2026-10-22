@@ -9,7 +9,7 @@ What is checked here:
 
 * every tag in `STEP_STATE_TAGS` is what the renderer actually emits, and nothing else is;
 * the rendering carries no markdown furniture and no blank lines;
-* a realistic eleven-key state renders smaller than the same state did as markdown;
+* a realistic eleven-key state renders smaller than the same state as markdown;
 * `companion/BASE.md` and every role file carry the style rules and the
   "pre-answer the master's next tool calls" table that make the strings dense in the first
   place.
@@ -165,10 +165,9 @@ MARKDOWN_RENDERING_CHARS = 1264
 
 
 def test_the_rendering_is_smaller_than_the_markdown_it_replaced():
-    """`MARKDOWN_RENDERING_CHARS` is what the previous heading-and-bullet rendering produced
-    for FULL_STATE. The saving is structural — the same facts, without the furniture — and it
-    is paid for once per boundary per stream, on top of the shorter strings the rewritten
-    companion prompts ask for."""
+    """`MARKDOWN_RENDERING_CHARS` is the size of FULL_STATE as markdown headings and bullets.
+    The saving is structural — the same facts, without the furniture — and it is paid for once
+    per boundary per stream, on top of the shorter strings the companion prompts ask for."""
     size = len(render_step_state(FULL_STATE))
     assert size < MARKDOWN_RENDERING_CHARS, (
         f"{size} chars against {MARKDOWN_RENDERING_CHARS} for the old markdown rendering"

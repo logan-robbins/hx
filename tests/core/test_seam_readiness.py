@@ -1,10 +1,10 @@
-"""The seam path never holds a turn hostage (spec 09.2).
+"""The seam path never holds a turn hostage.
 
-The `stop`-hook seam once blocked inside `flush()` until the Companion caught
-up, and a slow companion turned the turn into a hung "running Stop hook"
-indicator. Now the take waits only on the pane: `/clear` goes in when it can
-receive it, else a `seam_waiting` watcher record lands and the marker stays for
-the next boundary. The Companion's last installed state is the checkpoint.
+The `stop`-hook seam never waits inside `flush()` for the Companion, so a slow companion
+cannot turn the turn into a hung "running Stop hook" indicator. The take waits only on the
+pane: `/clear` goes in when it can receive it, else a `seam_waiting` watcher record lands and
+the marker stays for the next boundary. The Companion's last installed state is the
+checkpoint.
 """
 
 from __future__ import annotations

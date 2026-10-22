@@ -1,4 +1,4 @@
-"""The Partner's Companion as one Messages API exchange per pass (spec 10, 07.2, 07.4, 13 M5).
+"""The Partner's Companion as one Messages API exchange per pass.
 
 There is no Companion session and no pane: a pass sends the cached system block, the stream's
 prior state and its new records, and installs the state the model submits through
@@ -33,7 +33,7 @@ def state_of(instance, item_id, stream):
 
 
 def append(instance, item_id, stream, count, **extra):
-    """Append records, which is what the `log` hook does (spec 10)."""
+    """Append records, which is what the `log` hook does."""
     from hx.streams import append_record
 
     for _ in range(count):
@@ -89,7 +89,7 @@ def test_disabled_companion_takes_no_pass_and_stays_caught_up(instance):
 
 
 def test_the_system_block_is_composed_and_byte_stable(instance):
-    """spec 10: BASE.md, the role file and the harness facts — the cached prefix, and only it."""
+    """BASE.md, the role file and the harness facts — the cached prefix, and only it."""
     from hx.companion import system_prompt, config_for
 
     append(instance, "partner", "partner-main", 3)
@@ -179,7 +179,7 @@ def test_a_closed_subagent_stream_submits_its_digest(instance):
 
 
 def test_invalid_state_is_retried_once_then_the_prior_state_stands(instance):
-    """spec 10, 13 M5: "invalid output keeps prior state"."""
+    """Invalid output keeps the prior state."""
     append(instance, "partner", "partner-main", 3)
     run(instance, "submit-state", state={"state": full(goal="the good one")})
     good = state_of(instance, "partner", "partner-main")
@@ -254,7 +254,7 @@ def test_eviction_order_is_spec_10s(instance):
 
 
 def test_a_500_record_replay_stays_within_budget(instance):
-    """spec 13 M5. The log is synthesised: the build-5 live run recorded only a few records."""
+    """The log is synthesised: a live run records too few records to exercise the budget."""
     from hx.companion import due_streams
     from hx.stepstate import estimate_tokens
 
@@ -278,7 +278,7 @@ def test_a_500_record_replay_stays_within_budget(instance):
 
 
 def test_truncation_never_drops_records_at_or_ahead_of_the_cursor(instance):
-    """spec 07.1: never below `state.seq − keep_behind`."""
+    """Never below `state.seq − keep_behind`."""
     from hx.streams import iter_records, main_stream, truncate
 
     append(instance, "partner", "partner-main", 400)
@@ -339,7 +339,7 @@ def test_the_loop_selects_a_due_stream_and_a_failed_window_waits(instance):
             assert companion_mod.assess(ledger, retried)["status"] == "committed"
 
 
-# --- the seam policy (spec 10, fleet-throughput §4.4) ---------------------------------------------------
+# --- the seam policy (fleet-throughput §4.4) ----------------------------------------------------------
 
 
 def _seam_profile(instance, **values):
@@ -436,7 +436,7 @@ def test_an_idle_cold_partner_seams_only_on_an_empty_prompt(instance, monkeypatc
 
 
 def test_a_pending_seam_never_waits_on_the_companion(instance, monkeypatch):
-    """spec 14 D14, fleet-throughput §4.4: the Partner seams like any agent — `/clear` plus its
+    """fleet-throughput §4.4: the Partner seams like any agent — `/clear` plus its
     context file — and a Companion behind its stream head does not hold it."""
     from hx import hook_stop, streams, seam
     from hx.companion import is_caught_up
@@ -477,7 +477,7 @@ def test_a_menu_still_defers_the_seam(instance, monkeypatch):
 
 
 def test_doctor_warns_rather_than_failing_while_start_sh_has_not_execd(instance):
-    """handoff/gtm-to-build.md gtm-8: the check races the launch, and a failure would be untrue."""
+    """The check races the launch, and a failure would be untrue."""
     from hx.doctor import FAIL, WARN, live_agent_checks
 
     import hx.doctor as doctor_mod

@@ -1,10 +1,9 @@
 /* A small DOM for node, enough to run src/hx/ui/static/app.js headlessly.
  *
- * ui-8 restored autodev's UI, which builds the shell with `innerHTML` strings,
- * so the shim parses HTML now instead of only accepting nodes: `buildDocument`
- * takes the real `static/index.html`, so the harness runs against the page the
- * server actually serves. Anything app.js touches that is missing here throws,
- * which is still the point.
+ * app.js builds the shell with `innerHTML` strings, so the shim parses HTML:
+ * `buildDocument` takes the real `static/index.html`, so the harness runs against
+ * the page the server actually serves. Anything app.js touches that is missing
+ * here throws, which is the point.
  *
  * The selector engine covers what app.js uses: tag, `.class`, `#id`,
  * `[attr]`, `[attr="value"]`, compounds of those, descendant combinators and

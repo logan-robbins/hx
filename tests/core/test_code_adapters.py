@@ -9,7 +9,7 @@ from hx.code_import import import_graph
 
 
 def test_pinned_tags_format():
-    # tree-sitter v0.25.10 cli/src/tags.rs; Point's Display is zero-based (row, column).
+    # tree-sitter cli/src/tags.rs: Point's Display is zero-based (row, column).
     rows = code_adapters.parse_tags(
         "Foo       \t | class   \tdef (0, 0) - (3, 1) `class Foo {`\nRun       \t | call    \tref (2, 3) - (2, 8) `Run()`\n"
     )

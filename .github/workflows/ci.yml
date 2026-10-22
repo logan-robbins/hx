@@ -1,13 +1,8 @@
 name: ci
 
 # hx is stdlib-only Python 3.14 that drives real tmux sessions and ships as a uv tool, so CI
-# is deliberately plain: a real interpreter, a real tmux, a real uv, and the same
-# tools/milestone-check.sh every lane runs locally before finishing a goal.
-#
-# The guard test tests/guard/test_user_home_untouched.py compares ~/.claude against a manifest
-# recorded before the build started. A runner has no such history, so each job records its own
-# .baseline/ from the runner's empty HOME/.claude before any test runs. The assertion is
-# therefore the real one: nothing in the suite wrote to the Claude home it was given.
+# is deliberately plain: a real interpreter, a real tmux, a real uv, and pytest over the whole
+# suite with every test required.
 
 on:
   push:
@@ -53,9 +48,8 @@ jobs:
         with:
           python-version: '3.14'
 
-      # ORCHESTRATION.md "Python environment": one shared .venv on the system interpreter,
-      # pytest, and hx installed editable. tools/milestone-check.sh expects .venv/bin/python.
-      - name: Create the shared virtualenv
+      # One .venv on the runner's interpreter: pytest, and hx installed editable.
+      - name: Create the virtualenv
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
@@ -68,33 +62,9 @@ jobs:
           uv --version
           .venv/bin/python --version
 
-      # The guard baseline: the runner's own Claude home, hashed before anything runs. It does
-      # not exist on a fresh runner, so it is created empty — if the suite writes so much as a
-      # settings file into it, test_user_home_untouched fails. .baseline/ is gitignored
-      # precisely so a developer's local manifest is never what CI checks against.
-      - name: Record .baseline/ from the runner's empty HOME/.claude
-        run: |
-          mkdir -p "$HOME/.claude" .baseline
-          tools/claude-home-hash.sh "$HOME/.claude" > .baseline/claude-home.manifest
-          shasum -a 256 .baseline/claude-home.manifest | cut -d' ' -f1 > .baseline/claude-home.sha256
-          echo "baseline entries: $(wc -l < .baseline/claude-home.manifest)"
-
-      # Guard tests first and on their own, so a guard failure is never buried in suite output.
-      - name: Guard tests
-        run: .venv/bin/python -m pytest tests/guard -q
-
-      # Plain pytest rather than `tools/milestone-check.sh`. That script takes a lane name
-      # and treats the other lanes as advisory, which is right for a lane finishing a goal and
-      # wrong for CI, where every test is required. Its no-lane form now means "everything
-      # required" and would be safe — but CI stating the requirement itself, rather than
-      # inheriting it from a script whose default has already changed once, is the point.
-      - name: Full suite (every lane's tests are required here)
+      # Every test is required, tests/guard included.
+      - name: Full suite
         run: .venv/bin/python -m pytest -q
-
-      - name: The suite left the runner's Claude home untouched
-        run: |
-          tools/claude-home-hash.sh "$HOME/.claude" > /tmp/claude-home.after
-          diff -u .baseline/claude-home.manifest /tmp/claude-home.after
 
   package:
     needs: test

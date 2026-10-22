@@ -1,4 +1,4 @@
-"""Every request but the static index carries the bearer token (spec 16.1)."""
+"""Every request but the static index carries the bearer token."""
 
 from __future__ import annotations
 

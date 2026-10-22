@@ -105,7 +105,7 @@ def test_commit_range_many_modules_is_split(tmp_path):
     assert "split" in gate["instruction"]
 
 
-# --- hx discipline pull (TOOL_SKILL_PLAN step 5) -----------------------------------------------
+# --- hx discipline pull ------------------------------------------------------------------------
 
 FORK_DATE = "2026-01-01T00:00:00Z"
 

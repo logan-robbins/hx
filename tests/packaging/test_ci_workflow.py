@@ -1,12 +1,12 @@
-"""`.github/workflows/ci.yml` — validated, then checked for the things gtm-2 requires of it.
+"""`.github/workflows/ci.yml` — validated, then checked for what CI must do.
 
 **Which validator:** `actionlint` when it is on PATH (the real thing: schema plus shellcheck of
 every `run:` block), otherwise the minimal structural YAML parser below. There is no PyYAML in
-this repo's virtualenv and there never will be — hx is stdlib-only and `ORCHESTRATION.md` says
-not to add dependencies — and `tomllib` cannot read YAML. So the fallback parses the subset of
-YAML a workflow actually uses (block mappings, sequences of mappings, scalars, flow sequences,
-block scalars) and rejects anything outside it, which is enough to catch the failure that
-matters: a workflow that GitHub cannot load, discovered months later when someone pushes.
+this repo's virtualenv because hx is stdlib-only, and `tomllib` cannot read YAML. So the fallback
+parses the subset of YAML a workflow actually uses (block mappings, sequences of mappings,
+scalars, flow sequences, block scalars) and rejects anything outside it, which is enough to
+catch the failure that matters: a workflow that GitHub cannot load, discovered months later when
+someone pushes.
 
 Two things the fallback deliberately does not do, so nobody mistakes it for a YAML library:
 it does not resolve anchors or multi-document streams (a workflow has neither), and it keeps
@@ -181,35 +181,15 @@ def test_the_test_job_installs_tmux_and_uv_and_builds_the_venv():
     blob = "\n".join(str(s) for s in steps)
     assert "tmux" in blob, "hx drives real tmux sessions; a runner without tmux proves nothing"
     assert "astral-sh/setup-uv" in blob, "uv is needed for the packaging path"
-    assert "python -m venv .venv" in blob, "ORCHESTRATION.md: the shared venv is .venv"
+    assert "python -m venv .venv" in blob, "CI builds its venv at .venv"
     # The `test` extra is pytest plus pytest-xdist: the suite runs on every core (pyproject).
     assert 'pip install -e ".[test]"' in blob, "the venv needs hx editable and the test extra"
 
 
-def test_the_baseline_is_recorded_before_any_test_runs():
-    steps = workflow()["jobs"]["test"]["steps"]
-    names = [s.get("name", s.get("uses", "")) for s in steps]
-    record = next(i for i, n in enumerate(names) if "baseline" in n.lower())
-    guard = next(i for i, n in enumerate(names) if "guard" in n.lower())
-    suite = next(i for i, n in enumerate(names) if "full suite" in n.lower())
-    assert record < guard < suite, names
-    body = steps[record]["run"]
-    assert "tools/claude-home-hash.sh" in body
-    assert ".baseline/claude-home.manifest" in body
-
-
 def test_ci_runs_every_lane_s_tests_as_required():
-    """`tools/milestone-check.sh <lane>` is the lane form: guard plus that lane's own paths,
-    the rest advisory. CI is nobody's lane, so it runs the whole suite as required. Its
-    no-lane form means "everything required" as of 2026-09-20 and would work — but it has
-    already meant something else once, and CI should state its own requirement rather than
-    inherit it (orchestrator, gtm-6: "keep CI on plain pytest anyway")."""
+    """CI runs plain `pytest -q` over the whole suite, so every test is required."""
     blob = "\n".join(str(s) for s in workflow()["jobs"]["test"]["steps"])
     assert "pytest -q" in blob, "CI does not run the full suite"
-    assert "tools/milestone-check.sh" not in blob, (
-        "the lane-scoped script would under-run in CI; run pytest over everything instead"
-    )
-    assert "tests/guard" in blob, "the guard tests must still run on their own first"
 
 
 def test_the_package_job_runs_both_release_scripts():

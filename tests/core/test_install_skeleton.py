@@ -1,4 +1,4 @@
-"""Layout creation: `hx install --skeleton-only` (spec 03, 17.2 step 2)."""
+"""Layout creation: `hx install --skeleton-only`."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_install_is_idempotent_and_never_overwrites(tmp_path):
 
 
 def test_missing_gtm_files_are_reported_not_fatal(tmp_path, monkeypatch):
-    """Until the gtm lane's texts land, install tolerates their absence (goal build-1 item 2)."""
+    """Install reports missing skeleton texts and still creates the rest."""
     stripped = tmp_path / "skeleton"
     (stripped / "adapters" / "claude").mkdir(parents=True)
     (stripped / "adapters" / "claude" / "install.sh").write_text("#!/usr/bin/env bash\n")
@@ -83,7 +83,7 @@ def test_missing_gtm_files_are_reported_not_fatal(tmp_path, monkeypatch):
 
 
 def test_install_stops_for_the_seed_token(run_hx, tmp_path, fake_claude_on_path):
-    """Step 3 is the one thing hx cannot do for the human (spec 17.2, 11 Auth)."""
+    """The seed token is the one thing hx cannot do for the human."""
     from hx.install import TOKEN_WAIT_EXIT
 
     root = tmp_path / "instance"
@@ -138,11 +138,11 @@ def test_cli_honours_harness_root_env(run_hx, tmp_path):
     assert (root / "config" / "models.json").is_file()
 
 
-# --- build-8 item 11: `hx` on the agents' PATH -------------------------------------------------
+# --- `hx` on the agents' PATH ------------------------------------------------------------------
 
 
 def test_install_links_bin_hx_to_the_recorded_entry_points(tmp_path):
-    """spec 03: `bin/hx` and `bin/hx-hook`, symlinks to what `config/hx.json` records."""
+    """`bin/hx` and `bin/hx-hook`, symlinks to what `config/hx.json` records."""
     import json
     import os
 
@@ -160,7 +160,7 @@ def test_install_links_bin_hx_to_the_recorded_entry_points(tmp_path):
 
 
 def test_the_links_are_refreshed_when_the_entry_point_moves(tmp_path):
-    """An entry point that moves is followed by one `hx install` (spec 17.1)."""
+    """An entry point that moves is followed by one `hx install`."""
     import os
 
     from hx.install import install_skeleton, link_bin

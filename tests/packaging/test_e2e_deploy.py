@@ -1,11 +1,10 @@
-"""The M10 deploy proof, run as a test (spec 17.2–17.4, 11).
+"""The deploy proof, run as a test.
 
 `packaging/e2e-deploy.sh` goes past what `e2e-install.sh` proves — that the wheel builds and
-can create a skeleton — to the whole of `hx install`: seeding from a *fake* user Claude home,
-mirroring a product repo, cutting a sparse worktree without the product's `.claude/`, launching
-an agent into a private tmux server with the fake `claude`, and rendering the boot units into
-the machine's own launchd or systemd directory. It ends by proving the real `~/.claude` is
-byte-identical to what it was before.
+can create a skeleton — to the whole of `hx install`: the exit-4 stop for the seed token, a
+planted *fake* user Claude home that nothing reads or changes, no repository, worktree or OS
+service unit created, and a planned packet admitted and launched into a private tmux server
+with the fake `claude`.
 
 It is a shell script for the same reasons `e2e-install.sh` is: it is what a human runs before a
 release, and what it proves is about an *installed* tool, which an in-tree pytest cannot
@@ -40,7 +39,7 @@ def test_the_script_refuses_without_a_scratch_directory():
 
 
 def test_the_script_seeds_a_token_and_never_reads_a_user_claude_home():
-    """Auth is the instance token; hx reads no user Claude home at all (spec 11 Auth). The
+    """Auth is the instance token; hx reads no user Claude home at all. The
     proof writes its own token, and the `~/.claude` it creates exists only to prove that
     nothing in it is ever read."""
     text = SCRIPT.read_text()

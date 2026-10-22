@@ -12,7 +12,8 @@ from .test_map_updates import active
 @pytest.fixture(autouse=True)
 def no_automatic_learning_model(monkeypatch):
     from hx import learning_companion
-    # Existing context scheduling tests exercise their own paid lane only.
+    # The learning Companion selects nothing unless a test gives it a candidate, so each test
+    # pays only for the lane it exercises.
     monkeypatch.setattr(learning_companion, 'select', lambda *a, **kw: None)
     monkeypatch.setattr(learning_companion, 'reconcile', lambda *a, **kw: [])
 

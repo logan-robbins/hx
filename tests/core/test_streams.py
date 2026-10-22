@@ -1,9 +1,9 @@
-"""The M4 hooks: `log`, `subagent-start`, `subagent-stop`, `subagent-result`, `stop`.
+"""The stream hooks: `log`, `subagent-start`, `subagent-stop`, `subagent-result`, `stop`.
 
-Spec 07.1 (record shape, the 4 KB line, excerpt + ref), 07.3 (the subagent's context file),
-09.1 (the five hooks), 13 M4.
+What they guarantee: the record shape (one line under 4 KB, excerpt plus ref) and each
+subagent's own context file.
 
-Payload shapes verified against https://code.claude.com/docs/en/hooks on 2026-09-20:
+Payload shapes, per https://code.claude.com/docs/en/hooks:
 `SubagentStart` carries `agent_id` and `agent_type` and takes **JSON only** on stdout;
 `SubagentStop` adds `last_assistant_message`; `PostToolUse(Agent)` carries
 `tool_response.{agentId,status}`.
@@ -50,7 +50,7 @@ def post_tool(tool="Bash", tool_input=None, tool_response=None, *, agent_id=None
 
 
 def transcript_with(tmp_path, *, input_tokens=0, cache_read=0, cache_creation=0):
-    """A transcript whose latest assistant record carries a `usage` block (spec 07.1)."""
+    """A transcript whose latest assistant record carries a `usage` block."""
     path = tmp_path / "transcript.jsonl"
     path.write_text(
         json.dumps({"type": "user", "message": {"role": "user", "content": "hi"}}) + "\n"
@@ -119,7 +119,7 @@ def test_seq_is_monotonic_across_calls(working):
 
 
 def test_a_huge_tool_result_still_fits_one_line_under_4kb(working):
-    """spec 07.1: one JSON line per record, under 4 KB, excerpt plus ref."""
+    """One JSON line per record, under 4 KB, excerpt plus ref."""
     from hx.streams import MAX_RECORD_BYTES, main_stream
 
     huge = "x" * 500_000
@@ -137,12 +137,12 @@ def test_a_huge_tool_result_still_fits_one_line_under_4kb(working):
 
 
 def test_the_seam_marker_is_written_at_the_threshold(working, tmp_path):
-    """spec 05, 02: the hard trigger that does not wait for a step to close."""
+    """The hard trigger that does not wait for a step to close."""
     from hx.hook_log import seam_marker, threshold_for
 
     threshold = threshold_for(working, "partner")
     # The shipped row: 200000, below the 250000 autocompact window the session runs at, and
-    # inside spec 05's 500000 cap for a 1M model.
+    # inside the 500000 cap for a 1M model.
     assert threshold == 200_000, "the seam threshold comes from config/models.json"
 
     run_hook(working, "partner", "log",
@@ -155,7 +155,7 @@ def test_the_seam_marker_is_written_at_the_threshold(working, tmp_path):
 
 
 def test_a_subagent_stream_never_triggers_a_seam(working, tmp_path):
-    """A subagent's window is its own (spec 09.1: the marker is main-stream only)."""
+    """A subagent's window is its own: the marker is main-stream only."""
     from hx.hook_log import seam_marker
 
     run_hook(working, "partner", "subagent-start",
@@ -180,7 +180,7 @@ def test_a_malformed_log_payload_is_logged_and_allowed(working):
 
 
 def test_three_parallel_subagents_get_three_isolated_streams(working):
-    """spec 13 M4: correct handles, each with its own context file."""
+    """Correct handles, each with its own context file."""
     paths = {}
     for n, agent_id in enumerate(("agent-a", "agent-b", "agent-c"), start=1):
         result = run_hook(working, "partner", "subagent-start", {
@@ -246,7 +246,7 @@ def test_subagent_stop_closes_the_stream(working):
 
 
 def test_the_closed_stream_digest_reaches_the_parent(working):
-    """spec 09.1: `PostToolUse(Agent)` is the only path that reaches the parent."""
+    """`PostToolUse(Agent)` is the only path that reaches the parent."""
     run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agent-a", "agent_type": "Explore"})
     run_hook(working, "partner", "subagent-stop",
@@ -303,7 +303,7 @@ def test_stop_writes_the_turn_marker(working):
     assert marker["ts"].endswith("Z") and marker["session_id"] == "s1"
 
 
-# --- build-8 items 1 and 2: `hx seam` ---------------------------------------------------------
+# --- `hx seam` ---------------------------------------------------------------------------------
 
 
 def seam_marker_for(instance, item_id="partner"):
@@ -316,7 +316,7 @@ def seam_marker_for(instance, item_id="partner"):
 
 
 def test_stop_takes_a_pending_seam(working, tmux_server):
-    """spec 09.2: the marker is written, the next `stop` consumes it via `hx seam`."""
+    """The marker is written, the next `stop` consumes it via `hx seam`."""
 
     marker = seam_marker_for(working)
     (working / "run" / "partner" / "fake-input.log").write_text("")
@@ -330,7 +330,7 @@ def test_stop_takes_a_pending_seam(working, tmux_server):
 
 
 def test_a_seam_is_deferred_while_background_work_runs(working, tmux_server):
-    """spec 09.2 step 2: not a boundary. The marker stays and the next `stop` retries."""
+    """Not a boundary: the marker stays and the next `stop` retries."""
 
     marker = seam_marker_for(working)
     (working / "run" / "partner" / "fake-input.log").write_text("")
@@ -421,8 +421,8 @@ def test_hx_seam_defers_from_the_cli_without_touching_anything(working, tmux_ser
 def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(working):
     """`SubagentStart` carries no prompt; the section says where the task came from.
 
-    Verified live on 2026-09-20: the payload's documented fields are `session_id`,
-    `hook_event_name`, `agent_id`, `agent_type`, `cwd` and `permission_mode`.
+    The payload's documented fields are `session_id`, `hook_event_name`, `agent_id`,
+    `agent_type`, `cwd` and `permission_mode`.
     """
     result = run_hook(working, "partner", "subagent-start",
                       {"hook_event_name": "SubagentStart", "agent_id": "agent-a",
@@ -435,11 +435,11 @@ def test_a_subagent_with_no_prompt_in_its_payload_still_gets_a_task_section(work
     assert "already in this conversation" in section
 
 
-# --- build-8 item 3: the compaction hooks are log-only ----------------------------------------
+# --- the compaction hooks are log-only -------------------------------------------------------
 
 
 def test_precompact_records_and_never_blocks(working):
-    """spec 02, 09.1: a block suppresses compaction for the whole turn (live E4)."""
+    """A block suppresses compaction for the whole turn (observed live)."""
     result = run_hook(working, "partner", "precompact",
                       {"hook_event_name": "PreCompact", "trigger": "auto"})
     assert result.returncode == 0, result.stderr
@@ -460,7 +460,7 @@ def test_postcompact_records_what_claude_kept(working):
 
 
 def test_a_subagents_compaction_lands_on_its_own_stream(working):
-    """Live E8: PreCompact fires for subagent compactions with the parent's session_id."""
+    """PreCompact fires for subagent compactions with the parent's session_id (observed live)."""
     run_hook(working, "partner", "subagent-start",
              {"hook_event_name": "SubagentStart", "agent_id": "agt_x", "agent_type": "general-purpose"})
     run_hook(working, "partner", "precompact",

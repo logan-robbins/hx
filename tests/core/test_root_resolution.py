@@ -1,4 +1,4 @@
-"""HARNESS_ROOT resolution and the standing refusal (ORCHESTRATION.md rule 2, spec 17.3).
+"""HARNESS_ROOT resolution and the standing refusal.
 
 tests/guard/test_harness_root_refusal.py owns the guard-level version of this; these tests
 cover the resolution rules around it and prove that every command, implemented or not,
@@ -78,7 +78,7 @@ def test_a_sibling_directory_named_like_it_is_allowed(tmp_path):
 
 
 def test_every_command_refuses_before_doing_anything(run_hx, tmp_path):
-    """Implemented and not-yet-implemented commands alike (spec 08, goal build-1 item 1)."""
+    """Every command refuses the root before it answers anything else."""
     home = tmp_path / "home"
     (home / ".claude").mkdir(parents=True)
     for command in ("doctor", "board", "install", "plan", "complete", "seam", "ui", "goals", "code"):

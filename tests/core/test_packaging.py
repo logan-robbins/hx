@@ -1,7 +1,7 @@
-"""`hx install` end to end (spec 17.2, all four steps; 17.1, 08).
+"""`hx install` end to end, all four steps.
 
-Everything runs against a fake `claude` and a HOME under `tmp_path`: the user's real `~/.claude` is never read, which `tests/guard` also proves from
-the outside and `test_no_install_path_reads_the_users_claude_home` proves from the inside.
+Everything runs against a fake `claude` and a HOME under `tmp_path`: the user's real
+`~/.claude` is never read, which `test_no_install_path_reads_the_users_claude_home` proves.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def run_install(tmp_path, root, fake_claude_on_path, *args, home=None, tmux=None
 
     Step 4 is `hx launch partner`, so a full install starts a real tmux session. `tmux` points
     it at the test's private server; without it the session would land on the machine's default
-    server, where the lanes themselves run — which is exactly how one leaked in build-3.
+    server and outlive the test.
     """
     home = home or (tmp_path / "install-home")
     home.mkdir(parents=True, exist_ok=True)
@@ -114,7 +114,7 @@ def test_step_3_tightens_the_tokens_mode(tmp_path, fake_claude_on_path, tmux_ser
     assert token.stat().st_mode & 0o777 == 0o600
 
 
-# --- step 4: no units (spec 17.2) --------------------------------------------------------------
+# --- step 4: no units ---------------------------------------------------------------------------
 
 
 def test_install_ships_no_unit_files(tmp_path, fake_claude_on_path, tmux_server):
@@ -162,7 +162,7 @@ def test_there_is_no_implicit_repository_creation_push_or_upgrade_command(run_hx
 
 
 def test_no_install_path_reads_the_users_claude_home(tmp_path, fake_claude_on_path, monkeypatch):
-    """hx reads nothing from ~/.claude on any platform (spec 11 Auth, 17.3)."""
+    """hx reads nothing from ~/.claude on any platform."""
     import builtins
 
     real_home_claude = Path.home() / ".claude"

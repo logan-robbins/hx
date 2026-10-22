@@ -1,11 +1,11 @@
-"""`adapters/claude/install.sh` — the per-agent home (spec 09, 11, 17.3).
+"""`adapters/claude/install.sh` — the per-agent home.
 
-M0 pass criterion: "`run/<id>/home/settings.json` validates: hooks present with the right
-`--id`, instruction-files mode `claude-md`, `claudeMdExcludes` set".
+`run/<id>/home/settings.json` validates: hooks present with the right `--id`, instruction-files
+mode `claude-md`, `claudeMdExcludes` set.
 
-Settings keys verified against code.claude.com/docs/en/settings-reference,
+Settings keys per code.claude.com/docs/en/settings-reference,
 /docs/en/memory#choose-which-instruction-files-load, /docs/en/cross-session-messaging and
-/docs/en/hooks on 2026-09-20; the URLs are recorded in goals/build-1.done.md.
+/docs/en/hooks.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pytest
 
 from .conftest import SRC, clean_env
 
-#: spec 09.1, `<hx-hook> --id <id> <event>`, for a worker: no `guard`, which is the Partner's.
+#: A worker's hook events, each run as `<hx-hook> --id <id> <event>`: no `guard`, the Partner's.
 HX_EVENTS = {
     "context", "log", "subagent-start", "subagent-stop",
     "stop", "precompact", "postcompact",
@@ -64,7 +64,7 @@ def installed(instance):
 
 
 def test_refuses_without_the_instance_token(instance):
-    """spec 11 Auth: auth is one long-lived token per instance, at `seed/token`."""
+    """Auth is one long-lived token per instance, at `seed/token`."""
     (instance / "seed" / "token").unlink()
     result = run_install(instance, "eng-001")
     assert result.returncode != 0
@@ -99,7 +99,7 @@ def test_every_spec_09_event_is_wired_with_the_right_id(installed):
 
 
 def test_every_hook_runs_bin_hx_hook(instance):
-    """Spec 09: every hook command is `<root>/bin/hx-hook --id <id> <event>`, whatever
+    """Every hook command is `<root>/bin/hx-hook --id <id> <event>`, whatever
     `config/hx.json` records; `hx install` links `bin/hx-hook` to the entry point."""
     (instance / "config" / "hx.json").write_text(
         json.dumps({"hx_bin": "/opt/hx/bin/hx", "hook_bin": "/opt/hx/bin/hx-hook"})
@@ -129,8 +129,7 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
 
 
 def test_guard_is_installed_for_the_partner_alone(instance):
-    """Spec 09.1: `guard` is a PreToolUse entry in the Partner's settings.json, and in no
-    worker's."""
+    """`guard` is a PreToolUse entry in the Partner's settings.json, and in no worker's."""
     from hx.hook_guard import MATCHER
 
     assert run_install(instance, "partner").returncode == 0
@@ -179,12 +178,12 @@ def test_claude_md_excludes_cover_the_agents_own_workdir(installed):
 
 
 def test_the_bypass_acceptance_is_written(installed):
-    """Every agent runs bypass permissions; no launch is ever interactive (spec 05, 11)."""
+    """Every agent runs bypass permissions; no launch is ever interactive."""
     assert settings_for(installed, "eng-001")["skipDangerousModePermissionPrompt"] is True
 
 
 def test_cross_session_inbound_is_the_partners_alone(instance):
-    """Spec 05, 11, 17.3 scope `crossSessionInbound: accept` to the Partner."""
+    """`crossSessionInbound: accept` is scoped to the Partner."""
     assert run_install(instance, "partner").returncode == 0
     assert run_install(instance, "eng-001").returncode == 0
     assert settings_for(instance, "partner")["crossSessionInbound"] == "accept"
@@ -192,7 +191,7 @@ def test_cross_session_inbound_is_the_partners_alone(instance):
 
 
 def test_permissions_default_mode_is_not_used(installed):
-    """Spec 11: it is ignored in project/local scope and would silently degrade to manual."""
+    """It is ignored in project/local scope and would silently degrade to manual."""
     assert "permissions" not in settings_for(installed, "eng-001")
 
 
@@ -200,7 +199,7 @@ def test_permissions_default_mode_is_not_used(installed):
 
 
 def test_no_credentials_file_is_written_into_the_home(installed):
-    """spec 11 Auth: agent homes hold no credentials; the token is the whole of auth."""
+    """Agent homes hold no credentials; the token is the whole of auth."""
     home = installed / "run" / "eng-001" / "home"
     assert not (home / ".credentials.json").exists()
     assert list(home.glob("*credential*")) == []
@@ -221,12 +220,12 @@ def test_the_one_claude_md_is_installed_into_the_home(instance):
 
 
 def test_skills_are_copied_per_role(instance, tmp_path):
-    """Spec 17.5: `hx-partner` or `hx-worker` only, copied, never symlinked."""
+    """`hx-partner` or `hx-worker` only, copied, never symlinked."""
     skills = tmp_path / "skills"
     for name in ("hx-partner", "hx-worker"):
         (skills / name).mkdir(parents=True)
         (skills / name / "SKILL.md").write_text(f"---\nname: {name}\n---\n")
-    # Which home gets which skill is the manifest's decision (TOOL_SKILL_PLAN step 1).
+    # Which home gets which skill is the manifest's decision.
     (skills / "manifest.json").write_text(json.dumps({
         "hx-partner": {"audiences": ["partner"], "roles": ["partner"], "optional": False},
         "hx-worker": {"audiences": ["worker"], "roles": ["*"], "optional": False},
@@ -255,7 +254,6 @@ SKILLS_DIR = str(SRC / "hx" / "skills")
 
 
 def test_the_partner_home_gets_hx_partner_and_hx_fleet(instance):
-    """handoff/orchestrator-to-build.md 2026-09-20."""
     assert run_install(instance, "partner", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
     skills = instance / "run" / "partner" / "home" / "skills"
     assert (skills / "hx-partner" / "SKILL.md").is_file()
@@ -362,11 +360,10 @@ def test_a_broken_hx_python_is_refused(instance):
     assert "/nope/python not found" in result.stderr
 
 
-# --- nothing about launch is interactive (spec 05, 11) -------------------------------------
+# --- nothing about launch is interactive ---------------------------------------------------
 #
-# Both of these were found by the build-3 live check: a brand-new CLAUDE_CONFIG_DIR stops at
-# the first-run theme picker, and then at the folder-trust dialog, and an agent has no one to
-# answer either.
+# A brand-new CLAUDE_CONFIG_DIR stops at the first-run theme picker, and then at the
+# folder-trust dialog, and an agent has no one to answer either.
 
 
 def config_json(instance, item_id):
@@ -378,7 +375,7 @@ def test_onboarding_is_pre_completed(installed):
 
 
 def test_the_folder_trust_dialog_is_pre_accepted_for_the_agents_own_cwd(installed):
-    """The cwd is `wt/<id>` for a worker (spec 17.4), and hx created it."""
+    """A worker's cwd is its harness `workdir`, here `wt/<id>`."""
     projects = config_json(installed, "eng-001")["projects"]
     workdir = str(installed / "wt" / "eng-001")
     assert projects[workdir]["hasTrustDialogAccepted"] is True
@@ -409,7 +406,7 @@ def test_rerunning_keeps_what_claude_code_wrote_into_config_json(installed):
     assert after["hasCompletedOnboarding"] is True
 
 
-# --- the shipped role and optional skills (TOOL_SKILL_PLAN step 7) -------------------------------
+# --- the shipped role and optional skills ---------------------------------------------------------
 
 
 def _set_role(instance, item_id, role):

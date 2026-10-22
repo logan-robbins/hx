@@ -133,7 +133,7 @@ def test_partition_reproduces_providers_families_pairs_and_waves(partitioned, tm
 def test_partition_scopes_default_to_top_level_directories_and_rules_are_structural(partitioned, tmp_path):
     store, repo, _ = partitioned
     report = plan_partition.report(store.root, repo, None, [])
-    # docs/ is a scope of its own now, so round_cents reaches three.
+    # With default scopes docs/ is a scope of its own, so round_cents reaches three.
     assert report["scopes"] == ["billing", "docs", "jobs", "ledger", "shared"] and report["files"] == 16
     assert report["providers"][0]["scopes"] == ["billing", "docs", "ledger"] and report["pairs"] == []
     for bad in ({"partition": {"merge": [{"id": "x", "from": {"pattern": "*.py"}}]}},

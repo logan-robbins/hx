@@ -1,7 +1,6 @@
-"""`config/models.json` validator (spec 05).
+"""`config/models.json` validator.
 
-M0 pass criterion: every malformed fixture is rejected with a message naming the file and
-the rule.
+Every malformed fixture is rejected with a message naming the file and the rule.
 """
 
 from __future__ import annotations
@@ -56,7 +55,7 @@ def test_the_skeleton_models_file_validates():
     assert "claude-opus-5-5" in models
     for model in models.values():
         # The instance ships at a 250k autocompact window (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`,
-        # exported by start.sh), with the seam threshold below it and inside spec 05's cap.
+        # exported by start.sh), with the seam threshold below it and inside the validator's cap.
         # Official docs: every current-generation model is a 1M window.
         assert model.window == 1_000_000
         assert model.autocompact_window == 250_000
