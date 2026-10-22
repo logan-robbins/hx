@@ -23,9 +23,9 @@ def check_policy(store):
     path = store.root / 'config' / 'planning.json'
     if path.is_file():
         body = appmap.read_json(path,16000)
-        if not isinstance(body,dict) or body.keys() != {'schema_version','reviewer','required_checks'} or type(body['schema_version']) is not int or body['schema_version'] != 1:
-            raise ValidationError('config/planning.json requires schema_version=1, reviewer, required_checks')
-        return {'reviewer':body['reviewer'],'required_checks':body['required_checks']}
+        if not isinstance(body,dict) or body.keys() != {'schema_version','reviewer','required_checks','role'} or type(body['schema_version']) is not int or body['schema_version'] != 1:
+            raise ValidationError('config/planning.json requires schema_version=1, reviewer, required_checks, role')
+        return {'reviewer':body['reviewer'],'required_checks':body['required_checks'],'role':body['role']}
     config = store.root / 'config'
     reviewers = []
     if config.is_dir():
@@ -43,7 +43,7 @@ def check_policy(store):
 
 def draft(store, repository, snapshot, request):
     """Return a usable plan plus precise unknowns; never invent commands or paths."""
-    if not isinstance(request, dict) or request.keys() - {'plan_id', 'task_id', 'goal', 'constraints', 'recipe', 'require', 'write_paths', 'acceptance'}:
+    if not isinstance(request, dict) or request.keys() - {'plan_id', 'task_id', 'goal', 'constraints', 'recipe', 'require', 'write_paths', 'acceptance', 'role'}:
         raise ValidationError('goal draft has unknown fields')
     for key in ('plan_id', 'goal'):
         if key not in request:
@@ -59,6 +59,8 @@ def draft(store, repository, snapshot, request):
     brief = retrieval.plan_context(store, Path(repository), snapshot, request['goal'], required=request.get('require', ()))
     checks, paths, acceptance = {}, set(), list(request.get('acceptance', []))
     policy = check_policy(store)
+    if policy is not None and 'role' in request:
+        policy = {**policy, 'role': request['role']}
     owners = set(request.get('require') or brief['coverage']['seed_ids'][:1])
     # Dependency/consumer context is read scope, not permission to edit every
     # neighboring component. Expand only implementation and declared check edges.
@@ -97,11 +99,13 @@ def draft(store, repository, snapshot, request):
     unknowns = [item for item in brief['discovery'] if item != 'Identify a check that asserts the requested behavior; no current declared check was selected.']
     if policy is None:
         unknowns.append('Configure config/planning.json or a QA harness to approve worker check bindings.')
+    elif 'role' not in policy:
+        unknowns.append('Name the seat role that executes this unit: the request role or config/planning.json role.')
     if not writes and recipe != 'qa':
         unknowns.append('Name the exact implementation and test paths; no current source anchors were selected.')
     if len(refs) > 8:
         unknowns.append('Split this behavior: its required map context exceeds eight records.')
-    valid = policy is not None and len(refs) <= 8 and (bool(writes) or recipe == 'qa')
+    valid = policy is not None and 'role' in policy and len(refs) <= 8 and (bool(writes) or recipe == 'qa')
     if valid:
         planning.validate(store, plan)
     commands = [{'id': name, 'argv': value['argv'], 'cwd': value['cwd']} for name, value in checks.items()]

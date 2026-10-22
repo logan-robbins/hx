@@ -95,6 +95,8 @@ def guard_revision(tx, previous, payload):
 
 def _output(tx, dependency):
     producer = _task(tx, dependency["task_id"])
+    if dependency.get("plan_id", producer["payload"]["plan_id"]) != producer["payload"]["plan_id"]:
+        raise Conflict(f"prerequisite {dependency['task_id']} is no longer a unit of plan {dependency['plan_id']}")
     row = tx.db.execute("SELECT payload,version FROM unit_outputs WHERE task_id=? AND task_revision=? AND output_id=?",
         (producer["task_id"], producer["revision"], dependency["output_id"])).fetchone()
     if row is None or row["version"] != dependency["version"]:

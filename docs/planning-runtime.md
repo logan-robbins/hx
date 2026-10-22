@@ -58,7 +58,8 @@ outputs, prerequisites, resources, check_policy
   or `substitutable`. Early inputs add `provider_output`, `provider_version`, and boolean
   `stand_in`; substitution requires explicit true permission and retains real-provider proof.
 - `resources`: up to 32 `{id,mode}` entries, `shared` or `exclusive`.
-- `check_policy`: independent configured `reviewer` and 1–16 unique `required_checks` IDs.
+- `check_policy`: independent configured `reviewer`, 1–16 unique `required_checks` IDs, and the
+  `role` of the seat that executes the unit (a configured worker role, never `partner`).
 
 An assignment body is at most 16 KiB. Validation rejects cycles, mismatched versions,
 missing/unknown contract fields, invalid source scope, and unordered overlapping write scopes.

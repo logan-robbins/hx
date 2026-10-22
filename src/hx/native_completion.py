@@ -125,7 +125,7 @@ def advance_one(store, *, env=None, jobs=None):
                     intent['learnings'] = note
                 _save(store, scope, intent)
                 with store.transaction() as tx:
-                    tx.enqueue('unit_check_failed', 'finish:' + intent['request_id'], intent)
+                    tx.enqueue('unit_check_failed', 'finish:' + intent['request_id'], {**intent, 'identity': checked['event_id']})
                 # One bounded continuation, never a silent repeated check loop.
                 # Persist intent before transport; an uncertain paste is not resent.
                 from . import native_controller

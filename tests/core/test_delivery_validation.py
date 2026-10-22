@@ -277,7 +277,7 @@ def test_real_completed_integration_worker_must_execute_exact_candidate_policy(f
     git(repo,'reset','--hard',land['head'])
     task=source_unit(repo,'integration-worker')
     recipe=validation.policy(store,'integration')['recipes']['integration']
-    task['check_policy']={'reviewer':'rel-001','required_checks':['integration']}
+    task['check_policy']={'reviewer':'rel-001','required_checks':['integration'],'role':'release-engineer'}
     proposal=plan(fleet,[task])
     proposal['plan_id']='integration-worker'
     planning.apply(store,proposal)

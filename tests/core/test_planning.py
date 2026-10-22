@@ -20,7 +20,7 @@ def unit(repo, name="implement", *, paths=None, prerequisites=None):
         "behavior": "Continuation preserves events arriving after its frozen boundary.",
         "acceptance": ["A late event appears in the next pass and is never acknowledged early."],
         "workdir": str(repo), "write_paths": paths if paths is not None else [f"src/{name}.py", f"tests/test_{name}.py"],
-        "map_inputs": [], "check_policy": {"reviewer": "qa-001", "required_checks": ["unit"]}, "resources": [],
+        "map_inputs": [], "check_policy": {"reviewer": "qa-001", "required_checks": ["unit"], "role": "backend-engineer"}, "resources": [],
         "outputs": [{"id": "proof", "version": 1, "kind": "receipt", "obligation": "Checks prove the declared behavior."}],
         "prerequisites": [{"need": "hard", **need} for need in (prerequisites or [])]}
 

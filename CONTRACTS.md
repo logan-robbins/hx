@@ -177,13 +177,16 @@ configured credentials; instance setup does not authorize changing personal harn
 `companion.max_concurrent` (integer 1–64, default 1) bounds running Companion passes of every
 kind together. `seam` is the cache-aware seam profile: `soft_fraction` (number in (0, 1],
 default 0.6), `cache_ttl_s` (integer 0–86400, default 300; 3600 for a 1-hour cache) and
-`min_benefit_bytes` (integer 0–2^30, default 65536). Any other key or value is refused. Each
+`min_benefit_bytes` (integer 0–2^30, default 65536). `notifications.per_tick` (integer 1–256,
+default 8) bounds the notifications one tick delivers. Any other key or value is refused. Each
 agent's harness `companion` has `provider` (`anthropic`, the default and the only built
 transport; `openai-api` validates and a pass refuses it), `model`, `effort`, `batch_records`,
 `state_budget_tokens` and `disabled`; a Companion's max output tokens are its model's
 `config/models.json` `max_output_tokens`, else derived from the window.
-`config/planning.json` has `schema_version: 1`, independent `reviewer`, and `required_checks`;
-this policy document version is separate from the schema-2 packet plan.
+`config/planning.json` has `schema_version: 1`, independent `reviewer`, `required_checks`, and
+the executing seat `role`; a draft request's `role` overrides it. This policy document version
+is separate from the schema-2 packet plan. The `dispatch` section of `config/hx.json` configures
+the plan executor (§ Plan executor).
 
 Packaged skills are selected by the audience/role manifest. Worker subagents retain the
 parent packet/run and scope. Learnings are proposed with `hx learn propose` and reviewed by
@@ -361,20 +364,36 @@ Dirty or different-source copies are refused before modification.
 ## Dependency packet plan (`schema_version: 2`)
 
 Top-level plan fields remain `schema_version`, `plan_id`, `expected_revision`, `repository`,
-`goal`, `constraints`, `tasks`. Each version-2 task has exactly:
+`goal`, `constraints`, `tasks`. A plan holds 1–256 tasks and at most 1 MiB of canonical JSON.
+Each version-2 task has exactly:
 
 ```text
 id, expected_revision, behavior, acceptance, workdir, write_paths, map_inputs,
 outputs, prerequisites, resources, check_policy
 ```
 
-`check_policy` is `{reviewer,required_checks}` with an independent configured worker and
-1–16 unique check IDs. `resources` has up to 32 unique `{id,mode}` entries (`shared` or
+`check_policy` is `{reviewer,required_checks,role}` with an independent configured worker,
+1–16 unique check IDs, and the role of the seat that executes the unit (`partner` is refused
+as either identity). `resources` has up to 32 unique `{id,mode}` entries (`shared` or
 `exclusive`). Outputs have `{id,version,kind,obligation}` plus `paths` for `source` and
 `contract`; `receipt` outputs have no `check_id`. A prerequisite is `{task_id,output_id,
 version,need}`. `need` is `hard`, `contract`, or `substitutable`. Early dependencies add
 `provider_output`, `provider_version`, and boolean `stand_in`; substitution requires true.
+A prerequisite on a unit of another applied plan in the same root adds that plan's `plan_id`
+and names the output by exact identity: the task must be a unit of that plan's head, and the
+output must be declared there at that version (an early need also at its provider version).
+A prerequisite inside the plan omits `plan_id`. Readiness refuses a producer that has since
+left the named plan.
 Only the current schema-2 dependency packet plan is accepted.
+
+`hx plan validate|apply` compute levels and parallel groups over every applied plan in the
+root, this plan's units replacing its previous head. The report lists this plan's units in
+fleet order (`dependency_levels`, `hard_dependency_levels`, `potential_parallel_groups`,
+`initial_units` = units without prerequisites) and adds `fleet`
+`{plans,units,waves,max_parallelism}` for the union. A cycle through another plan, a task ID
+another plan owns, or overlapping write scopes between independent units of this plan
+(ordering through another plan counts) is refused. `cross_plan_warnings` names units of other
+plans whose prerequisite this plan no longer declares at their version; replan those plans.
 
 Before edits, the worker submits `hx plan bind RUN --file FILE` with exactly:
 
@@ -401,7 +420,65 @@ Typed milestones are `contract_published`, `packet_covered`, `integration_verifi
 and `deployable`. Packet coverage releases leases; deferred binding remains explicit.
 Current readiness revalidates proof rather than trusting historical milestone rows.
 The root loop delivers bounded at-least-once `HX-EVENT OPERATION KIND task=… identity=…`
-notifications. Deduplicate by operation ID and query readiness; a wake is not evidence.
+notifications: one pointer line, never a body, at most `config/hx.json`
+`notifications.per_tick` (integer 1–256, default 8) per tick. The Partner is woken for
+`plan_changed`, `unit_completed`, `unit_scope_violation`, the packet milestones,
+`native_launch_unresolved`, delivery outcomes, `unit_check_failed` (identity: the failing
+check's evidence event, for `hx evidence`), and `progress_blocked` (an `hx progress` update
+with a `blocker` or a `blocked` step, once per run and wording; identity: its hash).
+`packet_binding_proposed` (identity: the binding hash) is pasted, with ` reviewer=ID`, into the
+configured reviewer's live native session, or reaches the Partner when that seat has none.
+`contract_published` and `unit_completed` also clear the dispatch deferrals of the producer's
+consumers, so the executor's next pass re-evaluates them. Deduplicate by operation ID and query
+readiness; a wake is not evidence.
+
+## Plan executor (`hx plan run`, `hx fleet pause|resume`)
+
+The executor admits and launches ready units of applied plans onto idle configured seats.
+The application loop runs one pass per tick, after launch reconciliation, when
+`config/hx.json` `dispatch.auto` is true; `hx plan run PLAN [--dry-run] [--max N]` (Partner)
+runs one pass for one plan and starts the loop when it launched anything. `--dry-run` reports
+`selected` `{task_id,plan_id,worker_id,launch_key}` and admits nothing; `--max` bounds the pass
+below `per_tick`. A pass orders candidates downstream-first (`downstream_roles` rank, then fleet
+depth: the longest prerequisite chain above the unit across every plan) and gives each an idle seat whose
+`harness.json` role is the unit's `check_policy.role` and which is not its reviewer. A seat is
+idle with no active run; the unit's workdir must also be free. Admission is
+`hx plan assign`'s own atomic check, and launch spawns the native session; launch
+reconciliation submits the prompt.
+
+Each launch is recorded under `launch_key` = sha256 of canonical `[plan_id,task_id,revision,
+head]` in `dispatch_launches` (`reserved`, `assigned`, `launched`, `launch_failed`, or
+`deferred` with `retry_at`); a held key is never selected again, so a repeated, concurrent or
+resumed pass never launches one unit revision at one worktree head twice. A pass resumes rows
+a stopped process left (`reserved` without a run is dropped; `assigned` is launched once), and
+records an uncertain or failed native launch as `launch_failed`, never replaying it.
+
+`config/hx.json` `dispatch` (any other field is refused):
+
+| field | default | meaning |
+|---|---|---|
+| `auto` | `false` | the loop runs a pass every tick |
+| `sessions` | 60 | active runs across every root on the box |
+| `quota` | 60 | active runs in this root |
+| `writers` | 60 | active runs with non-empty `write_paths` in this root; read-only units are exempt |
+| `per_tick` | 8 | launches per pass |
+| `prepare_workers` | 8 | parallel admissions per pass |
+| `retry_seconds` | 60 | how long a deferral holds |
+| `base_ref`, `max_behind` | `null`, 20 | refuse a worktree more than `max_behind` commits behind `base_ref` (deferred, re-queued) |
+| `precheck` | `{}` | seat role → argv run in the workdir with the unit JSON on stdin; non-zero defers without a failure |
+| `precheck_timeout` | 120 | seconds |
+| `downstream_roles` | `[]` | roles ranked first and exempt from merge backpressure |
+| `restore` | `{concurrency:8, per_second:2}` | box-wide launch token bucket and in-flight bound |
+| `growth` | `{max_descendants:1500, per_second:40}` | process-growth breaker over sampled native descendants |
+
+Merge backpressure: with `config/delivery.json` `max_batch`, no unit whose role is outside
+`downstream_roles` and which writes is launched while its plan's repository lane has more than
+2 × `max_batch` landed batches awaiting validation. Box budgets live in a per-user, per-boot
+SQLite ledger under the system temporary directory that every root on the box shares; an
+in-flight launch belongs to its admitting process by kernel identity. The report is
+`{status: idle|dispatched|dry_run|paused, launched, deferred, waiting (≤ 32, with reason),
+budget}`. `hx fleet pause|resume` (operator) creates or removes `run/dispatch-paused`; while
+it exists no pass runs.
 
 ## Scoped check execution artifacts
 
@@ -466,8 +543,9 @@ cannot self-approve. Approval policies classify actual interface/migration/sensi
 Reviewer roles/identities come from configuration, not caller claims.
 
 `config/delivery.json` accepts reviewer/sensitive lists, `post_merge_checks`,
-`pre_deploy_checks`, `check_definitions`, `build_checks`, `artifact_paths`, and
-`validation_resources`. Exact check definitions and complete fixed-source closures are
+`pre_deploy_checks`, `check_definitions`, `build_checks`, `artifact_paths`,
+`validation_resources`, and `max_batch` (integer 1–1024; the plan executor's merge backpressure
+holds engineering units past 2 × `max_batch` landed batches awaiting validation). Exact check definitions and complete fixed-source closures are
 required for candidate execution. Pre-deploy requires build checks and explicit tested
 artifact inputs. Required forge checks remain required until forge policy changes explicitly.
 

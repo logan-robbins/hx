@@ -26,6 +26,7 @@ from . import complete as complete_cmd
 from . import companion as companion_cmd
 from . import compose as compose_cmd
 from . import doctor as doctor_cmd
+from . import fleet as fleet_cmd
 from . import flush as flush_cmd
 from . import install as install_cmd
 from . import lifecycle
@@ -60,6 +61,7 @@ IMPLEMENTED = {
     "complete": complete_cmd.main,
     "compose": compose_cmd.main,
     "doctor": doctor_cmd.main,
+    "fleet": fleet_cmd.main,
     "flush": flush_cmd.main,
     "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
@@ -106,6 +108,7 @@ subject to dependency proofs, source ownership, resource leases and host capacit
 
   plan draft/validate/apply     define and record graph-driven dependency packets
   plan ready/assign            inspect readiness and admit a packet
+  plan run PLAN [--dry-run]    admit and launch ready packets on idle seats within budgets
   launch ID --run RUN --request REQUEST  advance the admitted native worker
   launch partner               start the Partner orchestrator
   plan bind/approve-binding    freeze worker checks and independent approval
@@ -163,12 +166,13 @@ AUDIENCES: dict[str, set[str]] = {
         "build status", "build reconcile",
         "code journal",
         "code audit",
+        "fleet pause", "fleet resume",
     },
     "partner": {
         "launch",        "read", "file-read",
         "board", "show", "metrics", "goals",
         "plan draft", "plan replan", "plan changes", "plan validate", "plan apply", "plan unit",
-        "plan ready", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
+        "plan ready", "plan run", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
         "map init", "map import", "map export", "map overlay", "map propose", "map refresh",
         "map publish", "map plan-context", "map get", "map check", "map anchor",
         "learn pending", "learn accept", "learn reject", "learn list",

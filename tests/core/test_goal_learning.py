@@ -17,7 +17,7 @@ def seed_check(active):
     store, repo, _, component, _, _, _, _, _ = active
     policy=store.root/'config/planning.json'
     policy.parent.mkdir(parents=True,exist_ok=True)
-    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['compiler-check']}))
+    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['compiler-check'],'role':'backend-engineer'}))
     recipe = definition("print('compiler contract checked')")
     recipe.update(id='compiler-check', argv=['python3', '-c', "print('compiler contract checked')"], inputs=['compiler.py'])
     node = record('compiler-check', 'check', data={'recipe': recipe})

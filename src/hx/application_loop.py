@@ -144,6 +144,8 @@ def tick(store, *, env=None, jobs=None):
     observer.reconcile(store)
     from .native_controller import reconcile_launches
     reconcile_launches(store, env=env)
+    from . import plan_dispatch
+    dispatched = plan_dispatch.tick(store, env=env, jobs=jobs)
     changed = watch_map(store)
     completion = _completions(store, env=env, jobs=jobs)
     companion, running = _companions(store, env=env, jobs=jobs)
@@ -152,7 +154,8 @@ def tick(store, *, env=None, jobs=None):
     from .token_controls import partner_reset, reset_one
     reset = reset_one(store, env=env)
     partner = partner_reset(store.root, env=env)
-    extra = {'map_changes': changed, **({'companions': running} if running else {})}
+    extra = {'map_changes': changed, **({'companions': running} if running else {}),
+             **({'dispatch': dispatched} if dispatched else {})}
     if completion and completion['status'] in {'advancing', 'completed', 'failed'}:
         return {**completion, **extra}
     for result in (restart, reset, partner):

@@ -146,6 +146,11 @@ def update(store: ContinuityStore, body: dict, *, worker_id: str | None = None) 
         tx.classify(run_id, "progress", expected_revision=cursor_row["revision"], through=event["seq"],
                     dispositions={event["seq"]: "reduced"})
         tx.enqueue("projection", f"progress:{task_id}:{revision}", result)
+        blocked = sorted(step["step_id"] for step in body["step_updates"] if step["status"] == "blocked")
+        if body["blocker"] is not None or blocked:
+            # A blocker or decision request wakes the Partner once per run and wording.
+            identity = digest([body["blocker"], blocked])[:16]
+            tx.enqueue("progress_blocked", f"blocked:{run_id}:{identity}", {"task_id": task_id, "run_id": run_id, "identity": identity})
         from . import task_retention
         task_retention.enforce(tx, task_id)
         task_retention.collect(tx, task_id)

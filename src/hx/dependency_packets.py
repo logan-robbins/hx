@@ -199,6 +199,8 @@ def contract_proof(tx, dependency):
     task = tx.task(dependency['task_id'])
     if task is None or task['revision'] != row['task_revision']:
         raise Conflict('interface publication belongs to a superseded producer revision')
+    if dependency.get('plan_id',task['payload'].get('plan_id')) != task['payload'].get('plan_id'):
+        raise Conflict('interface producer is no longer a unit of the named plan')
     proof = json.loads(row['payload'])
     from .native_producer import require_drained
     require_drained(tx,proof['run_id'])
@@ -447,8 +449,11 @@ def verify_integration(store, task_id, integration_run, producer, output_id):
             milestone(tx,task,'deployable','packet',{'integration_run':integration_run,'commit':proof['commit'],
                 'integration_obligations':sorted(need['task_id']+'/'+need['output_id'] for need in task['payload']['prerequisites'] if need.get('need','hard')!='hard')})
         # Covered hard consumers also become eligible when the upstream binding
-        # discharges. Emit that transition once; historical rows remain immutable.
-        downstream = tx.db.execute('SELECT u.task_id FROM plan_units u JOIN plan_heads h ON h.plan_id=u.plan_id AND h.revision=u.plan_revision WHERE u.plan_id=?', (task['payload']['plan_id'],)).fetchall()
+        # discharges, in any applied plan. Emit that transition once; historical
+        # rows remain immutable.
+        downstream = tx.db.execute("""WITH RECURSIVE consumers(id) AS (
+            SELECT ? UNION SELECT p.task_id FROM plan_prerequisites p JOIN task_heads h ON h.task_id=p.task_id AND h.revision=p.task_revision JOIN consumers c ON p.producer=c.id
+            ) SELECT id FROM consumers ORDER BY id""", (task_id,)).fetchall()
         for candidate in downstream:
             other = effective_task(tx,tx.task(candidate[0]))
             if other['task_id'] == task_id or not other['payload'].get('dependency_packet'):

@@ -59,7 +59,8 @@ parallelism. Request length and apparent simplicity do not determine packet coun
 
 Write each packet's result and why in a paragraph. Name observable acceptance, exact map
 inputs, allowed writes, versioned output obligations, prerequisites, shared/exclusive resources,
-and inherited `check_policy`. Workers own implementation, definition of done, and executable
+and inherited `check_policy`: reviewer, required checks, and the `role` of the seat that executes
+the packet. A prerequisite on another applied plan names its `plan_id`. Workers own implementation, definition of done, and executable
 checks; the configured independent reviewer judges the exact binding.
 
 ```sh
@@ -103,7 +104,16 @@ hx plan assign TASK --revision REVISION --worker ID
 hx launch ID --run RUN --request STABLE_LAUNCH_REQUEST
 ```
 
-Assignment reserves a run and ownership; explicit launch advances its native controller.
+Or let the executor admit and launch every ready packet of a plan onto idle seats of its role,
+downstream first, within the `config/hx.json` `dispatch` budgets; preview the pass first:
+
+```sh
+hx plan run PLAN --dry-run
+hx plan run PLAN
+```
+
+With `dispatch.auto` the loop runs that pass every tick. Assignment reserves a run and
+ownership; explicit launch advances its native controller.
 Reuse the same launch request to reconcile uncertain startup. Read the returned native state;
 a reservation alone does not prove the worker received its packet or started.
 
@@ -115,7 +125,9 @@ for the worker or substitute prose evidence for receipts.
 ## Act on progress, proof, and delivery
 
 Workers report blockers and decision requests with `hx progress`; they retain their leases
-until verified completion or reconciled stop. On changed contracts or scope, stop affected runs,
+until verified completion or reconciled stop. A blocker, a failed acceptance check, a milestone,
+or a binding proposal whose reviewer has no live session reaches you as one `HX-EVENT OPERATION
+KIND task=TASK identity=ID` line: query that task's current state; the line is not evidence. On changed contracts or scope, stop affected runs,
 revise the graph, preserve outstanding obligations, and bind the new assignments. Do not amend
 source scope underneath an active worker.
 
