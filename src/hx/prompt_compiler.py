@@ -93,7 +93,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True, env=None):
     if audience not in AUDIENCES or (audience == "partner") != (item_id == "partner") and audience not in {"companion", "learning", "subagent"}:
         raise ValidationError("prompt audience does not match the configured executor")
     values = persona_mod.identity_values(root, item_id)
-    # The repository currently launches companions through the Claude adapter.
+    # Companions run on the Claude Messages API whatever the worker's flavor.
     runtime = "claude" if audience in {"companion", "learning"} else config.flavor
     channel = "context" if audience == "subagent" or runtime in NO_SYSTEM_PROMPT_FLAVORS else "system"
     branch = _branch(values["workdir"])

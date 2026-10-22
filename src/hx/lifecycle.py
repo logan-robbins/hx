@@ -21,9 +21,9 @@ def package_skills_dir() -> Path:
     return Path(__file__).resolve().parent / "skills"
 
 
-def adapter(root: Path, name: str, item_id: str | None = None, *, flavor: str | None = None) -> Path:
-    """`adapters/<flavor>/<name>`. The Companion is always the Claude adapter."""
-    chosen = flavor or (flavor_of(root, item_id) if item_id else "claude")
+def adapter(root: Path, name: str, item_id: str | None = None) -> Path:
+    """`adapters/<flavor>/<name>` for the agent's own flavor; Claude with no agent."""
+    chosen = flavor_of(root, item_id) if item_id else "claude"
     path = root / "adapters" / chosen / name
     if not path.is_file():
         raise NotFound(f"{path}: missing; `hx install` copies the adapters from the package (spec 17.2)")
@@ -46,10 +46,8 @@ def run_adapter(
             recorded = None
         if recorded:
             child.setdefault("HX_PYTHON", recorded)
-    # The Companion session is Claude even when the worker is Pi, Grok, or Meta.
-    flavor = "claude" if extra and "--companion" in extra else None
     return subprocess.run(
-        ["bash", str(adapter(root, name, item_id, flavor=flavor)), *(extra or []), item_id],
+        ["bash", str(adapter(root, name, item_id)), *(extra or []), item_id],
         env=child,
         capture_output=True,
         text=True,

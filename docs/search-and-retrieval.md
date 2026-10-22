@@ -297,15 +297,18 @@ Invariant information — persona, learnings, policy, tool schemas — belongs
 in the stable prefix the provider caches; everything else is working state.
 `hx cache assess --prefix-bytes N --age-s S --ttl 1h` reports whether that
 prefix is warm, expiring, or cold (TTL 5 minutes by default, one hour with
-`cache_ttl: "1h"`; prefixes under the provider's ~1,024-token minimum earn
+`seam.cache_ttl_s: 3600` in `config/hx.json`; prefixes under the provider's ~1,024-token minimum earn
 no cache benefit at all). `hx cache budget` checks invariants fit under the
 model's seam threshold, leaving the rest of the window as working room.
 
 Companion passes respect the same clock: warm cache means append-only
 deltas with no reordering of retained facts; a cold seam is the free moment
 to compress, drop, and restructure, because the prefix rewrite is already
-owed. Seams taken for token thresholds should prefer cold boundaries when
-the work allows waiting for one.
+owed. The seam policy acts on that clock: below the hard threshold a seam is
+taken only past `seam.soft_fraction` of it, when the cache is already cold (the
+last response missed, or it is older than `seam.cache_ttl_s`) and the next
+packet is smaller than the live context by `seam.min_benefit_bytes`
+(CONTRACTS.md § Companions).
 
 Jev is also leveraged where the judgment is semantic and the options are
 exact: `hx learn classify --jev` takes a Jev Choice over the fixed

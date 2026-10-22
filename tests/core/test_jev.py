@@ -140,7 +140,9 @@ def test_native_pass_classifies_deltas_without_selecting_facts(planned, monkeypa
     body = companion_protocol.frozen(store, job)
     assert set(body['record_versions']) == {'unrelated', 'constraint'}
     assert job['payload']['jev']['events'][event['event_id']]['route'] == 'review_delta'
-    assert 'observation routes' in job['payload']['system']
+    # Routes change per pass, so they ride the user turn and the system block stays cacheable.
+    assert 'observation routes' not in job['payload']['system']
+    assert 'review_delta' in native_companion.user_turn(body, job['payload']['jev']['events'], None)
     assert 'fixture-key' not in json.dumps(job)
     assert native_companion.prepare(store, 'eng-001', run, 'main', 'request', record_ids=('unrelated',))['job_id'] == job['job_id']
     native_companion.prepare(store, 'eng-001', run, 'main', 'second', record_ids=('unrelated',))

@@ -2,6 +2,8 @@
 
 XML is used to read MSBuild's preprocessed import boundaries, never to infer
 conditional project references or compile item lists from project source XML.
+Identities are relocated through `anchors` (default: the checkout and the support
+store's root), so equal inputs in two worktrees or two roots hash alike.
 """
 from __future__ import annotations
 
@@ -108,8 +110,14 @@ def _global_files(cwd):
 
 
 def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', framework=None,
-             runtime=None, platform=None, artifacts_path=None, source_contract=None, sdk=None, support_store=None):
+             runtime=None, platform=None, artifacts_path=None, source_contract=None, sdk=None, support_store=None,
+             anchors=None):
     cwd = Path(cwd).resolve()
+    if anchors is None:
+        anchors = fingerprints.anchors_for(cwd, *([support_store.root] if support_store is not None else []))
+
+    def relocate(value):
+        return fingerprints.relocate(value, anchors)
     project = (cwd / project).resolve()
     solution = project.suffix.lower() in ('.sln', '.slnx')
     if not project.is_file() or project.suffix.lower() not in ('.csproj', '.fsproj', '.vbproj', '.sln', '.slnx'):
@@ -118,7 +126,7 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
     if sdk is None:
         observed, info = invoke([dotnet, '--info'], cwd, env)
         help_result, help_text = invoke([dotnet, 'msbuild', '-help'], cwd, env)
-        sdk = {'info_hash': digest(info), 'query': '-getProperty' in help_text and '-getItem' in help_text,
+        sdk = {'info_hash': digest(relocate(info)), 'query': '-getProperty' in help_text and '-getItem' in help_text,
                'graph_build': '-graphBuild' in help_text, 'version': '',
                'available': observed['exit_code'] == 0 and help_result['exit_code'] == 0}
     reasons = set()
@@ -126,7 +134,7 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
         return {'schema_version': 1, 'project': str(project), 'configuration': configuration,
                 'framework': framework, 'runtime': runtime, 'nodes': [], 'sdk': sdk,
                 'complete': False, 'reasons': ['SDK lacks evaluated property/item query support'],
-                'hash': digest({'project': str(project), 'args': args, 'sdk': sdk})}
+                'hash': digest(relocate({'project': str(project), 'args': args, 'sdk': sdk})), 'anchors': anchors}
     if not sdk['graph_build']:
         reasons.add('SDK lacks static graph build support')
     inputs = {project, *_global_files(cwd)}
@@ -298,7 +306,7 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
                     else:
                         env_inputs.add(found)
                         package_paths.append(str(found))
-                manifest_identity = digest(manifest)
+                manifest_identity = digest(relocate(manifest))
             except (OSError, ValueError, TypeError):
                 reasons.add('resolved NuGet assets manifest is invalid')
                 manifest_identity = None
@@ -335,12 +343,13 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
                       'reference_contexts': reference_contexts})
     # Inputs inside the SDK/package closure are fingerprinted as execution state.
     source_paths = [str(p) for p in sorted(inputs) if not output_root or not p.resolve().is_relative_to(output_root)]
-    source = fingerprints.source(cwd, source_paths, env, contract=source_contract)
+    source = fingerprints.source(cwd, source_paths, env, contract=source_contract, anchors=anchors)
     environment, resolved = fingerprints.environment(cwd, [dotnet],
-        {'complete': True, 'executables': [], 'inputs': [str(p) for p in sorted(env_inputs)], 'external_versions': {}}, env)
+        {'complete': True, 'executables': [], 'inputs': [str(p) for p in sorted(env_inputs)], 'external_versions': {}}, env,
+        anchors=anchors)
     from . import dotnet_git
     repository_workdirs = sorted({str(Path(node['project']).parent) for node in nodes})
-    environment = dotnet_git.bind(environment, repository_workdirs, source['declared_inputs'], env)
+    environment = dotnet_git.bind(environment, repository_workdirs, source['declared_inputs'], env, anchors)
     if not nodes:
         reasons.add('no evaluated project nodes')
     if not source['complete']:
@@ -350,30 +359,36 @@ def evaluate(project, cwd, env, *, dotnet='dotnet', configuration='Debug', frame
     identity_nodes = []
     for node in nodes:
         # File timestamps in item metadata are observations, not semantic keys.
-        # Only actual evaluated values that influence compilation enter this key.
-        identity_nodes.append({key: node[key] for key in ('project', 'framework', 'references', 'inputs', 'imports', 'assets_hash', 'package_paths')})
-        identity_nodes[-1]['properties'] = node['properties']
-        identity_nodes[-1]['global_properties'] = node['global_properties']
-        identity_nodes[-1]['reference_contexts'] = node['reference_contexts']
+        # Only actual evaluated values that influence compilation enter this key,
+        # relocated and then ordered so every checkout lists them alike.
+        identity = relocate({key: node[key] for key in ('project', 'framework', 'references', 'inputs', 'imports', 'assets_hash',
+                                                         'package_paths', 'properties', 'global_properties', 'reference_contexts')})
+        for key in ('references', 'imports', 'package_paths'):
+            identity[key] = sorted(identity[key])
+        identity['inputs'] = sorted(identity['inputs'], key=lambda x: (x['kind'], x['path']))
+        identity_nodes.append(identity)
     result = {'schema_version': 1, 'project': str(project), 'cwd': str(cwd), 'configuration': configuration,
               'framework': framework, 'runtime': runtime, 'platform': platform, 'sdk': sdk, 'nodes': nodes,
               'solution_mapping': mapping,
               'source': source, 'environment': environment, 'resolved_dotnet': resolved[0],
               'dotnet': dotnet, 'environment_inputs': [str(p) for p in sorted(env_inputs)],
               'repository_workdirs': repository_workdirs,
-              'complete': not reasons, 'reasons': sorted(reasons), 'managed_inputs': sorted(str(p) for p in managed_inputs)}
-    result['hash'] = digest({'recipe': [str(project), configuration, framework, runtime, platform, str(output_root)],
-                             'nodes': identity_nodes, 'source': source['hash'], 'environment': environment['hash'], 'sdk': sdk})
+              'complete': not reasons, 'reasons': sorted(reasons), 'managed_inputs': sorted(str(p) for p in managed_inputs),
+              'anchors': anchors}
+    result['hash'] = digest(relocate({'recipe': [str(project), configuration, framework, runtime, platform, str(output_root)],
+                                      'nodes': identity_nodes, 'source': source['hash'], 'environment': environment['hash'], 'sdk': sdk}))
     return result
 
 
 def observe(graph, env):
     """Recheck the captured readset at an artifact publication boundary."""
     source = graph['source']
+    anchors = graph['anchors']
     contract = {'complete': True, 'inputs': []} if source['closure_complete'] else None
-    current = fingerprints.source(Path(graph['cwd']), source['declared_inputs'], env, contract=contract)
+    current = fingerprints.source(Path(graph['cwd']), source['declared_inputs'], env, contract=contract, anchors=anchors)
     environment, _ = fingerprints.environment(Path(graph['cwd']), [graph['dotnet']],
-        {'complete': True, 'executables': [], 'inputs': graph['environment_inputs'], 'external_versions': {}}, env)
+        {'complete': True, 'executables': [], 'inputs': graph['environment_inputs'], 'external_versions': {}}, env,
+        anchors=anchors)
     from . import dotnet_git
-    environment = dotnet_git.bind(environment, graph.get('repository_workdirs', []), source['declared_inputs'], env)
+    environment = dotnet_git.bind(environment, graph.get('repository_workdirs', []), source['declared_inputs'], env, anchors)
     return current, environment

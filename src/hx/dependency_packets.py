@@ -199,6 +199,8 @@ def contract_proof(tx, dependency):
     task = tx.task(dependency['task_id'])
     if task is None or task['revision'] != row['task_revision']:
         raise Conflict('interface publication belongs to a superseded producer revision')
+    if dependency.get('plan_id',task['payload'].get('plan_id')) != task['payload'].get('plan_id'):
+        raise Conflict('interface producer is no longer a unit of the named plan')
     proof = json.loads(row['payload'])
     from .native_producer import require_drained
     require_drained(tx,proof['run_id'])
@@ -240,6 +242,8 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
         cwd = (Path(workdir) / recipe['cwd']).resolve()
         identities[name] = (checks.source_identity(cwd,recipe,child),
                             fingerprints.environment(cwd,recipe['argv'],recipe['environment'],child)[0])
+    from . import code_stubs
+    stubs = code_stubs.extract(blobs)
     with store.transaction() as tx:
         _, task, _ = _run(tx,run_id)
         if task['payload']['workdir'] != workdir or workspace(task['payload'],clean=True) != before:
@@ -255,18 +259,22 @@ def publish_contract(store, run_id, output_id, receipt_ids, *, env=None):
             old = json.loads(previous[0])
             if any(old[key] != proof[key] for key in ('files','checks','task_revision')):
                 raise Conflict('published contract version is immutable; revise the output version')
-            return old
-        for path, entry in files.items():
-            proof['artifacts'][path] = tx.put_artifact(blobs[path],owner_type='contract',owner_id=digest([task['task_id'],output_id,output['version']]),slot=digest(path))
-        for name, receipt_id in receipt_ids.items():
-            receipt = _receipt(tx,receipt_id)
-            source, environment = identities[name]
-            if not source['complete'] or not environment['complete'] or source['hash'] != receipt['inputs_hash'] or environment['hash'] != receipt['environment_hash']:
-                raise Conflict('contract check inputs changed at publication')
-        tx._change()
-        tx.db.execute('INSERT INTO unit_contracts VALUES(?,?,?,?,?)',(task['task_id'],task['revision'],output_id,output['version'],canonical(proof)))
-        milestone(tx,task,'contract_published',output_id,{'run_id':run_id,'output_id':output_id,'version':output['version'],'contract_hash':digest(proof)})
-        return proof
+            proof = old
+        else:
+            for path, entry in files.items():
+                proof['artifacts'][path] = tx.put_artifact(blobs[path],owner_type='contract',owner_id=digest([task['task_id'],output_id,output['version']]),slot=digest(path))
+            for name, receipt_id in receipt_ids.items():
+                receipt = _receipt(tx,receipt_id)
+                source, environment = identities[name]
+                if not source['complete'] or not environment['complete'] or source['hash'] != receipt['inputs_hash'] or environment['hash'] != receipt['environment_hash']:
+                    raise Conflict('contract check inputs changed at publication')
+            tx._change()
+            tx.db.execute('INSERT INTO unit_contracts VALUES(?,?,?,?,?)',(task['task_id'],task['revision'],output_id,output['version'],canonical(proof)))
+            milestone(tx,task,'contract_published',output_id,{'run_id':run_id,'output_id':output_id,'version':output['version'],'contract_hash':digest(proof)})
+    # The ledger row is the authority; its graph stubs are derived, so a retried
+    # publication re-registers them after a failed graph write.
+    code_stubs.send(store.root,code_stubs.publication(store.root,task,proof,stubs),env)
+    return proof
 
 
 def acquire_contract(store, task_id, producer, output_id, destination):
@@ -447,8 +455,11 @@ def verify_integration(store, task_id, integration_run, producer, output_id):
             milestone(tx,task,'deployable','packet',{'integration_run':integration_run,'commit':proof['commit'],
                 'integration_obligations':sorted(need['task_id']+'/'+need['output_id'] for need in task['payload']['prerequisites'] if need.get('need','hard')!='hard')})
         # Covered hard consumers also become eligible when the upstream binding
-        # discharges. Emit that transition once; historical rows remain immutable.
-        downstream = tx.db.execute('SELECT u.task_id FROM plan_units u JOIN plan_heads h ON h.plan_id=u.plan_id AND h.revision=u.plan_revision WHERE u.plan_id=?', (task['payload']['plan_id'],)).fetchall()
+        # discharges, in any applied plan. Emit that transition once; historical
+        # rows remain immutable.
+        downstream = tx.db.execute("""WITH RECURSIVE consumers(id) AS (
+            SELECT ? UNION SELECT p.task_id FROM plan_prerequisites p JOIN task_heads h ON h.task_id=p.task_id AND h.revision=p.task_revision JOIN consumers c ON p.producer=c.id
+            ) SELECT id FROM consumers ORDER BY id""", (task_id,)).fetchall()
         for candidate in downstream:
             other = effective_task(tx,tx.task(candidate[0]))
             if other['task_id'] == task_id or not other['payload'].get('dependency_packet'):

@@ -18,9 +18,6 @@
 #
 # Repo-layer hooks and skills need project trust, which is never granted
 # unattended, so a checkout's own .codex/ stays inert.
-#
-# The Companion is still a Claude session. After the Codex home is written this runs
-# adapters/claude/install.sh with HX_COMPANION_ONLY=1, which needs seed/token.
 set -euo pipefail
 
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
@@ -57,12 +54,6 @@ if [ "$use_login" = 0 ]; then
   token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
   [ "$token_mode" = 0 ] || die \
     "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
-fi
-
-if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
-  claude_token=$root/seed/token
-  [ -f "$claude_token" ] || die \
-    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
 fi
 
 harness=$root/config/$id/harness.json
@@ -275,10 +266,6 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"
   done
-fi
-
-if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
-  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
 fi
 
 printf 'install.sh: wrote %s (Codex home, unattended, hx hooks)\n' "$home/config.toml"

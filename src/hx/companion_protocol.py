@@ -1,26 +1,51 @@
-"""Two bounded companion capabilities: read frozen evidence and propose a patch."""
+"""Two bounded companion capabilities: read frozen evidence and propose a patch.
+
+They reach the model as Messages API tools (`companion_api.exchange`); the
+patch tool's input is the pass response itself, which `passes.commit` validates.
+"""
 
 from __future__ import annotations
 
 import json
-import sys
 
 from . import evidence, passes
-from .continuity_store import ContinuityStore, Conflict, canonical, digest
+from .continuity_store import Conflict, canonical, digest
 from .errors import ValidationError
 
 READ_BUDGET = 8192
 READ_LIMIT = 2048
 MAX_CALLS = 8
 MAX_PATCH = 16384
-MCP_MAX_RESULT_CHARS = 500000
+#: The largest complete evidence a tool result carries; larger evidence stays pending.
+MAX_RESULT_CHARS = 500000
+DISPOSITIONS = ["reduced", "extracted", "no_change", "dropped", "pending"]
+
+RECORD_SCHEMA = {"type": "object", "properties": {
+    "kind": {"type": "string"}, "payload": {"type": "object"},
+    "evidence": {"type": "array", "items": {"type": "string"}}, "inputs": {"type": "object"},
+    "reason": {"type": "string"}, "expires_when": {},
+    "retention": {"type": "string", "enum": ["context", "store"]}, "consuming_step": {"type": "string"}},
+    "required": ["kind", "payload", "evidence", "inputs", "reason", "expires_when"]}
+
+PATCH_SCHEMA = {"type": "object", "properties": {
+    "schema_version": {"type": "integer", "enum": [1]}, "pass_id": {"type": "string"},
+    "event_digest": {"type": "string"}, "task_revision": {"type": "integer"},
+    "operations": {"type": "array", "items": {"type": "object", "properties": {
+        "op": {"type": "string", "enum": ["create", "supersede", "compress", "invalidate", "drop"]},
+        "record_id": {"type": "string"}, "expected_version": {"type": "integer", "minimum": 0},
+        "record": RECORD_SCHEMA, "reason": {"type": "string"}},
+        "required": ["op", "record_id", "expected_version"]}},
+    "dispositions": {"type": "object", "additionalProperties": {"type": "string", "enum": DISPOSITIONS}},
+    "event_reasons": {"type": "object", "additionalProperties": {"type": "string"}},
+    "map_patch": {"type": "object"}},
+    "required": ["schema_version", "pass_id", "event_digest", "task_revision", "operations", "dispositions"]}
 
 TOOLS = [
-    {"name": "read_evidence", "_meta": {"anthropic/maxResultSizeChars": MCP_MAX_RESULT_CHARS}, "description": "Read evidence named in this frozen pass. Source/instruction evidence requires event_id alone and returns the complete original file in one call, or refuses. Ordinary non-file observations require offset and limit. No filesystem access.",
-     "inputSchema": {"type": "object", "properties": {"event_id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
+    {"name": "read_evidence", "description": "Read evidence named in this frozen pass. Source/instruction evidence requires event_id alone and returns the complete original file in one call, or refuses. Ordinary non-file observations require offset and limit. No filesystem access.",
+     "input_schema": {"type": "object", "properties": {"event_id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
         "limit": {"type": "integer", "minimum": 1, "maximum": READ_LIMIT}}, "required": ["event_id"], "additionalProperties": False}},
-    {"name": "submit_patch", "description": "Submit the frozen pass response for atomic validation. At most two attempts; invalid changes never commit. Return after acceptance.",
-     "inputSchema": {"type": "object", "properties": {"response": {"type": "object"}}, "required": ["response"], "additionalProperties": False}},
+    {"name": "submit_patch", "description": "Submit the frozen pass response for atomic validation. At most two attempts; invalid changes never commit.",
+     "input_schema": PATCH_SCHEMA},
 ]
 
 
@@ -81,12 +106,12 @@ def call(store, job_id, name, args):
                 update(tx, job, reads=reads + 1, read_bytes=used + args['limit'])
         result = evidence.read(store, **args, expected_hash=captured['payload_hash'],
                                **({'whole_limit': available} if whole else {}))
-        if len(canonical(result).encode('utf-16-le')) // 2 > MCP_MAX_RESULT_CHARS:
-            raise ValidationError("complete evidence exceeds the native MCP result ceiling; leave it pending; no prefix was delivered")
+        if len(canonical(result)) > MAX_RESULT_CHARS:
+            raise ValidationError("complete evidence exceeds the tool result ceiling; leave it pending; no prefix was delivered")
         if whole:
-            # Charge the exact complete MCP result envelope, including JSON's
-            # escaped source, before any bytes can reach the native model.
-            charge = len(canonical({'content': [{'type': 'text', 'text': canonical(result)}], 'isError': False}).encode())
+            # Charge the exact tool result text as the request carries it,
+            # including JSON's escaped source, before any bytes reach the model.
+            charge = len(canonical(canonical(result)).encode())
             with store.transaction() as tx:
                 job = row(tx, job_id)
                 if job['status'] != 'running' or job['payload'].get('result') is not None:
@@ -148,42 +173,3 @@ def call(store, job_id, name, args):
         job = row(tx, job_id)
         update(tx, job, result=result)
     return {"accepted": True, "result": result}
-
-
-def serve(root, job_id, input_stream=None, output_stream=None):
-    source, target = input_stream or sys.stdin.buffer, output_stream or sys.stdout
-    with ContinuityStore(root) as store:
-        for _ in range(64):
-            line = source.readline(MAX_PATCH + 4097)
-            if not line:
-                return
-            if len(line) > MAX_PATCH + 4096:
-                return  # Never parse an unbounded or truncated RPC frame.
-            request = json.loads(line)
-            if not isinstance(request, dict) or "id" not in request:
-                continue
-            try:
-                method, params = request.get("method"), request.get("params", {})
-                if method == "initialize":
-                    result = {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
-                              "serverInfo": {"name": "hx-frozen-pass", "version": "1"}}
-                elif method == "ping":
-                    result = {}
-                elif method == "tools/list":
-                    result = {"tools": TOOLS}
-                elif method == "tools/call":
-                    value = call(store, job_id, params.get("name"), params.get("arguments"))
-                    result = {"content": [{"type": "text", "text": canonical(value)}], "isError": False}
-                else:
-                    raise ValidationError("unsupported companion RPC method")
-                reply = {"jsonrpc": "2.0", "id": request["id"], "result": result}
-            except (ValidationError, Conflict) as exc:
-                reply = {"jsonrpc": "2.0", "id": request["id"], "result": {
-                    "content": [{"type": "text", "text": str(exc)[:512]}], "isError": True}}
-            target.write(canonical(reply) + "\n")
-            target.flush()
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-    serve(Path(sys.argv[1]), sys.argv[2])

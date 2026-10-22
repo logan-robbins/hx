@@ -135,8 +135,6 @@ def advance(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure
         child = _native_env(ledger, row, env)
         adapter = child["HX_CONTINUITY_ADAPTER"]
         command = ["bash", str(capsule / "adapters" / adapter / "install.sh")]
-        if adapter == "meta":
-            command.append("--no-companion")
         try:
             # Installation output may include authentication diagnostics. Keep it
             # out of the ledger and bound the installer, which starts no worker.

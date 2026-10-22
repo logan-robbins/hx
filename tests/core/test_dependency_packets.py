@@ -19,7 +19,7 @@ def packet(repo, name='implement', *, paths=None, prerequisites=None, resources=
     body = unit(repo,name,paths=paths,prerequisites=prerequisites)
     body['outputs'] = [{'id':'proof','version':1,'kind':'receipt','obligation':'Checks prove the declared packet behavior.'}]
     body['resources'] = resources or []
-    body['check_policy'] = {'reviewer':'qa-001','required_checks':['unit']}
+    body['check_policy'] = {'reviewer':'qa-001','required_checks':['unit'],'role':'backend-engineer'}
     return body
 
 
@@ -207,7 +207,7 @@ def test_packet_commands_are_reachable_and_worker_ownership_is_enforced(fleet,tm
     store,repo=fleet[:2]
     policy=store.root/'config/planning.json'
     policy.parent.mkdir(parents=True,exist_ok=True)
-    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['unit']}))
+    policy.write_text(json.dumps({'schema_version':1,'reviewer':'qa-001','required_checks':['unit'],'role':'backend-engineer'}))
     request=tmp_path/'goal.json'
     request.write_text(json.dumps({'plan_id':'continuation','task_id':'implement','goal':'Preserve compiler behavior.','require':['compiler']}))
     generated=run_hx('plan','draft','--repo',str(repo),'--snapshot',fleet[6],'--file',str(request),'--root',str(store.root),env_extra={'HOME':str(tmp_path/'operator-home')})
@@ -306,10 +306,13 @@ def test_draft_uses_configured_qa_authority_without_partner_check_scripts(fleet)
     configured=store.root/'config/qa-002/harness.json'
     configured.parent.mkdir(parents=True)
     configured.write_text(json.dumps({'id':'qa-002','role':'qa-engineer'}))
-    drafted=goal_templates.draft(store,repo,fleet[6],{'plan_id':'drafted','goal':'Preserve compiler behavior.','require':['compiler']})
+    request={'plan_id':'drafted','goal':'Preserve compiler behavior.','require':['compiler']}
+    unnamed=goal_templates.draft(store,repo,fleet[6],request)
+    assert not unnamed['ready'] and any('seat role' in item for item in unnamed['unknowns'])
+    drafted=goal_templates.draft(store,repo,fleet[6],{**request,'role':'backend-engineer'})
     assert drafted['ready'],drafted['unknowns']
     task=drafted['plan']['tasks'][0]
-    assert task['check_policy']=={'reviewer':'qa-002','required_checks':['unit']}
+    assert task['check_policy']=={'reviewer':'qa-002','required_checks':['unit'],'role':'backend-engineer'}
     assert 'checks' not in task and drafted['recipe_suggestions']=={}
     assert task['behavior']=='Preserve compiler behavior.'
 

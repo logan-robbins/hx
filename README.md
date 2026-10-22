@@ -85,8 +85,9 @@ Immutable source snapshots support explicit `hx code … --at COMMIT` queries an
 content and extraction objects across checkouts. An optional host service behind the
 CLI shares those caches across instances and supplies checkout-free metadata queries.
 Scoped check execution artifacts can be reused across runs when complete input and
-environment identities match. `hx build` adds evaluated .NET dependencies, deduplicated
-builds, immutable artifacts, and test shards that avoid repeated compilation.
+environment identities match, and an equal check running in another worktree is joined.
+`hx build` adds evaluated .NET dependencies, builds and test shards joined across every root
+and worktree on the box, immutable artifacts, and test shards that avoid repeated compilation.
 
 The Companion processes frozen captured events and submits structured changes to current
 task state and the application map. Native worker passes expose only bounded evidence reads

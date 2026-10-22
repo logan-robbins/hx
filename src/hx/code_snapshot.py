@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS snapshot_contract_name ON snapshot_contract_postings(
 CREATE TABLE IF NOT EXISTS snapshot_project_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_project_name ON snapshot_project_postings(name,repo,path,artifact);
 CREATE TABLE IF NOT EXISTS snapshot_object_counts(artifact TEXT PRIMARY KEY,files INTEGER NOT NULL,symbols INTEGER NOT NULL,exclusions INTEGER NOT NULL,stale INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS snapshot_symbol_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name TEXT NOT NULL,name_folded TEXT NOT NULL,qualified_folded TEXT NOT NULL,lane TEXT NOT NULL,line INTEGER NOT NULL,PRIMARY KEY(artifact,ordinal));
+CREATE TABLE IF NOT EXISTS snapshot_symbol_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name TEXT NOT NULL,name_folded TEXT NOT NULL,qualified_folded TEXT NOT NULL,lane TEXT NOT NULL,line INTEGER NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_symbol_name ON snapshot_symbol_postings(name_folded,repo,path,artifact);
 CREATE INDEX IF NOT EXISTS snapshot_symbol_qualified ON snapshot_symbol_postings(qualified_folded,repo,path,artifact);
 CREATE TABLE IF NOT EXISTS snapshot_signature_terms(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,term TEXT NOT NULL,PRIMARY KEY(artifact,ordinal,term));
@@ -35,10 +35,10 @@ CREATE INDEX IF NOT EXISTS snapshot_signature_term ON snapshot_signature_terms(t
 CREATE TABLE IF NOT EXISTS snapshot_test_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name_folded TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_test_name ON snapshot_test_postings(name_folded,repo,path,artifact);
 CREATE INDEX IF NOT EXISTS snapshot_test_path ON snapshot_test_postings(repo,path,artifact);
-CREATE TABLE IF NOT EXISTS snapshot_ref_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name_folded TEXT NOT NULL,qualified_folded TEXT NOT NULL,lane TEXT NOT NULL,line INTEGER NOT NULL,kind TEXT NOT NULL DEFAULT '',PRIMARY KEY(artifact,ordinal));
+CREATE TABLE IF NOT EXISTS snapshot_ref_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,name_folded TEXT NOT NULL,qualified_folded TEXT NOT NULL,lane TEXT NOT NULL,line INTEGER NOT NULL,kind TEXT NOT NULL,extractor TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_ref_name ON snapshot_ref_postings(name_folded,repo,path,artifact);
 CREATE INDEX IF NOT EXISTS snapshot_ref_qualified ON snapshot_ref_postings(qualified_folded,repo,path,artifact);
-CREATE TABLE IF NOT EXISTS snapshot_edge_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,dst_folded TEXT NOT NULL,lane TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
+CREATE TABLE IF NOT EXISTS snapshot_edge_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,dst_folded TEXT NOT NULL,lane TEXT NOT NULL,kind TEXT NOT NULL,dst_text TEXT NOT NULL,PRIMARY KEY(artifact,ordinal));
 CREATE INDEX IF NOT EXISTS snapshot_edge_target ON snapshot_edge_postings(dst_folded,lane,repo,path,artifact);
 CREATE TABLE IF NOT EXISTS snapshot_import_postings(artifact TEXT NOT NULL,ordinal INTEGER NOT NULL,repo TEXT NOT NULL,path TEXT NOT NULL,leaf TEXT NOT NULL,PRIMARY KEY(artifact,ordinal,leaf));
 CREATE INDEX IF NOT EXISTS snapshot_import_leaf ON snapshot_import_postings(leaf,repo,path,artifact,ordinal);
@@ -112,7 +112,7 @@ def put_postings(conn, artifact, value):
     )
     for ordinal, row in enumerate(value.get("symbols", [])):
         conn.execute(
-            "INSERT OR IGNORE INTO snapshot_symbol_postings VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO snapshot_symbol_postings VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 artifact,
                 ordinal,
@@ -123,6 +123,7 @@ def put_postings(conn, artifact, value):
                 row["qualified"].casefold(),
                 row["lane"],
                 row["line"],
+                row["kind"],
             ),
         )
         if row["kind"] in {"class", "struct", "impl"}:
@@ -144,7 +145,7 @@ def put_postings(conn, artifact, value):
             )
     for ordinal, row in enumerate(value.get("refs", [])):
         conn.execute(
-            "INSERT OR REPLACE INTO snapshot_ref_postings(artifact,ordinal,repo,path,name_folded,qualified_folded,lane,line,kind) VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO snapshot_ref_postings VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 artifact,
                 ordinal,
@@ -155,11 +156,12 @@ def put_postings(conn, artifact, value):
                 row["lane"],
                 row["line"],
                 row["kind"],
+                row["extractor"],
             ),
         )
     for ordinal, row in enumerate(value.get("edges", [])):
         conn.execute(
-            "INSERT OR IGNORE INTO snapshot_edge_postings VALUES(?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO snapshot_edge_postings VALUES(?,?,?,?,?,?,?,?)",
             (
                 artifact,
                 ordinal,
@@ -168,6 +170,7 @@ def put_postings(conn, artifact, value):
                 row["dst_text"].casefold(),
                 row["lane"],
                 row["kind"],
+                row["dst_text"],
             ),
         )
         if row["kind"] == "imports":

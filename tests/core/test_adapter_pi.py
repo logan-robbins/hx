@@ -50,7 +50,7 @@ def _pi_token(instance: Path) -> None:
     token.chmod(0o600)
 
 
-def test_pi_install_writes_a_home_and_the_companion(instance):
+def test_pi_install_writes_a_home(instance):
     _pi_token(instance)
     script = instance / "adapters" / "pi" / "install.sh"
     result = subprocess.run(
@@ -72,9 +72,6 @@ def test_pi_install_writes_a_home_and_the_companion(instance):
     assert (home / "skills" / "hx-worker" / "SKILL.md").is_file()
     from .conftest import installed_skills, manifest_skills
     assert installed_skills(home / "skills") == manifest_skills(instance, "eng-001")
-    companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
-    assert companion.is_file()
-    assert "companion-stop" in companion.read_text()
     assert not (home / ".claude.json").exists()
 
 

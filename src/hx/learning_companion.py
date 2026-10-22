@@ -10,7 +10,7 @@ import json
 import uuid
 from pathlib import Path
 
-from . import evidence, native_processes, prompt_compiler, sidecar_process
+from . import companion_api, evidence, native_processes, prompt_compiler
 from .config_harness import load_harness
 from .continuity_store import Conflict, canonical, digest, _id
 from .errors import HxError, ValidationError
@@ -135,13 +135,13 @@ def prepare(store, agent_id, stream_id, request_id, *, run_id=None):
     if prior and row(store, prior[0])['status'] != 'prepared':
         return row(store, prior[0])
     prompt = prompt_compiler.build(store.root, agent_id, audience='learning')
-    if prior and not sidecar_process.supersede_unpaid(store, 'learning_jobs', prior[0], prompt['version']):
+    if prior and not companion_api.supersede_unpaid(store, 'learning_jobs', prior[0], prompt['version']):
         return row(store, prior[0])
     _, rendered = prompt_compiler.verified_bundle(store.root, agent_id, Path(prompt['manifest_path']),
                                                 workdir=prompt['identity']['workdir'], audience='learning')
     from .learning_protocol import TOOLS, instructions
     system = rendered['system'] + rendered['context'] + '\n' + instructions()
-    runtime = sidecar_process.runtime(store.root, config, purpose='learning')
+    runtime = companion_api.runtime(store.root, config, purpose='learning')
     request_bytes = min(config.learning.get('request_bytes', 65536), runtime['model_input_limit'])
     remaining = request_bytes - len(system.encode()) - len(canonical(TOOLS).encode()) - 2048
     if remaining < 1024:
@@ -161,10 +161,11 @@ def prepare(store, agent_id, stream_id, request_id, *, run_id=None):
                 'stream_id': cursor_key, 'from_seq': cursor['assessed_seq'], 'to_seq': events[-1]['seq'],
                 'cursor_revision': cursor['revision'], 'events': events,
                 'event_digest': digest([(e['event_id'], e['payload_hash']) for e in events])}
-        size = len(system.encode()) + len(canonical(body).encode()) + len(canonical(TOOLS).encode())
+        user = user_turn(body)
+        size = companion_api.request_bytes(system, user, TOOLS)
         if size > request_bytes:
             raise ValidationError('complete learning request exceeds its independent budget')
-        payload = {**runtime, 'body': body, 'system': system,
+        payload = {**runtime, 'body': body, 'system': system, 'user': user,
                    'manifest': prompt['manifest_path'], 'prompt_version': prompt['version'], 'workdir': prompt['identity']['workdir'],
                    'request_bytes': request_bytes, 'max_proposals': config.learning.get('max_proposals', 4),
                    'evidence_budget': request_bytes - size,
@@ -177,10 +178,14 @@ def prepare(store, agent_id, stream_id, request_id, *, run_id=None):
     return row(store, job_id)
 
 
+def user_turn(body):
+    return 'Frozen learning window: ' + canonical(body)
+
+
 def status(store, job_id):
     job = row(store, job_id)
     return {'job_id': job_id, 'agent_id': job['agent_id'], 'stream_id': job['stream_id'], 'status': job['status'],
-            **{key: job['payload'][key] for key in ('result', 'last_error', 'execution') if key in job['payload']}}
+            **{key: job['payload'][key] for key in ('result', 'last_error', 'execution', 'usage') if key in job['payload']}}
 
 
 def execute(store, job_id, *, env=None, timeout_s=60):
@@ -190,34 +195,59 @@ def execute(store, job_id, *, env=None, timeout_s=60):
     payload, body = job['payload'], frozen(store, job)
     _, rendered = prompt_compiler.verified_bundle(store.root, job['agent_id'], Path(payload['manifest']),
                                    workdir=payload['workdir'], audience='learning')
-    from .learning_protocol import instructions
-    if payload['system'] != rendered['system'] + rendered['context'] + '\n' + instructions():
+    from .learning_protocol import TOOLS, call, instructions
+    if payload['system'] != rendered['system'] + rendered['context'] + '\n' + instructions() or payload['user'] != user_turn(body):
         raise Conflict('learning instructions differ from their immutable prepared sources')
-    sidecar_process.verify_runtime(payload)
-    transport = sidecar_process.preflight(store.root, payload, body, protocol='learning_protocol', timeout_s=timeout_s)
+    transport = companion_api.preflight(store.root, payload, system=payload['system'], user=payload['user'],
+                                        tools=TOOLS, timeout_s=timeout_s)
     from .loop_jobs import companion_slots
     from .native_companion import occupied
     slots = companion_slots(store.root)
     with store.transaction() as tx:
-        if row(tx, job_id)['status'] != 'prepared':
+        current = row(tx, job_id)
+        if current['status'] != 'prepared':
             return status(tx, job_id)
         occupied(tx, slots)
         cursor = tx.db.execute('SELECT assessed_seq,revision FROM learning_cursors WHERE agent_id=? AND stream_id=?',
                                (job['agent_id'], job['stream_id'])).fetchone()
         if tuple(cursor) != (body['from_seq'], body['cursor_revision']):
             raise Conflict('learning cursor changed before execution')
-        tx._change()
+        update(tx, current, process=companion_api.own_process())
         tx.db.execute("UPDATE learning_jobs SET status='running' WHERE job_id=?", (job_id,))
-    def spawned(process):
+
+    def handle(name, arguments):
+        if name not in {'read_evidence', 'submit_assessment'}:
+            return 'unknown tool; use read_evidence or submit_assessment', True, False
+        submit = name == 'submit_assessment'
+        try:
+            result = call(store, job_id, name, {'response': arguments} if submit else arguments)
+        except (ValidationError, Conflict) as exc:
+            current = row(store, job_id)
+            attempts = current['payload'].get('attempts', 0) + submit
+            if submit:
+                with store.transaction() as tx:
+                    update(tx, row(tx, job_id), attempts=attempts, last_error=str(exc)[:512])
+            return str(exc)[:512], True, submit and attempts >= 2
+        return canonical(result), False, submit
+
+    def record(entry):
         with store.transaction() as tx:
-            update(tx, row(tx, job_id), process=native_processes.probe(process.pid))
-    execution = sidecar_process.execute(store.root, job_id, payload, body, protocol='learning_protocol',
-        tools=('read_evidence', 'submit_assessment'), on_spawn=spawned, env=env, timeout_s=timeout_s, transport=transport)
+            current = row(tx, job_id)
+            update(tx, current, usage=[*current['payload'].get('usage', []), entry])
+
+    try:
+        execution = companion_api.exchange(payload, credential=transport['credential'], system=payload['system'],
+            user=payload['user'], tools=TOOLS, handle=handle, record=record, timeout_s=timeout_s, env=env)
+    except Exception as exc:
+        # This process owns the slot while it lives: a fault must settle the job, not hold it.
+        execution = {'outcome': 'fault', 'error': f'{type(exc).__name__}: {str(exc)[:240]}'}
     with store.transaction() as tx:
         current = row(tx, job_id)
-        update(tx, current, execution=execution, last_error=None if current['payload'].get('result') else 'Learning Companion returned without an accepted assessment.')
+        accepted = current['payload'].get('result')
+        update(tx, current, execution=execution, last_error=None if accepted else
+               current['payload'].get('last_error') or 'Learning Companion ended without an accepted assessment: ' + execution['outcome'])
         tx.db.execute('UPDATE learning_jobs SET status=? WHERE job_id=?',
-                      ('committed' if current['payload'].get('result') else 'unresolved', job_id))
+                      ('committed' if accepted else 'unresolved', job_id))
     return status(store, job_id)
 
 

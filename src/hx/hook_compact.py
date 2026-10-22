@@ -35,30 +35,22 @@ def stream_for(payload: dict, item_id: str, root: Path) -> tuple[str, bool]:
 
 
 def pre(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, str]:
-    """Record that compaction is about to happen, and nudge the Companion to the head.
+    """Record that compaction is about to happen, so the Companion's next pass sees it.
 
-    The nudge is the value of this hook: whatever Claude Code is about to summarise away,
-    the Companion is already reading toward step state, so the context file stays the
-    authority. It signals and returns — never blocks: holding compaction hostage for a
-    Companion pass trades a slow summary for a hung turn, and the pass still lands in the
+    It never blocks and never runs a pass: holding compaction hostage for a model call
+    trades a slow summary for a hung turn, and the loop's next Partner pass lands in the
     state the `SessionStart(compact)` context file is composed from. It returns nothing —
     no decision output, ever (spec 02).
     """
     from .companion import require_partner
     require_partner(item_id)
-    stream, is_main = stream_for(payload, item_id, root)
+    stream, _ = stream_for(payload, item_id, root)
     streams.append_record(root, item_id, stream, {
         "event": COMPACT_PENDING,
         "trigger": payload.get("trigger"),
         "source": payload.get("source"),
     })
 
-    from . import flush as flush_mod
-
-    # Only the main thread's Companion is worth nudging; a subagent stream's pass comes
-    # with its close (spec 09.1 `subagent-stop`).
-    if is_main:
-        flush_mod.signal(root, item_id, env=env)
     return 0, ""
 
 

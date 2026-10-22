@@ -529,6 +529,25 @@ this lane plus `hx metrics --sizing` after a calibration wave, never from assert
 8. **P1.6, P1.7, P2.1, P2.3, P2.4**: parallel S items once 5 and 7 land.
 9. The scale lane (§6) is written alongside 5 and gates 6–8.
 
+### Scope cut, 2026-10-21
+
+With P0.1–P0.7, P1.1, P1.5 and P2.2 merged (main 6cc21fa), the author asked whether the rest
+adds efficiency, speed or width specifically. Judged on that alone:
+
+- **Kept:** stub registration in the graph and the graph-derived provider/wave report (P1.4,
+  without Louvain lanes or the contract-wave template); joining equal-input builds and checks,
+  build slots from config, and the commit-keyed search cache (P1.3, without project-named pools
+  or waiter queues); the token ledger with input/cache tokens per agent and companion spend
+  (P2.3, without lane budgets until there is data); the pre-dispatch `claim_command` in the
+  executor (the P1.6 half that saves whole units).
+- **Cut or deferred:** fleet provisioning, allocator, inbox and fleet status (P1.2: operator
+  ergonomics, the 13-instance procedure works by hand); the receipted reuse section in every
+  binding (P1.6: a step on every unit's critical path, and the conversion skill already puts
+  the `--expect absent` lines in the definition of done); structural folds (P2.1: only
+  `hx tool-exec` output is reduced and it is already capped); stale-read pointers (P2.4);
+  the sizing report (P1.7) until there is data; a separate scale lane (the P1.1 session
+  shipped a 60-run scale test).
+
 ## 8. Decisions
 
 - No external scheduler, graph or compressor is imported; patterns are re-implemented in stdlib

@@ -138,7 +138,7 @@ def _meta_token(instance: Path) -> None:
     token.chmod(0o600)
 
 
-def test_meta_install_writes_an_xdg_home_and_the_companion(instance):
+def test_meta_install_writes_an_xdg_home(instance):
     _meta_token(instance)
     script = instance / "adapters" / "meta" / "install.sh"
     result = subprocess.run(
@@ -159,25 +159,21 @@ def test_meta_install_writes_an_xdg_home_and_the_companion(instance):
     assert (home / "muse" / "skills" / "hx-worker" / "SKILL.md").is_file()
     from .conftest import installed_skills, manifest_skills
     assert installed_skills(home / "muse" / "skills") == manifest_skills(instance, "eng-001")
-    companion = instance / "run" / "eng-001" / "companion-home" / "settings.json"
-    assert companion.is_file()
-    assert "companion-stop" in companion.read_text()
 
 
-def test_meta_install_no_companion_needs_no_claude_token(instance):
-    """`--no-companion` is the `companion.disabled` install path: Muse home only."""
+def test_meta_install_needs_no_claude_token(instance):
+    """A Muse home is the whole install: nothing of Claude's, so no `seed/token`."""
     (instance / "seed" / "token").unlink()
     _meta_token(instance)
     script = instance / "adapters" / "meta" / "install.sh"
     result = subprocess.run(
-        ["bash", str(script), "--no-companion", "eng-001"],
+        ["bash", str(script), "eng-001"],
         env=clean_env(HARNESS_ROOT=str(instance)),
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
     assert (instance / "run" / "eng-001" / "home" / "muse" / "settings.json").is_file()
-    assert not (instance / "run" / "eng-001" / "companion-home").exists()
 
 
 def test_meta_install_refuses_the_partner(instance):

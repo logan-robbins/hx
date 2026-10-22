@@ -59,15 +59,12 @@ def test_private_installation_hooks_use_shared_authority(configured, child_env, 
     launch = prepare(configured, flavor)
     capsule = Path(launch["payload"]["capsule"])
     env = native_launch.environment(store.root, launch, env=child_env(HOME=str(login.parents[1])))
-    argv = ["bash", str(capsule / "adapters" / flavor / "install.sh")]
-    if flavor == "meta":
-        argv.append("--no-companion")
-    result = subprocess.run([*argv, "eng-001"], env=env, capture_output=True, text=True)
+    argv = ["bash", str(capsule / "adapters" / flavor / "install.sh"), "eng-001"]
+    result = subprocess.run(argv, env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     home = capsule / "run" / "eng-001" / "home"
     assert not (home / "history.jsonl").exists()
     assert not (home / "skills" / "hx-memory").exists()
-    assert not (home.parent / "companion-home").exists()
     assert native_launch.verify(store, run)["launch_id"] == launch["launch_id"]
     installed_commands = list(commands(home, flavor))
     if flavor != 'pi':

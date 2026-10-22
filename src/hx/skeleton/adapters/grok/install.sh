@@ -6,9 +6,6 @@
 # XAI_API_KEY from seed/grok-token, exported at launch; the home holds no
 # credentials. Nothing is read from ~/.grok. Goal delivery is grok's native
 # Native continuation and completion are owned by the admitted ledger run.
-#
-# The Companion is still a Claude session. After the Grok home is written this runs
-# adapters/claude/install.sh with HX_COMPANION_ONLY=1, which needs seed/token.
 set -euo pipefail
 
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
@@ -40,12 +37,6 @@ token_file=$root/seed/grok-token
 token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o77)' "$token_file")
 [ "$token_mode" = 0 ] || die \
   "refuse: $token_file is readable by group or other; it must be mode 0600. Run: chmod 600 $token_file"
-
-if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
-  claude_token=$root/seed/token
-  [ -f "$claude_token" ] || die \
-    "refuse: no $claude_token; the Companion is a Claude session and needs it, mode 0600"
-fi
 
 harness=$root/config/$id/harness.json
 [ -f "$harness" ] || die "refuse: no $harness"
@@ -160,10 +151,6 @@ if [ -n "$skills_src" ] && [ -d "$skills_src" ]; then
     rm -rf "$home/skills/$want"
     cp -R "$skills_src/$want" "$home/skills/$want"
   done
-fi
-
-if [ -z "${HX_CONTINUITY_AUTHORITY:-}" ]; then
-  HX_COMPANION_ONLY=1 bash "$root/adapters/claude/install.sh" "$id"
 fi
 
 printf 'install.sh: wrote %s (Grok home, minimal screen, hx hooks)\n' "$home/config.toml"

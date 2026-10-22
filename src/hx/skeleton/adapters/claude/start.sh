@@ -30,14 +30,10 @@ set -euo pipefail
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
-# `--companion` launches the Companion's own Claude Code session in window `companion`
-# (spec 10). There is no headless path: every model call in hx is a tmux session.
 mode=session
-role=agent
 while :; do
   case "${1:-}" in
     --exec) mode=exec; shift ;;
-    --companion) role=companion; shift ;;
     *) break ;;
   esac
 done
@@ -63,28 +59,16 @@ fi
 command -v "$python" >/dev/null 2>&1 || die "$python not found; hx needs Python 3.14 (spec 17.2)"
 
 # Every worker executable descends from the controller's admitted run supervisor.
-"$python" -m hx.adapter_guard "$id" claude "$mode" "$role" || die "worker launch admission refused"
+"$python" -m hx.adapter_guard "$id" claude "$mode" agent || die "worker launch admission refused"
 
-if [ "$role" = companion ]; then
-  home=$root/run/$id/companion-home
-  window=companion
-else
-  home=$root/run/$id/home
-  window=main
-fi
+home=$root/run/$id/home
 harness=$root/config/$id/harness.json
 # Workers receive the frozen system prompt from their private launch capsule.
 # Partner bootstrap receives its current orchestration persona at context boundaries.
 persona=$root/run/$id/persona.md
-companion_system=$root/run/$id/companion-system.md
 
 # --- refusals, checked in both modes so a bad instance fails before tmux is touched -------
 [ -f "$harness" ] || die "refuse: no $harness (spec 05)"
-if [ "$role" = companion ]; then
-  [ -f "$companion_system" ] || die \
-    "refuse: no $companion_system; \`hx companion $id\` composes it from companion/BASE.md and
-    the role file before launching (spec 10)"
-fi
 [ -f "$home/settings.json" ] || die \
   "refuse: no $home/settings.json; run adapters/claude/install.sh $id first (spec 11)"
 
@@ -98,12 +82,7 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
 
 # The directory this agent runs in: `workdir` from config/<id>/harness.json, whatever the
 # Partner chose for it (spec 17.2). hx creates no repository and no branch there.
-#
-# The Companion always runs in HARNESS_ROOT: it reads pass files under run/ and writes under
-# state/, never touches the workdir, and its home's `.claude.json` is pre-seeded for $root by
-# install.sh. Launching it in the workdir put it in front of the workspace-trust dialog for a
-# directory nobody had pre-seeded (live rehearsal 2026-09-21), where it sat forever.
-if [ "$id" = partner ] || [ "$role" = companion ]; then
+if [ "$id" = partner ]; then
   cwd=$root
 else
   cwd=$("$python" - "$harness" "$root" <<'CWDEOF'
@@ -125,15 +104,8 @@ fi
 [ -n "$bin" ] || die "refuse: no claude binary; \`hx install\` records {bin, version} in config/claude.json (spec 17.1)"
 [ -x "$bin" ] || die "refuse: pinned claude binary $bin is not executable (spec 17.1)"
 
-if [ "$role" = companion ]; then
-  model=$("$python" -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("companion") or {}).get("model") or d["model"])' "$harness")
-  # The Companion extracts step state; it runs at its own effort, not the agent's.
-  # Unset means the agent's: existing configs keep working.
-  effort=$("$python" -c 'import json,sys;d=json.load(open(sys.argv[1]));print((d.get("companion") or {}).get("effort") or d.get("effort","low"))' "$harness")
-else
-  model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
-  effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
-fi
+model=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["model"])' "$harness")
+effort=$("$python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["effort"])' "$harness")
 [ -n "$model" ] || die "refuse: $harness has no \`model\` (spec 05)"
 [ -n "$effort" ] || die "refuse: $harness has no \`effort\` (spec 05)"
 
@@ -142,8 +114,8 @@ fi
 # the session keeps Claude Code's native autocompact window (spec 11 Compaction). With it,
 # native compaction is moved down to a number the operator picks, and `config_models.py` has
 # already refused any row where hx's seam threshold is not below it. Empty on anything
-# unexpected — a missing file, an unlisted model (the Companion's own model need not be
-# listed), a malformed row: a launch never fails over this.
+# unexpected — a missing file, an unlisted model, a malformed row: a launch never fails
+# over this.
 autocompact=$("$python" - "$root/config/models.json" "$model" <<'ACEOF'
 import json, sys
 try:
@@ -159,34 +131,29 @@ if [ "$mode" = exec ]; then
   . "$root/adapters/load-env.sh"
   mkdir -p "$root/run/$id"
   system_args=()
-  if [ "$role" = companion ]; then
-    system_args=(--append-system-prompt-file "$companion_system")
-  else
-    if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
-      # A planned launch's persona is the compiled planned system prompt, prepared in its
-      # private root and verified by the controller (`native_launch`).
-      [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
-      system_args=(--append-system-prompt-file "$persona")
-    fi
-    # Otherwise no system-prompt flag: the persona, the identity line and the learnings arrive
-    # through the SessionStart `context` hook at every boundary (`hx persona $id` prints it).
-    # The invariants' one channel on Claude is the home's native user CLAUDE.md
-    # (`config_harness.INVARIANTS_CHANNEL`), refreshed here so an edit to config/CLAUDE.md
-    # lands at the next launch or restart, like a persona edit, not only at a reinstall.
-    if [ "$id" = partner ]; then
-      # The verified complete Partner context segments own invariants and
-      # persona delivery; clear this HX-private copy to avoid duplicates.
-      : > "$home/CLAUDE.md"
-    elif [ -f "$root/config/CLAUDE.md" ]; then
-      cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
-    fi
+  if [ -n "${HX_CONTINUITY_CAPSULE:-}" ]; then
+    # A planned launch's persona is the compiled planned system prompt, prepared in its
+    # private root and verified by the controller (`native_launch`).
+    [ -f "$persona" ] || die "refuse: no $persona; a planned launch prepares it (native_launch)"
+    system_args=(--append-system-prompt-file "$persona")
+  fi
+  # Otherwise no system-prompt flag: the persona, the identity line and the learnings arrive
+  # through the SessionStart `context` hook at every boundary (`hx persona $id` prints it).
+  # The invariants' one channel on Claude is the home's native user CLAUDE.md
+  # (`config_harness.INVARIANTS_CHANNEL`), refreshed here so an edit to config/CLAUDE.md
+  # lands at the next launch or restart, like a persona edit, not only at a reinstall.
+  if [ "$id" = partner ]; then
+    # The verified complete Partner context segments own invariants and
+    # persona delivery; clear this HX-private copy to avoid duplicates.
+    : > "$home/CLAUDE.md"
+  elif [ -f "$root/config/CLAUDE.md" ]; then
+    cp "$root/config/CLAUDE.md" "$home/CLAUDE.md"
   fi
 
   cd "$cwd"
   # The session env of spec 11 and 17.4. Exported rather than passed to `env`, so the token
   # never becomes an argv element of anything.
   export HARNESS_ID="$id"
-  export HX_ROLE="$role"
   export HARNESS_ROOT="${HX_CONTINUITY_AUTHORITY:-$root}"
   export CLAUDE_CONFIG_DIR="$home"
   export DISABLE_AUTOUPDATER=1
@@ -224,7 +191,7 @@ if [ "$mode" = exec ]; then
 
   # Spec 17.4, exactly. No prompt argument, ever.
   tool_args=()
-  if [ -n "${HX_CONTINUITY_RUN:-}" ] && [ "$role" != companion ]; then
+  if [ -n "${HX_CONTINUITY_RUN:-}" ]; then
     selected_tools=$("$python" -c 'import json,sys;print(",".join(json.load(open(sys.argv[1]))["selected"]))' "$root/run/$id/toolset.json")
     tool_args=(--tools "$selected_tools")
   fi
@@ -258,16 +225,12 @@ while IFS='=' read -r name value; do
   case "$name" in HX_*) env_args+=(-e "$name=$value") ;; esac
 done < <(env)
 
-if [ "$role" = companion ]; then
-  launcher=("$here/start.sh" --exec --companion "$id")
-else
-  launcher=("$here/start.sh" --exec "$id")
-fi
+launcher=("$here/start.sh" --exec "$id")
 pane_log=$root/logs/$id/$id-pane.log
 mkdir -p "$root/logs/$id"
 
 if ! "${TMUX_CMD[@]}" has-session -t "=$id" 2>/dev/null; then
-  "${TMUX_CMD[@]}" new-session -d -s "$id" -n "$window" -c "$cwd" "${env_args[@]}" "${launcher[@]}"
+  "${TMUX_CMD[@]}" new-session -d -s "$id" -n main -c "$cwd" "${env_args[@]}" "${launcher[@]}"
 else
   for arg in "${env_args[@]}"; do
     case "$arg" in
@@ -275,19 +238,17 @@ else
       *) "${TMUX_CMD[@]}" set-environment -t "=$id" "${arg%%=*}" "${arg#*=}" ;;
     esac
   done
-  if "${TMUX_CMD[@]}" list-windows -t "=$id" -F '#{window_name}' | grep -qx "$window"; then
-    "${TMUX_CMD[@]}" respawn-window -k -t "=$id:$window" -c "$cwd" "${launcher[@]}"
+  if "${TMUX_CMD[@]}" list-windows -t "=$id" -F '#{window_name}' | grep -qx main; then
+    "${TMUX_CMD[@]}" respawn-window -k -t "=$id:main" -c "$cwd" "${launcher[@]}"
   else
-    "${TMUX_CMD[@]}" new-window -d -t "=$id:" -n "$window" -c "$cwd" "${launcher[@]}"
+    "${TMUX_CMD[@]}" new-window -d -t "=$id:" -n main -c "$cwd" "${launcher[@]}"
   fi
 fi
 
 # The pane capture, the UI's fallback for a dead session (spec 03, 11). Not a Companion
 # stream: `hx.streams` ignores it and the runtime retains it only as bounded execution diagnostics.
-if [ "$role" != companion ]; then
-  "${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
-  "${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"
-fi
+"${TMUX_CMD[@]}" pipe-pane -t "=$id:main" 2>/dev/null || true
+"${TMUX_CMD[@]}" pipe-pane -o -t "=$id:main" "cat >> '$pane_log'"
 
-printf 'start.sh: %s running in tmux session %s window %s (cwd %s)\n' "$bin" "$id" "$window" "$cwd"
-[ "$role" = companion ] || printf 'start.sh: pane log %s\n' "$pane_log"
+printf 'start.sh: %s running in tmux session %s window main (cwd %s)\n' "$bin" "$id" "$cwd"
+printf 'start.sh: pane log %s\n' "$pane_log"

@@ -150,7 +150,7 @@ def test_the_hook_events_map_to_the_claude_code_events_of_spec_09(installed):
 
 def test_guard_is_installed_for_the_partner_alone(instance):
     """Spec 09.1: `guard` is a PreToolUse entry in the Partner's settings.json, and in no
-    worker's and no Companion's."""
+    worker's."""
     from hx.hook_guard import MATCHER
 
     assert run_install(instance, "partner").returncode == 0
@@ -164,10 +164,6 @@ def test_guard_is_installed_for_the_partner_alone(instance):
     worker = settings_for(instance, "eng-001")["hooks"]
     assert "PreToolUse" not in worker
     assert not any(c.endswith(" guard") for c in hook_commands({"hooks": worker}))
-    for item_id in ("partner", "eng-001"):
-        companion = json.loads((instance / "run" / item_id / "companion-home" / "settings.json").read_text())
-        assert "PreToolUse" not in companion["hooks"], item_id
-        assert not any(c.endswith(" guard") for c in hook_commands(companion)), item_id
 
 
 def test_the_partner_observes_and_rehydrates_its_bounded_research_children(instance):
@@ -278,16 +274,6 @@ def test_rerunning_is_idempotent(instance):
 SKILLS_DIR = str(SRC / "hx" / "skills")
 
 
-def test_the_companion_home_gets_only_its_stop_hook_and_hx_companion(instance):
-    """spec 10, handoff/orchestrator-to-build.md 2026-09-20: one hook, one skill."""
-    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
-    home = instance / "run" / "eng-001" / "companion-home"
-    settings = json.loads((home / "settings.json").read_text())
-    assert set(settings["hooks"]) == {"Stop"}
-    assert (home / "skills" / "hx-companion" / "SKILL.md").is_file()
-    assert not (home / "CLAUDE.md").exists()
-
-
 def test_the_partner_home_gets_hx_partner_and_hx_fleet(instance):
     """handoff/orchestrator-to-build.md 2026-09-20."""
     assert run_install(instance, "partner", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
@@ -304,21 +290,11 @@ def test_a_worker_home_gets_hx_worker_only(instance):
     assert not (skills / "hx-partner").exists() and not (skills / "hx-fleet").exists()
 
 
-
-
-def test_the_companion_home_does_not_get_hx_memory(instance):
-    """A Companion receives only its configured observation instructions."""
-    assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
-    companion = instance / "run" / "eng-001" / "companion-home" / "skills"
-    assert not (companion / "hx-memory").exists()
-
-
-def _expected_skills(instance, item_id, *, companion=False):
+def _expected_skills(instance, item_id):
     """The per-role skill set, read from the shipped manifest rather than retyped."""
     from hx import skill_manifest
 
-    return set(skill_manifest.for_agent(SRC / "hx" / "skills", instance, item_id,
-                                        companion=companion, env={}))
+    return set(skill_manifest.for_agent(SRC / "hx" / "skills", instance, item_id, env={}))
 
 
 def _installed(path):
@@ -330,8 +306,6 @@ def test_each_home_gets_exactly_the_manifests_skills(instance, item_id):
     assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
     home = instance / "run" / item_id
     assert _installed(home / "home" / "skills") == _expected_skills(instance, item_id)
-    assert _installed(home / "companion-home" / "skills") == _expected_skills(
-        instance, item_id, companion=True) == {"hx-companion"}
 
 
 def test_a_role_skill_installs_for_its_role_only(instance, tmp_path):
@@ -478,7 +452,6 @@ def test_hx_signoff_installs_for_release_and_qa_engineers_only(instance, role, e
     assert run_install(instance, "eng-001", HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
     home = instance / "run" / "eng-001"
     assert (home / "home" / "skills" / "hx-signoff" / "SKILL.md").is_file() is expected
-    assert "hx-signoff" not in _installed(home / "companion-home" / "skills")
     assert _installed(home / "home" / "skills") == _expected_skills(instance, "eng-001")
 
 
@@ -498,5 +471,4 @@ def test_hx_conversion_is_off_until_config_hx_json_turns_it_on(instance):
         assert run_install(instance, item_id, HX_SKILLS_DIR=SKILLS_DIR).returncode == 0
         home = instance / "run" / item_id
         assert (home / "home" / "skills" / "hx-conversion" / "SKILL.md").is_file(), item_id
-        assert "hx-conversion" not in _installed(home / "companion-home" / "skills")
         assert _installed(home / "home" / "skills") == _expected_skills(instance, item_id)

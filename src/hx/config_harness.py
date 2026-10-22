@@ -71,22 +71,17 @@ PARTNER_FLAVORS = ("claude", "codex")
 _COMPANION_INT_FIELDS = (
     "batch_records",
     "state_budget_tokens",
-    "seam_min_context_tokens",
 )
 
-# Zero permits immediate checkpoint boundaries.
-_COMPANION_NON_NEGATIVE_FIELDS = ("seam_min_interval_s",)
-_COMPANION_STR_FIELDS = ("provider", "model", "cache_ttl", "effort")
+_COMPANION_STR_FIELDS = ("provider", "model", "effort")
 
-#: `disabled` controls the optional native Companion session.
+#: `disabled` runs this agent without a Companion.
 _COMPANION_BOOL_FIELDS = ("disabled",)
 
-#: Spec 05: `claude-cli` goes through the pinned binary with the seed token and is the only one
-#: built; `anthropic` is the Messages API with an API key, for instances that have one.
-#: `openai-api` is the OpenAI API companion for Codex/OpenAI lanes (fleet direction
-#: 2026-10-05); validation-only, like the other two — Companion sessions are still
-#: created and routed by `start.sh --companion` in tmux, independent of this value.
-COMPANION_PROVIDERS = ("claude-cli", "anthropic", "openai-api")
+#: `anthropic` is the Messages API with an API key (`companion_api.py`), the only transport
+#: built and the default. `openai-api` is the OpenAI API companion for Codex/OpenAI lanes
+#: (fleet direction 2026-10-05); it validates, and a pass refuses it until it is built.
+COMPANION_PROVIDERS = ("anthropic", "openai-api")
 
 
 def resolve_workdir(workdir: str, root: Path) -> Path:
@@ -247,13 +242,6 @@ def validate_harness(
                 raise ValidationError(
                     f"{path}: `companion.{key}` must be a positive integer, got `{value!r}`"
                 )
-    for key in _COMPANION_NON_NEGATIVE_FIELDS:
-        if key in companion:
-            value = companion[key]
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValidationError(
-                    f"{path}: `companion.{key}` must be a non-negative integer, got `{value!r}`"
-                )
     for key in _COMPANION_STR_FIELDS:
         if key in companion:
             value = companion[key]
@@ -282,8 +270,7 @@ def validate_harness(
         )
 
     unknown_companion = sorted(
-        set(companion) - set(_COMPANION_INT_FIELDS) - set(_COMPANION_NON_NEGATIVE_FIELDS)
-        - set(_COMPANION_STR_FIELDS) - set(_COMPANION_BOOL_FIELDS)
+        set(companion) - set(_COMPANION_INT_FIELDS) - set(_COMPANION_STR_FIELDS) - set(_COMPANION_BOOL_FIELDS)
     )
     if unknown_companion:
         raise ValidationError(

@@ -10,6 +10,49 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
 
 ## [Unreleased]
 
+### Changed
+- The code index schema is version 3: symbol postings carry the declaration kind, reference
+  postings the extractor and edge postings the original target, for the bounded link query.
+  Remove `state/code-index/index.db` (and the repository service's) and rebuild with
+  `hx code index`; a version-2 index is refused.
+- `hx code map` and `submaps` read file links through one bounded postings query
+  (`code_queries.links`, at most 250 000 links) instead of loading every edge through
+  `edges(limit=1_000_000)` and the JSON graph views; `submaps` boundary links are now
+  `{repo,from_path,to_path,kind,lane,status,stale}`, and an import of the file itself is no
+  longer a link.
+- Native search reuse is box-wide and commit-keyed (docs/fleet-throughput-plan.md P1.3;
+  CONTRACTS.md § Admission and native execution). A scoped Grep or Glob result is keyed by
+  repository namespace, commit, the query relative to the checkout and the scope's content (file
+  contents for a search, names and sizes for a listing) instead of the absolute worktree and
+  inode metadata, so one lane's result serves every lane, worktree and root at that commit whose
+  scope matches, with paths served under the reader's own checkout; a changed file invalidates
+  only its own worktree. The cache moved from the per-root `search_coverage` table to the host
+  ledger `hx-search-UID` in the temp directory; a workdir that is not a Git checkout with a
+  commit is not cached. The ledger schema is 24; recreate prerelease instances.
+- Equal-input .NET builds, test shards and checks run once per box
+  (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker, § Scoped check
+  execution artifacts). Check, build and test identities hash checkout paths relative to the
+  checkout beside its repository namespace and commit, and .NET identities replace the root and
+  the job's artifact place with anchors, so equal inputs in any worktree or root have one
+  identity. A per-user, per-boot host ledger (`hx-jobs-UID` in the temp directory) replaces the
+  per-root `dotnet_claims` and `check_artifact_claims` tables: a request equal to an execution
+  running anywhere on the box joins it and records its own receipt with `joined` naming the
+  original. A joined build is adopted into the joiner's checkout place
+  (`state/dotnet/jobs/<seed>/<checkout>/artifacts`) and evaluated there; `fresh` no longer
+  refuses a live equal build but joins it. The restore and build caches are keyed by that place.
+- `hx build` slot limits come from config, not from the last `--jobs` any root passed
+  (docs/fleet-throughput-plan.md P1.3; CONTRACTS.md § .NET build broker). `--jobs` is gone from
+  `hx build build` and `hx build test`; set `pools.build` (1–64, default 2) and `pools.test`
+  (1–64, default 4) in `config/hx.json` instead, alike on every root of a box. Builds and test
+  shards hold separate box-wide pools, each root admits only while the box holds fewer slots of
+  the kind than its own limit, and a slot whose owning process and recorded children are gone is
+  reclaimed by process identity instead of staying held until `hx build reconcile`. The host
+  ledger moved to `hx-slots-UID` in the temp directory.
+- `check_policy` in a schema-2 plan is `{reviewer,required_checks,role}`, and
+  `config/planning.json` requires `role`: the configured seat role that executes the unit,
+  which the plan executor matches against `harness.json`. Add `role` to every plan and to
+  planning.json; a plan without it is refused. A draft request's `role` overrides the policy's.
+
 ### Added
 - `hx.credential_mask` (issue #5, docs/fleet-throughput-plan.md P0.6a, D15): the exact
   credentials hx loads — `seed/token`, which `start.sh` exports as `ANTHROPIC_API_KEY` or
@@ -25,6 +68,23 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   rotation is seen by the next process, and a capture repeated after one stays idempotent.
   Limits: the worker's own transcript and pane log hold what it printed, and ledger rows other
   than events (task payloads, recipes, receipts, records) are written as given.
+- `hx plan partition --repo WT [--scope PATH...] [--out plan.json]` (Partner;
+  docs/fleet-throughput-plan.md P1.4; CONTRACTS.md § Dependency packet plan) reports, from the
+  code graph, the shared providers (declarations called from two or more scopes, ranked by
+  fan-in), family heads (each callee built once by its smallest caller), pairs merged by
+  `config/hx.json` `partition.merge` rules (structural matches on paths and declaration names),
+  needs, merged cycles, and waves with width and depth over hard needs; `--out` drafts the
+  multi-unit schema-2 plan with contract outputs for providers and `need: contract`
+  prerequisites for their consumers, which `hx plan validate` accepts.
+- Published contracts answer the code graph before merge (docs/fleet-throughput-plan.md P1.4;
+  CONTRACTS.md § `hx code`): `hx plan publish-contract` registers the published files'
+  declarations under the plan's repository namespace with lane `contract` and the ledger row as
+  `provenance`, so `hx code type|signature|symbols|search|contract NAME` answer in every consumer
+  worktree before the stub is merged, and `--expect exists` holds throughout. Each checkout
+  shadows a stub at read time once its own index has the real declaration at the same path;
+  a later output version replaces the stubs and a new producer revision removes them. With a
+  repository service configured the stubs live in the service's graph (new `contract-stubs`
+  method).
 - Inspected web search for Codex agents (docs/codex-search-guard.md). Codex's hosted
   `web_search` runs inside the Responses API and fires no hook, so an optional
   `config/codex.json` `search_guard` (`toolbox_url`, `content_safety_endpoint`, both required)
@@ -42,6 +102,33 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   decision, credential-shaped query tokens withheld. `hx doctor` reports each Codex home's
   search posture and fails a `search_guard` lacking a key. Proven against the installed
   `codex exec` 0.156.1 through stubs (`HX_CODEX_TEST_BIN`); nothing has touched Azure yet.
+- Notifications wake the right party (docs/fleet-throughput-plan.md P1.5; CONTRACTS.md §
+  Dependency packet plan): `hx progress` blockers and blocked steps (`progress_blocked`) and
+  failed acceptance checks (`unit_check_failed`) wake the Partner; `packet_binding_proposed`
+  pastes one pointer line into the configured reviewer's live session, or wakes the Partner
+  when it has none; `contract_published` and `unit_completed` also clear the consumers' dispatch
+  deferrals so the executor re-evaluates them on its next pass. Every delivery stays one
+  `HX-EVENT` pointer line. `config/hx.json` `notifications.per_tick` bounds one drain.
+- The plan executor (docs/fleet-throughput-plan.md P1.1; CONTRACTS.md § Plan executor): with
+  `config/hx.json` `dispatch.auto` the application loop admits and launches ready units of
+  every applied plan onto idle seats whose role is the unit's `check_policy.role`, downstream
+  first, under box sessions shared by every root (a per-user, per-boot host ledger), a root
+  quota, a writer budget that exempts read-only units, a restore token bucket, a
+  process-growth breaker, per-role prechecks and a stale-base refusal that defer without a
+  failure, and merge backpressure at 2 × `delivery.json` `max_batch`. Launches are idempotent
+  under sha256(plan, task, revision, head); an uncertain native launch is never replayed.
+  `hx plan run PLAN [--dry-run] [--max N]` (Partner) runs one pass; `hx fleet pause|resume`
+  (operator) stops and restarts every pass. Two roots, 62 ready packets, real tmux and
+  tests/fakeclaude (tests/core/test_plan_dispatch_scale.py): ready→running p95 1 pass, zero
+  double launches, no budget exceeded; pass p50 1.9 s, pass start to live pane p50 13.6 s with
+  inline launches on a loaded 8-core box.
+- Plans at fleet scale (docs/fleet-throughput-plan.md P0.6; CONTRACTS.md § Dependency packet
+  plan): a prerequisite may name an output of another applied plan in the same root by exact
+  identity, `{plan_id,task_id,output_id,version,need}`. A plan holds up to 256 units (was 32)
+  and 1 MiB (was 256 KiB). `hx plan validate|apply` compute levels and parallel groups over the
+  union of applied plans and report `fleet` and `cross_plan_warnings`; integration discharge
+  re-evaluates consumers in every plan. Code freshness is proven once per worktree instead of
+  once per unit, twice: a 256-unit validate went from 29.6 s to 0.3 s.
 - `hx compose --max-tokens` defaults to 16000 (`compose.DEFAULT_MAX_TOKENS`), not 8000: a compiled
   codex/meta assignment is about 8.3 KB and is counted in bytes when no tokenizer is present, so
   the default must hold the system's own largest native delivery. The live native path still
@@ -134,6 +221,46 @@ of those is a minor bump and gets a **Changed** entry saying what an existing in
   adapters and change at their next launch. A Partner on Codex runs the instance's own
   `adapters/codex/install.sh`: delete it and rerun `hx install --skeleton-only` (which never
   overwrites, and adds `search_guard.py` and `toolbox_headers.py`) before its next launch.
+- Companions are scripts on the Messages API (docs/fleet-throughput-plan.md P0.7). Each
+  context, learning and Partner pass is one bounded `httpx` exchange: a byte-stable cached
+  system block, the frozen slice in the user turn, the pass's tools (`tool_choice: auto`),
+  `output_config.effort` from the harness. Evidence reads and one rejected submission
+  continue the same exchange, at most three requests. Each response's usage, cache counts
+  included, is recorded on the job (Partner: `run/partner/companion-usage.jsonl`). The Jev
+  routes moved from the system block to the user turn, so the system block caches across
+  passes. **Existing instances:** a Companion now needs an `sk-ant-api` key in `seed/token` or
+  `ANTHROPIC_API_KEY` in the instance env file (an OAuth token is refused); `companion.provider`
+  `claude-cli` is gone (`anthropic` is the default; `openai-api` validates and is refused at a
+  pass); delete `companion.cache_ttl`, `seam_min_context_tokens` and `seam_min_interval_s`
+  from every harness.json, which now refuses them.
+- The Partner's Companion is the same script, run by the application loop in the shared
+  Companion slots (`hx flush partner` runs it inline). Removed: the tmux `companion` window,
+  `start.sh --companion`, the companion home and its `companion-stop` hook, the `/clear`-plus-
+  pointer pass files, `hx companion partner` launch/`--wake`/`--ingest`, `hx flush --no-wait`,
+  the `companion` CLI audience, the `hx-companion` skill, `HX_ROLE`, meta `install.sh
+  --no-companion`, and `src/hx/sidecar_process.py` with its temporary-HOME `claude -p` path.
+  A closed subagent stream's pass must submit its digest. `stepstate.evict` stays the only
+  budget enforcement. `hx companion partner --pass STREAM` runs one stream now.
+- Seams are cache-aware (fleet-throughput §4.4). A hard seam fires at the threshold as before;
+  an opportunistic seam fires when context is at least `seam.soft_fraction` of the threshold,
+  the cache is cold (the last response wrote more prefix than it read, or is older than
+  `seam.cache_ttl_s`) and the next packet is smaller than the context grown since the last
+  reset by `seam.min_benefit_bytes`; otherwise the conversation holds. The profile lives in
+  `config/hx.json` `seam` (defaults 0.6, 300 s, 64 KiB; set `cache_ttl_s` 3600 for a 1-hour
+  cache), and the prompt-cache report reads its TTL from there. After every context pass the
+  next forced packet is measured into the ledger, so a seam is the reset command and one
+  packet and never waits on a model: the worker reset no longer waits for classification
+  (pending observations ride the forced packet) and the Partner seam no longer waits for its
+  Companion to catch up. Only the hard seam refuses tool calls. The Partner's cold-miss seam is
+  decided at Stop from the turn's last usage; its idle-cold seam is taken by the loop only
+  while its pane shows an empty prompt. `seam` records carry `reason`
+  (`hard`/`cold_miss`/`cold_idle`/`manual`); Partner `log` records carry `cache_read` and
+  `cache_creation`, and Stop appends a `turn_end` record with the turn's last usage (the `log`
+  hook fires per tool call and never sees a turn's final response). The fixed 60k context and
+  15-minute interval conditions are gone. A live check with the real Claude Code 2.1.304
+  against a scripted local Messages API: a warm turn held; a cold-miss turn seamed at Stop and
+  an idle-cold empty prompt seamed from `partner_reset`, each followed by `SessionStart(clear)`;
+  a draft in the input box or a turn inside the TTL held.
 
 - Claude's native Read is the whole-file delivery (docs/fleet-throughput-plan.md P0.5, D5). A
   live check with the real Claude Code 2.1.299 binary against a recording Messages API showed

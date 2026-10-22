@@ -80,9 +80,11 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
     # Pi's extension passes the count it already summed. Claude leaves it out and the
     # transcript parse below is how that session's usage is read.
     supplied = payload.get("context_tokens")
+    usage = None
     if isinstance(supplied, int) and not isinstance(supplied, bool):
         tokens = supplied
     else:
+        usage = transcripts.last_usage(transcript)
         tokens = transcripts.context_tokens(transcript)
 
     record = {
@@ -102,13 +104,13 @@ def handle(payload: dict, item_id: str, root: Path, *, env=None) -> tuple[int, s
                 break
     if agent_id:
         record["agent_id"] = agent_id
+    if is_main and usage:
+        # What the cache-aware seam reads: a turn whose cache write outweighs its read missed.
+        for field, key in (("cache_read_input_tokens", "cache_read"), ("cache_creation_input_tokens", "cache_creation")):
+            if isinstance(usage.get(field), int) and not isinstance(usage.get(field), bool):
+                record[key] = usage[field]
 
     streams.append_record(root, item_id, stream, record)
-
-    # Spec 10 wake trigger: `batch_records` new records in any stream.
-    from . import companion as companion_mod
-
-    companion_mod.wake_due(root, item_id, env=env)
 
     # The hard trigger: it does not wait for a step to close (spec 05, 02 Seams). The
     # Partner takes it like any agent; its seam rehydrates from the context file and no

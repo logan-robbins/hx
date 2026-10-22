@@ -26,6 +26,7 @@ from . import complete as complete_cmd
 from . import companion as companion_cmd
 from . import compose as compose_cmd
 from . import doctor as doctor_cmd
+from . import fleet as fleet_cmd
 from . import flush as flush_cmd
 from . import install as install_cmd
 from . import lifecycle
@@ -60,6 +61,7 @@ IMPLEMENTED = {
     "complete": complete_cmd.main,
     "compose": compose_cmd.main,
     "doctor": doctor_cmd.main,
+    "fleet": fleet_cmd.main,
     "flush": flush_cmd.main,
     "heartbeat": lifecycle.main_heartbeat,
     "install": install_cmd.main,
@@ -105,7 +107,9 @@ Search existing capabilities before building. Schedule all ready independent pac
 subject to dependency proofs, source ownership, resource leases and host capacity.
 
   plan draft/validate/apply     define and record graph-driven dependency packets
+  plan partition --repo WT     graph providers, families and waves; --out drafts the plan
   plan ready/assign            inspect readiness and admit a packet
+  plan run PLAN [--dry-run]    admit and launch ready packets on idle seats within budgets
   launch ID --run RUN --request REQUEST  advance the admitted native worker
   launch partner               start the Partner orchestrator
   plan bind/approve-binding    freeze worker checks and independent approval
@@ -163,12 +167,14 @@ AUDIENCES: dict[str, set[str]] = {
         "build status", "build reconcile",
         "code journal",
         "code audit",
+        "fleet pause", "fleet resume",
     },
     "partner": {
         "launch",        "read", "file-read",
         "board", "show", "metrics", "goals",
         "plan draft", "plan replan", "plan changes", "plan validate", "plan apply", "plan unit",
-        "plan ready", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
+        "plan ready", "plan run", "plan assign", "plan audit", "plan finish", "plan materialize", "plan stop",
+        "plan partition",
         "map init", "map import", "map export", "map overlay", "map propose", "map refresh",
         "map publish", "map plan-context", "map get", "map check", "map anchor",
         "learn pending", "learn accept", "learn reject", "learn list",
@@ -220,8 +226,6 @@ AUDIENCES: dict[str, set[str]] = {
         "content search", "content fetch", "exec",  "evidence", "file-read",
         "repo diff", "repo history", "repo file",
     },
-    # The Companion is a Read + Write session: no `hx` command at all.
-    "companion": set(),
     "runtime": {
         "capture", "observe", "flush", "seam", "compose", "check", "companion", "loop", "wake",
         "code index", "tools acknowledge",
@@ -235,7 +239,7 @@ OWN_ASSIGNMENT = {"plan audit", "plan finish", "plan materialize"}
 
 #: The audiences a worker caller may run, and the audiences `hx help` can print.
 WORKER_MAY_RUN = ("worker", "subagent", "runtime")
-HELP_AUDIENCES = ("operator", "partner", "worker", "subagent", "companion")
+HELP_AUDIENCES = ("operator", "partner", "worker", "subagent")
 
 
 def _entries(audiences: dict[str, set[str]] | None = None) -> set[str]:
@@ -283,7 +287,7 @@ def worker_may_run(command: str, capability: str | None,
 
 
 def help_audience(env) -> str:
-    """`operator` with no HARNESS_ID, `partner`, `companion` (HX_ROLE), else `worker`."""
+    """`operator` with no HARNESS_ID, `partner`, else `worker`."""
     from .caller import caller
     from .ids import PARTNER
 
@@ -292,8 +296,6 @@ def help_audience(env) -> str:
         return "operator"
     if who == PARTNER:
         return "partner"
-    if env.get("HX_ROLE") == "companion":
-        return "companion"
     return "worker"
 
 
@@ -370,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "help":
         # The caller's column of the inventory (TOOL_SKILL_PLAN step 1); `--all` for every one.
         return main_help(argv[1:], env)
-    if argv and argv[0] in ("-h", "--help") and help_audience(env) in ("worker", "companion"):
+    if argv and argv[0] in ("-h", "--help") and help_audience(env) == "worker":
         # A worker is shown its own column, never the whole list.
         return main_help([], env)
     if not argv or argv[0] in ("-h", "--help"):

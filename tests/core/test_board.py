@@ -13,7 +13,7 @@ def seed(root):
                'workdir': str(root), 'goal': 'Return the order result', 'acceptance': ['Result matches input'],
                'write_paths': ['order.py'], 'write_scope': ['order.py'], 'map_inputs': [],
                'outputs': [{'id': 'source', 'version': 1, 'kind': 'source', 'paths': ['order.py']}],
-               'prerequisites': [], 'resources': [], 'check_policy': {'reviewer': 'qa-001', 'required_checks': ['unit']}}
+               'prerequisites': [], 'resources': [], 'check_policy': {'reviewer': 'qa-001', 'required_checks': ['unit'], 'role': 'backend-engineer'}}
     with ContinuityStore(root) as store:
         db = store.db
         db.execute("INSERT INTO task_heads VALUES('orders.work',1)")

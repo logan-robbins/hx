@@ -9,7 +9,7 @@ from threading import Barrier, Lock
 import pytest
 
 from hx import learn, learning_companion as learner, learning_protocol as protocol
-from hx import native_companion, runtime_notifications, sidecar_process
+from hx import companion_api, native_companion, runtime_notifications
 from hx.continuity_store import Conflict, canonical
 from hx.errors import NotFound, ValidationError
 from .test_native_companion import planned
@@ -114,8 +114,8 @@ def test_independent_learner_model_limits_cap_all_input_and_evidence(planned):
     assert payload['model'] == 'small-learner'
     assert payload['request_bytes'] == payload['model_input_limit'] < 48000
     assert payload['max_output_tokens'] == 1024
-    assert payload['request_bytes'] + sidecar_process.MAX_TURNS * 1024 + sidecar_process.HOST_RESERVE <= 48000
-    size = len(payload['system'].encode()) + len(canonical(payload['body']).encode()) + len(canonical(protocol.TOOLS).encode())
+    assert payload['request_bytes'] + companion_api.MAX_ROUNDS * 1024 + companion_api.HOST_RESERVE <= 48000
+    size = companion_api.request_bytes(payload['system'], payload['user'], protocol.TOOLS)
     assert size + payload['evidence_budget'] == payload['request_bytes']
     data['small-learner']['threshold'] = 47000
     models.write_text(json.dumps(data))
@@ -133,7 +133,7 @@ def test_unknown_learner_model_never_invents_context_limits(planned):
 
 
 @pytest.mark.parametrize('purpose', ['learning', 'context'])
-def test_invalid_credential_never_claims_a_running_sidecar_slot(planned, purpose):
+def test_invalid_credential_never_claims_a_running_companion_slot(planned, purpose):
     store, run, _ = planned
     job = prepare(planned) if purpose == 'learning' else native_companion.prepare(store, 'eng-001', run, 'main', 'context-review')
     (store.root / 'seed/token').chmod(0o644)
@@ -227,7 +227,6 @@ def test_partner_capture_excerpt_cannot_be_promoted_to_complete_original_evidenc
     streams.append_record(instance, 'partner', 'partner-main', {'event': 'tool',
         'input': 'A bounded input preview', 'output': 'Only the initial result',
         'ref': {'transcript': '/unavailable/original.jsonl', 'tool_use_id': 'tool-1'}})
-    (instance / 'config/claude.json').write_text(json.dumps({'bin': sys.executable}))
     with ContinuityStore(instance) as store:
         job = learner.prepare(store, 'partner', 'partner-main', 'legacy-partner-review')
         event = job['payload']['body']['events'][0]
@@ -265,7 +264,6 @@ def test_unavailable_irrelevant_partner_capture_can_be_ignored_with_reason(insta
     from hx.continuity_store import ContinuityStore
     streams.append_record(instance, 'partner', 'partner-main', {'event': 'post_tool',
         'input': 'truncated diagnostic', 'output': 'partial observation', 'ref': {'transcript': '/missing'}})
-    (instance / 'config/claude.json').write_text(json.dumps({'bin': sys.executable}))
     with ContinuityStore(instance) as store:
         job = learner.prepare(store, 'partner', 'partner-main', 'ignore-no-proof')
         event = job['payload']['body']['events'][0]
@@ -280,7 +278,6 @@ def test_partner_broker_artifact_and_receipt_are_complete_learning_evidence(inst
     import hashlib
     from hx import streams
     from hx.continuity_store import ContinuityStore
-    (instance / 'config/claude.json').write_text(json.dumps({'bin': sys.executable}))
     with ContinuityStore(instance) as store:
         complete = 'The entire existing helper. ' * 500 + 'FINAL: preserve the current provider.'
         exact = complete.encode()

@@ -2,7 +2,7 @@
 
 The provider cache rewards a stable prefix (system prompt, persona,
 learnings, tool schemas) and expires on a TTL — 5 minutes by default, one
-hour when the harness configures ``cache_ttl: "1h"``. While the cache is
+hour when the instance profile sets ``seam.cache_ttl_s`` to 3600. While the cache is
 warm, changing the prefix pays a full rewrite, so context changes should be
 append-only deltas. Once it is cold, restructuring costs nothing extra:
 that is the moment to compress, reorder, or rebuild the context. This
@@ -20,7 +20,7 @@ MIN_CACHEABLE_TOKENS = 1024  # provider minimum prefix for a cache breakpoint
 
 
 def ttl_seconds(value) -> int:
-    """Parse a harness ``cache_ttl`` ("1h", "30m", "300", seconds) to seconds."""
+    """Parse a cache lifetime ("1h", "30m", "300", seconds) to seconds."""
     if value is None:
         return DEFAULT_TTL_S
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -190,13 +190,11 @@ def _partner_report(root, item_id: str, *, now: str | None = None, env=None) -> 
     stamp = timestamps.parse(seam_ts) if seam_ts else None
     current = timestamps.parse(now or timestamps.now())
     if stamp is not None and current is not None:
-        ttl, source = harness.get("cache_ttl"), "harness.json cache_ttl"
-        if ttl is None:
-            ttl, source = "5m", "default"
-        try:
-            ttl_seconds(ttl)
-        except ValidationError:
-            ttl, source = "5m", "default (harness.json cache_ttl is unparseable)"
+        from .loop_jobs import profile
+        from .token_controls import seam_profile
+        configured = "cache_ttl_s" in (profile(root).get("seam") or {})
+        ttl = f"{seam_profile(root)['cache_ttl_s']}s"
+        source = "config/hx.json seam.cache_ttl_s" if configured else "default"
         age = max(0, int((current - stamp).total_seconds()))
         seam = {"last_seam_ts": seam_ts, "cache_ttl": ttl, "ttl_source": source,
                 **assess(prefix_bytes=prefix, age_s=age, ttl=ttl)}

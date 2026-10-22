@@ -8,7 +8,7 @@ from hx.cli import COMMANDS, IMPLEMENTED
 
 CURRENT_COMMANDS = {
     "board", "build", "cache", "capture", "change", "check", "code", "companion",
-    "complete", "compose", "content", "discipline", "doctor", "evidence", "exec", "file-read", "flush",
+    "complete", "compose", "content", "discipline", "doctor", "evidence", "exec", "file-read", "fleet", "flush",
     "goals", "handoff", "heartbeat", "install", "launch", "learn", "loop", "map", "metrics",
     "models", "observe", "persona", "plan", "progress", "read", "repo", "seam", "show",
     "sift", "task", "tool-exec", "tools", "ui", "up", "wake",
@@ -52,9 +52,6 @@ def test_hook_entrypoint_knows_the_spec_09_events():
         "subagent-result", "stop", "precompact", "postcompact",
         # The Partner's PreToolUse guard over config/partner/guard.json (spec 09.1).
         "guard",
-        # The Companion's own `stop`, in its own home — the other half of the pass protocol
-        # (spec 10), not one of the agent's own.
-        "companion-stop",
         # Explicit normalized observation routes for planned-run capture.
         "request", "log-failure", "tool-start", "message", "model-response",
         "stop-failure", "stop-cancelled", "session-end",
@@ -94,7 +91,8 @@ def test_audiences_cover_every_command_and_nothing_else():
     assert set(cli_mod.COMMANDS) <= families, set(cli_mod.COMMANDS) - families
     # The subagent is a worker's child sharing its HARNESS_ID: its column is inside the worker's.
     assert cli_mod.AUDIENCES["subagent"] <= cli_mod.AUDIENCES["worker"]
-    assert cli_mod.AUDIENCES["companion"] == set()
+    # A Companion is a script on the Messages API: it calls no hx command, so it has no column.
+    assert "companion" not in cli_mod.AUDIENCES
 
 
 def test_a_worker_is_refused_every_partner_and_operator_command(monkeypatch, instance, capsys):
@@ -146,7 +144,6 @@ def test_operator_refusals_name_the_operator(run_hx, instance):
     ({}, "operator"),
     ({"HARNESS_ID": "partner", "HX_ROLE": "partner"}, "partner"),
     ({"HARNESS_ID": "eng-001", "HX_ROLE": "engineer"}, "worker"),
-    ({"HARNESS_ID": "eng-001", "HX_ROLE": "companion"}, "companion"),
 ])
 def test_hx_help_prints_the_callers_column(run_hx, instance, identity, audience):
     import json
@@ -181,7 +178,7 @@ def test_hx_help_all_prints_every_column(run_hx, instance):
     assert set(columns) == set(cli_mod.HELP_AUDIENCES)
     assert columns["partner"] == sorted(cli_mod.AUDIENCES["partner"])
     text = run_hx("help", "--all", env_extra={"HARNESS_ROOT": str(instance)})
-    assert text.returncode == 0 and "operator:" in text.stdout and "companion:" in text.stdout
+    assert text.returncode == 0 and "operator:" in text.stdout and "companion:" not in text.stdout
     # The operator's `hx --help` is still the whole usage text.
     usage = run_hx("--help", env_extra={"HARNESS_ROOT": str(instance)})
     assert usage.returncode == 0 and "usage: hx <command>" in usage.stdout

@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "body": {
+    "id": "msg_01Hx7SubmitAssessment",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-5-5",
+    "content": [
+      {"type": "tool_use", "id": "toolu_01SubmitAssessment", "name": "submit_assessment", "input": "$assessment"}
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {"input_tokens": 1204, "cache_creation_input_tokens": 3968, "cache_read_input_tokens": 0,
+              "output_tokens": 233, "service_tier": "standard"}
+  }
+}

@@ -144,17 +144,21 @@ def tick(store, *, env=None, jobs=None):
     observer.reconcile(store)
     from .native_controller import reconcile_launches
     reconcile_launches(store, env=env)
+    from . import plan_dispatch
+    dispatched = plan_dispatch.tick(store, env=env, jobs=jobs)
     changed = watch_map(store)
     completion = _completions(store, env=env, jobs=jobs)
     companion, running = _companions(store, env=env, jobs=jobs)
     from .native_restart import advance_one as restart_one
     restart = restart_one(store, env=env)
-    from .token_controls import reset_one
+    from .token_controls import partner_reset, reset_one
     reset = reset_one(store, env=env)
-    extra = {'map_changes': changed, **({'companions': running} if running else {})}
+    partner = partner_reset(store.root, env=env)
+    extra = {'map_changes': changed, **({'companions': running} if running else {}),
+             **({'dispatch': dispatched} if dispatched else {})}
     if completion and completion['status'] in {'advancing', 'completed', 'failed'}:
         return {**completion, **extra}
-    for result in (restart, reset):
+    for result in (restart, reset, partner):
         if result:
             return {**result, **extra}
     if companion.get('status') not in {'idle', 'no_work'}:
@@ -186,15 +190,16 @@ def _completions(store, *, env, jobs):
 
 
 def _companion_kinds():
-    from . import learning_companion
+    from . import companion, learning_companion
     return {'context': (_context_select, _context_pass, reconcile_companion),
-            'learning': (learning_companion.select, learning_companion.assess, learning_companion.reconcile)}
+            'learning': (learning_companion.select, learning_companion.assess, learning_companion.reconcile),
+            'partner': (companion.select, companion.assess, companion.reconcile)}
 
 
 def _companions(store, *, env, jobs):
     """Reap finished passes, reconcile foreign ones, and fill the free slots.
 
-    Both kinds share companion.max_concurrent slots and alternate turns. A pass
+    Every kind shares companion.max_concurrent slots and they take turns. A pass
     this process runs is never reconciled by process identity underneath it.
     """
     kinds = _companion_kinds()
@@ -218,13 +223,15 @@ def _companions(store, *, env, jobs):
     foreign = sum(not jobs.owns(row[0]) for row in store.db.execute(
         "SELECT job_id FROM companion_jobs WHERE status='running' UNION ALL SELECT job_id FROM learning_jobs WHERE status='running'"))
     free = loop_jobs.companion_slots(store.root) - foreign - sum(len(jobs.active(kind)) for kind in kinds)
-    first = _state(store, 'companion-turn').get('next', 'context')
+    names = list(kinds)
+    first = _state(store, 'companion-turn').get('next', names[0])
+    first = first if first in kinds else names[0]
     started = []
     for _ in range(max(free, 0)):
-        order = (first, 'context' if first == 'learning' else 'learning')
-        for kind in order:
+        start = names.index(first)
+        for kind in names[start:] + names[:start]:
             select, run, _ = kinds[kind]
-            first = 'context' if kind == 'learning' else 'learning'
+            first = names[(names.index(kind) + 1) % len(names)]
             _save(store, 'companion-turn', {'next': first})
             try:
                 candidate = select(store, exclude={key[1] for key in jobs.active(kind)})
@@ -240,7 +247,7 @@ def _companions(store, *, env, jobs):
             started.append(key)
             break
         else:
-            break  # Neither kind has work for another slot.
+            break  # No kind has work for another slot.
     for kind in kinds:
         for key, outcome in jobs.finished(kind):  # Inline jobs finish at submission.
             try:

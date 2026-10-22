@@ -21,10 +21,7 @@ WORKER = {
         "provider": "anthropic",
         "model": "claude-haiku-4-5-20251001",
         "batch_records": 20,
-        "cache_ttl": "1h",
         "state_budget_tokens": 10000,
-        "seam_min_context_tokens": 60000,
-        "seam_min_interval_s": 600,
     },
 }
 PARTNER = {
@@ -54,7 +51,9 @@ def malformed():
         "harness args not strings": {**WORKER, "harness": {"args": [1]}},
         "unknown flavor": {**WORKER, "flavor": "fleet"},
         "companion budget not an integer": {**WORKER, "companion": {"state_budget_tokens": "big"}},
-        "companion negative interval": {**WORKER, "companion": {"seam_min_interval_s": -1}},
+        "companion seam interval is gone": {**WORKER, "companion": {"seam_min_interval_s": 600}},
+        "companion cache ttl is gone": {**WORKER, "companion": {"cache_ttl": "1h"}},
+        "companion claude-cli is gone": {**WORKER, "companion": {"provider": "claude-cli"}},
         "companion unknown provider": {**WORKER, "companion": {"provider": "openai"}},
         "unknown companion field": {**WORKER, "companion": {"temperature": 1}},
         "companion disabled not a boolean": {**WORKER, "companion": {"disabled": "yes"}},
@@ -237,16 +236,8 @@ def test_workdir_must_exist(instance):
     assert "workdir" in str(exc.value)
 
 
-def test_zero_is_a_valid_seam_interval(tmp_path):
-    """Zero means no minimum interval between seams, which is a real setting (spec 05)."""
-    path = tmp_path / "eng-001" / "harness.json"
-    path.parent.mkdir()
-    path.write_text(json.dumps({**WORKER, "companion": {"seam_min_interval_s": 0}}))
-    assert load_harness(path, check_cross_file=False).companion["seam_min_interval_s"] == 0
-
-
-@pytest.mark.parametrize("provider", ["claude-cli", "anthropic", "openai-api"])
-def test_the_two_providers_of_spec_05(provider, tmp_path):
+@pytest.mark.parametrize("provider", ["anthropic", "openai-api"])
+def test_the_companion_providers(provider, tmp_path):
     path = tmp_path / "eng-001" / "harness.json"
     path.parent.mkdir()
     path.write_text(json.dumps({**WORKER, "companion": {"provider": provider}}))

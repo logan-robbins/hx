@@ -86,9 +86,7 @@ def test_partner_boundary_contains_full_instructions_and_current_notes_in_one_na
     assert partner_context.require_delivered(instance)['bytes'] == len(text.encode())
 
 
-def test_child_context_and_digest_are_delivered_whole_without_duplicate_side_effects(instance, capsys, monkeypatch):
-    from hx import companion
-    monkeypatch.setattr(companion, 'wake_due', lambda *a, **kw: [])
+def test_child_context_and_digest_are_delivered_whole_without_duplicate_side_effects(instance, capsys):
     (instance / 'config/partner/SUBAGENTS.md').write_text('Child rule.\n' + 'c' * 20_000 + '\nCHILD RULE TAIL.\n')
     start = {'session_id': 'S', 'agent_id': 'child-1', 'tool_input': {'prompt': 'Complete child task.'}}
     outputs = []

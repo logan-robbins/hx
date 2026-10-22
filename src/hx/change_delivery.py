@@ -61,8 +61,10 @@ def _policy(root):
         raise ValidationError("delivery policy exceeds 256 KiB")
     body = json.loads(path.read_text()) if path.exists() else {}
     lists = {"reviewers", "sensitive_paths", "sensitive_reviewers", "post_merge_checks", "pre_deploy_checks", "build_checks", "artifact_paths"}
-    if not isinstance(body,dict) or body.keys() - lists - {"check_definitions","validation_resources"}:
+    if not isinstance(body,dict) or body.keys() - lists - {"check_definitions","validation_resources","max_batch"}:
         raise ValidationError("delivery policy has unknown fields")
+    if "max_batch" in body and (type(body["max_batch"]) is not int or not 1 <= body["max_batch"] <= 1024):
+        raise ValidationError("delivery max_batch must be an integer from 1 to 1024")
     for key in lists & body.keys():
         value=body[key]
         if not isinstance(value,list) or len(value)>128 or any(not isinstance(x,str) or not x for x in value):

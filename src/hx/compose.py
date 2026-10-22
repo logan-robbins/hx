@@ -189,7 +189,7 @@ def render_step_state(state: dict) -> str:
     if extra:
         lines.append(f"other: {json.dumps(extra, separators=(',', ':'))}")
 
-    # `ts` is hx's ingest stamp (companion.ingest), so the reader knows how fresh this is.
+    # `ts` is hx's install stamp (companion.run_pass), so the reader knows how fresh this is.
     tail = f"seq {state['seq']}" if state.get("seq") is not None else ""
     if state.get("ts"):
         tail = f"{tail} ts {state['ts']}".strip()

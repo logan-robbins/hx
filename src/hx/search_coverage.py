@@ -1,41 +1,78 @@
-"""Bounded reuse of exact searches against unchanged, explicitly scoped sources."""
+"""Bounded reuse of exact searches against unchanged, explicitly scoped sources, box-wide.
+
+A search result is keyed by repository namespace, commit, the query with its scope relative
+to the checkout, and the scope's content: names for listings, names and file contents for
+content searches. One lane's result therefore serves every lane, worktree and root on the box
+at that commit whose scope holds the same content, from a per-user, per-boot host ledger.
+Paths under the checkout are stored as `{repository}` and served under the reader's own
+checkout, so a reused result never names another worktree's files.
+"""
 from __future__ import annotations
 
+from contextlib import closing
+import hashlib
 import json
 import os
 from pathlib import Path
+import stat
+import tempfile
+import time
 
+from . import fingerprints, host_jobs
 from .continuity_store import canonical, digest
 from .native_tools import AdmissionDenied
 
-TOOLS = {'Grep', 'grep', 'search', 'Glob', 'glob', 'find', 'ls'}
+SEARCHES = {'Grep', 'grep', 'search'}
+TOOLS = SEARCHES | {'Glob', 'glob', 'find', 'ls'}
+TOKEN = '{repository}'
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS coverage (namespace TEXT NOT NULL, commit_id TEXT NOT NULL, query_hash TEXT NOT NULL,
+ source_hash TEXT NOT NULL, result TEXT NOT NULL, complete INTEGER NOT NULL, stamp REAL NOT NULL,
+ PRIMARY KEY(namespace,commit_id,query_hash,source_hash))
+"""
 
 
-def fingerprint(path):
-    """Metadata only, at most 256 entries; larger scopes remain uncached."""
-    pending, stamps = [Path(path)], []
+def directory():
+    return Path(tempfile.gettempdir()) / f'hx-search-{os.getuid()}'
+
+
+def connect():
+    return host_jobs.ledger(directory(), SCHEMA)
+
+
+def fingerprint(path, top, contents):
+    """Names relative to `top` and kinds, with sizes for listings or contents for a content
+    search: at most 256 entries; larger scopes remain uncached."""
+    pending, entries = [Path(path)], []
     try:
         while pending:
             current = pending.pop()
             info = current.lstat()
-            if current.is_symlink():
-                return None  # Do not mistake link metadata for its target's contents.
-            stamps.append((str(current), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns))
-            if len(stamps) > 256:
+            name = current.relative_to(top).as_posix()
+            if stat.S_ISDIR(info.st_mode):
+                entries.append((name, 'directory'))
+            elif not stat.S_ISREG(info.st_mode):
+                return None  # Links, pipes and devices: never mistake them for contents or block on them.
+            elif contents:
+                with current.open('rb') as handle:
+                    entries.append((name, 'file', hashlib.file_digest(handle, 'sha256').hexdigest()))
+            else:
+                entries.append((name, 'file', info.st_size))
+            if len(entries) > 256:
                 return None
-            if current.is_dir():
-                with os.scandir(current) as entries:
-                    for entry in entries:
+            if stat.S_ISDIR(info.st_mode):
+                with os.scandir(current) as found:
+                    for entry in found:
                         # Include hidden files: the native query may search them.
-                        if len(pending) + len(stamps) >= 256:
+                        if len(pending) + len(entries) >= 256:
                             return None
                         pending.append(Path(entry.path))
     except OSError:
         return None
-    return digest(sorted(stamps))
+    return digest(sorted(entries))
 
 
-def prepare(store, row, task, payload):
+def prepare(task, payload):
     name = payload.get('tool_name', payload.get('toolName', ''))
     name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
     args = payload.get('tool_input', payload.get('toolInput'))
@@ -43,20 +80,33 @@ def prepare(store, row, task, payload):
         return None
     from .runtime_policy import _source
     path = _source(args, task)
-    repository = Path(task['workdir']).resolve()
-    if not path.is_relative_to(repository):
+    workdir = Path(task['workdir'])
+    if not path.is_relative_to(workdir.resolve()):
         return None
-    stamp = fingerprint(path)
+    found = fingerprints.checkout(workdir)
+    if found is None or found['commit'] is None:
+        return None
+    top = found['top']
+    stamp = fingerprint(path, top, name in SEARCHES)
     if stamp is None:
         return None
-    key = digest([name, {**args, 'path': str(path)}])
-    return dict(repository=str(repository), query_hash=key, source_hash=stamp, path=str(path), run_id=row['run_id'])
+    # Results name the checkout as the worker spelled it; serve them back that way.
+    spelled = workdir if workdir.resolve() == top else top
+    anchors = fingerprints.combine({str(spelled): TOKEN}, fingerprints.anchors_for(workdir))
+    request = dict(namespace=found['namespace'], commit=found['commit'], source_hash=stamp,
+                   query_hash=digest([name, fingerprints.relocate({**args, 'path': str(path)}, anchors)]),
+                   path=str(path), top=str(top), contents=name in SEARCHES, anchors=anchors)
+    with closing(connect()) as db:
+        known = db.execute('SELECT result,complete FROM coverage WHERE namespace=? AND commit_id=? AND query_hash=? AND source_hash=?',
+                           (request['namespace'], request['commit'], request['query_hash'], stamp)).fetchone()
+    if known:
+        request['cached'] = {'result': known[0].replace(TOKEN + '/', str(spelled) + '/'), 'complete': bool(known[1])}
+    return request
 
 
 def remember(tx, row, session, actor, call, request):
     if request:
-        known = tx.db.execute('SELECT * FROM search_coverage WHERE repository=? AND query_hash=? AND source_hash=?',
-                                 (request['repository'], request['query_hash'], request['source_hash'])).fetchone()
+        known = request.pop('cached', None)
         if known:
             status = 'Complete result' if known['complete'] else 'Partial result; absence is not established'
             raise AdmissionDenied(f'Cached search for unchanged scoped sources. {status}: {known["result"]}\nReuse this result; narrow or change the query for additional coverage.')
@@ -79,14 +129,21 @@ def settle(tx, launch, session, actor, call, payload):
     text = response if isinstance(response, str) else canonical(response)
     # Unmarked native output is never treated as exhaustive negative evidence.
     complete = isinstance(response, dict) and response.get('complete') is True and not response.get('truncated')
-    if not text.strip() or len(text.encode()) > 2048:
+    if not text.strip() or len(text.encode()) > 2048 or TOKEN in text:
         return
-    if fingerprint(request['path']) != request['source_hash']:
+    if fingerprint(request['path'], Path(request['top']), request['contents']) != request['source_hash']:
         return
-    tx.db.execute('INSERT OR REPLACE INTO search_coverage VALUES(?,?,?,?,?,?)',
-        (request['repository'], request['query_hash'], request['source_hash'], request['run_id'], text, int(complete)))
-    # This is a small current-source cache, not an unbounded cross-task archive.
-    tx.db.execute('''DELETE FROM search_coverage WHERE repository=? AND rowid NOT IN
-        (SELECT rowid FROM search_coverage WHERE repository=? ORDER BY rowid DESC LIMIT 128)''',
-        (request['repository'], request['repository']))
-    tx.db.execute('DELETE FROM search_coverage WHERE rowid NOT IN (SELECT rowid FROM search_coverage ORDER BY rowid DESC LIMIT 256)')
+    portable = fingerprints.relocate(text, request['anchors'])
+    if any(prefix in portable for prefix in request['anchors']):
+        return  # A checkout path that is not a path prefix would name this worktree to others.
+    with closing(connect()) as db:
+        db.execute('BEGIN IMMEDIATE')
+        db.execute('INSERT OR REPLACE INTO coverage VALUES(?,?,?,?,?,?,?)',
+                   (request['namespace'], request['commit'], request['query_hash'], request['source_hash'],
+                    portable, int(complete), time.time()))
+        # This is a small current-source cache, not an unbounded cross-task archive.
+        db.execute('''DELETE FROM coverage WHERE namespace=? AND rowid NOT IN
+            (SELECT rowid FROM coverage WHERE namespace=? ORDER BY rowid DESC LIMIT 128)''',
+                   (request['namespace'], request['namespace']))
+        db.execute('DELETE FROM coverage WHERE rowid NOT IN (SELECT rowid FROM coverage ORDER BY rowid DESC LIMIT 256)')
+        db.execute('COMMIT')

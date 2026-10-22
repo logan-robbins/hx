@@ -37,13 +37,12 @@ MODELS = {
 PERSONA = "You are eng-001, an engineer.\nYou commit as you go.\n"
 
 
-def manifest_skills(root: Path, item_id: str, *, companion: bool = False, **env: str) -> set[str]:
+def manifest_skills(root: Path, item_id: str, **env: str) -> set[str]:
     """The skills `src/hx/skills/manifest.json` gives `<id>`'s home (TOOL_SKILL_PLAN step 1)."""
     sys.path.insert(0, str(SRC))
     from hx import skill_manifest
 
-    return set(skill_manifest.for_agent(SRC / "hx" / "skills", root, item_id,
-                                        companion=companion, env=env))
+    return set(skill_manifest.for_agent(SRC / "hx" / "skills", root, item_id, env=env))
 
 
 def installed_skills(path: Path) -> set[str]:
@@ -75,6 +74,22 @@ def clean_env(**extra: str) -> dict[str, str]:
     env["PYTHONPATH"] = str(SRC)
     env.update(extra)
     return env
+
+
+@pytest.fixture(autouse=True)
+def host_jobs_ledger(tmp_path, monkeypatch):
+    """Each test joins equal executions only within its own host job ledger (`hx.host_jobs`)."""
+    from hx import host_jobs
+
+    monkeypatch.setattr(host_jobs, "directory", lambda: tmp_path / "host-jobs")
+
+
+@pytest.fixture(autouse=True)
+def search_ledger(tmp_path, monkeypatch):
+    """Each test reuses searches only from its own host search ledger (`hx.search_coverage`)."""
+    from hx import search_coverage
+
+    monkeypatch.setattr(search_coverage, "directory", lambda: tmp_path / "host-search")
 
 
 @pytest.fixture
@@ -295,12 +310,11 @@ def hx(instance, tmux_server):
 
     def _run(*args: str, harness_id: str | None = "partner", cwd: Path | None = None, **env_extra):
         # `start.sh` forwards every HX_* variable onto the tmux session, so the fake claude
-        # in the pane can find the hook binary and its Companion script.
+        # in the pane can find the hook binary.
         env = clean_env(
             HARNESS_ROOT=str(instance),
             HX_TMUX=" ".join(tmux_server),
             HX_HOOK_BIN=f"{sys.executable} -m hx.hooks",
-            HX_FAKE_COMPANION_SCRIPT=str(instance / "companion-script.json"),
             **env_extra,
         )
         if harness_id is not None:
@@ -418,31 +432,3 @@ def fake_claude_on_path(tmp_path):
     binary.write_text(FAKE_CLAUDE_BIN.format(version=tested, real=FAKE_CLAUDE))
     binary.chmod(0o755)
     return {"PATH": f"{bindir}:{os.environ.get('PATH', '')}", "HX_FAKE_CLAUDE_VERSION": tested}
-
-
-@pytest.fixture
-def companion_script(instance):
-    """Script the Companion's answers. It runs as a real tmux session playing the fake.
-
-    One entry is consumed per pass: `{"state": {...}}` writes that step state,
-    `{"text": "..."}` writes it verbatim, which is how the invalid-output path is driven.
-    """
-    path = instance / "companion-script.json"
-    path.write_text("[]")
-
-    class Script:
-        env = {"HX_FAKE_COMPANION_SCRIPT": str(path)}
-
-        def responses(self, *items, item_id="eng-001"):
-            # The fake indexes responses by how many passes it has seen, so a new script
-            # starts a new count.
-            (instance / "run" / item_id / "fake-passes.log").unlink(missing_ok=True)
-            path.write_text(json.dumps(list(items)))
-
-        def passes(self, item_id="eng-001"):
-            log = instance / "run" / item_id / "fake-passes.log"
-            if not log.is_file():
-                return []
-            return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
-
-    return Script()

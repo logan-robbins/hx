@@ -5,7 +5,7 @@
 #   - the hx hooks of spec 09.1, each carrying `--id <id>`, pointed at the hook binary
 #     recorded in config/hx.json (CONTRACTS.md), falling back to $HARNESS_ROOT/bin/hx-hook.
 #     The Partner alone also gets the `guard` PreToolUse hook over config/partner/guard.json;
-#     no worker and no Companion is ever guarded (spec 09.1)
+#     no worker is ever guarded (spec 09.1)
 #   - instruction-files mode `claude-md`, so no AGENTS.md is ever discovered
 #   - claudeMdExcludes for the agent's own workdir
 #   - the bypass-permissions acceptance, so no launch is ever interactive
@@ -48,12 +48,7 @@ token_mode=$("$python" -c 'import os,sys;print(os.stat(sys.argv[1]).st_mode & 0o
   "refuse: $token_file is readable by group or other; it holds a year-long credential and must
   be mode 0600 (CONTRACTS.md). Run: chmod 600 $token_file"
 
-# Pi workers call this script with HX_COMPANION_ONLY=1. The agent home is Pi's;
-# the Companion session is still Claude and still needs this home.
-companion_only=${HX_COMPANION_ONLY:-}
-
 # Hook and hx binary paths: config/hx.json when hx install recorded it, else bin/ (spec 17.1).
-# Computed for the Companion home too, which is why this sits outside the agent-home branch.
 hook_bin=$root/bin/hx-hook
 hx_bin=$root/bin/hx
 if [ -f "$root/config/hx.json" ]; then
@@ -63,8 +58,7 @@ if [ -f "$root/config/hx.json" ]; then
     "$root/config/hx.json" "$hx_bin")
 fi
 
-# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5). Defined
-# out here because the Companion home is written even when the agent home is Pi's.
+# Skills from the package, loaded on demand; nothing is symlinked (spec 17.5).
 skills_src=${HX_SKILLS_DIR:-}
 copy_skills() {
   local target=$1; shift
@@ -81,12 +75,11 @@ copy_skills() {
 # CONTRACTS.md): audience, role, optional skills from config/hx.json `skills`.
 manifest_skills() {
   [ -n "$skills_src" ] && [ -d "$skills_src" ] || return 0
-  "$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id" "$@" ||
+  "$python" -m hx.skill_manifest select --skills "$skills_src" --root "$root" --id "$id" ||
     die "skill manifest: cannot select the skills for $id from $skills_src"
 }
 
 home=$root/run/$id/home
-if [ "$companion_only" != 1 ]; then
 mkdir -p "$home"
 
 # The directory this agent will run in, which start.sh also uses (spec 17.4): the `workdir`
@@ -261,87 +254,10 @@ fi
 # Native packet launches load task-specific capabilities through the bounded catalog.
 wants=$(manifest_skills) || exit 1
 copy_skills "$home/skills" $wants
-fi
 
-# The Companion's own config dir (spec 10). It gets one hook, the `hx-companion` skill, and no
-# CLAUDE.md: the Companion interprets a stream and returns JSON, and anything else that could
-# make it act or load project context is a liability, not a feature. Onboarding and trust are
-# pre-seeded here too, for the same reason as the agent's home.
 if [ -n "${HX_CONTINUITY_AUTHORITY:-}" ]; then
   printf 'install.sh: prepared executor home %s\n' "$home"
   exit 0
 fi
-
-companion_home=$root/run/$id/companion-home
-mkdir -p "$companion_home"
-wants=$(manifest_skills --companion) || exit 1
-copy_skills "$companion_home/skills" $wants
-HX_COMPANION_HOME=$companion_home HX_CWD=$root HX_HOOK_BIN=$hook_bin HX_ID=$id HX_ROOT=$root \
-"$python" - <<'COMPANIONEOF'
-import json
-import os
-import shlex
-from pathlib import Path
-
-home = os.environ["HX_COMPANION_HOME"]
-hook = os.environ["HX_HOOK_BIN"]
-item_id = os.environ["HX_ID"]
-
-
-def companion_hook(event):
-    return {"type": "command",
-            "command": f"{shlex.quote(hook)} --id {shlex.quote(item_id)} {event}"}
-
-
-# The Companion gets one hook and no others: its own `stop`, which validates what it wrote
-# and installs it. It is never guarded: the guard is the Partner's (spec 09.1). No product skills and
-# no CLAUDE.md: it reads the files each pass names and nothing else (spec 10).
-settings = {
-    "hooks": {
-        "Stop": [{"hooks": [companion_hook("companion-stop")]}],
-    },
-    "pluginConfigs": {"agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}},
-    "skipDangerousModePermissionPrompt": True,
-    "theme": "dark",
-}
-with open(os.path.join(home, "settings.json"), "w") as handle:
-    json.dump(settings, handle, indent=2)
-    handle.write("\n")
-
-config_json = os.path.join(home, ".claude.json")
-existing = {}
-if os.path.exists(config_json):
-    try:
-        with open(config_json) as handle:
-            loaded = json.load(handle)
-        existing = loaded if isinstance(loaded, dict) else {}
-    except (json.JSONDecodeError, OSError):
-        existing = {}
-existing["hasCompletedOnboarding"] = True
-existing.setdefault("theme", "dark")
-credential = (Path(os.environ["HX_ROOT"]) / "seed" / "token").read_text().strip()
-if credential.startswith("sk-ant-api"):
-    responses = existing.setdefault("customApiKeyResponses", {"approved": [], "rejected": []})
-    if credential[-20:] not in responses["approved"]:
-        responses["approved"].append(credential[-20:])
-projects = existing.get("projects")
-if not isinstance(projects, dict):
-    projects = {}
-workdir = os.environ["HX_CWD"]
-project = projects.get(workdir)
-if not isinstance(project, dict):
-    project = {}
-project["hasTrustDialogAccepted"] = True
-project["hasClaudeMdExternalIncludesApproved"] = True
-projects[workdir] = project
-existing["projects"] = projects
-with open(config_json, "w") as handle:
-    json.dump(existing, handle, indent=2)
-    handle.write("\n")
-COMPANIONEOF
-
-if [ "$companion_only" != 1 ]; then
-  printf 'install.sh: wrote %s\n' "$home/settings.json"
-fi
-printf 'install.sh: wrote %s (stop hook + hx-companion, no CLAUDE.md)\n' "$companion_home/settings.json"
+printf 'install.sh: wrote %s\n' "$home/settings.json"
 printf 'install.sh: auth is %s, exported by start.sh for the credential type\n' "$token_file"
