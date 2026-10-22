@@ -219,7 +219,7 @@ config.update(id='eng-001',pod='engineers',workdir=workdir,purpose='Prove instal
 unit = dict(id='deploy-proof.work',expected_revision=0,behavior='Inspect the committed fixture behavior.',
     acceptance=['The installed runtime admits and launches the exact packet.'],workdir=workdir,
     write_paths=['proof.py'],map_inputs=[],resources=[],prerequisites=[],
-    check_policy={'reviewer':'qa-001','required_checks':['unit']},
+    check_policy={'reviewer':'qa-001','required_checks':['unit'],'role':'backend-engineer'},
     outputs=[{'id':'proof','version':1,'kind':'receipt','obligation':'Verify installed execution.'}])
 target.write_text(json.dumps(dict(plan_id='deploy-proof',expected_revision=0,
     repository='55b3d70b-9af1-4839-88da-cbc65b284ef9',goal='Verify the installed worker runtime.',constraints=[],tasks=[unit])))
