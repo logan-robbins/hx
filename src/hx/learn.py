@@ -111,19 +111,11 @@ def _hx_json(root: Path) -> dict:
 
 def learnings_path(root: Path, env: dict[str, str] | None = None) -> Path:
     """The learnings directory: `HX_LEARNINGS`, else `config/hx.json` `learnings`, else
-    `<root>/LEARNINGS/`. A value naming a single `.md` file is the pre-directory layout and
-    is refused."""
+    `<root>/LEARNINGS/`."""
     env = os.environ if env is None else env
     value = env.get("HX_LEARNINGS") or _hx_json(root).get("learnings") or ""
     if value:
-        path = Path(os.path.expanduser(value))
-        if path.suffix == ".md":
-            raise ValidationError(
-                f"learnings {path} names one file; hx keeps learnings as a directory of category "
-                f"files (LEARNINGS/<category>.md). Point `learnings` at the directory "
-                f"(docs/learnings.md)"
-            )
-        return path
+        return Path(os.path.expanduser(value))
     return Path(root) / DIRECTORY_NAME
 
 
@@ -134,12 +126,6 @@ def default_prefix(root: Path, env: dict[str, str] | None = None) -> str:
     if not re.fullmatch(r"[A-Z]{1,3}", value):
         raise ValidationError(f"learnings prefix {value!r} is not 1–3 capital letters")
     return value
-
-
-def learnings_dir(path: Path) -> Path:
-    """Where proposals, decisions and the lock live: the learnings directory itself."""
-    path = Path(path)
-    return path.parent if path.suffix == ".md" else path
 
 
 def category_file(directory: Path, category: str) -> Path:
@@ -250,15 +236,11 @@ def read_file_rules(path: Path) -> list[dict]:
 
 
 def read_rules(path: Path) -> list[dict]:
-    """Every rule under the learnings directory, categories in taxonomy order; a single file
-    reads as itself."""
-    path = Path(path)
-    if path.is_dir():
-        rules: list[dict] = []
-        for category in CATEGORY_NAMES:
-            rules.extend(read_file_rules(category_file(path, category)))
-        return rules
-    return read_file_rules(path)
+    """Every rule under the learnings directory, categories in taxonomy order."""
+    rules: list[dict] = []
+    for category in CATEGORY_NAMES:
+        rules.extend(read_file_rules(category_file(path, category)))
+    return rules
 
 
 def read_role_rules(root: Path, role: str) -> list[dict]:
@@ -477,11 +459,8 @@ def repeats_summary(root: Path, env: dict[str, str] | None = None) -> dict[str, 
     if not path.is_file():
         return {}
     accepted: dict[str, str] = {}
-    try:
-        decisions = learnings_dir(learnings_path(root, env)) / "decisions.jsonl"
-    except HxError:
-        decisions = None
-    if decisions is not None and decisions.is_file():
+    decisions = learnings_path(root, env) / "decisions.jsonl"
+    if decisions.is_file():
         for line in decisions.read_text(encoding="utf-8").splitlines():
             try:
                 row = json.loads(line)
@@ -537,7 +516,7 @@ def nearest(rules: list[dict], proposal: dict, limit: int = NEAREST) -> list[dic
 
 @contextmanager
 def _locked(path: Path):
-    directory = learnings_dir(path)
+    directory = Path(path)
     directory.mkdir(parents=True, exist_ok=True)
     with open(directory / ".lock", "a+") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -548,11 +527,11 @@ def _locked(path: Path):
 
 
 def _proposal_path(path: Path, proposal_id: str, state: str = "proposals") -> Path:
-    return learnings_dir(path) / state / f"{proposal_id}.json"
+    return Path(path) / state / f"{proposal_id}.json"
 
 
 def list_proposals(path: Path) -> list[dict]:
-    directory = learnings_dir(path) / "proposals"
+    directory = Path(path) / "proposals"
     if not directory.is_dir():
         return []
     found = []
@@ -567,7 +546,7 @@ def list_proposals(path: Path) -> list[dict]:
 def load_proposal(path: Path, proposal_id: str) -> dict:
     file = _proposal_path(path, proposal_id)
     if not file.is_file():
-        raise NotFound(f"no pending proposal {proposal_id} under {learnings_dir(path) / 'proposals'}")
+        raise NotFound(f"no pending proposal {proposal_id} under {Path(path) / 'proposals'}")
     return json.loads(file.read_text())
 
 
@@ -666,7 +645,7 @@ def is_text(proposal: dict) -> bool:
 
 
 def _record_decision(path: Path, record: dict) -> None:
-    decisions = learnings_dir(path) / "decisions.jsonl"
+    decisions = Path(path) / "decisions.jsonl"
     decisions.parent.mkdir(parents=True, exist_ok=True)
     with open(decisions, "a") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")

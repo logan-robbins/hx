@@ -342,7 +342,7 @@ def skill_isolation(root: Path, ids: list[str], env=None) -> list[tuple[str, str
 
 def _persona_sources(root: Path, item_id: str) -> list[tuple[str, str, str]]:
     """What the `context` hook hands a worker (docs/prompt-runtime.md § Prompt layers): a
-    `purpose` the Partner actually wrote, a role persona, and no per-id file left over."""
+    `purpose` the Partner actually wrote and a role persona."""
     from .config_harness import purpose_text
 
     if item_id == "partner":
@@ -462,10 +462,7 @@ def run_checks(root: Path, *, env: dict[str, str] | None = None) -> list[tuple[s
 
     # An instance that points `learnings` elsewhere (a fleet's shared directory) does not use
     # its own LEARNINGS/ skeleton files; the `learnings` row below reports the directory it uses.
-    try:
-        own_learnings = learn_mod.learnings_path(root, env) == root / learn_mod.DIRECTORY_NAME
-    except ValidationError:
-        own_learnings = True
+    own_learnings = learn_mod.learnings_path(root, env) == root / learn_mod.DIRECTORY_NAME
     for relative in EXPECTED_SKELETON_FILES:
         if relative.startswith(learn_mod.DIRECTORY_NAME + "/") and not own_learnings:
             continue

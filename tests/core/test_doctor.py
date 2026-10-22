@@ -307,8 +307,6 @@ def test_reports_the_learnings_directory(instance):
     checks = run_checks(instance)
     assert ("learnings", OK) in statuses(checks), detail_for(checks, "learnings")
     assert "0 rule(s) (none), 0 pending" in detail_for(checks, "learnings")[0]
-    assert "learnings-legacy" not in {check for _, check, _ in checks}
-    assert "learnings-size" not in {check for _, check, _ in checks}
 
 
 def test_an_instance_on_a_shared_directory_is_not_asked_for_its_own_skeleton_files(instance, tmp_path):
