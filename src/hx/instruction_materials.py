@@ -132,12 +132,12 @@ def install(references, files):
     if references:
         fields = {"path", "sha256", "bytes", "payload_bytes", "payload_sha256", "part", "parts", "next_path", "bundle_sha256", "bundle_bytes"}
         intrinsic = [{key: value for key, value in reference.items() if key in fields} for reference in references]
-        body = json.dumps({"schema_version": 1, "files": intrinsic}, ensure_ascii=False, separators=(",", ":"))
+        body = json.dumps({"files": intrinsic}, ensure_ascii=False, separators=(",", ":"))
         if len(body.encode()) > MAX_FILE_BYTES:
             raise ValidationError("complete material manifest exceeds its file cap")
         manifest = Path(references[0]["path"]).parent / "bundle.json"
         if manifest.exists():
-            if manifest.is_symlink() or json.loads(manifest.read_text()) != {"schema_version": 1, "files": intrinsic}:
+            if manifest.is_symlink() or json.loads(manifest.read_text()) != {"files": intrinsic}:
                 raise ValidationError("required material chain manifest changed")
         else:
             store.atomic_write_text(manifest, body)
@@ -158,7 +158,7 @@ def discover_bundle(path):
     try:
         body = json.loads(raw)
         references = body["files"]
-        if body["schema_version"] != 1 or not isinstance(references, list) or not references:
+        if body.keys() != {"files"} or not isinstance(references, list) or not references:
             raise ValueError("invalid material chain")
         for index, reference in enumerate(references, 1):
             expected = target.parent / f"{index:04d}.md"

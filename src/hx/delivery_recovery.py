@@ -122,7 +122,7 @@ def fail(store,batch_id,receipt_id,*,baseline_receipt=None,env=None):
     with store.transaction() as tx:
         paths=sorted({path for member in members for path in _change(tx,member['change'])['payload']['paths']}) or [file['path'] for file in row['payload']['files']]
         repair_id='repair.'+batch_id
-        packet={'schema_version':1,'repair_id':repair_id,'batch':batch_id,
+        packet={'repair_id':repair_id,'batch':batch_id,
                 'goal':f"Restore the behavior rejected by {record['check_id']} at the pinned source snapshot; preserve unrelated later changes.",
                 'failed_head':row['head'],'source_tree':row['payload']['tree'],'failed_receipt':receipt_id,
                 'failure_artifact':record['artifact_hash'],'check_version':record['check_version'],

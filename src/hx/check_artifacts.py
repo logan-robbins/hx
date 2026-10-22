@@ -27,7 +27,7 @@ def initialize(tx):
 
 
 def identity(version, source, environment):
-    return digest({"schema_version": 1, "recipe": version,
+    return digest({"recipe": version,
                    "source": source["hash"], "environment": environment["hash"]})
 
 
@@ -61,7 +61,7 @@ def reserve(tx, execution_id, identity_hash):
     owner = native_processes.probe(os.getpid())
     if owner is None:
         raise Conflict("check execution owner identity is unavailable")
-    metadata = {"schema_version": 1, "execution_id": execution_id, "identity_hash": identity_hash,
+    metadata = {"execution_id": execution_id, "identity_hash": identity_hash,
                 "owner": owner["identity"], "child": None}
     tx.db.execute("INSERT INTO check_artifacts VALUES(?,?,'running',NULL,?,?)",
                   (execution_id, identity_hash, canonical(metadata), digest(metadata)))

@@ -35,7 +35,7 @@ def manifest(repository,artifacts,checks,*,expected_head=None):
         files[path.relative_to(repo).as_posix()]={'sha256':hasher.hexdigest(),'bytes':path.stat().st_size}
     if not files:
         raise ValidationError('CI manifest requires a tested artifact')
-    body={'schema_version':1,'source_commit':head,'source_tree':git('rev-parse','HEAD^{tree}'),
+    body={'source_commit':head,'source_tree':git('rev-parse','HEAD^{tree}'),
           'artifacts':files,'checks':{name:'passed' for name in checks}}
     return {**body,'build_id':digest(body)}
 

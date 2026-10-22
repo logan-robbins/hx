@@ -149,7 +149,7 @@ def build(root: Path, item_id: str, *, audience=None, persist=True, env=None):
         required_files, materials = instruction_materials.prepare(
             material_text, root / "run" / item_id / "prompts" / "material",
             channel=channel, delivery="inline", sections=[section["id"] for section in sections if section["id"] != "identity"])
-    manifest = {"schema_version": 1, "identity": identity, "sources": sources,
+    manifest = {"identity": identity, "sources": sources,
                 "sections": [{key: value for key, value in section.items() if key != "text"} for section in sections],
                 "delivery": {target: {"sha256": hashlib.sha256(text.encode()).hexdigest(), "bytes": len(text.encode()),
                                       "status": "prepared" if text else "absent"} for target, text in rendered.items()},

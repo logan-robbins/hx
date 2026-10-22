@@ -15,7 +15,7 @@ from hx.evidence import read
 
 
 def definition(script="print('checked')"):
-    return {"schema_version": 1, "id": "unit", "argv": [sys.executable, "-c", script], "cwd": ".",
+    return {"id": "unit", "argv": [sys.executable, "-c", script], "cwd": ".",
             "inputs": [], "environment": {"complete": True, "executables": [], "inputs": [], "external_versions": {}},
             "timeout_s": 3, "max_output_bytes": 100000}
 
@@ -307,7 +307,6 @@ def test_receipt_without_current_provenance_cannot_pass_any_gate(setup):
     receipt = checks.run_check(store, run, "unit", recipe=definition(), env=env, request_id="proof")
     row = store.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt["receipt_id"],)).fetchone()
     payload = json.loads(row["payload"])
-    payload["schema_version"] = 1
     payload.pop("provenance")
     store.db.execute("UPDATE receipts SET payload=? WHERE receipt_id=?", (json.dumps(payload), receipt["receipt_id"]))
     row = store.db.execute("SELECT * FROM receipts WHERE receipt_id=?", (receipt["receipt_id"],)).fetchone()

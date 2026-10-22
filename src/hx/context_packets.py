@@ -288,7 +288,7 @@ def issue(store, run_id, *, request_id, record_ids=(), required_ids=(), mode="fo
                                             slot=f"full-context:{reference['part']}")
                 if installed != reference["sha256"]:
                     raise ValidationError("full assignment artifact identity changed")
-        metadata = {"schema_version": 1, "request_hash": request_hash, "run_id": run_id,
+        metadata = {"request_hash": request_hash, "run_id": run_id,
                     "task_id": task["task_id"], "task_revision": task["revision"], "phase": run["phase"], "mode": mode,
                     "records": selected, "omitted": omitted, "map_inputs": payload["map_inputs"],
                     "prerequisite_proofs": admission["prerequisites"],

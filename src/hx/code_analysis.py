@@ -268,7 +268,6 @@ def _submaps(conn, nodes, rows, links, focus, limit):
                 sha = graph_for(conn, repo, path)["files"][0]["sha256"]
                 anchors.append(dict(path=path, symbol=None, sha256=sha))
             record = dict(
-                schema_version=1,
                 id=identity,
                 version=1,
                 kind="component",

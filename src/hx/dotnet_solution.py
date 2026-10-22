@@ -62,12 +62,12 @@ class Reader {
                 }).ToArray()
             }).ToArray();
             Console.WriteLine(JsonSerializer.Serialize(new {
-                schema_version = 1, complete = true, platform = properties["Platform"], nodes = nodes
+                complete = true, platform = properties["Platform"], nodes = nodes
             }));
             return 0;
         } catch (Exception error) {
             Console.WriteLine(JsonSerializer.Serialize(new {
-                schema_version = 1, complete = false, reason = error.GetType().Name
+                complete = false, reason = error.GetType().Name
             }));
             return 1;
         }

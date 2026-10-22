@@ -431,7 +431,7 @@ def _run_validation(store,batch_id,workdir,*,env=None):
                 for path,artifact in built.items():
                     if hashlib.sha256((directory/path).read_bytes()).hexdigest()!=artifact:
                         raise Conflict('tested build changed before candidate publication')
-                manifest={'schema_version':1,'source_commit':row['head'],'source_tree':payload['tree'],'source_archive':payload['source_archive'],
+                manifest={'source_commit':row['head'],'source_tree':payload['tree'],'source_archive':payload['source_archive'],
                           'policy_hash':contract['hash'],'artifacts':built,'checks':receipts}
                 payload['build_id']=digest(manifest)
                 payload['build_manifest']=tx.put_artifact(canonical(manifest).encode(),owner_type='validation_build',owner_id=batch_id,slot='manifest')
@@ -684,7 +684,7 @@ def attest_unit(store,batch_id,run_id,*,env=None):
         payload['proof']={'run_id':run_id,'receipts':{name:result['checks'][name] for name in contract['recipes']},
             'failure':None,'head':row['head'],'tree':payload['tree'],'policy_hash':contract['hash'],'source_archive':payload['source_archive']}
         if built:
-            manifest={'schema_version':1,'source_commit':row['head'],'source_tree':payload['tree'],'source_archive':payload['source_archive'],
+            manifest={'source_commit':row['head'],'source_tree':payload['tree'],'source_archive':payload['source_archive'],
                 'policy_hash':contract['hash'],'artifacts':built,'checks':payload['proof']['receipts']}
             payload['build_id']=digest(manifest)
             payload['build_manifest']=tx.put_artifact(canonical(manifest).encode(),owner_type='validation_build',owner_id=batch_id,slot='manifest')

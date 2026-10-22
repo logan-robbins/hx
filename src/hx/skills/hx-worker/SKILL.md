@@ -49,7 +49,7 @@ hx plan binding RUN
 
 ```json
 {"definition_of_done":["Observable behavior holds."],
- "checks":{"unit":{"schema_version":1,"id":"unit","argv":["python3","-m","pytest","tests/test_feature.py"],"cwd":".","inputs":[],"environment":{"complete":true,"executables":[],"inputs":[],"external_versions":{}},"timeout_s":120,"max_output_bytes":100000}},
+ "checks":{"unit":{"id":"unit","argv":["python3","-m","pytest","tests/test_feature.py"],"cwd":".","inputs":[],"environment":{"complete":true,"executables":[],"inputs":[],"external_versions":{}},"timeout_s":120,"max_output_bytes":100000}},
  "coverage":{"acceptance.0":["unit"],"output.proof":["unit"]}}
 ```
 

@@ -52,7 +52,7 @@ def plan_context(store, repository, snapshot, goal, *, required=(), max_bytes=16
             ORDER BY bm25(map_search,3.0,1.0),k.record_id LIMIT 3""", (query, *key)):
             seeds.append(row[0])
     seeds = list(dict.fromkeys(seeds))[:3]
-    brief = {"schema_version": 1, "repo_id": key[0], "snapshot": snapshot, "goal": goal,
+    brief = {"repo_id": key[0], "snapshot": snapshot, "goal": goal,
              "nodes": [], "relations": [], "owners": [], "discovery": [],
              "coverage": {"seed_ids": seeds, "considered": 0, "available_edges": 0, "omitted_edges": 0,
                           "strategy": "exact/lexical seeds, adjacent boundaries, and their interface consumers", "stop": "exhausted_neighborhood"}}
