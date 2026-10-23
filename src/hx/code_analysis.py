@@ -168,20 +168,29 @@ def _graph(conn, repo):
     return nodes, rows, links
 
 
+def _under(path, focus):
+    """Whether `path` lies under any focus; `.` is the whole repository."""
+    return any(p in {".", ""} or path == p or path.startswith(p.rstrip("/") + "/") for p in focus)
+
+
 def _map(conn, nodes, links, focus, budget, limit):
+    """Ranked files with their declarations within `budget` bytes.
+
+    With a focus, every declaring file under it is named: the top `limit` in full while
+    the budget allows, the rest as path and qualified declarations; `omitted` counts what
+    the budget left out, so `complete` says whether the focus was enumerated. Without a
+    focus the same view ranks the whole repository.
+    """
     if budget < 2 or budget > 1024 * 1024:
         raise ValueError("map budget must be between 2 and 1048576 bytes")
-    focused = [
-        n
-        for n in nodes
-        if any(n[1] == p or n[1].startswith(p.rstrip("/") + "/") for p in focus)
-    ]
-    rank = pagerank(nodes, links, focused)
+    candidates = [n for n in nodes if _under(n[1], focus)] if focus else sorted(nodes)
+    rank = pagerank(nodes, links, candidates if focus else ())
     fan_in = defaultdict(set)
     for a, b in links:
         fan_in[b].add(a)
-    result = []
-    for repo, path in sorted(nodes, key=lambda n: (-rank[n], n)):
+    result = {"focus": list(focus), "files": [], "more": [], "omitted": 0, "complete": False}
+    used = len(json.dumps(result).encode())
+    for repo, path in sorted(candidates, key=lambda n: (-rank[n], n)):
         facts = list(facts_in_path(conn, "symbols", path, repo=repo))
         definitions = sorted(
             facts,
@@ -189,41 +198,54 @@ def _map(conn, nodes, links, focus, budget, limit):
         )[:8]
         if not definitions:
             continue
-        row = store.decorate(conn, definitions[0])
-        item = {
-            k: row[k]
-            for k in ("repo", "path", "lane", "extractor", "anchor_sha", "stale")
-        }
-        item.update(
-            rank=round(rank[(repo, path)], 12),
-            fan_in=len(fan_in[(repo, path)]),
-            scopes=sorted(
-                {
-                    r["qualified"].rsplit(".", 1)[0]
+        if len(result["files"]) < limit:
+            row = store.decorate(conn, definitions[0])
+            item = {
+                k: row[k]
+                for k in ("repo", "path", "lane", "extractor", "anchor_sha", "stale")
+            }
+            item.update(
+                rank=round(rank[(repo, path)], 12),
+                fan_in=len(fan_in[(repo, path)]),
+                scopes=sorted(
+                    {
+                        r["qualified"].rsplit(".", 1)[0]
+                        for r in definitions
+                        if "." in r["qualified"]
+                    }
+                ),
+                definitions=[
+                    {
+                        key: store.decorate(conn, r).get(key)
+                        for key in (
+                            "qualified",
+                            "signature",
+                            "line",
+                            "lane",
+                            "extractor",
+                            "anchor_sha",
+                            "stale",
+                        )
+                    }
                     for r in definitions
-                    if "." in r["qualified"]
-                }
-            ),
-            definitions=[
-                {
-                    key: store.decorate(conn, r).get(key)
-                    for key in (
-                        "qualified",
-                        "signature",
-                        "line",
-                        "lane",
-                        "extractor",
-                        "anchor_sha",
-                        "stale",
-                    )
-                }
-                for r in definitions
-            ],
-        )
-        if len(json.dumps([*result, item]).encode()) <= budget:
-            result.append(item)
-        if len(result) >= limit:
-            break
+                ],
+            )
+            size = len(json.dumps(item).encode()) + 1
+            if used + size <= budget:
+                result["files"].append(item)
+                used += size
+                continue
+        compact = {"path": path, "definitions": [r["qualified"] for r in definitions]}
+        size = len(json.dumps(compact).encode()) + 1
+        if used + size <= budget:
+            result["more"].append(compact)
+            used += size
+        else:
+            result["omitted"] += 1
+    while result["more"] and len(json.dumps(result).encode()) > budget:
+        result["more"].pop()
+        result["omitted"] += 1
+    result["complete"] = result["omitted"] == 0
     return result
 
 
@@ -239,16 +261,7 @@ def _submaps(conn, nodes, rows, links, focus, limit):
     candidates = []
     if score > baseline + 1e-12:
         for group in sorted(groups.values()):
-            if (
-                len(group) < 2
-                or focus
-                and not any(
-                    any(
-                        n[1] == p or n[1].startswith(p.rstrip("/") + "/") for p in focus
-                    )
-                    for n in group
-                )
-            ):
+            if len(group) < 2 or focus and not any(_under(n[1], focus) for n in group):
                 continue
             member_set = set(group)
             boundary = [

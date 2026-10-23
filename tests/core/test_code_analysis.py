@@ -50,7 +50,20 @@ def test_map_budget_and_candidate_patch(tmp_path, capsys):
         )
     code_index.index_repo(root, repo)
     assert code_index.main(["map", "--budget", "700", "--focus", "a.py"], root) == 0
-    assert len(capsys.readouterr().out.strip().encode()) <= 700
+    shown = capsys.readouterr().out
+    assert len(shown.strip().encode()) <= 700
+    shown = json.loads(shown)
+    assert [item["path"] for item in shown["files"]] == ["a.py"] and shown["more"] == [] and shown["complete"]
+    # A focus names every declaring file under it: the budget decides detail, not membership.
+    detailed = len(json.dumps(shown["files"][0]).encode())
+    assert code_index.main(["map", "--budget", str(detailed + 400), "--focus", "."], root) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert 1 <= len(shown["files"]) < 6 and shown["omitted"] == 0 and shown["complete"]
+    assert sorted(item["path"] for item in [*shown["files"], *shown["more"]]) == sorted(f"{n}.py" for n in "abcxyz")
+    assert shown["more"][0]["definitions"] == [shown["more"][0]["path"][0]]
+    assert code_index.main(["map", "--budget", "200", "--focus", "."], root) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["omitted"] > 0 and not shown["complete"]
     assert code_index.main(["submaps"], root) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["beats_directory"] and len(result["candidates"]) == 2

@@ -43,9 +43,12 @@ Missing knowledge or an incomplete packet is a progress blocker requiring discov
 Every search you make is receipted to your run: each graph query above and each native
 Grep or Glob, whether it ran or the search cache answered it. `hx task` lists your packet's
 `search_areas`, the directories a prior implementation of its behavior would live in (your
-write paths and the packet's map anchors), and your `searches` with their receipt ids. Search
-those areas: a whole-repository graph query covers every area; a native search covers the
-directory it was pointed at and below.
+write paths and the packet's map anchors), and your `searches` with their receipt ids.
+Enumerate each area first, then traverse: `hx code map --budget BYTES --focus AREA` names
+every declaring file under the area with its declarations and reports `complete`; raise the
+budget until it is, then follow what it shows with `callers`, `contract`, `precedent` and
+`tests-for`. Only a complete area map counts for an area: a lookup by name finds what you
+already know the name of, and a grep is lexical.
 
 Before editing or executing proof commands, submit your exact binding, citing the receipts:
 
@@ -63,8 +66,8 @@ hx plan binding RUN
 
 Cover every actual acceptance, output, and deferred integration obligation exactly, including
 inherited required checks. The example's coverage keys must be replaced by your packet's
-obligations, and `searches` by receipt ids from `hx task` that together cover every search
-area; the binding is refused otherwise. The configured independent reviewer approves the exact frozen hash using
+obligations, and `searches` by receipt ids from `hx task`: a complete area map of every
+search area, with the traversals beside them; the binding is refused otherwise. The configured independent reviewer approves the exact frozen hash using
 `hx plan approve-binding RUN --binding HASH`. You cannot approve yourself. A changed binding
 requires stopped/revised work. Keep the admitted source unchanged until approval.
 

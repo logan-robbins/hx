@@ -51,6 +51,30 @@ from . import models_cmd
 from . import wake as wake_cmd
 from .errors import HxError, ValidationError
 
+
+def _code(rest, root, *, env):
+    """`hx code`: answered by the configured repository service when there is one, else
+    locally; a worker's graph search is then receipted to its run for its binding to cite."""
+    import json
+    shared = None if any(a in {"-h", "--help"} for a in rest) else repo_cmd.code_request(root, rest, env)
+    if shared is not None:
+        print(json.dumps(shared["result"]))
+        status, result = shared["exit_code"], shared["result"]
+    else:
+        printed = []
+
+        def emit(value, **kwargs):
+            if not kwargs.get("file"):
+                printed.append(value)
+            print(value, **kwargs)
+
+        status = code_cmd.main(rest, root, env=env, _emit=emit)
+        result = json.loads(printed[0]) if printed else None
+    from . import search_receipts
+    search_receipts.receipt_graph_query(root, rest, status, env, result)
+    return status
+
+
 IMPLEMENTED = {
     "board": board_cmd.main,
     "companion": companion_cmd.main,
@@ -70,7 +94,7 @@ IMPLEMENTED = {
     "tool-exec": tool_execution_cmd.main,
     "file-read": file_reads_cmd.main,
     "tools": tool_catalog_cmd.main,
-    "code": code_cmd.main,
+    "code": _code,
     "repo": repo_cmd.main,
     "change": change_cmd.main,
     "build": build_cmd.main,
@@ -391,18 +415,6 @@ def main(argv: list[str] | None = None) -> int:
         root = _root_for(rest, env)
         # Authority backs visibility: a worker caller is refused anything outside its column.
         gate(command, rest, env)
-        if command == "code" and not any(a in {"-h", "--help"} for a in rest):
-            shared = repo_cmd.code_request(root, rest, env)
-            if shared is not None:
-                import json
-                print(json.dumps(shared["result"]))
-                status = shared["exit_code"]
-            else:
-                status = IMPLEMENTED[command](rest, root, env=env)
-            # A worker's graph search is receipted to its run for its binding to cite.
-            from . import search_receipts
-            search_receipts.receipt_graph_query(root, rest, status, env)
-            return status
         return IMPLEMENTED[command](rest, root, env=env)
     except HxError as exc:
         print(f"hx: {exc.message}", file=sys.stderr)

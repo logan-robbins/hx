@@ -114,7 +114,7 @@ def remember(tx, row, session, actor, call, request):
         if known:
             status = 'Complete result' if known['complete'] else 'Partial result; absence is not established'
             served = AdmissionDenied(f'Cached search for unchanged scoped sources. {status}: {known["result"]}\nReuse this result; narrow or change the query for additional coverage.')
-            served.receipt = request['receipt']  # The worker searched and has the answer.
+            served.receipt = {**request['receipt'], 'complete': known['complete']}  # The worker searched and has the answer.
             raise served
         tx.db.execute('INSERT INTO search_calls VALUES(?,?,?,?,?)',
                       (row['launch_id'], session, actor, call, canonical(request)))
@@ -134,10 +134,10 @@ def settle(tx, launch, session, actor, call, payload):
         return None
     if isinstance(response, dict) and (response.get('error') or response.get('is_error') or response.get('isError')):
         return None
-    receipt = request['receipt']
     text = response if isinstance(response, str) else canonical(response)
     # Unmarked native output is never treated as exhaustive negative evidence.
     complete = isinstance(response, dict) and response.get('complete') is True and not response.get('truncated')
+    receipt = {**request['receipt'], 'complete': complete}
     if not text.strip() or len(text.encode()) > 2048 or TOKEN in text:
         return receipt
     if fingerprint(request['path'], Path(request['top']), request['contents']) != request['source_hash']:

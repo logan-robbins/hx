@@ -38,11 +38,11 @@ def dependency(task):
 
 
 def searched(store, run):
-    """The receipt of one whole-repository graph query by the run, as `hx code precedent` leaves."""
+    """The receipt of one complete whole-repository area map by the run."""
     from hx import search_receipts
     with store.transaction() as tx:
         repository = tx.db.execute("SELECT json_extract(t.payload,'$.repository') FROM tasks t JOIN runs r ON r.task_id=t.task_id AND r.task_revision=t.revision WHERE r.run_id=?", (run,)).fetchone()[0]
-        return [search_receipts.record(tx, run, "graph", "hx code precedent implement", ".", repository)]
+        return [search_receipts.record(tx, run, "area", "hx code map --focus . --budget 65536", ".", repository, True)]
 
 
 def bind(store, run, *, recipes=None):

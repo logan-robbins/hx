@@ -281,8 +281,11 @@ custom imported kinds. These never validate map relations. `conform` returns
 `{interface, interfaces, implementations, tests, diffs, uncertain, truncated,
 stale, clean}`; overloads, generic constraints and default values cannot certify
 clean parity. `projects [NAME]` returns manifests and project dependencies;
-`map --budget BYTES [--focus PATH...]` returns ranked files with scope headers,
-definitions and fan-in. `map`, `submaps` and `hx plan partition` read file links through one
+`map --budget BYTES [--focus PATH...]` returns `{focus, files, more, omitted, complete}`:
+`files` are ranked files with scope headers, definitions and fan-in, as many as the budget
+and `--limit` allow. With a focus (`.` is the whole repository) every declaring file under it
+is named: the rest as path and qualified declarations in `more`, `omitted` counting what the
+budget left out, `complete` whether the focus was enumerated. `map`, `submaps` and `hx plan partition` read file links through one
 bounded postings query over the checkout's current snapshot (at most 250 000 links, never
 the JSON graph views): a `calls` reference links to every same-named declaration in another
 file (a Natural reference only to an object kind), `imports` resolve to indexed paths or a
@@ -434,16 +437,20 @@ Before edits, the worker submits `hx plan bind RUN --file FILE` with exactly:
 ```
 
 Every acceptance/output/deferred-integration obligation must be covered. Inherited check
-IDs remain required. `searches` cites 1–32 receipts of the run's own searches: the runtime
-receipts every native Grep/Glob the hooks admit, executed or served from the box-wide search
-cache, and every `hx code` graph query the worker runs, each with its kind, query, repository
-and the repository-relative scope it covered (`.` for a whole-repository graph query, each
-focus of a focused map, the path of a native search). The packet's search areas are the
-directory of every write path (a reserved prefix is its own area) and of every source anchor of
-its map inputs, `.` when it declares neither; each cited receipt covers at least one area and
-together they cover every area, so the areas a prior implementation would live in have been
-searched before the first edit. `hx task` lists `search_areas` and `searches`. Binding occurs
-at the unchanged admission source and freezes recipes.
+IDs remain required. `searches` cites 1–32 receipts of the run's own searches. The runtime
+receipts every search a run makes with its kind, query, repository, repository-relative scope
+and completeness: `area`, a focused `hx code map` naming every declaring file under its focus,
+complete when the budget omitted none; `graph`, any other graph query, complete when its
+limit did not cap it; `native`, a Grep/Glob the hooks admitted, executed or served from the
+box-wide search cache, complete only when the native result said so. The packet's search
+areas are the directory of every write path (a reserved prefix is its own area) and of every
+source anchor of its map inputs, `.` when it declares neither. Only a complete area map at
+or above an area covers it: a name lookup finds what the worker already knows the name of
+and a grep is lexical. The cited maps together cover every area, so what exists where a
+prior implementation would live has been enumerated before the first edit; traversal
+receipts (`callers`, `contract`, `precedent`, `tests-for`) are cited beside them for the
+reviewer. `hx task` lists `search_areas` and `searches`. Binding occurs at the unchanged
+admission source and freezes recipes.
 `hx plan binding RUN` exposes the exact proposal; `approve-binding RUN --binding HASH`
 requires the independently named reviewer. Known mutating native tools and proof commands
 refuse unapproved bindings; this does not sandbox arbitrary shell programs.

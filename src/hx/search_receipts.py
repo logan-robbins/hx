@@ -1,19 +1,27 @@
-"""Receipts of the searches a run made, and the packet areas a binding must have searched.
+"""Receipts of the searches a run made, and the packet areas a binding must have mapped.
 
 A worker searches before it builds, and the runtime receipts every search its run makes: a
 native Grep or Glob admitted through the hooks, whether executed or served from the box-wide
 search cache, and every `hx code` query the worker runs from its shell. A receipt is the
-search's kind, its query, the repository it answered for and the repository-relative scope it
-covered: the path a native search was pointed at, each focus of a focused graph map, or `.`
-for a graph query, which answers over the whole indexed repository.
+search's kind, its query, the repository it answered for, the repository-relative scope it
+covered and whether it was complete over that scope.
+
+Three kinds. An `area` receipt is a focused graph map, `hx code map --focus AREA`, which
+names every declaring file under its focus with its declarations; it is complete when the
+budget omitted none. A `graph` receipt is any other graph query: a lookup or traversal by
+name or path, complete when its limit did not cap it. A `native` receipt is a Grep or Glob,
+complete only when the native result said so.
 
 A packet's search areas are where a prior implementation of its behavior would live: the
 directory of every declared write path (a reserved prefix is its own area) and the directory
 of every source anchor of its map inputs; a packet that declares neither has the whole
-repository as its one area. The binding cites receipts of its run, each covering at least
-one area and together covering every area. `hx plan bind` refuses anything else, and known
-mutating native tools refuse an unapproved binding, so the first edit cannot precede a search
-of the areas the packet builds in. `hx task` lists a run's areas and receipts.
+repository as its one area. Only a complete area map covers an area, at the area or above:
+a name lookup finds what the worker already knows the name of and a grep is lexical, so
+neither establishes what exists there. The binding cites receipts of its run that together
+map every area; `hx plan bind` refuses anything else, and known mutating native tools refuse
+an unapproved binding, so the first edit cannot precede an enumeration of the areas the
+packet builds in. Traversal from what the maps show (`callers`, `contract`, `precedent`,
+`tests-for`) is cited beside them for the reviewer. `hx task` lists a run's areas and receipts.
 """
 from __future__ import annotations
 
@@ -24,7 +32,7 @@ import time
 from .continuity_store import digest
 from .errors import ValidationError
 
-KINDS = ("native", "graph")
+KINDS = ("area", "graph", "native")
 #: `hx code` subcommands that search the graph; indexing, auditing, registering and the
 #: journal are not searches.
 GRAPH_QUERIES = {"search", "symbols", "type", "signature", "callers", "tests-for", "conform", "precedent",
@@ -33,25 +41,27 @@ QUERY_BYTES = 256
 CITATIONS = 32
 
 
-def receipt_id(kind, query, scope):
-    return digest([kind, query, scope])[:12]
+def receipt_id(kind, query, scope, repository):
+    return digest([kind, query, scope, repository])[:12]
 
 
-def record(tx, run_id, kind, query, scope, repository):
-    """Receipt one search of `run_id`; an identical search keeps its receipt."""
+def record(tx, run_id, kind, query, scope, repository, complete):
+    """Receipt one search of `run_id`; a repeated search keeps its receipt, complete once any
+    repetition answered completely."""
     if kind not in KINDS:
         raise ValidationError(f"search receipt kind is one of {', '.join(KINDS)}")
     query = query.encode()[:QUERY_BYTES].decode(errors="ignore")
-    identity = receipt_id(kind, query, scope)
-    tx.db.execute("INSERT OR IGNORE INTO search_receipts VALUES(?,?,?,?,?,?,?)",
-                  (run_id, identity, kind, query, scope, repository, time.time()))
+    identity = receipt_id(kind, query, scope, repository)
+    tx.db.execute("""INSERT INTO search_receipts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(run_id,receipt_id)
+        DO UPDATE SET complete=max(search_receipts.complete,excluded.complete)""",
+                  (run_id, identity, kind, query, scope, repository, int(bool(complete)), time.time()))
     return identity
 
 
 def listing(db, run_id):
     """A run's receipts, oldest first."""
-    return [{"id": row[0], "kind": row[1], "query": row[2], "scope": row[3], "repository": row[4]}
-            for row in db.execute("SELECT receipt_id,kind,query,scope,repository FROM search_receipts WHERE run_id=? ORDER BY stamp,receipt_id",
+    return [{"id": row[0], "kind": row[1], "query": row[2], "scope": row[3], "repository": row[4], "complete": bool(row[5])}
+            for row in db.execute("SELECT receipt_id,kind,query,scope,repository,complete FROM search_receipts WHERE run_id=? ORDER BY stamp,receipt_id",
                                   (run_id,))]
 
 
@@ -83,48 +93,49 @@ def areas(db, payload):
 
 
 def cite(tx, run_id, payload, cited):
-    """Validate a binding's `searches`: 1–32 unique receipt ids of this run, each covering an
-    area of the packet, together covering every area."""
+    """Validate a binding's `searches`: 1–32 unique receipt ids of this run for the packet's
+    repository, whose complete area maps together cover every packet area."""
     if (not isinstance(cited, list) or not 1 <= len(cited) <= CITATIONS or len(set(cited)) != len(cited)
             or any(not isinstance(item, str) for item in cited)):
         raise ValidationError(f"binding searches cite 1–{CITATIONS} unique search receipt ids of this run; hx task lists them")
     required = areas(tx.db, payload)
     receipts = {row["receipt_id"]: row for row in tx.db.execute("SELECT * FROM search_receipts WHERE run_id=?", (run_id,))}
-    covered = set()
+    maps = []
     for identity in cited:
         receipt = receipts.get(identity)
         if receipt is None:
             raise ValidationError(f"search receipt {identity} is not a search of this run")
         if receipt["repository"] != payload["repository"]:
             raise ValidationError(f"search receipt {identity} answered for another repository")
-        hits = {area for area in required if covers(receipt["scope"], area)}
-        if not hits:
-            raise ValidationError(f"search receipt {identity} ({receipt['query']}, scope {receipt['scope']}) "
-                                  f"covers none of the packet areas: {', '.join(required)}")
-        covered |= hits
-    missing = [area for area in required if area not in covered]
+        if receipt["kind"] == "area" and receipt["complete"]:
+            maps.append(receipt["scope"])
+    missing = [area for area in required if not any(covers(scope, area) for scope in maps)]
     if missing:
-        raise ValidationError("binding searches leave packet areas unsearched: " + ", ".join(missing))
+        raise ValidationError("binding searches leave packet areas without a complete area map: " + ", ".join(missing)
+                              + "; cite a complete `hx code map --focus AREA --budget BYTES` of each")
 
 
 def graph_queries(argv):
-    """`(query, scope)` for one `hx code` argv that searched the graph, one per focus of a
-    focused map; nothing for a command that is not a search."""
+    """The parsed `hx code` arguments and `(kind, query, scope)` for each search they make:
+    one `area` per focus of a focused map, else one `graph` over the repository; nothing for
+    a command that is not a search."""
     from .code_index import _parser
     try:
         args = _parser().parse_args(argv)
     except SystemExit:
-        return []
+        return None, []
     if args.command not in GRAPH_QUERIES:
-        return []
+        return args, []
     shown = [value for index, value in enumerate(argv)
              if value != "--root" and not value.startswith("--root=") and (index == 0 or argv[index - 1] != "--root")]
     query = "hx code " + " ".join(shown)
-    scopes = [PurePosixPath(focus).as_posix().strip("/") or "." for focus in getattr(args, "focus", None) or []] or ["."]
-    return [(query, scope) for scope in scopes]
+    focus = getattr(args, "focus", None) or []
+    if args.command == "map" and focus:
+        return args, [("area", query, PurePosixPath(item).as_posix().strip("/") or ".") for item in focus]
+    return args, [("graph", query, ".")]
 
 
-def receipt_graph_query(root, argv, status, env):
+def receipt_graph_query(root, argv, status, env, result):
     """Receipt a finished `hx code` search to the calling worker's active run; the Partner,
     the operator and a worker without a run leave none. An `--expect` miss (exit 3) is
     still a search with an answer."""
@@ -133,21 +144,27 @@ def receipt_graph_query(root, argv, status, env):
     who = caller(env)
     if status not in {0, 3} or who is None or who == PARTNER:
         return
-    queries = graph_queries(argv)
+    args, queries = graph_queries(argv)
     if not queries:
         return
     from . import fingerprints
+    from .code_metadata import rows_of
     from .code_snapshot import caller_checkout
-    repo = next((argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "--repo"), None)
-    checkout = caller_checkout(repo)
+    checkout = caller_checkout(getattr(args, "repo", None))
     found = fingerprints.checkout(checkout) if checkout else None
     if found is None:
         return
+    # An area map says whether its budget omitted anything; a bounded query is complete
+    # when its limit did not cap it.
+    if queries[0][0] == "area":
+        complete = isinstance(result, dict) and result.get("complete") is True
+    else:
+        complete = len(rows_of(result)) < getattr(args, "limit", 0)
     from .continuity_store import ContinuityStore
     with ContinuityStore(root) as store:
         run_id = active_run(store.db, who)
         if run_id is None:
             return
         with store.transaction() as tx:
-            for query, scope in queries:
-                record(tx, run_id, "graph", query, scope, found["namespace"])
+            for kind, query, scope in queries:
+                record(tx, run_id, kind, query, scope, found["namespace"], complete)
