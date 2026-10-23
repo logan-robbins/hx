@@ -52,6 +52,11 @@ def overlaps(a, b):
     return a == b or a.startswith(b + "/") or b.startswith(a + "/")
 
 
+def covers(scopes, canonical_path):
+    """Whether a `write_scope` path lies at or under one of the frozen `scopes`."""
+    return any(canonical_path == scope or canonical_path.startswith(scope + "/") for scope in scopes)
+
+
 def _declared(declared, dependency):
     """The producer output a prerequisite names, at its exact version and the kind its need requires."""
     output = declared.get(dependency["output_id"])
@@ -140,8 +145,7 @@ def _definition(body):
                 if not isinstance(output["paths"], list) or not 1 <= len(output["paths"]) <= 64:
                     raise ValidationError("source output requires 1–64 exact file paths")
                 for path in output["paths"]:
-                    canonical_path = write_scope(workdir, path)
-                    if not any(canonical_path == owner or canonical_path.startswith(owner + "/") for owner in scope):
+                    if not covers(scope, write_scope(workdir, path)):
                         raise ValidationError("source output lies outside the unit's declared write scope")
             declared[output["id"]] = output
         if not isinstance(unit["prerequisites"], list) or len(unit["prerequisites"]) > 64:

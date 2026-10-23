@@ -6,10 +6,15 @@ explicitly deny an operation. Worker startup,
 request and tool admission errors deny execution; observation failures retain a
 capture gap instead of inventing successful evidence. A planned hook attaches to
 the ledger without its writer lock and reads through snapshots. When the writer
-is unavailable within `LEDGER_BUDGET_S`, the hook passes the operation through
-and defers its whole delivery to the application loop, which replays it in
-order; contention never denies. Native host crashes and hook timeouts still
-require process reconciliation before ownership is released.
+is unavailable within `LEDGER_BUDGET_S`, the hook passes a read, a search or any
+non-mutating event through and defers its whole delivery to the application
+loop, which replays it in order. A tool start that would edit a file or run a
+shell command is denied instead (exit 2) and spooled as denied, because its
+admission gate (binding approval, the frozen write paths) cannot be checked
+without the ledger. The bound continuity fields alone establish that the run is
+a dependency packet: every planned run is admitted as one, so the hook reads
+nothing to decide. Native host crashes and hook timeouts still require process
+reconciliation before ownership is released.
 """
 
 from __future__ import annotations
@@ -150,6 +155,12 @@ def planned(ledger, delivery, *, write, replay=False):
     from .native_launch import _row
     from . import token_controls
     launch = _row(ledger, run_id)
+    if replay and event == "tool-start" and delivery.get("denied"):
+        # The hook refused the call without the ledger; record the refusal so the host's
+        # error result settles silently.
+        from .native_tools import record_denied
+        record_denied(ledger, run_id, launch_id, payload)
+        return 0
     if replay and event == "tool-start":
         # The deferred call already executed; record it so drain and settlement see it.
         from .native_tools import record_executed
@@ -244,8 +255,20 @@ def replay(store, delivery):
     return planned(store, delivery, write=lambda value: None, replay=True)
 
 
+def mutating(delivery):
+    """A tool start that would edit a file or run a shell command."""
+    from .file_reads import SHELL_TOOLS, tool_name
+    from .runtime_policy import EDIT_TOOLS
+    return delivery["event"] == "tool-start" and tool_name(delivery["payload"]) in EDIT_TOOLS | SHELL_TOOLS
+
+
 def _defer(root, delivery, reason):
     from . import hook_spool
+    if mutating(delivery):
+        hook_spool.record(root, {**delivery, "denied": True}, reason)
+        print(f"hx-hook: {delivery['event']}: {reason}; a packet edit or shell command is not admitted "
+              "without the ledger: retry it", file=sys.stderr)
+        return 2
     hook_spool.record(root, delivery, reason)
     print(f"hx-hook: {delivery['event']}: {reason}; passed through and deferred to the application loop", file=sys.stderr)
     return 0

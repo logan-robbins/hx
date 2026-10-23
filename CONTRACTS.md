@@ -34,18 +34,23 @@ acknowledgment, and process ownership. `hx launch partner` starts the unassigned
 Unknown process or remote outcomes retain their obligations rather than inventing success.
 
 Planned hooks attach to the ledger without its writer lock and read through snapshots. Each
-commit waits at most `hooks.LEDGER_BUDGET_S` for the writer. A hook that cannot get it lets the
-native operation proceed (exit 0). It writes its whole delivery under `state/hook-spool/`, and
-later hooks of the same run queue behind it. Only intentional refusals and the guard deny.
-The application loop replays deferred deliveries in order: a tool start is recorded as
-admitted, and a complete-file read is recorded as undelivered so the agent repeats it. A
-delivery that cannot apply becomes the run's capture gap. Until replayed, deferred deliveries
-count as capture lag, so drain, restart, reset and completion wait.
+commit waits at most `hooks.LEDGER_BUDGET_S` for the writer. A hook that cannot get it lets a
+read, a search or any non-mutating event proceed (exit 0) and writes its whole delivery under
+`state/hook-spool/`; later hooks of the same run queue behind it. A tool start that would edit
+a file or run a shell command is denied instead (exit 2) and spooled as denied: its admission
+gate cannot be checked without the ledger, and the agent retries it. The application loop
+replays deferred deliveries in order: a passed-through tool start is recorded as admitted, a
+denied one as denied, and a complete-file read is recorded as undelivered so the agent repeats
+it. A delivery that cannot apply becomes the run's capture gap. Until replayed, deferred
+deliveries count as capture lag, so drain, restart, reset and completion wait.
 Long work (worktree hashing, bundle compilation, fingerprints, check identities) runs before
 the writer opens, and the transaction re-verifies its inputs and refuses changed ones.
 
 Workers bind their definition of done and exact check recipes before edits/proof. A configured
-independent reviewer approves the frozen hash. Known mutating/proof tools enforce that gate;
+independent reviewer approves the frozen hash. Admission enforces that gate: until approval,
+edit tools are refused and the shell admits only `hx` and read-only inspection
+(`runtime_policy.PREBINDING`, with no output redirected to a file); after approval, an edit
+whose target lies outside the packet's frozen write paths is refused naming them, and
 arbitrary shell commands are not a filesystem sandbox. Worker commands act only on their run.
 
 ## Progress, context, and completion
@@ -452,8 +457,10 @@ receipts (`callers`, `contract`, `precedent`, `tests-for`) are cited beside them
 reviewer. `hx task` lists `search_areas` and `searches`. Binding occurs at the unchanged
 admission source and freezes recipes.
 `hx plan binding RUN` exposes the exact proposal; `approve-binding RUN --binding HASH`
-requires the independently named reviewer. Known mutating native tools and proof commands
-refuse unapproved bindings; this does not sandbox arbitrary shell programs.
+requires the independently named reviewer. Until approval, native edit tools and proof
+commands are refused and the shell admits only `hx` and read-only inspection; after approval,
+edits are admitted only inside the frozen write paths, and arbitrary shell programs are not
+sandboxed.
 
 `publish-contract RUN --output ID --file RECEIPTS` publishes exact regular interface files
 and passing scoped proof while the provider is active. Published versions are immutable.
@@ -513,8 +520,9 @@ runs one pass for one plan and starts the loop when it launched anything. `--dry
 `selected` `{task_id,plan_id,worker_id,launch_key}` and admits nothing; `--max` bounds the pass
 below `per_tick`. A pass orders candidates downstream-first (`downstream_roles` rank, then fleet
 depth: the longest prerequisite chain above the unit across every plan) and gives each an idle seat whose
-`harness.json` role is the unit's `check_policy.role` and which is not its reviewer. A seat is
-idle with no active run; the unit's workdir must also be free. Admission is
+`harness.json` role is the unit's `check_policy.role`, whose workdir is the unit's workdir, and
+which is not its reviewer. A seat is idle with no active run; the unit's workdir must also be
+free. Admission is
 `hx plan assign`'s own atomic check, and launch spawns the native session; launch
 reconciliation submits the prompt.
 
@@ -523,7 +531,11 @@ head]` in `dispatch_launches` (`reserved`, `assigned`, `launched`, `launch_faile
 `deferred` with `retry_at`); a held key is never selected again, so a repeated, concurrent or
 resumed pass never launches one unit revision at one worktree head twice. A pass resumes rows
 a stopped process left (`reserved` without a run is dropped; `assigned` is launched once), and
-records an uncertain or failed native launch as `launch_failed`, never replaying it.
+records an uncertain or failed native launch as `launch_failed`, never replaying it. A failed
+launch ends its run as `failed` and releases its leases and resources, so the unit is a
+candidate again at its next head or through `hx plan assign`; a run whose native session
+ownership is uncertain keeps them until reconciliation. The row's `leases` field records
+`released` or `retained` with the reason.
 
 `config/hx.json` `dispatch` (any other field is refused):
 

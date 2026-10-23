@@ -69,11 +69,14 @@ inherited required checks. The example's coverage keys must be replaced by your 
 obligations, and `searches` by receipt ids from `hx task`: a complete area map of every
 search area, with the traversals beside them; the binding is refused otherwise. The configured independent reviewer approves the exact frozen hash using
 `hx plan approve-binding RUN --binding HASH`. You cannot approve yourself. A changed binding
-requires stopped/revised work. Keep the admitted source unchanged until approval.
+requires stopped/revised work. Until approval, edit tools are refused and your shell admits
+only `hx` and read-only inspection (`ls`, `pwd`, `wc`, `which`, `echo`, `cd`, `git status`,
+`git rev-parse`, `git ls-files`), with no output redirected to a file.
 
 ## Work and progress
 
-Keep source changes inside frozen write scope and retain the admitted branch/worktree identity.
+Edits are admitted only inside the frozen write paths; one anywhere else is refused naming
+them. Retain the admitted branch/worktree identity.
 Do not pull newer source underneath a binding. Request changed inputs/scope through the Partner,
 who stops/replans affected assignments. Record concrete next actions, findings, blockers,
 deliverables, and evidence through typed progress:

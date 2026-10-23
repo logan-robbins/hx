@@ -103,9 +103,10 @@ hx plan verify-integration CONSUMER --integration-run RUN --producer PROVIDER --
 ```
 
 Binding and approval require the unchanged admission source. Binding recipes freeze before
-edits; the implementing worker cannot approve its own binding. Native known mutating tools
-and proof paths reject an unapproved binding. This is deterministic lifecycle enforcement,
-not a filesystem sandbox for arbitrary shell programs.
+edits; the implementing worker cannot approve its own binding. Native edit tools and proof
+paths reject an unapproved binding, the shell admits only `hx` and read-only inspection until
+approval, and an approved packet's edits are admitted only inside its frozen write paths. This
+is deterministic lifecycle enforcement, not a filesystem sandbox for arbitrary shell programs.
 
 A hard prerequisite requires completed exact output and installation proof as appropriate.
 A `contract` or `substitutable` prerequisite names the immutable contract output/version,

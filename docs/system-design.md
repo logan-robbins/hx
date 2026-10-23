@@ -132,8 +132,9 @@ plan waves describe possible parallelism; `ready` and `assign` recheck actual co
 | 10. External deployment | The deployable candidate and tested artifact are handed to the product's release system | The configured CI/CD job, platform API, or deployment CLI consumes the verified artifact. HX exposes deployability and evidence through its delivery records; it does not provide a universal `hx deploy` command or imply a remote deployment. | This action is downstream of HX's deploy gate. Post-deploy health checks and rollback behavior depend on the product's configured release system. |
 
 Native worker tool names vary by configured harness. The read, search, edit, write, and shell
-calls above describe capabilities; HX gates the planned lifecycle and captures observed
-events, but arbitrary shell commands are not a filesystem sandbox. The Companion processes
+calls above describe capabilities; HX gates the planned lifecycle (edits to the frozen write
+paths, the shell to `hx` and read-only inspection until binding approval) and captures
+observed events, but arbitrary shell commands are not otherwise a filesystem sandbox. The Companion processes
 bounded captured deltas and proposes structured task/map updates; it does not execute worker
 commands. Jev judges bounded observation and routing candidates, not dependency truth,
 absence, or deployment readiness.

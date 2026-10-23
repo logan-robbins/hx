@@ -123,7 +123,9 @@ Only the independently configured reviewer can approve that exact frozen binding
 remain unchanged through approval. Revised recipes require stopped/revised work. Check receipt
 reuse requires complete matching source, recipe, environment, toolchain, fixture, platform,
 and external identities; unknown closures use broad source fingerprints rather than guessed
-completeness. Native shell tools are not a filesystem sandbox.
+completeness. Until approval the native shell admits only `hx` and read-only inspection, and
+edits are admitted only inside the frozen write paths; native shell tools are not otherwise a
+filesystem sandbox.
 
 Workers report current actions, blockers, findings, and evidence through `hx progress`.
 A blocker does not release ownership. Audit pauses unexpected writes and retains leases;

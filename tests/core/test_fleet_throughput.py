@@ -1,4 +1,4 @@
-"""Fleet throughput: hooks never deny for contention; checks and passes leave the tick."""
+"""Fleet throughput: non-mutating hooks never deny for contention; checks and passes leave the tick."""
 from __future__ import annotations
 
 import json
@@ -27,6 +27,11 @@ def quiet_companions(monkeypatch):
     monkeypatch.setattr(learning_companion, 'select', lambda *a, **kw: None)
 
 
+def fetch(call, **changes):
+    """A tool hx does not classify: passed through and deferred under contention."""
+    return payload(call, tool_name='WebFetch', tool_input={'url': f'https://example.test/{call}'}, **changes)
+
+
 def profile(root, **sections):
     path = root / 'config' / 'hx.json'
     config = json.loads(path.read_text()) if path.is_file() else {}
@@ -35,7 +40,7 @@ def profile(root, **sections):
     path.write_text(json.dumps(config))
 
 
-def test_concurrent_hooks_never_deny_beside_a_mutating_loop(runtime, monkeypatch, capsys):
+def test_concurrent_non_mutating_hooks_never_deny_beside_a_mutating_loop(runtime, monkeypatch, capsys):
     store, _, run, env = runtime
     row = submitted(runtime)
     quiet_companions(monkeypatch)
@@ -47,8 +52,8 @@ def test_concurrent_hooks_never_deny_beside_a_mutating_loop(runtime, monkeypatch
         return time.monotonic() - began, result
     def burst(tag):
         with ThreadPoolExecutor(64) as pool:
-            starts = list(pool.map(lambda index: invoke('tool-start', payload(f'{tag}-{index}')), range(64)))
-            results = list(pool.map(lambda index: invoke('log', payload(f'{tag}-{index}', tool_response='done')), range(64)))
+            starts = list(pool.map(lambda index: invoke('tool-start', fetch(f'{tag}-{index}')), range(64)))
+            results = list(pool.map(lambda index: invoke('log', fetch(f'{tag}-{index}', tool_response='done')), range(64)))
         return starts + results
     def settled():
         # Results that arrived behind another of the session's deliveries queue; the loop delivers them in order.
@@ -91,7 +96,7 @@ def test_concurrent_hooks_never_deny_beside_a_mutating_loop(runtime, monkeypatch
     assert p95(contended) - p95(idle) < hooks.LEDGER_BUDGET_S
 
 
-def test_contended_hook_passes_through_and_the_loop_replays_it_in_order(runtime, monkeypatch):
+def test_contended_hook_passes_through_and_the_loop_replays_it_in_order(runtime, monkeypatch, capsys):
     store, _, run, _ = runtime
     row = submitted(runtime)
     monkeypatch.setattr(hooks, 'LEDGER_BUDGET_S', 0.3)
@@ -99,29 +104,60 @@ def test_contended_hook_passes_through_and_the_loop_replays_it_in_order(runtime,
     holder.execute('BEGIN IMMEDIATE')
     try:
         began = time.monotonic()
-        assert fire(store, run, row, 'tool-start', payload('deferred')) == 0
+        assert fire(store, run, row, 'tool-start', fetch('deferred')) == 0
         assert time.monotonic() - began < 5
         assert len(hook_spool.pending(store.root, run)) == 1
         # Later hooks of the run queue behind it without waiting for the writer.
         began = time.monotonic()
-        assert fire(store, run, row, 'log', payload('deferred', tool_response='done')) == 0
+        assert fire(store, run, row, 'log', fetch('deferred', tool_response='done')) == 0
         assert time.monotonic() - began < .3
         assert len(hook_spool.pending(store.root, run)) == 2
+        # A file edit or shell command is refused without the ledger, and spooled as denied.
+        assert fire(store, run, row, 'tool-start', payload('refused')) == 2
+        edit = {'file_path': 'src/implement.py', 'content': ''}
+        assert fire(store, run, row, 'tool-start', payload('refused-edit', tool_name='Write', tool_input=edit)) == 2
+        assert 'hx-hook: tool-start: an earlier observation of this run is deferred; a packet edit or shell command is not admitted without the ledger: retry it' in capsys.readouterr().err
+        assert fire(store, run, row, 'log', payload('refused', tool_response='blocked', is_error=True)) == 0
+        assert fire(store, run, row, 'tool-start', fetch('after-refusal')) == 0
+        assert len(hook_spool.pending(store.root, run)) == 6
     finally:
         holder.rollback()
         holder.close()
     # Until the loop replays them, deferred hooks are capture lag: every drain and completion barrier waits.
-    assert native_producer.status(store, run)['deferred_hooks'] == 2 and native_producer.status(store, run)['lag']
+    assert native_producer.status(store, run)['deferred_hooks'] == 6 and native_producer.status(store, run)['lag']
     with pytest.raises(Conflict, match='unacknowledged deliveries'), store.snapshot() as tx:
         native_producer.require_drained(tx, run)
     applied = hook_spool.ingest(store)
-    assert [item['event'] for item in applied] == ['tool-start', 'log']
-    assert not any('gap' in item for item in applied)
+    assert [item['event'] for item in applied] == ['tool-start', 'log', 'tool-start', 'tool-start', 'log', 'tool-start']
+    assert not any('gap' in item for item in applied), applied
     assert hook_spool.pending(store.root) == []
-    assert store.db.execute("SELECT status FROM native_tool_calls WHERE call_id='deferred'").fetchone()[0] == 'settled'
+    statuses = {call: status for call, status in store.db.execute("SELECT call_id,status FROM native_tool_calls")}
+    assert statuses == {'deferred': 'settled', 'refused': 'denied', 'refused-edit': 'denied', 'after-refusal': 'admitted'}
     assert native_producer.status(store, run)['gap'] is None
     # With nothing deferred, hooks admit directly again.
     assert fire(store, run, row, 'tool-start', payload('direct')) == 0
+    assert native_tools.pending(store, row['launch_id']) == 2
+
+
+def test_a_mutating_hook_is_denied_when_the_writer_is_held_and_its_error_result_settles(runtime, monkeypatch, capsys):
+    store, _, run, _ = runtime
+    row = submitted(runtime)
+    monkeypatch.setattr(hooks, 'LEDGER_BUDGET_S', 0.3)
+    holder = sqlite3.connect(store.path, isolation_level=None)
+    holder.execute('BEGIN IMMEDIATE')
+    try:
+        assert fire(store, run, row, 'tool-start', payload('held')) == 2
+        assert 'ledger unavailable within the hook budget; a packet edit or shell command is not admitted without the ledger: retry it' in capsys.readouterr().err
+        assert fire(store, run, row, 'tool-start', payload('held-read', tool_name='Grep',
+                    tool_input={'path': str(store.root), 'pattern': 'x', 'head_limit': 5})) == 0
+    finally:
+        holder.rollback()
+        holder.close()
+    assert [item['event'] for item in hook_spool.ingest(store)] == ['tool-start', 'tool-start']
+    statuses = {call: status for call, status in store.db.execute("SELECT call_id,status FROM native_tool_calls")}
+    assert statuses == {'held': 'denied', 'held-read': 'admitted'}
+    assert fire(store, run, row, 'log', payload('held', tool_response='blocked', is_error=True)) == 0
+    assert native_producer.status(store, run)['gap'] is None
     assert native_tools.pending(store, row['launch_id']) == 1
 
 
