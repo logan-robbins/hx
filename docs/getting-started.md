@@ -80,7 +80,8 @@ The Partner explores current graph dependencies and searches for existing capabi
 building. It defines observable dependency packets, maximizes useful parallel work, prepares
 separate worker worktrees, reserves ready runs, and explicitly launches their native controllers.
 Every directive uses this flow; apparent request size does not determine packet count.
-Workers bind exact checks before edits and obtain independent approval. Typed blockers bring
+Workers search where a prior implementation would live, bind exact checks citing those
+searches before edits, and obtain independent approval. Typed blockers bring
 unresolved decisions back to the Partner; changed scope requires stopped/revised work.
 
 The runtime verifies exact source/dependencies, approved checks, managed-operation drain,

@@ -72,8 +72,8 @@ def require_bound(task):
 
 def bind_checks(store, run_id, body):
     from .unit_execution import _run, workspace, _changed
-    if not isinstance(body, dict) or body.keys() != {'definition_of_done', 'checks', 'coverage'}:
-        raise ValidationError('binding requires definition_of_done, checks, coverage')
+    if not isinstance(body, dict) or body.keys() != {'definition_of_done', 'checks', 'coverage', 'searches'}:
+        raise ValidationError('binding requires definition_of_done, checks, coverage, searches')
     from .planning import _statements
     _statements(body['definition_of_done'], 'worker Definition of done', required=True)
     if not isinstance(body['checks'], dict) or not 1 <= len(body['checks']) <= 16:
@@ -96,6 +96,8 @@ def bind_checks(store, run_id, body):
         for ids in body['coverage'].values():
             if not isinstance(ids, list) or not ids or any(not isinstance(name,str) or name not in body['checks'] for name in ids) or len(ids) != len(set(ids)):
                 raise ValidationError('coverage needs unique assigned check IDs for each obligation')
+        from .search_receipts import cite
+        cite(tx, run_id, task['payload'], body['searches'])
         existing = tx.db.execute('SELECT payload FROM unit_check_bindings WHERE task_id=? AND task_revision=?', (task['task_id'],task['revision'])).fetchone()
         if existing:
             if json.loads(existing[0]) != body:

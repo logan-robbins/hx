@@ -396,7 +396,13 @@ def main(argv: list[str] | None = None) -> int:
             if shared is not None:
                 import json
                 print(json.dumps(shared["result"]))
-                return shared["exit_code"]
+                status = shared["exit_code"]
+            else:
+                status = IMPLEMENTED[command](rest, root, env=env)
+            # A worker's graph search is receipted to its run for its binding to cite.
+            from . import search_receipts
+            search_receipts.receipt_graph_query(root, rest, status, env)
+            return status
         return IMPLEMENTED[command](rest, root, env=env)
     except HxError as exc:
         print(f"hx: {exc.message}", file=sys.stderr)

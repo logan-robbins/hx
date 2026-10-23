@@ -117,7 +117,7 @@ def inspect_call(row, task, observation, *, root=None):
     name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
     args = observation.get('tool_input', observation.get('toolInput'))
     if task.get('dependency_packet') and task.get('binding_status') != 'approved' and name in {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace', 'apply_patch'}:
-        raise AdmissionDenied('bind packet checks and obtain independent policy approval before source edits')
+        raise AdmissionDenied('search the packet areas, bind packet checks citing the search receipts, and obtain independent policy approval before source edits')
     from .continuity_store import canonical
     replacing = None
     if name in {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace'} and isinstance(args, dict):

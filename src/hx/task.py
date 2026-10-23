@@ -21,6 +21,10 @@ def task(root, item_id, *, run_id=None):
             raise Refused('packet belongs to another worker')
         binding = rows(db, 'SELECT * FROM unit_check_bindings WHERE run_id=?', (result['run_id'],))
         result['binding'] = binding[0] if binding else None
+        from .search_receipts import areas, listing
+        # Where a prior implementation would live, and the receipts a binding can cite.
+        result['search_areas'] = areas(db, result['payload'])
+        result['searches'] = listing(db, result['run_id'])
         return json.dumps(result, indent=2)
 
 

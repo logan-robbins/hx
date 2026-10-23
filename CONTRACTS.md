@@ -429,11 +429,21 @@ Before edits, the worker submits `hx plan bind RUN --file FILE` with exactly:
 ```json
 {"definition_of_done":["Observable result"],"checks":{"CHECK":"exact check recipe"},
  "coverage":{"acceptance.0":["CHECK"],"output.OUTPUT":["CHECK"],
- "integration.PRODUCER/CONTRACT":["INTEGRATION_CHECK"]}}
+ "integration.PRODUCER/CONTRACT":["INTEGRATION_CHECK"]},
+ "searches":["RECEIPT"]}
 ```
 
 Every acceptance/output/deferred-integration obligation must be covered. Inherited check
-IDs remain required. Binding occurs at the unchanged admission source and freezes recipes.
+IDs remain required. `searches` cites 1–32 receipts of the run's own searches: the runtime
+receipts every native Grep/Glob the hooks admit, executed or served from the box-wide search
+cache, and every `hx code` graph query the worker runs, each with its kind, query, repository
+and the repository-relative scope it covered (`.` for a whole-repository graph query, each
+focus of a focused map, the path of a native search). The packet's search areas are the
+directory of every write path (a reserved prefix is its own area) and of every source anchor of
+its map inputs, `.` when it declares neither; each cited receipt covers at least one area and
+together they cover every area, so the areas a prior implementation would live in have been
+searched before the first edit. `hx task` lists `search_areas` and `searches`. Binding occurs
+at the unchanged admission source and freezes recipes.
 `hx plan binding RUN` exposes the exact proposal; `approve-binding RUN --binding HASH`
 requires the independently named reviewer. Known mutating native tools and proof commands
 refuse unapproved bindings; this does not sandbox arbitrary shell programs.

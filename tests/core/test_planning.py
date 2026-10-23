@@ -37,6 +37,14 @@ def dependency(task):
 
 
 
+def searched(store, run):
+    """The receipt of one whole-repository graph query by the run, as `hx code precedent` leaves."""
+    from hx import search_receipts
+    with store.transaction() as tx:
+        repository = tx.db.execute("SELECT json_extract(t.payload,'$.repository') FROM tasks t JOIN runs r ON r.task_id=t.task_id AND r.task_revision=t.revision WHERE r.run_id=?", (run,)).fetchone()[0]
+        return [search_receipts.record(tx, run, "graph", "hx code precedent implement", ".", repository)]
+
+
 def bind(store, run, *, recipes=None):
     from hx import dependency_packets
     task = store.db.execute("SELECT t.payload FROM tasks t JOIN runs r ON r.task_id=t.task_id AND r.task_revision=t.revision WHERE run_id=?", (run,)).fetchone()
@@ -45,7 +53,8 @@ def bind(store, run, *, recipes=None):
     primary = next(iter(recipes))
     body = {"definition_of_done": ["Every packet obligation has current proof."],
             "checks": recipes,
-            "coverage": {name: [primary] for name in dependency_packets.obligations(payload)}}
+            "coverage": {name: [primary] for name in dependency_packets.obligations(payload)},
+            "searches": searched(store, run)}
     proposed = dependency_packets.bind_checks(store, run, body)
     dependency_packets.approve_binding(store, run, proposed["binding_hash"], payload["check_policy"]["reviewer"])
     return body

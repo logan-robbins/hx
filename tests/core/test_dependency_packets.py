@@ -11,7 +11,7 @@ from hx.errors import Refused, ValidationError
 from .test_appmap import git, mapped
 from .test_map_updates import active
 from .test_checks import definition
-from .test_planning import plan, unit
+from .test_planning import plan, searched, unit
 from .test_unit_execution import fleet, commit
 
 
@@ -23,16 +23,17 @@ def packet(repo, name='implement', *, paths=None, prerequisites=None, resources=
     return body
 
 
-def binding(task, *, recipes=None):
+def binding(store, run, task, *, recipes=None):
     primary=next(iter(recipes)) if recipes else 'unit'
     return {'definition_of_done':['Every packet obligation has a current passing check.'],
             'checks':recipes or {'unit':definition()},
-            'coverage':{name:[primary] for name in packets.obligations(task)}}
+            'coverage':{name:[primary] for name in packets.obligations(task)},
+            'searches':searched(store,run)}
 
 
 def bind(store, run, *, recipes=None):
     task = store.db.execute('SELECT t.payload FROM tasks t JOIN runs r ON r.task_id=t.task_id AND r.task_revision=t.revision WHERE run_id=?',(run,)).fetchone()
-    body = binding(json.loads(task[0]),recipes=recipes)
+    body = binding(store,run,json.loads(task[0]),recipes=recipes)
     proposed = packets.bind_checks(store,run,body)
     packets.approve_binding(store,run,proposed['binding_hash'],'qa-001')
     return body
@@ -51,7 +52,7 @@ def test_partner_packets_omit_scripts_worker_binds_before_edits_and_policy_revie
     with pytest.raises(Conflict,match='approval'):
         units.complete(store,run,{})
     task = planning.assignment(store,'implement')
-    body = binding(task)
+    body = binding(store,run,task)
     proposed = packets.bind_checks(store,run,body)
     assert planning.assignment(store,'implement')['binding_status']=='proposed'
     with pytest.raises(Refused,match='independent'):
@@ -72,11 +73,11 @@ def test_binding_rejects_incomplete_coverage_and_after_first_edit(fleet):
     store,repo=fleet[:2]
     planning.apply(store,plan(fleet,[packet(repo)]))
     run=units.assign(store,'implement',1,'eng-001')['run_id']
-    body=binding(planning.assignment(store,'implement'))
+    body=binding(store,run,planning.assignment(store,'implement'))
     body['coverage'].pop('acceptance.0')
     with pytest.raises(ValidationError,match='cover every'):
         packets.bind_checks(store,run,body)
-    body=binding(planning.assignment(store,'implement'))
+    body=binding(store,run,planning.assignment(store,'implement'))
     (repo/'src').mkdir()
     (repo/'src/implement.py').write_text('edited = True\n')
     with pytest.raises(Conflict,match='clean|first edit'):
@@ -105,7 +106,7 @@ def publish_interface(fleet):
     contract_recipe['id']='contract-check'
     contract_recipe['source']={'complete':True,'inputs':['api.py'],'dependencies':[]}
     recipe=definition("from pathlib import Path; assert Path('provider.py').read_text() == 'provider_value = 42\\n'")
-    body=binding(planning.assignment(store,'producer'),recipes={'unit':recipe,'contract-check':contract_recipe})
+    body=binding(store,run,planning.assignment(store,'producer'),recipes={'unit':recipe,'contract-check':contract_recipe})
     body['coverage']['output.interface']=['contract-check']
     proposal=packets.bind_checks(store,run,body)
     packets.approve_binding(store,run,proposal['binding_hash'],'qa-001')
@@ -216,7 +217,7 @@ def test_packet_commands_are_reachable_and_worker_ownership_is_enforced(fleet,tm
     result=run_hx('plan','apply','--root',str(store.root),'--file',str(path),env_extra=operator_env)
     assert result.returncode==0,result.stderr
     run=units.assign(store,'implement',1,'eng-001')['run_id']
-    bound=binding(planning.assignment(store,'implement'),recipes={'unit':definition("from runpy import run_path; assert run_path('compiler.py')['Compiler']().build() == 'context'")})
+    bound=binding(store,run,planning.assignment(store,'implement'),recipes={'unit':definition("from runpy import run_path; assert run_path('compiler.py')['Compiler']().build() == 'context'")})
     source=tmp_path/'checks.json'
     source.write_text(json.dumps(bound))
     worker_env={'HARNESS_ID':'eng-001','HOME':str(tmp_path/'worker-home')}
@@ -257,7 +258,7 @@ def test_separate_integration_proves_real_provider_and_publishes_deployability(f
     consumer_run=units.assign(store,'consumer',1,'eng-002')['run_id']
     integration_recipe=definition("from runpy import run_path; assert run_path('provider.py')['provider_value'] == run_path('app.py')['consumer_value'] == 42")
     integration_recipe['id']='real-integration'
-    consumer_binding=binding(planning.assignment(store,'consumer'),recipes={'unit':definition("from pathlib import Path; assert Path('app.py').read_text() == 'consumer_value = 42\\n'"),'real-integration':integration_recipe})
+    consumer_binding=binding(store,consumer_run,planning.assignment(store,'consumer'),recipes={'unit':definition("from pathlib import Path; assert Path('app.py').read_text() == 'consumer_value = 42\\n'"),'real-integration':integration_recipe})
     consumer_binding['coverage']['integration.producer/interface']=['real-integration']
     proposal=packets.bind_checks(store,consumer_run,consumer_binding)
     packets.approve_binding(store,consumer_run,proposal['binding_hash'],'qa-001')
@@ -270,7 +271,7 @@ def test_separate_integration_proves_real_provider_and_publishes_deployability(f
     commit(repo)
     units.complete(store,producer_run,run_receipts(store,producer_run,['unit','contract-check']))
     integration_run=units.assign(store,'integration',1,'eng-003')['run_id']
-    integration_binding=binding(planning.assignment(store,'integration'),recipes={'unit':definition(),'real-integration':integration_recipe})
+    integration_binding=binding(store,integration_run,planning.assignment(store,'integration'),recipes={'unit':definition(),'real-integration':integration_recipe})
     integration_binding['coverage']['output.installed'].append('real-integration')
     proposal=packets.bind_checks(store,integration_run,integration_binding)
     packets.approve_binding(store,integration_run,proposal['binding_hash'],'qa-001')
@@ -343,7 +344,7 @@ def test_contract_publication_rechecks_declared_external_input_at_commit_boundar
     recipe=definition("from pathlib import Path; assert Path('api.py').read_text() == 'def adapt(value): return value\\n'")
     recipe['id']='contract-check'
     recipe['inputs']=[str(fixture)]
-    body=binding(planning.assignment(store,'producer'),recipes={'unit':definition(),'contract-check':recipe})
+    body=binding(store,run,planning.assignment(store,'producer'),recipes={'unit':definition(),'contract-check':recipe})
     body['coverage']['output.interface']=['contract-check']
     proposal=packets.bind_checks(store,run,body)
     packets.approve_binding(store,run,proposal['binding_hash'],'qa-001')

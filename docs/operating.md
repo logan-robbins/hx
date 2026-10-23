@@ -40,7 +40,8 @@ hx launch ID --run RUN --request REQUEST
 Assignment reserves ownership. Explicit launch advances native startup; repeat the original
 request to reconcile uncertainty. A reservation or visible pane alone does not prove delivery.
 
-Workers explore/reuse, bind their exact checks with `hx plan bind`, obtain independent approval,
+Workers search the packet's areas, bind their exact checks with `hx plan bind` citing the
+search receipts, obtain independent approval,
 implement within frozen scope, and record typed progress. They retain admitted source identity;
 changed contracts or scope require the Partner to stop/replan affected work. `hx complete done`
 requests managed checks, drain, output proof, publication, and ownership release.

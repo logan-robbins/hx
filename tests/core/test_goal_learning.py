@@ -41,7 +41,7 @@ def complete_goal(active):
     run = unit_execution.assign(store, 'improve.work', 1, 'eng-001')['run_id']
     from .test_dependency_packets import binding
     task=planning.assignment(store,'improve.work')
-    proposed=dependency_packets.bind_checks(store,run,binding(task,recipes=draft['recipe_suggestions']))
+    proposed=dependency_packets.bind_checks(store,run,binding(store,run,task,recipes=draft['recipe_suggestions']))
     dependency_packets.approve_binding(store,run,proposed['binding_hash'],'qa-001')
     receipt = checks.run_check(store, run, 'compiler-check')
     done = unit_execution.complete(store, run, {'compiler-check': receipt['receipt_id']})

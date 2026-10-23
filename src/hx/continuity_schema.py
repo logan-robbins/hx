@@ -334,6 +334,7 @@ CREATE INDEX map_publication_lookup ON map_publications(repository,snapshot,reco
 CREATE TABLE map_aliases(repository TEXT NOT NULL,snapshot TEXT NOT NULL,record_id TEXT NOT NULL,version INTEGER NOT NULL,term TEXT NOT NULL,PRIMARY KEY(repository,snapshot,record_id,term));
 CREATE INDEX map_alias_lookup ON map_aliases(repository,snapshot,term);
 CREATE TABLE search_calls(launch_id TEXT NOT NULL,session_id TEXT NOT NULL,actor_id TEXT NOT NULL,call_id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(launch_id,session_id,actor_id,call_id));
+CREATE TABLE search_receipts(run_id TEXT NOT NULL REFERENCES runs(run_id),receipt_id TEXT NOT NULL,kind TEXT NOT NULL,query TEXT NOT NULL,scope TEXT NOT NULL,repository TEXT NOT NULL,stamp REAL NOT NULL,PRIMARY KEY(run_id,receipt_id));
 CREATE TABLE "native_launches"(launch_id TEXT PRIMARY KEY REFERENCES native_launch_contracts(launch_id),run_id TEXT NOT NULL REFERENCES runs(run_id),request_id TEXT NOT NULL,request_hash TEXT NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,error TEXT);
 CREATE UNIQUE INDEX active_native_launch ON native_launches(run_id) WHERE status<>'archived';
 INSERT INTO ledger_meta VALUES(1,0);

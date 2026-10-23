@@ -87,8 +87,11 @@ it retains prior paths and refuses dirty or different-source copies.
 
 Dependency packet plans declare `check_policy` and `resources`; workers bind executable checks.
 Behavior/acceptance and output obligations remain fixed. Policy names an independent
-reviewer and required check IDs. Worker bindings supply exact recipes and a coverage map
-for every `acceptance.N`, `output.ID`, and deferred `integration.PRODUCER/CONTRACT`.
+reviewer and required check IDs. Worker bindings supply exact recipes, a coverage map
+for every `acceptance.N`, `output.ID`, and deferred `integration.PRODUCER/CONTRACT`, and
+`searches`: receipts of the run's own searches that together cover the packet's search areas
+(the directories of its write paths and map anchors), so the places a prior implementation
+would live are searched before the first edit.
 
 ```sh
 hx plan bind RUN --file binding.json

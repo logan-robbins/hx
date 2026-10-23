@@ -140,8 +140,9 @@ See [getting started](docs/getting-started.md) for credentials and installation.
 
 Worker tasks use one dependency packet lifecycle. A configured source workdir precedes admission; optional provisioning is needed only when no
 suitable prepared directory exists; `hx plan assign` reserves ownership and explicit `hx launch ID
---run RUN --request REQUEST` advances native startup. Workers bind executable checks before
-edits and obtain approval from the configured independent reviewer. Empty write scopes still
+--run RUN --request REQUEST` advances native startup. Workers search the packet's areas, bind
+executable checks citing those search receipts before edits, and obtain approval from the
+configured independent reviewer. Empty write scopes still
 require a current repository graph. The ledger is authoritative for task state and views.
 
 Tests exercise named lifecycle, concurrency, recovery, graph, and proof boundaries. They do

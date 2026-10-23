@@ -40,7 +40,7 @@ def publish(fleet, producer):
     check = definition(f"from pathlib import Path; assert Path('api.py').read_text() == {API!r}")
     check["id"] = "contract-check"
     check["source"] = {"complete": True, "inputs": ["api.py"], "dependencies": []}
-    body = binding(planning.assignment(store, "producer"), recipes={"unit": definition(), "contract-check": check})
+    body = binding(store, run, planning.assignment(store, "producer"), recipes={"unit": definition(), "contract-check": check})
     body["coverage"]["output.interface"] = ["contract-check"]
     proposal = packets.bind_checks(store, run, body)
     packets.approve_binding(store, run, proposal["binding_hash"], "qa-001")

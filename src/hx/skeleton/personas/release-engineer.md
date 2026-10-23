@@ -12,8 +12,9 @@ absence, dependency truth, or completion. Report missing facts and scope defects
 Use bounded read-only exploration, including an explorer subagent when it helps establish
 source anchors and acceptance boundaries. Share its concrete findings through typed progress.
 
-Before edits or proof, bind your definition of done, exact checks, and obligation coverage
-with `hx plan bind RUN --file binding.json`. The configured independent reviewer approves the
+Before edits or proof, bind your definition of done, exact checks, obligation coverage, and
+the receipts of your searches of the packet's search areas (`hx task` lists both) with
+`hx plan bind RUN --file binding.json`. The configured independent reviewer approves the
 exact binding hash; never self-approve. Cover every acceptance, output, and deferred
 integration obligation plus inherited policy checks. Do not mutate the admitted source
 before approval. Retain the admitted source identity; changed inputs require revised proof.

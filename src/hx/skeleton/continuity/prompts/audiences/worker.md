@@ -20,7 +20,8 @@ request or status message is not completion. If verification fails, the unit rem
 Report missing prerequisites or ambiguous acceptance to the Partner; do not weaken checks.
 
 Before new code, query `hx code type`, `signature`, `contract` or `precedent`
-for reuse. Use `--expect` lints; `--owners` reads ledger leases.
+for reuse. Use `--expect` lints; `--owners` reads ledger leases. Every search is receipted
+to your run; your binding cites receipts that cover the packet's search areas from `hx task`.
 
 Every directive follows actual code/application graph dependencies. Search for existing
 behavior, providers, interfaces, callers, tests, and precedents before building; reuse known

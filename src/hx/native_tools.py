@@ -82,7 +82,7 @@ def admit(store, run_id, launch_id, payload, *, adapter):
     """Commit ownership before allowing execution; serialize with drain/finish."""
     try:
         _admit(store, run_id, launch_id, payload, adapter)
-    except AdmissionDenied:
+    except AdmissionDenied as exc:
         # Hosts may still emit an error result for a deliberately blocked call.
         # Retain that identity so it does not masquerade as missing capture.
         session, actor, call, fingerprint = _identity(payload)
@@ -93,6 +93,10 @@ def admit(store, run_id, launch_id, payload, *, adapter):
                     tx._change()
                     tx.db.execute("INSERT OR IGNORE INTO native_tool_calls VALUES(?,?,?,?,?,'denied')",
                                   (launch_id, session, actor, call, fingerprint))
+                    served = getattr(exc, "receipt", None)
+                    if served:  # A search the cache answered is a search the worker made.
+                        from .search_receipts import record
+                        record(tx, run_id, **served)
         except LedgerBusy:
             pass  # The refusal stands; its unmatched error result becomes a capture gap.
         raise
@@ -204,4 +208,7 @@ def settle(tx, run_id, session_id, payload):
     from .runtime_policy import settled
     settled(tx, row['launch_id'], session, actor, call, payload)
     from .search_coverage import settle as settle_search
-    settle_search(tx, row['launch_id'], session, actor, call, payload)
+    receipt = settle_search(tx, row['launch_id'], session, actor, call, payload)
+    if receipt:
+        from .search_receipts import record
+        record(tx, run_id, **receipt)

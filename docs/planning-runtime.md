@@ -103,8 +103,12 @@ Read returned controller state and reconcile uncertainty using that same request
 
 ## Worker binding and proof
 
-Before edits/proof, the worker proposes exact definition of done, check recipes, and coverage
-for every acceptance/output/deferred-integration obligation plus required policy checks:
+Before edits/proof, the worker proposes exact definition of done, check recipes, coverage
+for every acceptance/output/deferred-integration obligation plus required policy checks, and
+the receipts of its searches. The runtime receipts every search a run makes (native Grep/Glob
+through the hooks, `hx code` queries from the worker's shell); the cited receipts must together
+cover the packet's search areas, the directories of its write paths and map anchors, where a
+prior implementation would live. `hx task` lists the areas and receipts:
 
 ```sh
 hx plan bind RUN --file binding.json

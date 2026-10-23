@@ -93,9 +93,13 @@ def prepare(task, payload):
     # Results name the checkout as the worker spelled it; serve them back that way.
     spelled = workdir if workdir.resolve() == top else top
     anchors = fingerprints.combine({str(spelled): TOKEN}, fingerprints.anchors_for(workdir))
+    pattern = args.get('pattern', args.get('glob', args.get('query', '')))
+    relative = path.relative_to(top).as_posix()
     request = dict(namespace=found['namespace'], commit=found['commit'], source_hash=stamp,
                    query_hash=digest([name, fingerprints.relocate({**args, 'path': str(path)}, anchors)]),
-                   path=str(path), top=str(top), contents=name in SEARCHES, anchors=anchors)
+                   path=str(path), top=str(top), contents=name in SEARCHES, anchors=anchors,
+                   receipt={'kind': 'native', 'query': f'{name} {pattern}'.strip() if isinstance(pattern, str) else name,
+                            'scope': relative if relative != '.' else '.', 'repository': found['namespace']})
     with closing(connect()) as db:
         known = db.execute('SELECT result,complete FROM coverage WHERE namespace=? AND commit_id=? AND query_hash=? AND source_hash=?',
                            (request['namespace'], request['commit'], request['query_hash'], stamp)).fetchone()
@@ -109,33 +113,38 @@ def remember(tx, row, session, actor, call, request):
         known = request.pop('cached', None)
         if known:
             status = 'Complete result' if known['complete'] else 'Partial result; absence is not established'
-            raise AdmissionDenied(f'Cached search for unchanged scoped sources. {status}: {known["result"]}\nReuse this result; narrow or change the query for additional coverage.')
+            served = AdmissionDenied(f'Cached search for unchanged scoped sources. {status}: {known["result"]}\nReuse this result; narrow or change the query for additional coverage.')
+            served.receipt = request['receipt']  # The worker searched and has the answer.
+            raise served
         tx.db.execute('INSERT INTO search_calls VALUES(?,?,?,?,?)',
                       (row['launch_id'], session, actor, call, canonical(request)))
 
 
 def settle(tx, launch, session, actor, call, payload):
+    """Cache a settled search's result when it is portable; return the receipt of every
+    search that produced a result, cached or not, else None."""
     key = (launch, session, actor, call)
     row = tx.db.execute('SELECT payload FROM search_calls WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?', key).fetchone()
     if not row:
-        return
+        return None
     tx.db.execute('DELETE FROM search_calls WHERE launch_id=? AND session_id=? AND actor_id=? AND call_id=?', key)
     request = json.loads(row[0])
     response = payload.get('tool_response')
     if payload.get('is_error') or response is None:
-        return
+        return None
     if isinstance(response, dict) and (response.get('error') or response.get('is_error') or response.get('isError')):
-        return
+        return None
+    receipt = request['receipt']
     text = response if isinstance(response, str) else canonical(response)
     # Unmarked native output is never treated as exhaustive negative evidence.
     complete = isinstance(response, dict) and response.get('complete') is True and not response.get('truncated')
     if not text.strip() or len(text.encode()) > 2048 or TOKEN in text:
-        return
+        return receipt
     if fingerprint(request['path'], Path(request['top']), request['contents']) != request['source_hash']:
-        return
+        return receipt
     portable = fingerprints.relocate(text, request['anchors'])
     if any(prefix in portable for prefix in request['anchors']):
-        return  # A checkout path that is not a path prefix would name this worktree to others.
+        return receipt  # A checkout path that is not a path prefix would name this worktree to others.
     with closing(connect()) as db:
         db.execute('BEGIN IMMEDIATE')
         db.execute('INSERT OR REPLACE INTO coverage VALUES(?,?,?,?,?,?,?)',
@@ -147,3 +156,4 @@ def settle(tx, launch, session, actor, call, payload):
                    (request['namespace'], request['namespace']))
         db.execute('DELETE FROM coverage WHERE rowid NOT IN (SELECT rowid FROM coverage ORDER BY rowid DESC LIMIT 256)')
         db.execute('COMMIT')
+    return receipt
