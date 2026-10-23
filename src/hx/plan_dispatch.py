@@ -12,11 +12,12 @@ A pass:
 2. List candidates in one ledger read: incomplete head units of every applied plan
    with no active run, whose exact prerequisite outputs or contracts exist.
 3. Order them downstream-first: the `downstream_roles` rank, then fleet depth.
-4. Give each an idle seat whose role is the unit's `check_policy.role` and which is
-   not its reviewer, within the root quota, the writer budget (a unit without write
-   paths is read-only and exempt) and merge backpressure (no new engineering unit
-   for a lane with more than 2 × `delivery.json max_batch` landed-but-unvalidated
-   batches; a unit whose role is in `downstream_roles` is not engineering).
+4. Give each an idle seat whose role is the unit's `check_policy.role`, whose
+   `harness.json` workdir is the unit's workdir, and which is not its reviewer, within
+   the root quota, the writer budget (a unit without write paths is read-only and
+   exempt) and merge backpressure (no new engineering unit for a lane with more than
+   2 × `delivery.json max_batch` landed-but-unvalidated batches; a unit whose role is
+   in `downstream_roles` is not engineering).
 5. Ask the host pool for box sessions, restore tokens and the growth breaker.
 6. In parallel: the stale-base check, the role's precheck, then `assign`.
 7. Launch each admitted run as a loop job, spawn only; the loop's launch
@@ -25,7 +26,11 @@ A pass:
 A precheck exit, a stale base or an admission refusal defers the unit for
 `retry_seconds` without consuming a failure; a producer completing or publishing a
 contract clears its consumers' deferrals (`wake_consumers`). Nothing replays an
-uncertain native launch. `hx fleet pause` stops every pass until `hx fleet resume`.
+uncertain native launch. A launch that failed ends its run as failed and releases its
+leases and resources, so the unit is a candidate again at its next head or through
+`hx plan assign`; a run whose native session ownership is uncertain keeps them until
+reconciliation, and the launch row records which. `hx fleet pause` stops every pass
+until `hx fleet resume`.
 """
 from __future__ import annotations
 
@@ -120,7 +125,9 @@ def launch_key(plan_id, task_id, revision, head):
 
 
 def _seats(root):
-    """Configured worker seats, id → role: config/<id>/harness.json whose id is its folder."""
+    """Configured worker seats, id → {role, workdir}: config/<id>/harness.json whose id is its
+    folder; a seat without a workdir works in the root, as its identity says."""
+    from .config_harness import resolve_workdir
     seats = {}
     for path in sorted((Path(root) / "config").glob("*/harness.json")):
         try:
@@ -128,7 +135,9 @@ def _seats(root):
         except (OSError, ValueError, HxError):
             continue
         if isinstance(body, dict) and body.get("id") == path.parent.name != "partner" and isinstance(body.get("role"), str):
-            seats[body["id"]] = body["role"]
+            workdir = body.get("workdir")
+            seats[body["id"]] = {"role": body["role"], "workdir": (resolve_workdir(workdir, Path(root))
+                                 if isinstance(workdir, str) and workdir else Path(root)).resolve()}
     return seats
 
 
@@ -215,6 +224,17 @@ def _update(store, key, status, **fields):
                       (status, canonical(payload), fields.get("run_id"), key))
 
 
+def _release(store, run_id):
+    """End a run whose launch failed so its leases and resources free; a run whose native
+    session ownership is uncertain keeps them until reconciliation."""
+    from . import unit_execution
+    try:
+        unit_execution.stop(store, run_id, "failed")
+    except Conflict as exc:
+        return "retained: " + str(exc)
+    return "released"
+
+
 def _launch(store, key, env):
     """Spawn one admitted run's native session; the loop submits its prompt later."""
     from .native_controller import advance
@@ -224,6 +244,7 @@ def _launch(store, key, env):
         status, fields = "launched", {"launch_status": result["status"]}
     except Exception as exc:  # The job boundary: a failed launch is recorded, never retried.
         status, fields = "launch_failed", {"reason": f"{type(exc).__name__}: {exc}"[:400]}
+        fields["leases"] = _release(store, row["run_id"])
     finally:
         host_pool.release(key)
     _update(store, key, status, launched_at=time.time(), **fields)
@@ -233,8 +254,9 @@ def _launch(store, key, env):
 def _resume(store, jobs, env):
     """Launches a stopped process left: reserved without a run, or admitted without a launch.
 
-    Only rows whose owning process is gone are touched; an uncertain native launch is
-    recorded as failed, never replayed.
+    Only rows whose owning process is gone are touched; an uncertain or failed native
+    launch is recorded as failed, never replayed, and its run's leases are released
+    where ownership allows.
     """
     from .native_launch import _row
     jobs.finished("dispatch")
@@ -255,8 +277,9 @@ def _resume(store, jobs, env):
         native = _row(store, run_id)
         if native is not None and native["status"] != "prepared":
             failed = native["status"].endswith(("_uncertain", "_failed"))
+            fields = {"reason": "native launch is " + native["status"], "leases": _release(store, run_id)} if failed else {}
             _update(store, row["launch_key"], "launch_failed" if failed else "launched", run_id=run_id,
-                    launch_status=native["status"], **({"reason": "native launch is " + native["status"]} if failed else {}))
+                    launch_status=native["status"], **fields)
             continue
         _update(store, row["launch_key"], "assigned", run_id=run_id, owner=_owner())
         jobs.submit(("dispatch", row["launch_key"]), lambda attached, key=row["launch_key"]: _launch(attached, key, env), store)
@@ -359,10 +382,12 @@ def dispatch(store, *, config, env=None, jobs, plan_id=None, dry_run=False, maxi
         if writer and unit["role"] not in ranks and payload["repository"] in blocked:
             wait(unit, f"merge backpressure: lane has more than {2 * config['max_batch']} landed batches awaiting validation")
             continue
-        seat = next((seat for seat, role in seats.items()
-                     if role == unit["role"] and seat != unit["reviewer"] and seat not in busy_workers), None)
+        workdir = Path(payload["workdir"]).resolve()
+        seat = next((seat for seat, placement in seats.items()
+                     if placement["role"] == unit["role"] and placement["workdir"] == workdir
+                     and seat != unit["reviewer"] and seat not in busy_workers), None)
         if seat is None:
-            wait(unit, f"no idle seat has role {unit['role']}")
+            wait(unit, f"no idle seat has role {unit['role']} in {payload['workdir']}")
             continue
         try:
             head = _git(payload["workdir"], "rev-parse", "HEAD")

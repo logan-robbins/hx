@@ -9,19 +9,28 @@ import shlex
 from pathlib import Path
 
 from .continuity_store import digest
+from .file_reads import SHELL_TOOLS
 from .native_tools import AdmissionDenied
-from .errors import HxError
+from .errors import HxError, ValidationError
 
 CONTEXT_BYTES = 8192
 MEMORY_BYTES = 4096
 SEARCH_RESULTS = 80
 INPUT_BYTES = 16384
+#: Every native host's file-mutating tools; `apply_patch` carries a string patch.
+EDIT_TOOLS = {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace', 'apply_patch'}
 #: Build, test and diff programs whose output belongs in `hx tool-exec` or an assigned check.
 NOISY = {'pytest', 'npm', 'pnpm', 'yarn', 'cargo', 'make', 'mvn', 'gradle', 'dotnet'}
 NOISY_SUBCOMMANDS = {('git', 'diff'), ('git', 'show'), ('git', 'log'), ('go', 'test')}
 READERS = {'cat', 'less', 'more', 'find', 'head', 'tail', 'awk'}
 #: Global options that take the next argument before a git or go subcommand.
 VALUE_OPTIONS = {'-C', '-c', '--git-dir', '--work-tree', '--namespace'}
+#: What a packet worker's shell may run before its binding is approved: `hx`, and programs
+#: that read the worktree and change nothing.
+PREBINDING = {'hx', 'cd', 'ls', 'pwd', 'echo', 'true', 'which', 'wc'}
+PREBINDING_SUBCOMMANDS = {('git', 'status'), ('git', 'rev-parse'), ('git', 'ls-files')}
+BIND_FIRST = ('search the packet areas, bind packet checks citing the search receipts, and obtain independent '
+              'policy approval before source edits; until then the shell runs only hx and read-only inspection')
 
 
 def _stamp(path):
@@ -29,7 +38,7 @@ def _stamp(path):
     return digest([stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns])
 
 
-def check_files(row, *, replacing=None):
+def check_files(row):
     """Stat known installed files only; never scan a worker's home or repository."""
     payload = row['payload']
     capsule = Path(payload['capsule'])
@@ -40,7 +49,7 @@ def check_files(row, *, replacing=None):
     home = capsule / 'run' / worker / 'home'
     paths += [(home / name, MEMORY_BYTES) for name in ('MEMORY.md', 'memory.md', 'context.md')]
     for path, bound in paths:
-        if path.resolve() != replacing and path.exists() and path.stat().st_size > bound:
+        if path.exists() and path.stat().st_size > bound:
             raise AdmissionDenied(f'{path.name} exceeds {bound} bytes; compress current task state before continuing')
 
 
@@ -111,20 +120,60 @@ def _subcommand(args):
     return args[index] if index < len(args) else None
 
 
+def _writes_file(parts):
+    """Whether a command segment opens a file for writing: a redirect operator (`>`, `>>`,
+    `>|`, `>&`, `&>`, `<>`; `_segments` keeps each operator as one token) whose target is
+    neither a descriptor nor /dev/null."""
+    for index, token in enumerate(parts):
+        if '>' in token and all(char in '<>&|' for char in token):
+            target = parts[index + 1] if index + 1 < len(parts) else ''
+            if target != '/dev/null' and not (token.endswith('&') and target.isdigit()):
+                return True
+    return False
+
+
+def prebinding(parts):
+    """Whether an unapproved packet worker may run this command: `hx`, or read-only
+    inspection, writing no file. `parts` is one shell segment or an exact argv."""
+    program, args = _program(parts)
+    return (program in PREBINDING or (program, _subcommand(args)) in PREBINDING_SUBCOMMANDS) and not _writes_file(parts)
+
+
+def require_write_path(task, path):
+    """A packet edit lands inside the frozen write paths; `path` is the resolved target.
+
+    The target is normalized exactly as the plan validator normalized the declared paths
+    (`planning.write_scope`), so a case alias or a symlink out of the worktree is outside.
+    """
+    from .planning import covers, write_scope
+    workdir = Path(task['workdir']).resolve()
+    inside = False
+    shown = str(path)
+    if path.is_relative_to(workdir) and path != workdir:
+        shown = path.relative_to(workdir).as_posix()
+        try:
+            inside = covers(task['write_scope'], write_scope(workdir, shown))
+        except ValidationError:
+            inside = False
+    if not inside:
+        allowed = ', '.join(task['write_paths'])
+        raise AdmissionDenied(f'{shown} is outside the packet write paths: {allowed}' if allowed
+                              else f'{shown} cannot be edited: the packet declares no write paths')
+
+
 def inspect_call(row, task, observation, *, root=None):
     """Return a complete read identity, or None for non-file operations."""
     name = observation.get('tool_name', observation.get('toolName', ''))
     name = name.rsplit('.', 1)[-1] if isinstance(name, str) else ''
     args = observation.get('tool_input', observation.get('toolInput'))
-    if task.get('dependency_packet') and task.get('binding_status') != 'approved' and name in {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace', 'apply_patch'}:
-        raise AdmissionDenied('search the packet areas, bind packet checks citing the search receipts, and obtain independent policy approval before source edits')
+    packet = bool(task.get('dependency_packet'))
+    unapproved = packet and task.get('binding_status') != 'approved'
+    if unapproved and name in EDIT_TOOLS:
+        raise AdmissionDenied(BIND_FIRST)
     from .continuity_store import canonical
-    replacing = None
-    if name in {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace'} and isinstance(args, dict):
-        target = _source(args, task)
-        if target.name.lower() in {'memory.md', 'context.md', 'agents.md', 'claude.md'}:
-            replacing = target
-    check_files(row, replacing=replacing)
+    if packet and name in EDIT_TOOLS - {'apply_patch'} and isinstance(args, dict):
+        require_write_path(task, _source(args, task))
+    check_files(row)
     if len(canonical(args).encode()) > INPUT_BYTES:
         raise AdmissionDenied('tool arguments exceed 16384 bytes; split the operation')
     if name == 'apply_patch':
@@ -132,11 +181,13 @@ def inspect_call(row, task, observation, *, root=None):
         if isinstance(patch, str):
             for target in re.findall(r'^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$', patch, re.M):
                 path = _source({'path': target.strip()}, task)
+                if packet:
+                    require_write_path(task, path)
                 if path == Path(row['payload']['packet_path']).resolve() or _material_reference(row, path) is not None:
                     raise AdmissionDenied('structured patches cannot mutate runtime-owned checkpoints or required material')
     if not isinstance(args, dict):
         return None  # Native patch tools can carry a string.
-    if name in {'Write', 'write', 'write_file', 'Edit', 'edit', 'edit_file', 'search_replace'}:
+    if name in EDIT_TOOLS - {'apply_patch'}:
         path = _source(args, task)
         if path == Path(row['payload']['packet_path']).resolve():
             raise AdmissionDenied('the task checkpoint is runtime-owned; use typed progress updates')
@@ -198,15 +249,20 @@ def inspect_call(row, task, observation, *, root=None):
             raise AdmissionDenied('search requires a named scope and at most 80 results; if the tool has no limit, use hx tool-exec')
     if name == 'list_dir':
         raise AdmissionDenied('native list_dir cannot accept a result bound; use hx tool-exec --request ID -- ls PATH')
-    if name in {'Bash', 'bash', 'exec_command', 'shell', 'shell_command', 'run_shell_command', 'run_terminal_cmd'}:
+    if name in SHELL_TOOLS:
         command = args.get('command', args.get('cmd', ''))
-        # These common unbounded inspections have native bounded equivalents.
-        # This is an efficiency gate, not an attempt to sandbox arbitrary code.
+        # Before binding approval the shell runs hx and read-only inspection only. The rest
+        # routes common unbounded inspections to their native bounded equivalents: an
+        # efficiency gate, not an attempt to sandbox arbitrary code.
         if isinstance(command, str):
             try:
                 commands = list(_segments(command))
             except ValueError:
+                if unapproved:
+                    raise AdmissionDenied(BIND_FIRST) from None
                 return None
+            if unapproved and not all(prebinding(parts) for parts, _ in commands):
+                raise AdmissionDenied(BIND_FIRST)
             from .file_inspection import require_non_file_output
             try:
                 require_non_file_output(['sh', '-c', command])

@@ -186,6 +186,18 @@ def record_executed(store, run_id, launch_id, payload):
         tx.db.execute("INSERT INTO native_tool_calls VALUES(?,?,?,?,?,'admitted')", (launch_id, session, actor, call, fingerprint))
 
 
+def record_denied(store, run_id, launch_id, payload):
+    """A deferred tool call was refused without admission; record the refusal so the
+    host's error result for it settles silently."""
+    session, actor, call, fingerprint = _identity(payload)
+    with store.transaction() as tx:
+        row = native_launch._row(tx, run_id)
+        if row is None or row["launch_id"] != launch_id:
+            raise Conflict("deferred tool call lost its native launch")
+        tx._change()
+        tx.db.execute("INSERT OR IGNORE INTO native_tool_calls VALUES(?,?,?,?,?,'denied')", (launch_id, session, actor, call, fingerprint))
+
+
 def settle(tx, run_id, session_id, payload):
     """Settle inside the capture transaction, including durable queue retries."""
     row = native_launch._row(tx, run_id)

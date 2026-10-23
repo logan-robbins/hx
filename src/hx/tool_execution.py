@@ -29,7 +29,13 @@ def execute(store, run_id, request_id, argv, *, cwd=None, env=None, report=None)
         run = passes._active_run(tx, run_id)
         if child.get('HARNESS_ID') not in {None, run['worker_id']}:
             raise Conflict('tool caller does not own this assignment')
-        task = tx.task(run['task_id'])
+        from .dependency_packets import effective_task
+        task = effective_task(tx, tx.task(run['task_id']))
+        if task['payload'].get('dependency_packet') and task['payload'].get('binding_status') != 'approved':
+            # The same rule as the native shell: hx and read-only inspection until approval.
+            from .runtime_policy import BIND_FIRST, prebinding
+            if not prebinding(argv):
+                raise Conflict(BIND_FIRST)
         workdir = Path(task['payload']['workdir']).resolve()
         directory = (workdir / (cwd or '.')).resolve()
         if not directory.is_relative_to(workdir):

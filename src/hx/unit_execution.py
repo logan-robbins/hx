@@ -306,7 +306,7 @@ def _changed(payload, admission, state):
 
 def audit(store, run_id):
     """Persist a pause on unexpected writes; keep leases until the run stops."""
-    from .planning import write_scope
+    from .planning import covers, write_scope
     with store.transaction() as tx:
         run, task, admission = _run(tx, run_id)
         payload = task["payload"]
@@ -316,11 +316,7 @@ def audit(store, run_id):
             changed = _changed(payload, admission, state)
             from .file_limits import require_changed
             require_changed(payload["workdir"], changed)
-            unexpected = []
-            for path in changed:
-                candidate = write_scope(Path(payload["workdir"]), path)
-                if not any(candidate == scope or candidate.startswith(scope + "/") for scope in scopes):
-                    unexpected.append(path)
+            unexpected = [path for path in changed if not covers(scopes, write_scope(Path(payload["workdir"]), path))]
             reason = "writes exceed the frozen assignment scope" if unexpected else None
             if payload.get("binding_status") != "approved" and (changed or state != admission["workspace"]):
                 reason = "worker must bind and independently approve checks before the first edit"

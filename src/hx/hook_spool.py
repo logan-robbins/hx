@@ -1,11 +1,12 @@
 """Planned hook deliveries deferred to the application loop.
 
-A planned hook that cannot take the ledger writer within its budget lets the
-native operation proceed and leaves its whole delivery here, one file per hook,
-in arrival order under its run. While a run has deferred deliveries its later
-hooks defer too, so the loop replays them in their original order. The loop is
-the writer: it replays each through `hooks.replay`. A delivery replay cannot
-apply is a lost observation and becomes the run's capture gap.
+A planned hook that cannot take the ledger writer within its budget lets a
+non-mutating native operation proceed and leaves its whole delivery here, one
+file per hook, in arrival order under its run; a file edit or shell command it
+denied is left here marked `denied`. While a run has deferred deliveries its
+later hooks defer too, so the loop replays them in their original order. The
+loop is the writer: it replays each through `hooks.replay`. A delivery replay
+cannot apply is a lost observation and becomes the run's capture gap.
 """
 
 from __future__ import annotations

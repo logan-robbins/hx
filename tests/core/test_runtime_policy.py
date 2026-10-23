@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from hx import native_tools, runtime_policy, search_coverage
+from hx.native_tools import AdmissionDenied
 from hx.continuity_store import Conflict
 from .test_appmap import mapped
 from .test_map_updates import active
@@ -438,3 +439,76 @@ def test_changed_file_delivery_fails_explicitly_and_can_retry_without_capture_ga
     assert native_tools.pending(store, row['launch_id']) == 0
     assert native_producer.status(store, run)['gap'] is None
     assert fire(store, run, row, 'tool-start', payload('resumed-action')) == 0
+
+
+def test_packet_edits_are_admitted_only_inside_the_frozen_write_paths(runtime, capsys):
+    store, repo, run, _ = runtime
+    row = submitted(runtime)
+    (Path(repo) / 'src').mkdir(exist_ok=True)
+    inside = [('Write', {'file_path': str(Path(repo) / 'src' / 'implement.py'), 'content': 'x = 1\n'}),
+              ('Edit', {'file_path': 'tests/test_implement.py', 'old_string': 'a', 'new_string': 'b'}),
+              ('apply_patch', '*** Begin Patch\n*** Add File: src/implement.py\n+x = 1\n*** End Patch\n')]
+    for index, (name, args) in enumerate(inside):
+        assert fire(store, run, row, 'tool-start', payload(f'inside-{index}', tool_name=name, tool_input=args)) == 0, name
+    home = Path(row['payload']['capsule']) / 'run' / 'eng-001' / 'home'
+    outside = [('Write', {'file_path': str(Path(repo) / 'README.md'), 'content': 'x'}),
+               ('Edit', {'file_path': 'src/other.py', 'old_string': 'a', 'new_string': 'b'}),
+               ('Write', {'file_path': str(Path(repo).parent / 'elsewhere.py'), 'content': 'x'}),
+               ('Write', {'file_path': str(home / 'MEMORY.md'), 'content': 'x'}),
+               ('apply_patch', '*** Begin Patch\n*** Update File: docs/notes.md\n*** End Patch\n')]
+    for index, (name, args) in enumerate(outside):
+        assert fire(store, run, row, 'tool-start', payload(f'outside-{index}', tool_name=name, tool_input=args)) == 2, name
+        assert 'outside the packet write paths: src/implement.py, tests/test_implement.py' in capsys.readouterr().err, name
+    assert native_tools.pending(store, row['launch_id']) == len(inside)
+
+
+def packet_row(tmp_path):
+    return {'payload': {'capsule': str(tmp_path / 'capsule'), 'worker_id': 'eng-001', 'required_files': [],
+                        'packet_path': str(tmp_path / 'task-context.md')}}
+
+
+def packet_task(repo, paths, status='approved'):
+    from hx import planning
+    return {'dependency_packet': True, 'binding_status': status, 'workdir': str(repo), 'write_paths': paths,
+            'write_scope': sorted({planning.write_scope(repo, path) for path in paths})}
+
+
+def test_write_paths_cover_their_directories_and_case_aliases_by_the_plan_normalization(tmp_path):
+    repo = tmp_path / 'repo'
+    (repo / 'src' / 'billing').mkdir(parents=True)
+    (tmp_path / 'outside').mkdir()
+    (repo / 'src' / 'billing' / 'vendored').symlink_to(tmp_path / 'outside')
+    row, task = packet_row(tmp_path), packet_task(repo, ['src/billing', 'README.md'])
+    def edit(name, args):
+        return runtime_policy.inspect_call(row, task, {'tool_name': name, 'tool_input': args})
+    assert edit('Write', {'file_path': 'src/billing/tax.py', 'content': ''}) is None
+    assert edit('Write', {'file_path': str(repo / 'src' / 'billing' / 'rates' / 'eu.py'), 'content': ''}) is None
+    assert edit('Edit', {'file_path': 'readme.md', 'old_string': 'a', 'new_string': 'b'}) is None
+    for target in ['src/billing2/tax.py', 'src/billing/../tax.py', 'src/billing/vendored/tax.py', 'src', '.', str(repo)]:
+        with pytest.raises(AdmissionDenied, match='outside the packet write paths: src/billing, README.md'):
+            edit('Write', {'file_path': target, 'content': ''})
+    with pytest.raises(AdmissionDenied, match='the packet declares no write paths'):
+        runtime_policy.inspect_call(row, packet_task(repo, []), {'tool_name': 'Write', 'tool_input': {'file_path': 'README.md', 'content': ''}})
+
+
+def test_before_binding_approval_the_shell_admits_only_hx_and_read_only_inspection(tmp_path):
+    repo = tmp_path / 'repo'
+    (repo / 'src').mkdir(parents=True)
+    row, task = packet_row(tmp_path), packet_task(repo, ['src/implement.py'], 'proposed')
+    def shell(command, status='proposed'):
+        return runtime_policy.inspect_call(row, {**task, 'binding_status': status},
+                                           {'tool_name': 'Bash', 'tool_input': {'command': command}})
+    for command in ['hx task', 'hx tool-exec --request t1 -- ls src', 'FOO=1 hx code map --focus src --budget 4096',
+                    'uv run hx task', 'git status', 'git -C . rev-parse HEAD', 'git ls-files src', 'ls src | wc -l',
+                    'cd src && ls', 'pwd; which python3', 'echo "a && pytest"', 'ls > /dev/null', 'git status 2>&1', 'true']:
+        assert shell(command) is None, command
+    for command in ['pytest -q', 'python3 -m pytest', 'touch x', 'git commit -am x', 'git checkout -- .', 'echo x > notes.txt',
+                    'ls >> log.txt', 'ls &> out', 'echo x >| out.txt', 'ls 2>| out.txt', 'ls <> out.txt', 'ls >& out.txt',
+                    'rm -rf src', 'sed -i s/a/b/ src/implement.py', 'cat src/implement.py',
+                    'ls && pytest', 'hx task; make', 'python3 script.py', 'unterminated "quote']:
+        with pytest.raises(AdmissionDenied, match='until then the shell runs only hx and read-only inspection'):
+            shell(command)
+    # Approval opens the shell; the output-routing gate stays.
+    assert shell('touch x', 'approved') is None
+    with pytest.raises(AdmissionDenied, match='hx tool-exec'):
+        shell('pytest -q', 'approved')

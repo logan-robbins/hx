@@ -34,12 +34,18 @@ def launches(monkeypatch):
     return calls
 
 
-def seats(store, **roles):
-    for worker, role in roles.items():
+def seats(store, **placements):
+    """Each seat is `role` (working in the root) or `(role, workdir)`."""
+    for worker, placement in placements.items():
+        role, workdir = placement if isinstance(placement, tuple) else (placement, store.root)
         folder = store.root / "config" / worker.replace("_", "-")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "harness.json").write_text(json.dumps({"id": worker.replace("_", "-"), "pod": worker.split("_")[0], "role": role,
-                                                         "model": "claude-opus-5-5", "effort": "high", "workdir": str(store.root)}))
+                                                         "model": "claude-opus-5-5", "effort": "high", "workdir": str(workdir)}))
+
+
+def leases(store, run_id):
+    return store.db.execute("SELECT count(*) FROM leases WHERE run_id=?", (run_id,)).fetchone()[0]
 
 
 def configure(store, delivery=None, **dispatch):
@@ -69,9 +75,10 @@ def rows(store):
 
 def test_a_pass_admits_downstream_first_onto_role_matched_seats_and_never_launches_a_key_twice(fleet, tmp_path, launches):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer", eng_002="backend-engineer", qa_001="qa-engineer", qa_002="qa-engineer")
-    configure(store, per_tick=2, downstream_roles=["qa-engineer"])
     first, second, third, fourth = trees(repo, tmp_path, "schema", "report", "extra", "verify")
+    seats(store, eng_001=("backend-engineer", second), eng_002=("backend-engineer", third),
+          qa_001=("qa-engineer", fourth), qa_002=("qa-engineer", fourth))
+    configure(store, per_tick=2, downstream_roles=["qa-engineer"])
     planning.apply(store, plan(fleet, [unit(first, "schema"), unit(second, "report", prerequisites=[dependency("schema")]),
                                        unit(third, "extra"), role(unit(fourth, "verify"), "qa-engineer")]))
     producer = units.assign(store, "schema", 1, "eng-001")["run_id"]
@@ -102,9 +109,9 @@ def test_a_pass_admits_downstream_first_onto_role_matched_seats_and_never_launch
 
 def test_quota_and_writer_budgets_exempt_read_only_units(fleet, tmp_path, launches):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer", eng_002="backend-engineer", eng_003="backend-engineer", eng_004="backend-engineer")
-    configure(store, per_tick=8, quota=2, writers=1)
     a, b, c, d = trees(repo, tmp_path, "a", "b", "c", "d")
+    seats(store, eng_001=("backend-engineer", a), eng_002=("backend-engineer", b), eng_003=("backend-engineer", c), eng_004=("backend-engineer", d))
+    configure(store, per_tick=8, quota=2, writers=1)
     planning.apply(store, plan(fleet, [unit(a, "a"), unit(b, "b"), unit(c, "c", paths=[]), unit(d, "d", paths=[])]))
     result = plan_dispatch.run(store, "continuation")
     assert [item["task_id"] for item in result["launched"]] == ["a", "c"]
@@ -114,8 +121,8 @@ def test_quota_and_writer_budgets_exempt_read_only_units(fleet, tmp_path, launch
 
 def test_box_sessions_restore_tokens_and_the_growth_breaker_bound_every_root(fleet, tmp_path, launches, monkeypatch):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer", eng_002="backend-engineer", eng_003="backend-engineer")
     a, b, c = trees(repo, tmp_path, "a", "b", "c")
+    seats(store, eng_001=("backend-engineer", a), eng_002=("backend-engineer", b), eng_003=("backend-engineer", c))
     planning.apply(store, plan(fleet, [unit(a, "a"), unit(b, "b"), unit(c, "c")]))
     configure(store, sessions=3, restore={"concurrency": 8, "per_second": 1000})
     # Another root on the box already holds two sessions.
@@ -139,8 +146,8 @@ def test_box_sessions_restore_tokens_and_the_growth_breaker_bound_every_root(fle
 
 def test_precheck_and_stale_base_defer_without_failure_and_backpressure_holds_engineering(fleet, tmp_path, launches):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer", eng_002="backend-engineer", eng_003="backend-engineer", qa_002="qa-engineer")
     a, b, c, d = trees(repo, tmp_path, "a", "b", "c", "d")
+    seats(store, eng_001=("backend-engineer", a), eng_002=("backend-engineer", b), eng_003=("backend-engineer", c), qa_002=("qa-engineer", d))
     precheck = [sys.executable, "-c", "import json,sys; sys.exit(3 if json.load(sys.stdin)['task_id'] == 'b' else 0)"]
     configure(store, per_tick=8, retry_seconds=3600, precheck={"backend-engineer": precheck})
     planning.apply(store, plan(fleet, [unit(a, "a"), unit(b, "b")]))
@@ -175,8 +182,8 @@ def test_precheck_and_stale_base_defer_without_failure_and_backpressure_holds_en
 
 def test_a_stopped_pass_resumes_admitted_launches_and_never_replays_an_uncertain_one(fleet, tmp_path, launches, monkeypatch):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer", eng_002="backend-engineer")
     a, b = trees(repo, tmp_path, "a", "b")
+    seats(store, eng_001=("backend-engineer", a), eng_002=("backend-engineer", b))
     planning.apply(store, plan(fleet, [unit(a, "a"), unit(b, "b")]))
     gone = {"platform": sys.platform, "boot": "a-previous-boot", "pid": 2}
     for task, worker in (("a", "eng-001"), ("b", "eng-002")):
@@ -192,15 +199,20 @@ def test_a_stopped_pass_resumes_admitted_launches_and_never_replays_an_uncertain
     assert [call[2] for call in launches] == ["a-key"]
     assert rows(store)["a"]["status"] == "launched"
     assert rows(store)["b"]["status"] == "launch_failed"
-    assert json.loads(rows(store)["b"]["payload"])["reason"] == "native launch is start_uncertain"
+    failed = json.loads(rows(store)["b"]["payload"])
+    assert failed["reason"] == "native launch is start_uncertain"
+    # Uncertain session ownership keeps the run's leases until reconciliation, and says so.
+    assert failed["leases"] == "retained: native session ownership must be reconciled before releasing assignment leases"
+    assert leases(store, rows(store)["b"]["run_id"]) > 0
+    assert store.db.execute("SELECT ended_at FROM runs WHERE run_id=?", (rows(store)["b"]["run_id"],)).fetchone()[0] is None
     assert plan_dispatch.tick(store, jobs=Jobs.inline()) is None and len(launches) == 1
 
 
 def test_the_loop_dispatches_when_auto_and_the_operator_pauses_it(fleet, tmp_path, launches, run_hx):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer")
-    configure(store, auto=True)
     (a,) = trees(repo, tmp_path, "a")
+    seats(store, eng_001=("backend-engineer", a))
+    configure(store, auto=True)
     planning.apply(store, plan(fleet, [unit(a, "a")]))
     root = str(store.root)
     paused = run_hx("fleet", "pause", "--root", root)
@@ -224,8 +236,8 @@ def test_dispatch_settings_are_validated(fleet, dispatch, message):
 
 def test_a_concurrent_pass_that_reserved_a_key_first_keeps_it(fleet, tmp_path, launches, monkeypatch):
     store, repo = fleet[:2]
-    seats(store, eng_001="backend-engineer", eng_002="backend-engineer")
     (a,) = trees(repo, tmp_path, "a")
+    seats(store, eng_001=("backend-engineer", a), eng_002=("backend-engineer", a))
     planning.apply(store, plan(fleet, [unit(a, "a")]))
     admit = host_pool.admit
 
@@ -240,3 +252,46 @@ def test_a_concurrent_pass_that_reserved_a_key_first_keeps_it(fleet, tmp_path, l
     assert result["launched"] == [] and result["waiting"][-1]["reason"] == "launch key already reserved at this head"
     assert launches == [] and host_pool.status()["launching"] == 0
     assert store.db.execute("SELECT count(*) FROM runs WHERE task_id='a'").fetchone()[0] == 0
+
+
+def test_a_seat_serves_only_units_of_its_own_workdir(fleet, tmp_path, launches):
+    store, repo = fleet[:2]
+    a, b = trees(repo, tmp_path, "a", "b")
+    seats(store, eng_001=("backend-engineer", a), eng_002="backend-engineer")
+    planning.apply(store, plan(fleet, [unit(b, "b")]))
+    result = plan_dispatch.run(store, "continuation")
+    assert result["launched"] == [] and launches == []
+    assert result["waiting"] == [{"task_id": "b", "plan_id": "continuation", "reason": f"no idle seat has role backend-engineer in {b}"}]
+    seats(store, eng_003=("backend-engineer", b))
+    result = plan_dispatch.run(store, "continuation")
+    assert [(item["task_id"], item["worker_id"]) for item in result["launched"]] == [("b", "eng-003")]
+
+
+def test_a_failed_launch_ends_its_run_and_releases_its_leases_so_the_unit_is_dispatched_again(fleet, tmp_path, launches, monkeypatch):
+    store, repo = fleet[:2]
+    (a,) = trees(repo, tmp_path, "a")
+    seats(store, eng_001=("backend-engineer", a))
+    planning.apply(store, plan(fleet, [unit(a, "a")]))
+    recording = native_controller.advance
+
+    def failing(ledger, worker, run_id, request_id, *, env=None, submit=True, ensure_service=True):
+        raise OSError("tmux is unavailable")
+
+    monkeypatch.setattr(native_controller, "advance", failing)
+    first = plan_dispatch.run(store, "continuation")["launched"][0]
+    row = rows(store)["a"]
+    assert row["status"] == "launch_failed" and row["run_id"] == first["run_id"]
+    assert json.loads(row["payload"])["reason"] == "OSError: tmux is unavailable"
+    assert json.loads(row["payload"])["leases"] == "released"
+    assert store.db.execute("SELECT outcome FROM runs WHERE run_id=? AND ended_at IS NOT NULL", (first["run_id"],)).fetchone()[0] == "failed"
+    assert leases(store, first["run_id"]) == 0
+    assert store.db.execute("SELECT count(*) FROM unit_resources WHERE run_id=?", (first["run_id"],)).fetchone()[0] == 0
+    # The key stays held at this head; the seat and the worktree are free for the next head.
+    again = plan_dispatch.run(store, "continuation")
+    assert again["launched"] == [] and again["waiting"][0]["reason"] == "launch key already launch_failed at this head"
+    monkeypatch.setattr(native_controller, "advance", recording)
+    (a / "notes.md").write_text("Moved the head.\n")
+    commit(a)
+    second = plan_dispatch.run(store, "continuation")["launched"][0]
+    assert second["worker_id"] == "eng-001" and second["run_id"] != first["run_id"]
+    assert [call[1] for call in launches] == [second["run_id"]] and leases(store, second["run_id"]) > 0
