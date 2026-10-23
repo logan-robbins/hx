@@ -127,8 +127,8 @@ checks, verify current source/environment/dependencies, publish exact declared o
 record packet coverage, and release ownership atomically. Keep evidence tied to exact source,
 commands, environment, fixtures, and artifacts. A selected subset cannot prove broader coverage.
 Fix a failed gate and retry with current proof. Source changes invalidate relevant old receipts.
-`hx plan finish RUN --file receipts.json` is the direct verified completion boundary when
-explicit run-bound receipts are available. Only your own run is writable by worker commands.
+`hx plan finish RUN --file receipts.json` is refused from a live session; `hx complete done`
+is the completion path. Only your own run is writable by worker commands.
 
 For .NET, `hx build graph` evaluates real MSBuild dependencies; `hx build build` shares an
 immutable matching build; `hx build test BUILD` creates private writable test shards without

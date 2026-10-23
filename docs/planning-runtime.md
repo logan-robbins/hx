@@ -131,7 +131,8 @@ restoring a file does not silently resume a paused run. The Partner stops/replan
 assignments. Leases survive restart and do not expire on time alone.
 
 `hx complete done` requests managed completion; `hx plan finish RUN --file receipts.json`
-performs the direct verified boundary with exact receipts. Completion requires approved/current
+performs the same verified boundary with exact receipts for a run whose native session is
+quiesced or that has none. Completion requires approved/current
 passing checks, managed work/capture drain, clean source, unchanged prerequisites, and explicit
 outputs covering all committed changed paths. Output proof names exact commit/tree/mode/blob
 identities including verified deletions. Publication, coverage, release, and notification are

@@ -48,7 +48,7 @@ flowchart TB
             direction TB
             E1{"Complete instructions and learning rules delivered<br/>Worker binds DoD and checks<br/>Independent binding approval"}
             E2["Search → read whole files → implement<br/>Native tools · complete file-read · code queries<br/>Publish / acquire immutable interfaces early"]
-            E3["Check and audit → verified packet coverage<br/>check · build / test · plan audit / finish"]
+            E3["Check and audit → verified packet coverage<br/>check · build / test · plan audit · complete done"]
             EC["CONTEXT COMPANION<br/>Captured events → validated task/map patch → checkpoint"]
             EL["LEARNING COMPANION<br/>Independent event cursor → assess → propose<br/>Reviewed global and engineering rules feed future context"]
             E1 --> E2 --> E3
@@ -83,9 +83,9 @@ flowchart TB
         direction TB
         R1{"Independent intent review<br/>change submit / review<br/>Configured authority for consequential boundaries"}
         R2["Short local landing<br/>change land --expected-head<br/>Moved head → prepare again"]
-        R3["Freeze merged source and run integration CI<br/>change candidate / run-validation<br/>Build once; parallel private test shards<br/>Main can advance while this candidate is tested"]
+        R3["Freeze merged source and run integration CI<br/>change candidate / run-validation<br/>Checks run one by one; equal builds and shards on the box are joined<br/>Main can advance while this candidate is tested"]
         R4{"Deploy gate<br/>Same-source integration verified<br/>Real-provider obligations resolved<br/>Pre-deploy checks + tested immutable artifact match"}
-        R5["Seal and verify release handoff<br/>handoff delivery / check --live<br/>Configured release tool deploys the tested artifact"]
+        R5["Seal and verify release handoff<br/>handoff delivery · handoff check --live<br/>The product's release tool deploys outside hx"]
         RC["CONTEXT COMPANION<br/>Candidate, checks and release obligations → current state"]
         RL["LEARNING COMPANION<br/>CI / release outcomes → assessment → proposal<br/>Reviewed release and shared rules feed future context"]
         R1 --> R2 --> R3 --> R4 --> R5
@@ -125,9 +125,9 @@ plan waves describe possible parallelism; `ready` and `assign` recheck actual co
 | 3. Admission and source materialization | Frozen source is materialized before a packet receives its admitted run, map versions, and prerequisite proofs | `hx repo assignment TASK …` optionally provisions a sparse clean checkout when a suitable prepared workdir is unavailable; accept a newly provisioned workdir in the plan before admission. `hx plan ready PLAN` explains which units can start. `hx plan assign TASK --revision … --worker …` rechecks readiness and acquires ownership; `hx launch ID --run RUN --request REQUEST` explicitly advances native startup. `hx repo expand …` adds known files before a tool needs them. Use `hx plan audit RUN` to check that edits stay in the assigned scope. | Separate packets can start in parallel only after admission proves current inputs, clean source, prerequisite readiness, nonconflicting leases, and available capacity. A sparse omission is not evidence that a capability is absent. |
 | 4. Worker binding and implementation | The admitted packet becomes an approved worker check binding, then source changes and evidence | Before edits, the worker records its exact checks and obligation coverage with `hx plan bind RUN --file …`; `hx plan binding RUN` reads it; the separately configured reviewer approves the frozen hash with `hx plan approve-binding RUN --binding …`. The worker then uses its configured native read/search/edit/write/shell tools and HX graph/content queries. `hx check CHECK --run RUN` executes a bound check. For .NET, `hx build graph` evaluates the real MSBuild closure, then `hx build build` creates or reuses the immutable build. | Binding and independent approval are a per-packet gate before known mutation/proof operations. Once approved, independent admitted workers can edit concurrently in their own worktrees. |
 | 5. Interface-first fan-out | An immutable contract version and its passing contract evidence become a consumer input | Provider: `hx plan publish-contract RUN --output API --file receipts.json`. Consumer: `hx plan acquire-contract CONSUMER --producer PROVIDER --output API --out …`. Use these only for the declared contract/output version; the plan must permit a stand-in. `hx code search` and `hx code signature` let consumers locate and inspect the published interface. | Publication can release consumers before provider implementation finishes. The contract is immutable and versioned; undeclared or unpermitted stand-ins cannot bypass a hard prerequisite. Real-provider verification remains pending. |
-| 6. Local proof and packet completion | Changed paths, exact output versions, and run-bound receipts become packet coverage | Run each bound check with `hx check` or the appropriate `hx build test BUILD --run RUN --request … --filter …`; query `hx build status JOB` and recover uncertain jobs with `hx build reconcile JOB`. `hx plan finish RUN --file receipts.json` publishes accepted outputs and releases leases atomically. For the real provider, `hx plan verify-integration …` records the consumer's integration result; `hx plan materialize …` installs exact source outputs for a hard source dependency. | Packet coverage can free workers and unlock the next ready packets. It does not resolve deferred integration or make the change deployable. Matching check artifacts may be reused only when source, environment, tools, fixtures, platform, and declared closure identities match. |
+| 6. Local proof and packet completion | Changed paths, exact output versions, and run-bound receipts become packet coverage | Run each bound check with `hx check` or the appropriate `hx build test BUILD --run RUN --request … --filter …`; query `hx build status JOB` and recover uncertain jobs with `hx build reconcile JOB`. `hx complete done` requests managed completion: the loop runs the bound checks, drains the companion, quiesces the native session and publishes outputs, coverage and lease release in one transaction. `hx plan finish RUN --file receipts.json` is the same boundary for a run whose native session is already quiesced or that has none. For the real provider, `hx plan verify-integration …` records the consumer's integration result; `hx plan materialize …` installs exact source outputs for a hard source dependency. | Packet coverage can free workers and unlock the next ready packets. It does not resolve deferred integration or make the change deployable. Matching check artifacts may be reused only when source, environment, tools, fixtures, platform, and declared closure identities match. |
 | 7. Intent review and landing | A reviewed intent, source head, and expected integration head become a local landed change | `hx change submit --file …` records the run, base, head, and behavior. `hx change review CHANGE --revision … --decision …` records an independent decision; sensitive boundaries use the configured consequential-change authority. `hx change land CHANGE --repo … --expected-head …` publishes with a short local expected-head update. `hx change status --change …` reads current state. | Review is per change. Landing is serialized at the integration ref; if its head moved, preparation must be repeated against the new head. Local landing does not push remotely. |
-| 8. Integration candidate and CI | A fixed merged source snapshot, covered intents, recipes, and test receipts become an integration checkpoint | `hx change candidate --repo … --expected-head … --boundary integration` freezes the candidate; `hx change run-validation BATCH --snapshot …` runs the configured post-merge checks; `hx change status` reports its result. For .NET, matching `hx build build` requests share immutable build output, then `hx build test BUILD` creates private writable test shards without recompiling. | Checks or independent shards can run concurrently within host slots and resource leases. The candidate stays fixed while main advances. This gate validates the merged snapshot, not just each packet's local checks. |
+| 8. Integration candidate and CI | A fixed merged source snapshot, covered intents, recipes, and test receipts become an integration checkpoint | `hx change candidate --repo … --expected-head … --boundary integration` freezes the candidate; `hx change run-validation BATCH --snapshot …` runs the configured post-merge checks; `hx change status` reports its result. For .NET, matching `hx build build` requests share immutable build output, then `hx build test BUILD` creates private writable test shards without recompiling. | Validation checks run one after another against the fixed snapshot and stop at the first failure; an equal build or test shard already running anywhere on the box is joined instead of repeated. The candidate stays fixed while main advances. This gate validates the merged snapshot, not just each packet's local checks. |
 | 9. Deploy candidate and artifact | A verified integration checkpoint, resolved provider obligations, tested build identity, and immutable artifact manifest become deployment evidence | `hx change candidate … --boundary deploy` freezes the release source; `hx change run-validation …` runs configured pre-deploy/build checks and captures configured artifacts; `hx change status` reports `deployable` only when the exact candidate and all obligations pass. `hx handoff delivery …` captures the packet, review, landing, candidate, and proof chain; `hx handoff check … --live` confirms current identities before acting on a handoff. | The deploy boundary requires verified integration for the same source and resolved real-provider obligations. Artifact paths and build manifest are bound to that candidate; a newer main commit does not replace it. |
 | 10. External deployment | The deployable candidate and tested artifact are handed to the product's release system | The configured CI/CD job, platform API, or deployment CLI consumes the verified artifact. HX exposes deployability and evidence through its delivery records; it does not provide a universal `hx deploy` command or imply a remote deployment. | This action is downstream of HX's deploy gate. Post-deploy health checks and rollback behavior depend on the product's configured release system. |
 
@@ -137,6 +137,123 @@ events, but arbitrary shell commands are not a filesystem sandbox. The Companion
 bounded captured deltas and proposes structured task/map updates; it does not execute worker
 commands. Jev judges bounded observation and routing candidates, not dependency truth,
 absence, or deployment readiness.
+
+## What each boundary enforces
+
+The table's steps hand data forward through the mechanisms below. Each item is enforced by
+code; where a step rests on the agent's own conduct, the line says so.
+
+1. Directive and orientation
+- `hx wake partner TEXT` reaches a Claude Partner over a per-process socket that its
+  SessionStart hook records; one 5 s bound covers the send, nothing is read back or retried,
+  and no ledger row is written. A Codex Partner receives a bounded tmux paste.
+- The Partner's SessionStart `context` hook delivers one frozen body (invariants, persona,
+  identity line, reviewed rules, PARTNER.md) with a sha256, a generation id and 9,000-byte
+  parts; its PreToolUse `guard` denies every tool until the body is delivered and while a
+  whole-file read is pending.
+- Partner graph queries write no search receipts; searching before planning is the persona's
+  instruction, not a gate.
+
+2. Decomposition and packets
+- `hx map plan-context` carries an input hash over snapshot, goal, record versions and
+  relations; required records must be current, not hypotheses, and the map baseline an
+  ancestor of HEAD. Expansion stops at 1.5 s, 24 nodes or 32 edges.
+- `hx plan apply` keys the request by sha256 of its canonical JSON, so a repeated body returns
+  the stored result; one `BEGIN IMMEDIATE` transaction writes plans, units, prerequisites and
+  tasks with `expected_revision` compare-and-set and enqueues `plan_changed` once per plan
+  revision.
+- Validation refuses more than 256 units; more than 64 write paths, map inputs or
+  prerequisites per unit; a `partner` reviewer or role; write paths that escape the checkout;
+  outputs outside the write scope; duplicate or cyclic prerequisites; and overlapping writes
+  between independent units of the same plan. Graph freshness and map-input anchors are
+  hashed before and again inside the writer.
+
+3. Admission and launch
+- `hx plan ready` reads snapshots only; `hx plan assign` repeats every check under the writer
+  and refuses a second active run per worker, task or workdir, overlapping write leases,
+  incompatible resources, a revision that is not the plan head, and any commit, tree, branch
+  or git_dir change since preparation. Hard prerequisites need a completion, intact receipts,
+  a materialization receipt and the files at the pinned commit.
+- The dispatch executor orders candidates by role rank, depth, plan and task, reserves a
+  launch key (sha256 of plan, task, revision and HEAD) by compare-and-set, defers refused
+  admissions and records a failed launch without retrying it. The host pool bounds box-wide
+  sessions, restore rate and process growth per user and boot.
+- `hx launch` derives the launch id from run and request, re-verifies worktree state and
+  prerequisite digests under the lock, and writes a content-addressed prompt bundle, a
+  checkpoint and a 0700 capsule. The adapter installs hooks bound once to run, worker and
+  adapter, installs no skills, and starts the session under `hx-supervise` with the token in
+  the environment only. Every command and hook refuses an hx root inside `~/.claude`.
+- The first turn is one hashed paste; the `request` hook must match that hash and denies a
+  request before startup is observed. A packet over 256 KiB or over the context budget is
+  refused whole, never shortened.
+
+4. Binding and implementation
+- `hx task` lists the packet's search areas (the directories of its write paths and map-input
+  anchors) and this run's search receipts. Every `hx code` query and admitted native Grep is
+  receipted with kind, query, scope, repository and completeness; a focused `hx code map` is
+  complete only when it omitted nothing within its budget.
+- `hx plan bind` freezes exact keys, 1–16 checks, coverage of every obligation and 1–32
+  receipts of this run and repository, including a complete area map at or above every
+  search area; the binding hash is sha256 of the canonical body and a different rebind is a
+  conflict. `hx plan approve-binding` requires the configured reviewer, an id different from
+  the worker's, the exact hash and a worktree still identical to admission.
+- PreToolUse admission denies Write and Edit on a packet run until the binding is approved,
+  and denies oversized arguments, writes to the checkpoint or required material, paused runs,
+  capture gaps and reused call ids; a denial exits 2 with its reason on stderr. The scope
+  audit at completion compares every change since admission with the frozen write scope and
+  pauses the run on a violation; `hx progress` cannot clear a pause.
+- PostToolUse settlement captures each result once; an unmatched result records a capture gap
+  that blocks all later admission. A hook that cannot reach the ledger writer spools its
+  delivery for the loop to replay in order, so capture is never lost. Reads deliver the whole
+  file and are checked against the admitted bytes.
+- Neither Companion approves edits: the Context Companion submits typed patches from a frozen
+  event slice; the Learning Companion only enqueues proposals for `hx learn`.
+
+5. Interface-first fan-out
+- Contract outputs are immutable per task, output and version, their blobs are
+  content-addressed, and their stubs are the one publication that enters the code graph
+  before merge. Publication needs an approved binding, receipts and a drained producer.
+
+6. Completion
+- `hx complete done` records intent only and refuses the Partner, another worker's run, any
+  outcome but done, a dirty worktree (untracked files count), and a diff over 5 source modules
+  or 1200 lines. Tool calls are refused from the request until publication.
+- The loop advances one completion per tick and waits on tools in flight, children,
+  unclassified cursors and undrained capture. Companion passes share one slot per root.
+- A check's identity is a digest of its recipe, a relative-path source hash and an environment
+  hash; a valid execution of that identity is reused, an equal one in flight anywhere on the
+  box is joined, and each run still gets its own receipt. Checks are bounded to 3600 s and
+  64 MiB and are invalidated by a timeout, a surviving process group or a source change
+  during the run.
+- Shutdown drains, freezes and kills exact kernel process identities before the launch is
+  quiesced. Publication rechecks the scope audit, receipts, hashes and prerequisite proofs in
+  one transaction that also releases leases and resources; a replay returns the stored row.
+
+7. Review and landing
+- `hx change submit` belongs to the run's worker; the head must equal the completion proof and
+  the diff a subset of its changed paths; the payload digest makes it idempotent and a landed
+  revision immutable. `hx change review` refuses the submitter, requires a qa-engineer or
+  release-engineer and records the intent hash of the reviewed revision.
+- `hx change land` is release authority only, into a bare integration repository, as a
+  two-parent commit swapped onto the ref with an old-value check; a moved head refuses and the
+  prepared row lets a retry reconcile. Git calls carry a 60 s timeout and a 256 KiB output
+  bound. Nothing is pushed.
+
+8–9. Validation candidates
+- A candidate's batch id is a digest of head, boundary, policy, members, checkpoint, retry and
+  reversions; its archive is bounded to 8192 files and 256 MiB with no `..`, `.git` or external
+  symlinks. The same head under the same policy returns the prior verified result.
+- One attempt runs; a retry needs a reconciled failure and a distinct batch. Deploy candidates
+  need verified integration at the same head. Failure attribution writes a repair packet and
+  wakes the Partner.
+
+10. Handoff
+- `hx handoff delivery DIR --change CHANGE --batch BATCH` writes delivery-boundaries.json and
+  HANDOFF.md from the ledger; `hx handoff capture` records existing pull-request rows through
+  `gh pr view`; `hx handoff sums` seals the directory; `hx handoff check DIR --live` recomputes
+  every identity and fails on any difference. hx pushes nothing and creates no pull request.
+- Environment values enter receipts as hashes and are never serialized; no token is passed to
+  `gh`.
 
 Every worker assignment is admitted through the dependency packet plan. Source
 materialization and the accepted workdir precede admission. Assignment reserves a run;

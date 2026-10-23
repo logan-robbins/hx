@@ -2,8 +2,8 @@
 name: hx-signoff
 description: Verify packet proof, intent review, exact source landing, fixed integration candidates, tested artifacts, and authorized delivery without overstating completion.
 metadata:
-  hx-audience: worker, partner
-  hx-roles: "*"
+  hx-audience: worker
+  hx-roles: release-engineer, qa-engineer
   hx-loads-when: preparing packet completion, reviewing evidence, handing off source, validating a fixed candidate
 ---
 
@@ -22,7 +22,8 @@ subset cannot certify broader coverage. Skips and unrun obligations remain expli
 Commit bounded declared source outputs and request `hx complete done`. The request is not
 completion: the runtime drains managed work/capture, executes or reuses approved checks,
 verifies exact receipts/dependencies/output coverage, publishes, and releases leases.
-For explicit receipts use `hx plan finish RUN --file receipts.json`. Fix a failed gate and
+`hx plan finish RUN --file receipts.json` is the same boundary for a run whose native session
+is already quiesced or that never had one; a live session is refused. Fix a failed gate and
 retry using current proof. Agent prose or a nonempty evidence note cannot bypass the gate.
 
 Packet coverage, independent intent review, local landing, integration proof, deployability,
@@ -30,18 +31,23 @@ and external deployment are separate states. Early declared interfaces can relea
 consumers while provider implementation continues. A stand-in retains real-provider binding.
 Check current readiness/proof; a historic milestone is not evidence that inputs stayed valid.
 
-## Partner only: intent and delivery
+## Delivery authorities
 
-Submit exact run/base/head/behavior through `hx change submit`; the configured independent
-reviewer records intent approval against its revision/hash. Sensitive boundaries use the
-configured authority. Prepare merge work outside the short publication transaction, then
-`hx change land` with the expected integration head. A moved head requires renewed preparation.
-Local landing does not push or deploy remotely.
+The Partner plans and admits; it holds no delivery authority. The run's worker submits exact
+run/base/head/behavior through `hx change submit`; the head must equal the completion proof and
+the diff must stay within its published changed paths. A qa-engineer or release-engineer who
+is not the submitter records intent approval with `hx change review` against the revision and
+intent hash; sensitive kinds or paths need every configured sensitive reviewer or a
+release-engineer. A release-engineer prepares merge work outside the short publication
+transaction, then lands with `hx change land` and the expected integration head; a moved head
+requires renewed preparation. Local landing does not push or deploy remotely.
 
-Freeze integration candidates and run configured post-merge checks against fixed source while
-main can advance. Freeze deploy candidates only with matching verified integration and resolved
-real-provider obligations. Pre-deploy/build proof names immutable source and tested artifact
-manifest. Use `hx change status` for current state rather than promoting a worker's claim.
+QA or release authority freezes integration candidates and runs the configured post-merge
+checks one after another against fixed source while main can advance. Freeze deploy candidates
+only with matching verified integration and resolved real-provider obligations; failure
+attribution and revert belong to release authority. Pre-deploy/build proof names immutable
+source and tested artifact manifest. Use `hx change status` for current state rather than
+promoting a worker's claim.
 
 `hx handoff delivery DIR --change CHANGE --batch BATCH` captures exact packet/review/landing/
 candidate/check/artifact identities. `hx handoff check DIR --live` rechecks current identity.

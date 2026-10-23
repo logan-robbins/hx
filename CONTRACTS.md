@@ -133,8 +133,9 @@ Complete transport is evidence of emitted content, not proof of model attention 
 It does not publish proof from agent prose. The runtime drains observed managed work and
 capture, runs approved bound checks, verifies current source/environment/dependencies and
 explicit changed output coverage, then atomically publishes outputs/coverage and releases
-leases. `hx plan finish RUN --file RECEIPTS` is the direct boundary with exact run-bound
-receipts. Blockers and decisions use typed progress; the Partner stops/replans affected work.
+leases. `hx plan finish RUN --file RECEIPTS` is the same boundary with exact run-bound
+receipts for a run whose native session is quiesced or that has none; a live session is
+refused. Blockers and decisions use typed progress; the Partner stops/replans affected work.
 Lease release after stop requires reconciled owned-process quiescence.
 
 ## Partner boundary transport
