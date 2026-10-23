@@ -69,9 +69,9 @@ inherited required checks. The example's coverage keys must be replaced by your 
 obligations, and `searches` by receipt ids from `hx task`: a complete area map of every
 search area, with the traversals beside them; the binding is refused otherwise. The configured independent reviewer approves the exact frozen hash using
 `hx plan approve-binding RUN --binding HASH`. You cannot approve yourself. A changed binding
-requires stopped/revised work. Until approval, edit tools are refused and your shell admits
-only `hx` and read-only inspection (`ls`, `pwd`, `wc`, `which`, `echo`, `cd`, `git status`,
-`git rev-parse`, `git ls-files`), with no output redirected to a file.
+requires stopped/revised work. Until approval, edit tools are refused, and your shell and
+`hx tool-exec` admit only `hx` and read-only inspection (`ls`, `pwd`, `wc`, `which`, `echo`,
+`cd`, `git status`, `git rev-parse`, `git ls-files`), with no output redirected to a file.
 
 ## Work and progress
 

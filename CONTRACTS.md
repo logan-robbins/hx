@@ -49,7 +49,8 @@ the writer opens, and the transaction re-verifies its inputs and refuses changed
 Workers bind their definition of done and exact check recipes before edits/proof. A configured
 independent reviewer approves the frozen hash. Admission enforces that gate: until approval,
 edit tools are refused and the shell admits only `hx` and read-only inspection
-(`runtime_policy.PREBINDING`, with no output redirected to a file); after approval, an edit
+(`runtime_policy.PREBINDING`, with no output redirected to a file), and `hx tool-exec` admits
+its command by the same rule; after approval, an edit
 whose target lies outside the packet's frozen write paths is refused naming them, and
 arbitrary shell commands are not a filesystem sandbox. Worker commands act only on their run.
 
@@ -458,7 +459,8 @@ reviewer. `hx task` lists `search_areas` and `searches`. Binding occurs at the u
 admission source and freezes recipes.
 `hx plan binding RUN` exposes the exact proposal; `approve-binding RUN --binding HASH`
 requires the independently named reviewer. Until approval, native edit tools and proof
-commands are refused and the shell admits only `hx` and read-only inspection; after approval,
+commands are refused, and the shell and `hx tool-exec` admit only `hx` and read-only
+inspection; after approval,
 edits are admitted only inside the frozen write paths, and arbitrary shell programs are not
 sandboxed.
 

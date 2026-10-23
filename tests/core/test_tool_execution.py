@@ -3,10 +3,16 @@ import sys
 
 import pytest
 
-from hx import jev, tool_execution, output_reduction
+from pathlib import Path
+
+from hx import jev, planning, tool_execution, output_reduction, unit_execution as units
 from hx.errors import ValidationError
 from hx.continuity_store import Conflict
+from .test_appmap import mapped  # noqa: F401 — fixture chain
+from .test_map_updates import active  # noqa: F401 — fixture chain
+from .test_unit_execution import fleet  # noqa: F401 — fixture
 from .test_native_companion import planned
+from .test_planning import bind, plan, unit
 
 
 def test_small_command_is_bounded_and_replay_never_reexecutes(planned):
@@ -149,3 +155,18 @@ def test_failed_test_run_summary_is_recorded_and_its_failing_chunk_leads_the_red
     assert 'FAILED tests/test_parser.py::test_rejects_field' in result['text']
     assert 'retry error budget' in result['text'] and result['requires_read']
     assert len(result['text'].encode()) <= output_reduction.OUTPUT_BYTES
+
+
+def test_tool_exec_runs_only_hx_and_read_only_inspection_before_binding_approval(fleet):
+    store, repo = fleet[:2]
+    planning.apply(store, plan(fleet, [unit(repo)]))
+    run = units.assign(store, 'implement', 1, 'eng-001')['run_id']
+    for argv in (['touch', 'x'], ['sh', '-c', 'echo x >| out.txt'], [sys.executable, '-c', 'pass'],
+                 ['git', 'checkout', '--', '.'], ['uv', 'run', 'pytest', '-q'], ['ls', '>', 'listing.txt']):
+        with pytest.raises(Conflict, match='until then the shell runs only hx and read-only inspection'):
+            tool_execution.execute(store, run, 'refused', argv)
+    assert tool_execution.execute(store, run, 'listing', ['git', 'status', '--short'])['exit_code'] == 0
+    assert not (Path(repo) / 'x').exists() and not (Path(repo) / 'out.txt').exists()
+    bind(store, run)
+    assert tool_execution.execute(store, run, 'touch', ['touch', 'x'])['exit_code'] == 0
+    assert (Path(repo) / 'x').exists()

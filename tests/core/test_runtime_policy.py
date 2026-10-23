@@ -498,12 +498,13 @@ def test_before_binding_approval_the_shell_admits_only_hx_and_read_only_inspecti
     def shell(command, status='proposed'):
         return runtime_policy.inspect_call(row, {**task, 'binding_status': status},
                                            {'tool_name': 'Bash', 'tool_input': {'command': command}})
-    for command in ['hx task', 'hx tool-exec --request t1 -- uv run pytest', 'FOO=1 hx code map --focus src --budget 4096',
+    for command in ['hx task', 'hx tool-exec --request t1 -- ls src', 'FOO=1 hx code map --focus src --budget 4096',
                     'uv run hx task', 'git status', 'git -C . rev-parse HEAD', 'git ls-files src', 'ls src | wc -l',
                     'cd src && ls', 'pwd; which python3', 'echo "a && pytest"', 'ls > /dev/null', 'git status 2>&1', 'true']:
         assert shell(command) is None, command
     for command in ['pytest -q', 'python3 -m pytest', 'touch x', 'git commit -am x', 'git checkout -- .', 'echo x > notes.txt',
-                    'ls >> log.txt', 'ls &> out', 'rm -rf src', 'sed -i s/a/b/ src/implement.py', 'cat src/implement.py',
+                    'ls >> log.txt', 'ls &> out', 'echo x >| out.txt', 'ls 2>| out.txt', 'ls <> out.txt', 'ls >& out.txt',
+                    'rm -rf src', 'sed -i s/a/b/ src/implement.py', 'cat src/implement.py',
                     'ls && pytest', 'hx task; make', 'python3 script.py', 'unterminated "quote']:
         with pytest.raises(AdmissionDenied, match='until then the shell runs only hx and read-only inspection'):
             shell(command)

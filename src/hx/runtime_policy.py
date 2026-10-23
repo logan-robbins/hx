@@ -121,18 +121,20 @@ def _subcommand(args):
 
 
 def _writes_file(parts):
-    """Whether a command segment redirects output to a file: `>`, `>>` or `&>` whose target is
+    """Whether a command segment opens a file for writing: a redirect operator (`>`, `>>`,
+    `>|`, `>&`, `&>`, `<>`; `_segments` keeps each operator as one token) whose target is
     neither a descriptor nor /dev/null."""
     for index, token in enumerate(parts):
-        if '>' in token and all(char in '<>&' for char in token):
+        if '>' in token and all(char in '<>&|' for char in token):
             target = parts[index + 1] if index + 1 < len(parts) else ''
             if target != '/dev/null' and not (token.endswith('&') and target.isdigit()):
                 return True
     return False
 
 
-def _prebinding(parts):
-    """Whether an unapproved packet worker may run this command segment."""
+def prebinding(parts):
+    """Whether an unapproved packet worker may run this command: `hx`, or read-only
+    inspection, writing no file. `parts` is one shell segment or an exact argv."""
     program, args = _program(parts)
     return (program in PREBINDING or (program, _subcommand(args)) in PREBINDING_SUBCOMMANDS) and not _writes_file(parts)
 
@@ -259,7 +261,7 @@ def inspect_call(row, task, observation, *, root=None):
                 if unapproved:
                     raise AdmissionDenied(BIND_FIRST) from None
                 return None
-            if unapproved and not all(_prebinding(parts) for parts, _ in commands):
+            if unapproved and not all(prebinding(parts) for parts, _ in commands):
                 raise AdmissionDenied(BIND_FIRST)
             from .file_inspection import require_non_file_output
             try:
